@@ -4,6 +4,7 @@ on:
   pull_request_target:
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -220,12 +221,12 @@ jobs:
           ACTIONLINT: ${{ needs.static-analysis.outputs.actionlint }}
           CODEQL: ${{ needs.static-analysis.outputs.codeql }}
           MANIFEST: ${{ needs.unit-tests.outputs.manifest }}
-          TESTS: ${{ needs.unit-tests.outputs.tests }}
+          TESTS_PRESENT: ${{ needs.unit-tests.outputs.tests }}
           UNIT: ${{ needs.unit-tests.outputs.unit }}
         run: |
           if [[ "$MANIFEST" != "success" ]]; then
             tests=invalid-package-manifest
-          elif [[ "$TESTS" != "true" ]]; then
+          elif [[ "$TESTS_PRESENT" != "true" ]]; then
             tests=skipped
           else
             tests="$UNIT"
