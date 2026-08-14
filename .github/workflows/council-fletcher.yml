@@ -1,0 +1,23 @@
+name: Council - Fletcher
+
+on:
+  pull_request_target:
+    paths:
+      - ".cacophony/agents/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  prompt-review:
+    uses: ./.github/workflows/cacophony-review.yml
+    with:
+      agent-slug: fletcher
+      deployment: gpt-5.4-mini
+      fail-on: high
+    secrets:
+      azure-api-key: ${{ secrets.CACOPHONY_AZURE_API_KEY }}

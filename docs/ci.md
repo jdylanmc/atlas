@@ -27,6 +27,10 @@ Three independent reviewers run through the trusted-base
 | Runekeeper | Security, untrusted content, secrets, pins, and trust boundaries |
 | Seer | Cross-surface consistency among code, schemas, tests, and instructions |
 
+Fletcher is a fourth, path-gated meta-reviewer rather than a council member. It
+runs only when files under `.cacophony/agents/` change and reviews the three
+wizard prompts for overlap, ambiguity, evidence quality, and token efficiency.
+
 The reusable worker checks authorization before checkout, inspects the pull
 request merge ref without executing it, loads reviewer prompts from the trusted
 base commit, gives the Azure credential only to an immutable Cacophony action,
