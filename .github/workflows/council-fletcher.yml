@@ -1,0 +1,59 @@
+name: Council - Fletcher
+
+on:
+  pull_request_target:
+    paths:
+      - ".cacophony/agents/**"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  detect-new-adversaries:
+    runs-on: ubuntu-latest
+    outputs:
+      found: ${{ steps.prompts.outputs.found }}
+    steps:
+      - name: Detect newly added adversary prompts
+        id: prompts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          added_prompts="$(
+            gh api --paginate \
+              "repos/$REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
+              --jq '.[] | select(.status == "added") | .filename' |
+              awk '
+                /^\.cacophony\/agents\/[^/]+\.md$/ &&
+                $0 != ".cacophony/agents/fletcher.md"
+              '
+          )"
+
+          if [[ -n "$added_prompts" ]]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            printf 'Fletcher will review:\n%s\n' "$added_prompts"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No new adversary prompt files were added."
+          fi
+
+  prompt-review:
+    needs: detect-new-adversaries
+    if: needs.detect-new-adversaries.outputs.found == 'true'
+    uses: ./.github/workflows/cacophony-review.yml
+    with:
+      agent-slug: fletcher
+      deployment: gpt-5.6-luna-high
+      max-turns: 40
+      timeout-seconds: 1200
+      fail-on: high
+    secrets:
+      azure-api-key: ${{ secrets.CACOPHONY_AZURE_API_KEY }}
