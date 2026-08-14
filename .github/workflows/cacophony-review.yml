@@ -1,0 +1,94 @@
+name: Reusable Cacophony Review
+
+on:
+  workflow_call:
+    inputs:
+      agent-slug:
+        required: true
+        type: string
+      deployment:
+        required: true
+        type: string
+      fail-on:
+        required: false
+        type: string
+        default: high
+    secrets:
+      azure-api-key:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    env:
+      CACOPHONY_AZURE_ENDPOINT: ${{ vars.CACOPHONY_AZURE_ENDPOINT }}
+    steps:
+      - name: Authorize trusted-base review
+        shell: bash
+        env:
+          AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+          BASE_REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          if [[ "$EVENT_NAME" != "pull_request_target" ]]; then
+            echo "::error::Cacophony reviews require a pull_request_target caller."
+            exit 1
+          fi
+
+          if [[ "$HEAD_REPOSITORY" == "$BASE_REPOSITORY" ]]; then
+            exit 0
+          fi
+
+          case "$AUTHOR_ASSOCIATION" in
+            OWNER|MEMBER|COLLABORATOR) ;;
+            *)
+              echo "::error::Fork reviews require an owner, member, or collaborator author."
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check trusted prompt availability
+        id: prompt
+        shell: bash
+        env:
+          AGENT_SLUG: ${{ inputs.agent-slug }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git cat-file -e "$BASE_SHA:.cacophony/agents/$AGENT_SLUG.md"; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "$AGENT_SLUG starts reviewing after its prompt is merged."
+          fi
+
+      - name: Run Cacophony review
+        id: review
+        if: steps.prompt.outputs.ready == 'true'
+        uses: jdylanmc/cacophony@ca1bc14b1415f4bfb8e92f439594d312e565a9a5
+        with:
+          prompt-file: .cacophony/agents/${{ inputs.agent-slug }}.md
+          endpoint: ${{ env.CACOPHONY_AZURE_ENDPOINT }}
+          deployment: ${{ inputs.deployment }}
+          max-turns: 20
+          timeout-seconds: 600
+          rate-limit-retries: 2
+          fail-on: ${{ inputs.fail-on }}
+        env:
+          CACOPHONY_AZURE_API_KEY: ${{ secrets.azure-api-key }}
+
+      - name: Upload Cacophony report
+        if: always() && steps.review.outcome != 'skipped'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cacophony-${{ inputs.agent-slug }}
+          path: .cacophony/out/${{ inputs.agent-slug }}/

@@ -1,0 +1,60 @@
+name: Verification
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-lint:
+    name: Workflow lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Validate GitHub Actions workflows
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2
+        with:
+          version: "1.7.7"
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Detect JavaScript or TypeScript sources
+        id: sources
+        shell: bash
+        run: |
+          if find . -type f \
+            \( -name '*.cjs' -o -name '*.cts' -o -name '*.js' -o -name '*.jsx' \
+            -o -name '*.mjs' -o -name '*.mts' -o -name '*.ts' -o -name '*.tsx' \) \
+            -not -path './.git/*' -print -quit | grep -q .; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "No JavaScript or TypeScript sources exist yet; CodeQL will activate when they are added."
+          fi
+
+      - name: Initialize CodeQL
+        if: steps.sources.outputs.present == 'true'
+        uses: github/codeql-action/init@f3712979fa5f215279b101dd0a2e3bdfb4353324 # v3
+        with:
+          languages: javascript-typescript
+
+      - name: Analyze
+        if: steps.sources.outputs.present == 'true'
+        uses: github/codeql-action/analyze@f3712979fa5f215279b101dd0a2e3bdfb4353324 # v3
