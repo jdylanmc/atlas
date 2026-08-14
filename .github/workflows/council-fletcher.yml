@@ -51,7 +51,7 @@ jobs:
     uses: ./.github/workflows/cacophony-review.yml
     with:
       agent-slug: fletcher
-      deployment: gpt-5.6-luna-high
+      deployment: gpt-5.4-mini
       max-turns: 40
       timeout-seconds: 1200
       fail-on: high
