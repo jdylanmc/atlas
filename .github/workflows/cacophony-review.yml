@@ -17,6 +17,14 @@ on:
         required: false
         type: number
         default: 600
+      evidence-artifact:
+        required: false
+        type: string
+        default: ""
+      evidence-files:
+        required: false
+        type: string
+        default: ""
       fail-on:
         required: false
         type: string
@@ -26,6 +34,7 @@ on:
         required: true
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -37,7 +46,6 @@ jobs:
       - name: Authorize trusted-base review
         shell: bash
         env:
-          AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
           BASE_REPOSITORY: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
           HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
@@ -47,21 +55,14 @@ jobs:
             exit 1
           fi
 
-          if [[ "$HEAD_REPOSITORY" == "$BASE_REPOSITORY" ]]; then
-            exit 0
+          if [[ "$HEAD_REPOSITORY" != "$BASE_REPOSITORY" ]]; then
+            echo "::error::Cacophony reviews do not execute for fork pull requests."
+            exit 1
           fi
-
-          case "$AUTHOR_ASSOCIATION" in
-            OWNER|MEMBER|COLLABORATOR) ;;
-            *)
-              echo "::error::Fork reviews require an owner, member, or collaborator author."
-              exit 1
-              ;;
-          esac
 
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -72,19 +73,32 @@ jobs:
           AGENT_SLUG: ${{ inputs.agent-slug }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          if git cat-file -e "$BASE_SHA:.cacophony/agents/$AGENT_SLUG.md"; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "$AGENT_SLUG starts reviewing after its prompt is merged."
+          if ! git cat-file -e "$BASE_SHA:.cacophony/agents/$AGENT_SLUG.md"; then
+            echo "::error::Trusted prompt .cacophony/agents/$AGENT_SLUG.md is missing from the base commit."
+            exit 1
           fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare evidence directory
+        if: inputs.evidence-artifact != ''
+        shell: bash
+        run: |
+          rm -rf .cacophony/evidence
+          mkdir -p .cacophony/evidence
+
+      - name: Download deterministic evidence
+        if: inputs.evidence-artifact != ''
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ${{ inputs.evidence-artifact }}
+          path: .cacophony/evidence
 
       - name: Run Cacophony review
         id: review
-        if: steps.prompt.outputs.ready == 'true'
         uses: jdylanmc/cacophony@ee9525ab23d654cf67172e178a5ab885f352c0d3
         with:
           prompt-file: .cacophony/agents/${{ inputs.agent-slug }}.md
+          evidence-files: ${{ inputs.evidence-files }}
           endpoint: ${{ env.CACOPHONY_AZURE_ENDPOINT }}
           deployment: ${{ inputs.deployment }}
           max-turns: ${{ inputs.max-turns }}
@@ -94,9 +108,52 @@ jobs:
         env:
           CACOPHONY_AZURE_API_KEY: ${{ secrets.azure-api-key }}
 
-      - name: Upload Cacophony report
+      - name: Stage validated Cacophony report
+        if: always() && steps.review.outcome != 'skipped'
+        shell: bash
+        env:
+          AGENT_SLUG: ${{ inputs.agent-slug }}
+        run: |
+          source_root="$GITHUB_WORKSPACE/.cacophony/out/$AGENT_SLUG"
+          workspace_root="$(realpath "$GITHUB_WORKSPACE")"
+
+          if [[ ! -d "$source_root" || -L "$source_root" ]]; then
+            echo "::error::Cacophony report directory is missing or is a symbolic link."
+            exit 1
+          fi
+
+          source_root="$(realpath "$source_root")"
+          case "$source_root" in
+            "$workspace_root"/.cacophony/out/*) ;;
+            *)
+              echo "::error::Cacophony report directory escapes the workspace."
+              exit 1
+              ;;
+          esac
+
+          destination="$RUNNER_TEMP/cacophony-report/$AGENT_SLUG"
+          mkdir -p "$destination"
+          for report in report.json report.md; do
+            source_file="$source_root/$report"
+            if [[ ! -f "$source_file" || -L "$source_file" ]]; then
+              echo "::error::$report is missing, not regular, or is a symbolic link."
+              exit 1
+            fi
+            resolved="$(realpath "$source_file")"
+            case "$resolved" in
+              "$source_root"/*) ;;
+              *)
+                echo "::error::$report escapes the validated report directory."
+                exit 1
+                ;;
+            esac
+            install -m 0644 "$resolved" "$destination/$report"
+          done
+
+      - name: Upload staged Cacophony report
         if: always() && steps.review.outcome != 'skipped'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: cacophony-${{ inputs.agent-slug }}
-          path: .cacophony/out/${{ inputs.agent-slug }}/
+          path: ${{ runner.temp }}/cacophony-report/${{ inputs.agent-slug }}/
+          if-no-files-found: error
