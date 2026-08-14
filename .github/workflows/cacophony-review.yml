@@ -9,6 +9,14 @@ on:
       deployment:
         required: true
         type: string
+      max-turns:
+        required: false
+        type: number
+        default: 20
+      timeout-seconds:
+        required: false
+        type: number
+        default: 600
       fail-on:
         required: false
         type: string
@@ -74,13 +82,13 @@ jobs:
       - name: Run Cacophony review
         id: review
         if: steps.prompt.outputs.ready == 'true'
-        uses: jdylanmc/cacophony@ca1bc14b1415f4bfb8e92f439594d312e565a9a5
+        uses: jdylanmc/cacophony@ee9525ab23d654cf67172e178a5ab885f352c0d3
         with:
           prompt-file: .cacophony/agents/${{ inputs.agent-slug }}.md
           endpoint: ${{ env.CACOPHONY_AZURE_ENDPOINT }}
           deployment: ${{ inputs.deployment }}
-          max-turns: 20
-          timeout-seconds: 600
+          max-turns: ${{ inputs.max-turns }}
+          timeout-seconds: ${{ inputs.timeout-seconds }}
           rate-limit-retries: 2
           fail-on: ${{ inputs.fail-on }}
         env:
