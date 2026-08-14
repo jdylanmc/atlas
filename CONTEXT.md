@@ -32,6 +32,18 @@ Derived knowledge whose Realm-defined freshness period has elapsed. Stale Knowle
 **Thread**:
 An explicit semantic relationship connecting knowledge nodes.
 
+**Pillar**:
+A human-declared baseline truth that forms a structural boundary of a Realm. Only a human can establish or amend a Pillar; agents may propose changes but cannot silently reinterpret or override it.
+
+**Creator**:
+The human authority who establishes and amends a Realm's Pillars.
+
+**Pillar Amendment**:
+An append-only record of a Pillar change that identifies the previous and new truth, the human author, the rationale, and the time of change.
+
+**Heresy**:
+A preserved knowledge claim that contradicts a Pillar. Gather detects Heresy when knowledge enters a Realm, while Pillar creation detects Heresy against knowledge already present.
+
 **Realm Law**:
 A versioned invariant or policy that governs how agents maintain and use a Realm. Violating a Realm Law makes the resulting Realm invalid.
 _Avoid_: Realm Rule
