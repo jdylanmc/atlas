@@ -14,11 +14,20 @@ _Avoid_: Region
 **Realm Repository**:
 The Git repository that owns a Realm and stores its knowledge beneath its top-level `.atlas/` directory.
 
+**Realm Manifest**:
+The human-authored declaration of a Realm's identity and intended knowledge contract.
+
+**Realm Lock**:
+The generated record of the exact schema and content versions resolved for a Realm.
+
 **Consumer Repository**:
 An Atlas-enabled project repository whose `.atlas/` directory provides an entry point to selected Realms without making the project itself a Realm.
 
 **Bonfire**:
-A Realm-local conceptual landmark where related ideas strongly intersect. Agents navigate from Bonfire to Bonfire, including across Realms through explicit Threads; a Bonfire is not authoritative source material.
+A human-approved, Realm-local conceptual landmark where related ideas strongly intersect. Gather and Weave may recommend Bonfires according to Realm policy, but agents do not establish them autonomously. A Bonfire provides concise orientation and named paths while Insights hold detailed understanding. Bonfire-to-Bonfire Threads are the only relationships that may cross Realm boundaries; a Bonfire is not authoritative source material.
+
+**Rest**:
+The mandatory re-anchoring checkpoint performed whenever an agent reaches a Bonfire. The agent re-reads the current Realm manifest, Realm Laws, Pillars, and Bonfire orientation, then restates its active objective and constraints before continuing.
 
 **Lore**:
 Authoritative source material or a pointer to authoritative source material. Lore is not synthesized understanding.
