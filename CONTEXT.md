@@ -20,6 +20,9 @@ The human-authored declaration of a Realm's identity and intended knowledge cont
 **Realm Lock**:
 The generated record of the exact schema and content versions resolved for a Realm.
 
+**Realm Chronicle**:
+The append-only operational history of Gather and Weave runs, recording when each operation occurred, who performed it, its outcome, high-level metrics, and its report pointer. The Chronicle is audit history, not synthesized knowledge.
+
 **Consumer Repository**:
 An Atlas-enabled project repository whose `.atlas/` directory provides an entry point to selected Realms without making the project itself a Realm.
 
@@ -51,10 +54,10 @@ The human authority who establishes and amends a Realm's Pillars.
 An append-only record of a Pillar change that identifies the previous and new truth, the human author, the rationale, and the time of change.
 
 **Heresy**:
-A preserved knowledge claim that contradicts a Pillar. Gather detects Heresy when knowledge enters a Realm, while Pillar creation detects Heresy against knowledge already present.
+A reported finding that contradicts a Pillar or violates a Realm Law. Heresy exists in Gather and Weave reports rather than as knowledge stored in the Realm.
 
 **Realm Law**:
-A versioned invariant or policy that governs how agents maintain and use a Realm. Violating a Realm Law makes the resulting Realm invalid.
+A human-approved, versioned invariant or policy that governs how agents maintain and use a Realm. Agents may propose Laws and amendments but cannot establish them autonomously. Violating a Realm Law makes the resulting Realm invalid.
 _Avoid_: Realm Rule
 
 **Gather**:
