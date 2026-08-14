@@ -30,6 +30,8 @@ Three independent reviewers run through the trusted-base
 Fletcher is a fourth, path-gated meta-reviewer rather than a council member. It
 runs only when files under `.cacophony/agents/` change and reviews the three
 wizard prompts for overlap, ambiguity, evidence quality, and token efficiency.
+Fletcher uses the `gpt-5.6-luna-high` deployment with the full 20-turn review
+budget; the three product reviewers use `gpt-5.4-mini`.
 
 The reusable worker checks authorization before checkout, inspects the pull
 request merge ref without executing it, loads reviewer prompts from the trusted
