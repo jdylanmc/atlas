@@ -7,7 +7,7 @@ The path-gated `pull_request_target` workflow first queries the pull request
 file metadata without checking out or executing pull-request code. Fletcher
 runs only when the change adds a new Markdown prompt directly under
 `.cacophony/agents/`; edits, renames, and deletions do not invoke it. Fletcher
-uses the `gpt-5.4-mini` deployment with a 40-turn review budget.
+uses the `gpt-5.6-luna` deployment with a 40-turn review budget.
 
 The reusable worker checks authorization before checkout, inspects the pull
 request merge ref without executing it, loads reviewer prompts from the trusted
@@ -41,7 +41,7 @@ the trusted step outcomes, checksum-verified Actionlint diagnostics, CodeQL
 SARIF, and exact base, head, and merge revisions into one immutable artifact.
 
 Only after collection finishes do Bolas, Smaug, and Balerion run in parallel on
-the `gpt-5.4-mini` deployment with 30-turn budgets. Each receives the
+the `gpt-5.6-luna` deployment with 30-turn budgets. Each receives the
 static-analysis results, CodeQL SARIF, and unit-test result:
 
 | Dragon | Lens |
