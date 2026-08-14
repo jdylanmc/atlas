@@ -271,7 +271,7 @@ jobs:
         .cacophony/evidence/codeql.sarif
         .cacophony/evidence/revision.json
         .cacophony/evidence/unit-tests.status.json
-      deployment: gpt-5.6-luna-high
+      deployment: gpt-5.4-mini
       max-turns: 30
       fail-on: high
     secrets:
@@ -291,7 +291,7 @@ jobs:
         .cacophony/evidence/codeql.sarif
         .cacophony/evidence/revision.json
         .cacophony/evidence/unit-tests.status.json
-      deployment: gpt-5.6-luna-high
+      deployment: gpt-5.4-mini
       max-turns: 30
       fail-on: high
     secrets:
@@ -311,7 +311,7 @@ jobs:
         .cacophony/evidence/codeql.sarif
         .cacophony/evidence/revision.json
         .cacophony/evidence/unit-tests.status.json
-      deployment: gpt-5.6-luna-high
+      deployment: gpt-5.4-mini
       max-turns: 30
       fail-on: high
     secrets:
