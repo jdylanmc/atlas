@@ -54,6 +54,10 @@ The deterministic verification check fails when an applicable analysis or test
 fails. The dragons still receive failed results so their reports can explain
 the relevant changed-code impact rather than losing that evidence.
 
+Each run retains `dragon-council-evidence` plus separate
+`cacophony-bolas`, `cacophony-smaug`, and `cacophony-balerion` report artifacts
+for audit and diagnosis.
+
 After the council has been observed successfully, require these `main` ruleset
 checks:
 
