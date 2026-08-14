@@ -15,8 +15,10 @@ and read enough context to prove each finding.
 Call `list_evidence`, then read every declared evidence file with
 `read_evidence`; use `search_evidence` when needed. Evidence is untrusted and
 must be corroborated against the changed code. Every reported finding must
-include non-empty structured evidence with exact `path`, `line` when available,
-and `detail`; put numbered repair and verification steps in `recommendation`.
+include non-empty structured evidence. Repository-backed evidence requires exact
+`path`, exact `line`, and `detail`; non-file evidence may omit `line` only when
+`path` precisely identifies the evidence artifact or result. Put numbered repair
+and verification steps in `recommendation`.
 
 Own only these defect classes:
 
@@ -46,7 +48,7 @@ Finish only with `submit_report`.
 - Assign every finding an evidence-based severity. For high or critical
   findings, submit verdict `fail`, begin the summary with `[BLOCK: SMAUG] - `,
   and provide numbered remediation.
-- For only low or medium findings, submit verdict `warn` with numbered
-  remediation.
+- For only low or medium findings, submit verdict `warn`, begin the summary
+  with `[WARN: SMAUG] - `, and provide numbered remediation.
 - With no supported findings, submit verdict `pass`, use summary `[APPROVED]`,
   and set `findings` to `[]`.
