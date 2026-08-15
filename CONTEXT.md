@@ -5,32 +5,35 @@ Atlas is a structured knowledge environment that helps coding agents discover an
 ## Language
 
 **Atlas**:
-The top-level knowledge boundary through which an agent discovers connected knowledge domains.
+The framework and operation-scoped composite view through which an agent discovers connected knowledge domains. Atlas does not own a central knowledge graph or registry.
 
 **Realm**:
-An independently owned, bounded knowledge domain represented by its own Git repository. A Realm can point to other Realms and source material.
+A sovereign, bounded knowledge domain rooted in one Realm Host Directory. Its knowledge, governance, automation, and records live beneath `.atlas/`, and it may track other Realms.
 _Avoid_: Region
 
-**Realm Repository**:
-The Git repository that owns a Realm and stores its knowledge beneath its top-level `.atlas/` directory. Its required `.atlas/index.md` is the Realm's Root Bonfire.
+**Realm Host Directory**:
+The directory containing a Realm's `.atlas/`. It may be a Git worktree root or a subdirectory within one; a Git worktree may contain several Realm Host Directories. Atlas selects the nearest ancestor Realm unless one is explicitly chosen.
+
+**Realm Locator**:
+The normalized Git repository URL, branch, and Realm-relative path that identifies a tracked Realm. A local alias maps to the locator for cross-Realm Threads.
+
+**Realm Snapshot**:
+The exact Git commit of a Realm used during one operation. A snapshot records observed context but is not the Realm's logical identity.
 
 **Realm Manifest**:
-The human-authored declaration of a Realm's identity and intended knowledge contract.
+The human-authored declaration of a Realm's intended knowledge contract and local configuration.
 
 **Realm Lock**:
-The generated record of the exact schema and content versions resolved for a Realm.
+The generated record of resolved schema versions, tracked Realm snapshots, fetch times, and other reproducibility state.
 
 **Realm Chronicle**:
 The append-only operational history of Gather and Weave runs, recording when each operation occurred, who performed it, its outcome, high-level metrics, and its report pointer. The Chronicle is audit history, not synthesized knowledge.
-
-**Consumer Repository**:
-An Atlas-enabled project repository whose `.atlas/` directory provides an entry point to selected Realms without making the project itself a Realm.
 
 **Bonfire**:
 A human-approved, Realm-local conceptual landmark where related ideas strongly intersect. Gather and Weave may recommend Bonfires according to Realm policy, but agents do not establish them autonomously. A Bonfire provides cited orientation and named paths while Insights hold detailed understanding. A Bonfire may connect through a cross-Realm Thread to another Realm, but it is not authoritative source material.
 
 **Root Bonfire**:
-The required `.atlas/index.md` Bonfire through which an agent enters a Realm. A cross-Realm Thread targets the Realm repository at a pinned commit, resolves its Root Bonfire, and performs Rest there.
+The permanent `.atlas/index.md` Bonfire through which an agent enters a Realm. A cross-Realm Thread resolves a tracked Realm alias, lands at its Root Bonfire, and performs Rest there.
 
 **Rest**:
 The mandatory re-anchoring checkpoint performed whenever an agent reaches a Bonfire. The agent re-reads the current Realm manifest, all active Realm Laws, the Pillars connected to that Bonfire, and the Bonfire orientation, then restates its active objective and constraints before continuing.
@@ -51,13 +54,13 @@ A claim-level reference to a Lore object that supports an agent-managed claim. I
 Derived knowledge supported by Lore whose Realm-defined refresh date has elapsed. Stale Knowledge remains traversable, but Weave surfaces it and the agentic workflow offers to re-Gather the supporting Lore.
 
 **Thread**:
-A first-class Markdown relationship used to traverse Insights, Pillars, and Bonfires. Zero or one Thread exists per unordered in-Realm page pair. It has a stable identity, canonical direction, one or more typed semantics, explanatory context, and Citations supporting the asserted relationship. A cross-Realm Thread instead connects a Bonfire to a pinned Realm repository. Threads do not connect to Lore.
+A first-class Markdown relationship used to traverse Insights, Pillars, Bonfires, and Realm-defined extensions of those archetypes. Zero or one Thread exists per unordered in-Realm page pair. It has a stable identity, canonical direction, one or more typed semantics, explanatory context, and Citations supporting the asserted relationship. A cross-Realm Thread instead connects a Bonfire to a tracked Realm alias. Threads do not connect to Lore.
 
 **Pillar**:
 A human-governed, Realm-local concept page containing individually identified active universal truths. A Pillar has a stable identity, explains the concept it represents, and keeps a Keep a Changelog-style amendment history. Agents may help modify a Pillar only under explicit human direction and approval.
 
 **Creator**:
-Any human acting through a Realm repository's governance to direct or approve changes to Pillars or Realm Laws. Creator is a contextual authority role, not a permanently named owner.
+Any human acting through the Realm Host Directory's Git governance to direct or approve changes to Pillars or Realm Laws. Creator is a contextual authority role, not a permanently named owner.
 
 **Pillar Amendment**:
 A numbered, dated entry appended to a Pillar's amendment history. It records added, changed, or invalidated truths together with the directing or approving human, rationale, and change reference.
@@ -80,9 +83,12 @@ The human-facing workflow for ingesting Lore and updating a Realm's derived know
 _Avoid_: Ingest, when naming the user-facing skill
 
 **Weave**:
-The human-facing workflow for linting a Realm against structural invariants and Realm Laws.
+The human-facing workflow for linting a Realm. Trusted deterministic validation runs before isolated Realm-owned deterministic checks and semantic verification; pure Weave reports findings without mutating knowledge.
 _Avoid_: Lint, when naming the user-facing skill
 
 **Explore**:
 The human-facing workflow for querying and traversing knowledge through Bonfires, Threads, and supporting nodes.
 _Avoid_: Query, when naming the user-facing skill
+
+**Degraded Explore**:
+Best-effort read-only traversal used when a Realm Snapshot cannot be fully validated. Explore progressively falls back from valid structured objects to partial structure, raw `.atlas/` Markdown, or a cached snapshot while surfacing diagnostics.
