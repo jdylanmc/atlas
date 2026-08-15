@@ -23,8 +23,11 @@ The exact Git commit of a Realm used during one operation. A snapshot records ob
 **Realm Manifest**:
 The human-authored declaration of a Realm's intended knowledge contract and local configuration.
 
+**Realm Schema**:
+The versioned extension contract that adds Realm-specific page types, fields, relationship semantics, and validation while inheriting and preserving Atlas core archetype behavior.
+
 **Realm Lock**:
-The generated record of resolved schema versions, tracked Realm snapshots, fetch times, and other reproducibility state.
+The generated, local record of resolved schema versions, tracked Realm Snapshots, fetch times, and other reproducibility state. Realm Lock is replaceable cache state rather than committed Realm knowledge.
 
 **Realm Chronicle**:
 The append-only operational history of Gather and Weave runs, recording when each operation occurred, who performed it, its outcome, high-level metrics, and its report pointer. The Chronicle is audit history, not synthesized knowledge.
