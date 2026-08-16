@@ -4,6 +4,18 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 
 ## Conventions
 
+- **Title every issue as `type(scope): summary`**. Use a lowercase type and
+  scope so lists remain visually scannable:
+  - `feat(scope)` for product behavior, specifications, and implementation work
+  - `fix(scope)` for defects and corrections
+  - `chore(scope)` for repository maintenance, infrastructure, and planning maps
+  - `docs(scope)` for documentation-only work
+  - `research(scope)` for fact-finding that resolves an external unknown
+- Choose a short Atlas area for the scope, such as `realm`, `explore`, `gather`,
+  `weave`, `runtime`, `governance`, `agent`, `site`, `ci`, or `map`.
+- Workflow labels such as `wayfinder:grilling` remain separate from the title:
+  the title describes the outcome category; the label describes how the issue
+  is worked.
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
 - **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
 - **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
