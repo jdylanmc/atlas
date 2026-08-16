@@ -1,0 +1,5 @@
+name: Legacy Identity Realm
+purpose: Preserve historical password-session architecture.
+atlas-schema: 1.0.0
+realm-schema: 1.0.0
+

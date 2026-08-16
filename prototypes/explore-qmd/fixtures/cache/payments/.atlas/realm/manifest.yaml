@@ -1,0 +1,5 @@
+name: Payments Realm
+purpose: Explain payment authorization and token validation.
+atlas-schema: 1.0.0
+realm-schema: 1.0.0
+

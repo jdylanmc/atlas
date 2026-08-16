@@ -1,0 +1,11 @@
+{
+  "name": "atlas-explore-qmd-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "probe": "node probe.mjs"
+  },
+  "dependencies": {
+    "@tobilu/qmd": "2.5.3"
+  }
+}

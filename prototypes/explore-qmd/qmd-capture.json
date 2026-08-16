@@ -1,0 +1,220 @@
+{
+  "question": "Can QMD provide a Realm-local lexical index whose results Atlas can wrap with sovereignty, freshness, and Bonfire context?",
+  "providerContract": {
+    "methods": [
+      "sync",
+      "status",
+      "query",
+      "get",
+      "close"
+    ],
+    "queryResultFields": [
+      "resultId",
+      "realm",
+      "snapshot",
+      "freshness",
+      "path",
+      "objectId",
+      "archetype",
+      "title",
+      "engineScore",
+      "entryScore",
+      "preview",
+      "links",
+      "realmContext?"
+    ]
+  },
+  "qmdMode": "SDK inline config + explicit Realm-local SQLite path + BM25 only, wrapped behind Atlas SearchProvider",
+  "firstUpdate": {
+    "collections": 3,
+    "indexed": 11,
+    "updated": 0,
+    "unchanged": 0,
+    "removed": 0,
+    "needsEmbedding": 11
+  },
+  "secondUpdate": {
+    "collections": 3,
+    "indexed": 0,
+    "updated": 0,
+    "unchanged": 11,
+    "removed": 0,
+    "needsEmbedding": 11
+  },
+  "status": {
+    "engine": "qmd",
+    "mode": "lexical",
+    "indexedRealms": [
+      {
+        "realm": "local",
+        "documents": 5
+      },
+      {
+        "realm": "github-com-example-payments",
+        "documents": 4
+      },
+      {
+        "realm": "github-com-example-legacy-identity",
+        "documents": 2
+      }
+    ]
+  },
+  "searches": {
+    "authentication session token rotation": [
+      {
+        "resultId": "local:bonfire-security",
+        "realm": "local",
+        "snapshot": "local-commit-a1",
+        "freshness": "fresh",
+        "path": "bonfires/security-boundary.md",
+        "objectId": "bonfire-security",
+        "archetype": "bonfire",
+        "title": "Security Boundary",
+        "engineScore": 0.4951834636281275,
+        "entryScore": 0.6951834636281276,
+        "preview": "Authentication establishes identity. Session rotation limits the lifetime of stolen credentials. Follow insights/session-rotation for the current application behavior. The payments Realm contains the token-validation boundary used after log",
+        "links": [
+          "insights/session-rotation",
+          "lore/auth-design"
+        ],
+        "realmContext": {
+          "manifest": "name: Atlas Application Realm\npurpose: Explain authentication and session behavior for the application.\natlas-schema: 1.0.0\nrealm-schema: 1.0.0\n\n",
+          "laws": "# Realm Laws\n\n## [law:pillar-governance] Pillar governance\n\nTreat active Pillar truths as universal within this Realm.\n\n## [law:thread-explanation] Thread explanation\n\nEvery Thread explains why its endpoints are connected.\n\n"
+        }
+      },
+      {
+        "resultId": "local:lore-auth-design",
+        "realm": "local",
+        "snapshot": "local-commit-a1",
+        "freshness": "fresh",
+        "path": "lore/auth-design.md",
+        "objectId": "lore-auth-design",
+        "archetype": "lore",
+        "title": "Authentication Design",
+        "engineScore": 0.6519676726185257,
+        "entryScore": 0.6519676726185257,
+        "preview": "The first-party authentication design specifies rotating refresh tokens and session-family revocation.",
+        "links": []
+      }
+    ],
+    "payment access token validation": [
+      {
+        "resultId": "github-com-example-payments:bonfire-payments-root",
+        "realm": "github-com-example-payments",
+        "snapshot": "payments-commit-b2",
+        "freshness": "fresh",
+        "path": "index.md",
+        "objectId": "bonfire-payments-root",
+        "archetype": "bonfire",
+        "title": "Payments Realm",
+        "engineScore": 0.5158080361817114,
+        "entryScore": 0.7158080361817114,
+        "preview": "This Realm explains payment authorization and access-token validation. Begin at bonfires/payment-identity.",
+        "links": [
+          "bonfires/payment-identity"
+        ],
+        "realmContext": {
+          "manifest": "name: Payments Realm\npurpose: Explain payment authorization and token validation.\natlas-schema: 1.0.0\nrealm-schema: 1.0.0\n\n",
+          "laws": "# Realm Laws\n\n## [law:financial-evidence] Financial evidence\n\nEvery payment authorization claim must cite first-party service documentation.\n\n"
+        }
+      },
+      {
+        "resultId": "github-com-example-payments:bonfire-payment-identity",
+        "realm": "github-com-example-payments",
+        "snapshot": "payments-commit-b2",
+        "freshness": "fresh",
+        "path": "bonfires/payment-identity.md",
+        "objectId": "bonfire-payment-identity",
+        "archetype": "bonfire",
+        "title": "Payment Identity",
+        "engineScore": 0.5093923557764163,
+        "entryScore": 0.7093923557764164,
+        "preview": "Payment requests accept short-lived access tokens issued by the application identity service. Follow insights/token-validation for validation requirements. : lore/payment-contract",
+        "links": [
+          "insights/token-validation",
+          "lore/payment-contract"
+        ],
+        "realmContext": {
+          "manifest": "name: Payments Realm\npurpose: Explain payment authorization and token validation.\natlas-schema: 1.0.0\nrealm-schema: 1.0.0\n\n",
+          "laws": "# Realm Laws\n\n## [law:financial-evidence] Financial evidence\n\nEvery payment authorization claim must cite first-party service documentation.\n\n"
+        }
+      },
+      {
+        "resultId": "github-com-example-payments:insight-payment-token-validation",
+        "realm": "github-com-example-payments",
+        "snapshot": "payments-commit-b2",
+        "freshness": "fresh",
+        "path": "insights/token-validation.md",
+        "objectId": "insight-payment-token-validation",
+        "archetype": "insight",
+        "title": "Payment Token Validation",
+        "engineScore": 0.5328171227359009,
+        "entryScore": 0.6128171227359008,
+        "preview": "The payment service validates issuer, audience, expiry, and signing key before accepting an access token. : lore/payment-contract",
+        "links": [
+          "lore/payment-contract"
+        ]
+      },
+      {
+        "resultId": "github-com-example-payments:lore-payment-contract",
+        "realm": "github-com-example-payments",
+        "snapshot": "payments-commit-b2",
+        "freshness": "fresh",
+        "path": "lore/payment-contract.md",
+        "objectId": "lore-payment-contract",
+        "archetype": "lore",
+        "title": "Payment Service Contract",
+        "engineScore": 0.5142290980378457,
+        "entryScore": 0.5142290980378457,
+        "preview": "The first-party service contract defines payment access-token validation.",
+        "links": []
+      }
+    ],
+    "retired password sessions": [
+      {
+        "resultId": "github-com-example-legacy-identity:bonfire-legacy-root",
+        "realm": "github-com-example-legacy-identity",
+        "snapshot": "legacy-commit-c3",
+        "freshness": "stale",
+        "path": "index.md",
+        "objectId": "bonfire-legacy-root",
+        "archetype": "bonfire",
+        "title": "Legacy Identity Realm",
+        "engineScore": 0.7461819551719763,
+        "entryScore": 0.9461819551719763,
+        "preview": "This stale Realm documents the retired password-session architecture.",
+        "links": [],
+        "realmContext": {
+          "manifest": "name: Legacy Identity Realm\npurpose: Preserve historical password-session architecture.\natlas-schema: 1.0.0\nrealm-schema: 1.0.0\n\n",
+          "laws": "# Realm Laws\n\n## [law:historical-scope] Historical scope\n\nNever present retired behavior as current application guidance.\n\n"
+        }
+      },
+      {
+        "resultId": "github-com-example-legacy-identity:insight-password-sessions",
+        "realm": "github-com-example-legacy-identity",
+        "snapshot": "legacy-commit-c3",
+        "freshness": "stale",
+        "path": "insights/password-sessions.md",
+        "objectId": "insight-password-sessions",
+        "archetype": "insight",
+        "title": "Password Sessions",
+        "engineScore": 0.799571299456576,
+        "entryScore": 0.879571299456576,
+        "preview": "The retired application created long-lived sessions directly from passwords. This contradicts the current rotating-token architecture.",
+        "links": []
+      }
+    ]
+  },
+  "assertions": {
+    "secondPassWasIncremental": true,
+    "stableResultIdentityAcrossSync": true,
+    "hostileSkillWasExcluded": true,
+    "lawsWereNotIndexedAsKnowledge": true,
+    "bonfireCarriesRealmContext": true,
+    "staleRealmRemainsQueryable": true,
+    "realmFilterIsEnforced": true,
+    "qmdDetailsDoNotEscape": true,
+    "lexicalSearchWorksWithoutEmbeddings": true,
+    "bonfireIsPromotedAsEntryPoint": true
+  }
+}

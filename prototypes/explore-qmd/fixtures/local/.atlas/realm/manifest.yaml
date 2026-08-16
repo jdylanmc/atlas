@@ -1,0 +1,5 @@
+name: Atlas Application Realm
+purpose: Explain authentication and session behavior for the application.
+atlas-schema: 1.0.0
+realm-schema: 1.0.0
+

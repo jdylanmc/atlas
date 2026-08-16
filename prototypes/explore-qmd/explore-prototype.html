@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PROTOTYPE — Atlas Explore over QMD</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172019;
+      --muted: #657067;
+      --paper: #f7f5ee;
+      --panel: #fffdf7;
+      --line: #d8d4c7;
+      --accent: #356b4b;
+      --accent-soft: #e4efe7;
+      --warn: #8a5b12;
+      --warn-soft: #fff2d6;
+      --danger: #8d3f38;
+      --danger-soft: #f8e7e5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main { max-width: 1180px; margin: 0 auto; padding: 34px 24px 70px; }
+    h1, h2, h3 { margin: 0; line-height: 1.15; }
+    h1 { font-size: clamp(28px, 4vw, 46px); letter-spacing: -0.035em; }
+    h2 { font-size: 19px; }
+    h3 { font-size: 15px; }
+    p { margin: 8px 0 0; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .eyebrow {
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .intro { max-width: 850px; color: var(--muted); font-size: 17px; }
+    .question {
+      margin-top: 18px;
+      padding: 16px 18px;
+      border-left: 4px solid var(--accent);
+      background: var(--accent-soft);
+      font-weight: 650;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(310px, .65fr);
+      gap: 18px;
+      margin-top: 24px;
+      align-items: start;
+    }
+    .stack { display: grid; gap: 16px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      padding: 18px;
+      box-shadow: 0 6px 24px rgb(37 47 39 / 5%);
+    }
+    .panel-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .muted { color: var(--muted); }
+    .state-list {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 7px 14px;
+      margin: 0;
+    }
+    .state-list dt { color: var(--muted); }
+    .state-list dd { margin: 0; font-weight: 650; overflow-wrap: anywhere; }
+    .meter {
+      height: 9px;
+      margin-top: 8px;
+      overflow: hidden;
+      border-radius: 99px;
+      background: #e7e4db;
+    }
+    .meter > div { height: 100%; background: var(--accent); transition: width .15s linear; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    button {
+      border: 1px solid #b9c8bc;
+      border-radius: 8px;
+      padding: 9px 12px;
+      background: white;
+      color: var(--ink);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); background: var(--accent-soft); }
+    button.primary { color: white; border-color: var(--accent); background: var(--accent); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .results { display: grid; gap: 9px; }
+    .result {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      width: 100%;
+      text-align: left;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: white;
+    }
+    .result:hover { border-color: var(--accent); }
+    .result small { display: block; margin-top: 4px; color: var(--muted); font-weight: 500; }
+    .badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 99px;
+      padding: 3px 7px;
+      background: #eceae2;
+      color: #4d554f;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .badge.bonfire { background: var(--accent-soft); color: var(--accent); }
+    .badge.stale { background: var(--warn-soft); color: var(--warn); }
+    .score { color: var(--accent); font-size: 13px; font-weight: 800; }
+    .document {
+      min-height: 170px;
+      white-space: pre-wrap;
+      border-radius: 10px;
+      padding: 14px;
+      background: #f4f2eb;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+    }
+    .notice {
+      padding: 11px 12px;
+      border-radius: 8px;
+      background: var(--warn-soft);
+      color: var(--warn);
+      font-weight: 650;
+    }
+    .notice.danger { background: var(--danger-soft); color: var(--danger); }
+    .notice.good { background: var(--accent-soft); color: var(--accent); }
+    .tabs { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
+    .tab[aria-selected="true"] { color: white; background: var(--accent); border-color: var(--accent); }
+    .steps { display: grid; gap: 9px; }
+    .step {
+      display: grid;
+      grid-template-columns: 28px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+    }
+    .step.done { opacity: .55; }
+    .step-number {
+      display: grid;
+      place-items: center;
+      width: 25px;
+      height: 25px;
+      color: white;
+      background: var(--accent);
+      border-radius: 50%;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .log { max-height: 220px; overflow: auto; margin: 0; padding-left: 20px; color: var(--muted); }
+    @media (max-width: 830px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Throwaway logic prototype</div>
+  <h1>Atlas Explore over a replaceable QMD provider</h1>
+  <p class="intro">Drive the progressive Explore state model using results captured from a real QMD 2.5.3 index over one local Realm and two cached Realms. Watch what enters the agent's context after each action.</p>
+  <div class="question">Does one ranked query produce useful entry points while keeping Realm sovereignty, Bonfire re-anchoring, stale-state visibility, and the context budget understandable?</div>
+
+  <section class="grid">
+    <div class="stack">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Free play</h2>
+          <span class="muted">Every button is always available</span>
+        </div>
+        <div class="actions">
+          <button class="primary" data-action="query-auth">Query authentication</button>
+          <button data-action="query-payments">Query payment tokens</button>
+          <button data-action="query-legacy">Query retired sessions</button>
+          <button data-action="query-hostile">Query hostile instructions</button>
+          <button data-action="open-first">Open top result</button>
+          <button data-action="follow-link">Follow first link</button>
+          <button data-action="inspect-citation">Inspect Citation</button>
+          <button data-action="synthesize">Synthesize answer</button>
+          <button data-action="gather-session">Offer Gather session</button>
+          <button data-action="reset">Reset</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Query results</h2>
+          <span id="query-label" class="muted">No query yet</span>
+        </div>
+        <div id="results" class="results">
+          <div class="muted">Choose a query to search the local Realm and materialized Realm Cache entries.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Loaded page</h2>
+          <span id="page-label" class="muted">Nothing loaded</span>
+        </div>
+        <div id="warnings"></div>
+        <div id="document" class="document">Explore begins with ranked entry points, not the contents of every Realm.</div>
+        <div id="document-actions" class="actions" style="margin-top: 12px"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Guided walkthroughs</h2>
+          <span class="muted">Start one to reset state</span>
+        </div>
+        <div id="tabs" class="tabs"></div>
+        <p id="scenario-description" class="muted"></p>
+        <div id="steps" class="steps"></div>
+      </div>
+    </div>
+
+    <aside class="stack">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Explore state</h2>
+          <span id="status-badge" class="badge">idle</span>
+        </div>
+        <dl class="state-list">
+          <dt>Instruction authority</dt><dd id="authority">local</dd>
+          <dt>Active Realm</dt><dd id="active-realm">local</dd>
+          <dt>Selected snapshot</dt><dd id="snapshot">—</dd>
+          <dt>Loaded pages</dt><dd id="loaded-count">0</dd>
+          <dt>Realm contexts</dt><dd id="context-count">0</dd>
+          <dt>Visited results</dt><dd id="visited-count">0</dd>
+          <dt>Gather offered</dt><dd id="gather-offered">no</dd>
+        </dl>
+        <div style="margin-top: 15px">
+          <div class="panel-head" style="margin-bottom: 0">
+            <span class="muted">Estimated context</span>
+            <strong id="tokens">180 / 4,000 tokens</strong>
+          </div>
+          <div class="meter"><div id="token-meter" style="width: 4.5%"></div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>What just happened</h2>
+        <p id="explanation" class="muted">No Realm knowledge is loaded until a query returns an entry point.</p>
+      </div>
+
+      <div class="panel">
+        <h2>Breadcrumbs</h2>
+        <p id="breadcrumbs" class="muted">Realm Entry → Explore</p>
+      </div>
+
+      <div class="panel">
+        <h2>Event log</h2>
+        <ol id="event-log" class="log">
+          <li>Realm Entry selected the local Realm.</li>
+          <li>QMD provider is ready in lexical mode.</li>
+        </ol>
+      </div>
+    </aside>
+  </section>
+</main>
+
+<script>
+const queries = {
+  auth: {
+    label: "authentication session token rotation",
+    results: [
+      {
+        resultId: "local:bonfire-security",
+        realm: "local",
+        snapshot: "local-commit-a1",
+        freshness: "fresh",
+        path: "bonfires/security-boundary.md",
+        objectId: "bonfire-security",
+        archetype: "bonfire",
+        title: "Security Boundary",
+        entryScore: 0.695,
+        preview: "Authentication establishes identity. Session rotation limits the lifetime of stolen credentials.",
+        links: ["insights/session-rotation", "lore/auth-design"],
+        content: "# Security Boundary\n\nAuthentication establishes identity. Session rotation limits the lifetime of stolen credentials.\n\nFollow Session Rotation for the current application behavior.\nThe payments Realm contains the token-validation boundary used after login.",
+        realmContext: {
+          manifest: "Atlas Application Realm — authentication and session behavior.",
+          laws: ["Pillar governance", "Thread explanation"]
+        }
+      },
+      {
+        resultId: "local:lore-auth-design",
+        realm: "local",
+        snapshot: "local-commit-a1",
+        freshness: "fresh",
+        path: "lore/auth-design.md",
+        objectId: "lore-auth-design",
+        archetype: "lore",
+        title: "Authentication Design",
+        entryScore: 0.652,
+        preview: "The first-party authentication design specifies rotating refresh tokens and session-family revocation.",
+        links: [],
+        content: "# Authentication Design\n\nThe first-party authentication design specifies rotating refresh tokens and session-family revocation."
+      }
+    ]
+  },
+  payments: {
+    label: "payment access token validation",
+    results: [
+      {
+        resultId: "github-com-example-payments:bonfire-payments-root",
+        realm: "github-com-example-payments",
+        snapshot: "payments-commit-b2",
+        freshness: "fresh",
+        path: "index.md",
+        objectId: "bonfire-payments-root",
+        archetype: "bonfire",
+        title: "Payments Realm",
+        entryScore: 0.716,
+        preview: "This Realm explains payment authorization and access-token validation.",
+        links: ["bonfires/payment-identity"],
+        content: "# Payments Realm\n\nThis Realm explains payment authorization and access-token validation.\n\nBegin at Payment Identity.",
+        realmContext: {
+          manifest: "Payments Realm — payment authorization and token validation.",
+          laws: ["Financial evidence"]
+        }
+      },
+      {
+        resultId: "github-com-example-payments:bonfire-payment-identity",
+        realm: "github-com-example-payments",
+        snapshot: "payments-commit-b2",
+        freshness: "fresh",
+        path: "bonfires/payment-identity.md",
+        objectId: "bonfire-payment-identity",
+        archetype: "bonfire",
+        title: "Payment Identity",
+        entryScore: 0.709,
+        preview: "Payment requests accept short-lived access tokens issued by the application identity service.",
+        links: ["insights/token-validation", "lore/payment-contract"],
+        content: "# Payment Identity\n\nPayment requests accept short-lived access tokens issued by the application identity service.\n\nFollow Payment Token Validation for validation requirements.",
+        realmContext: {
+          manifest: "Payments Realm — payment authorization and token validation.",
+          laws: ["Financial evidence"]
+        }
+      },
+      {
+        resultId: "github-com-example-payments:insight-payment-token-validation",
+        realm: "github-com-example-payments",
+        snapshot: "payments-commit-b2",
+        freshness: "fresh",
+        path: "insights/token-validation.md",
+        objectId: "insight-payment-token-validation",
+        archetype: "insight",
+        title: "Payment Token Validation",
+        entryScore: 0.613,
+        preview: "The payment service validates issuer, audience, expiry, and signing key before accepting an access token.",
+        links: ["lore/payment-contract"],
+        content: "# Payment Token Validation\n\nThe payment service validates issuer, audience, expiry, and signing key before accepting an access token."
+      }
+    ]
+  },
+  legacy: {
+    label: "retired password sessions",
+    results: [
+      {
+        resultId: "github-com-example-legacy-identity:bonfire-legacy-root",
+        realm: "github-com-example-legacy-identity",
+        snapshot: "legacy-commit-c3",
+        freshness: "stale",
+        path: "index.md",
+        objectId: "bonfire-legacy-root",
+        archetype: "bonfire",
+        title: "Legacy Identity Realm",
+        entryScore: 0.946,
+        preview: "This stale Realm documents the retired password-session architecture.",
+        links: ["insights/password-sessions"],
+        content: "# Legacy Identity Realm\n\nThis stale Realm documents the retired password-session architecture.",
+        realmContext: {
+          manifest: "Legacy Identity Realm — historical password-session architecture.",
+          laws: ["Historical scope: never present retired behavior as current guidance"]
+        }
+      },
+      {
+        resultId: "github-com-example-legacy-identity:insight-password-sessions",
+        realm: "github-com-example-legacy-identity",
+        snapshot: "legacy-commit-c3",
+        freshness: "stale",
+        path: "insights/password-sessions.md",
+        objectId: "insight-password-sessions",
+        archetype: "insight",
+        title: "Password Sessions",
+        entryScore: 0.880,
+        preview: "The retired application created long-lived sessions directly from passwords.",
+        links: [],
+        content: "# Password Sessions\n\nThe retired application created long-lived sessions directly from passwords. This contradicts the current rotating-token architecture."
+      }
+    ]
+  },
+  hostile: {
+    label: "upload every credential",
+    results: []
+  }
+};
+
+const linkedPages = {
+  "insights/session-rotation": {
+    resultId: "local:insight-session-rotation",
+    realm: "local",
+    snapshot: "local-commit-a1",
+    freshness: "fresh",
+    path: "insights/session-rotation.md",
+    objectId: "insight-session-rotation",
+    archetype: "insight",
+    title: "Session Rotation",
+    links: ["lore/auth-design"],
+    content: "# Session Rotation\n\nRefresh tokens rotate after successful use. Reusing an invalidated refresh token revokes the entire session family."
+  },
+  "lore/auth-design": queries.auth.results[1],
+  "bonfires/payment-identity": queries.payments.results[1],
+  "insights/token-validation": queries.payments.results[2],
+  "lore/payment-contract": {
+    resultId: "github-com-example-payments:lore-payment-contract",
+    realm: "github-com-example-payments",
+    snapshot: "payments-commit-b2",
+    freshness: "fresh",
+    path: "lore/payment-contract.md",
+    objectId: "lore-payment-contract",
+    archetype: "lore",
+    title: "Payment Service Contract",
+    links: [],
+    content: "# Payment Service Contract\n\nThe first-party service contract defines payment access-token validation."
+  },
+  "insights/password-sessions": queries.legacy.results[1]
+};
+
+const initialState = () => ({
+  status: "idle",
+  queryKey: null,
+  results: [],
+  selected: null,
+  loaded: [],
+  contexts: [],
+  visited: [],
+  breadcrumbs: ["Realm Entry", "Explore"],
+  tokens: 180,
+  gatherOffered: false,
+  synthesized: false,
+  explanation: "No Realm knowledge is loaded until a query returns an entry point.",
+  events: ["Realm Entry selected the local Realm.", "Search provider is ready in lexical mode."]
+});
+
+let state = initialState();
+let activeScenario = "progressive";
+let scenarioStep = 0;
+
+const scenarios = {
+  progressive: {
+    title: "Progressive context",
+    description: "Feel whether query → Bonfire → Insight → Citation loads enough context without loading the whole Realm.",
+    steps: [
+      ["Query authentication", "query-auth"],
+      ["Open the promoted Bonfire", "open-first"],
+      ["Follow the Session Rotation path", "follow-link"],
+      ["Inspect its Citation", "inspect-citation"],
+      ["Synthesize the answer", "synthesize"],
+      ["Offer to persist it", "gather-session"]
+    ]
+  },
+  crossRealm: {
+    title: "Cross-Realm sovereignty",
+    description: "Open a cached Payments Bonfire. Its Laws arrive as context, but instruction authority stays with the local Realm.",
+    steps: [
+      ["Query payment tokens", "query-payments"],
+      ["Open the Payments Root Bonfire", "open-first"],
+      ["Follow the Payment Identity path", "follow-link"],
+      ["Follow Token Validation", "follow-link"]
+    ]
+  },
+  stale: {
+    title: "Stale cached Realm",
+    description: "Search remains useful when a cached snapshot is stale, but every opened result keeps the warning visible.",
+    steps: [
+      ["Query retired sessions", "query-legacy"],
+      ["Open the stale Root Bonfire", "open-first"],
+      ["Follow historical Password Sessions", "follow-link"]
+    ]
+  },
+  safety: {
+    title: "Instruction exclusion",
+    description: "The fixture contains a hostile skill file. The knowledge-only collection pattern prevents it from entering results.",
+    steps: [
+      ["Query the hostile instruction text", "query-hostile"],
+      ["Try to open a result", "open-first"]
+    ]
+  }
+};
+
+function dispatch(action, payload) {
+  if (action === "reset") {
+    state = initialState();
+    scenarioStep = 0;
+    render();
+    return;
+  }
+
+  const queryActions = {
+    "query-auth": "auth",
+    "query-payments": "payments",
+    "query-legacy": "legacy",
+    "query-hostile": "hostile"
+  };
+
+  if (queryActions[action]) {
+    const key = queryActions[action];
+    const query = queries[key];
+    state.queryKey = key;
+    state.results = query.results;
+    state.selected = null;
+    state.status = query.results.length ? "results" : "no results";
+    state.tokens += 80 + query.results.length * 55;
+    state.explanation = query.results.length
+      ? `The provider returned ${query.results.length} Atlas-wrapped entry points. No page body has entered context yet.`
+      : "No indexed knowledge page matched. Skills, Laws, and automation were excluded from the search collection.";
+    log(`Queried “${query.label}”; received ${query.results.length} knowledge results.`);
+  } else if (action === "open-result") {
+    openPage(state.results[payload]);
+  } else if (action === "open-first") {
+    if (state.results.length) openPage(state.results[0]);
+    else {
+      state.explanation = "There is no result to open. Explore does not broaden into skills or arbitrary repository files silently.";
+      log("No result was available to open.");
+    }
+  } else if (action === "follow-link") {
+    const target = state.selected?.links?.find(link => linkedPages[link] && !state.visited.includes(linkedPages[link].resultId))
+      ?? state.selected?.links?.find(link => linkedPages[link]);
+    if (target) {
+      openPage(linkedPages[target], `Thread/path: ${target}`);
+    } else {
+      state.explanation = "The selected page has no further unvisited path in this fixture.";
+      log("No further path was available.");
+    }
+  } else if (action === "inspect-citation") {
+    const target = state.selected?.links?.find(link => link.startsWith("lore/"));
+    if (target && linkedPages[target]) {
+      openPage(linkedPages[target], `Citation: ${target}`);
+    } else {
+      state.explanation = "No Citation is exposed by the selected page.";
+      log("No Citation was available.");
+    }
+  } else if (action === "synthesize") {
+    state.synthesized = true;
+    state.status = "answer ready";
+    state.tokens += 140;
+    state.explanation = "The agent can answer from the loaded pages and retain breadcrumbs back to every supporting Realm snapshot.";
+    log("Synthesized an answer from loaded evidence.");
+  } else if (action === "gather-session") {
+    state.gatherOffered = true;
+    state.explanation = "Explore remains read-only. Persisting this answer is an explicit handoff to Gather Session.";
+    log("Offered Gather Session; no Realm files were changed.");
+  }
+
+  render();
+}
+
+function openPage(page, breadcrumb) {
+  if (!page) return;
+  state.selected = page;
+  state.status = page.archetype === "bonfire" ? "resting" : "reading";
+  if (!state.loaded.some(item => item.resultId === page.resultId)) {
+    state.loaded.push(page);
+    state.tokens += page.archetype === "bonfire" ? 420 : page.archetype === "lore" ? 250 : 310;
+  }
+  if (!state.visited.includes(page.resultId)) state.visited.push(page.resultId);
+  if (page.realmContext && !state.contexts.includes(page.realm)) {
+    state.contexts.push(page.realm);
+    state.tokens += 180;
+  }
+  state.breadcrumbs.push(breadcrumb ?? `${page.realm}:${page.path}`);
+  state.explanation = page.archetype === "bonfire"
+    ? `Bonfire opened. Its Realm context was reinforced, but instruction authority remains “local”.`
+    : `${page.archetype} opened on demand. Other search results remain unloaded.`;
+  log(`Opened ${page.archetype} “${page.title}” from ${page.realm}.`);
+}
+
+function log(message) {
+  state.events.push(message);
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, char => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+  })[char]);
+}
+
+function render() {
+  document.getElementById("query-label").textContent = state.queryKey ? `“${queries[state.queryKey].label}”` : "No query yet";
+  const results = document.getElementById("results");
+  results.innerHTML = state.results.length
+    ? state.results.map((result, index) => `
+      <button class="result" data-result="${index}">
+        <span>
+          <strong>${escapeHtml(result.title)}</strong>
+          <small>${escapeHtml(result.realm)} · ${escapeHtml(result.path)}</small>
+          <span class="badges">
+            <span class="badge ${result.archetype === "bonfire" ? "bonfire" : ""}">${escapeHtml(result.archetype)}</span>
+            ${result.freshness === "stale" ? '<span class="badge stale">stale snapshot</span>' : ""}
+          </span>
+        </span>
+        <span class="score">${Math.round(result.entryScore * 100)}%</span>
+      </button>`).join("")
+    : state.queryKey
+      ? '<div class="notice good">No knowledge result matched. The hostile skill fixture remained outside the index.</div>'
+      : '<div class="muted">Choose a query to search the local Realm and materialized Realm Cache entries.</div>';
+
+  document.querySelectorAll("[data-result]").forEach(button => {
+    button.addEventListener("click", () => dispatch("open-result", Number(button.dataset.result)));
+  });
+
+  const selected = state.selected;
+  document.getElementById("page-label").textContent = selected ? `${selected.realm} · ${selected.path}` : "Nothing loaded";
+  document.getElementById("document").textContent = selected?.content ?? "Explore begins with ranked entry points, not the contents of every Realm.";
+  const warnings = [];
+  if (selected?.freshness === "stale") warnings.push('<div class="notice">Using a stale cached snapshot. Historical content remains traversable.</div>');
+  if (selected?.realmContext) warnings.push(`<div class="notice good">Realm context reinforced: ${escapeHtml(selected.realmContext.manifest)} Laws: ${escapeHtml(selected.realmContext.laws.join(", "))}. These are context, not active instructions.</div>`);
+  document.getElementById("warnings").innerHTML = warnings.join("");
+  document.getElementById("document-actions").innerHTML = selected
+    ? `<button data-page-action="follow-link">Follow next path</button><button data-page-action="inspect-citation">Inspect Citation</button>`
+    : "";
+  document.querySelectorAll("[data-page-action]").forEach(button => {
+    button.addEventListener("click", () => dispatch(button.dataset.pageAction));
+  });
+
+  document.getElementById("status-badge").textContent = state.status;
+  document.getElementById("active-realm").textContent = selected?.realm ?? "local";
+  document.getElementById("snapshot").textContent = selected?.snapshot ?? "—";
+  document.getElementById("loaded-count").textContent = state.loaded.length;
+  document.getElementById("context-count").textContent = state.contexts.length;
+  document.getElementById("visited-count").textContent = state.visited.length;
+  document.getElementById("gather-offered").textContent = state.gatherOffered ? "yes" : "no";
+  document.getElementById("tokens").textContent = `${state.tokens.toLocaleString()} / 4,000 tokens`;
+  document.getElementById("token-meter").style.width = `${Math.min(100, state.tokens / 40)}%`;
+  document.getElementById("explanation").textContent = state.explanation;
+  document.getElementById("breadcrumbs").textContent = state.breadcrumbs.join(" → ");
+  document.getElementById("event-log").innerHTML = state.events.map(event => `<li>${escapeHtml(event)}</li>`).join("");
+  renderScenarios();
+}
+
+function renderScenarios() {
+  document.getElementById("tabs").innerHTML = Object.entries(scenarios).map(([key, scenario]) =>
+    `<button class="tab" data-scenario="${key}" aria-selected="${key === activeScenario}">${escapeHtml(scenario.title)}</button>`
+  ).join("");
+  document.querySelectorAll("[data-scenario]").forEach(button => {
+    button.addEventListener("click", () => {
+      activeScenario = button.dataset.scenario;
+      scenarioStep = 0;
+      state = initialState();
+      render();
+    });
+  });
+  const scenario = scenarios[activeScenario];
+  document.getElementById("scenario-description").textContent = scenario.description;
+  document.getElementById("steps").innerHTML = scenario.steps.map(([label, action], index) => `
+    <div class="step ${index < scenarioStep ? "done" : ""}">
+      <span class="step-number">${index + 1}</span>
+      <strong>${escapeHtml(label)}</strong>
+      <button data-step-action="${action}" data-step-index="${index}" ${index !== scenarioStep ? "disabled" : ""}>Run</button>
+    </div>`).join("");
+  document.querySelectorAll("[data-step-action]").forEach(button => {
+    button.addEventListener("click", () => {
+      dispatch(button.dataset.stepAction);
+      scenarioStep = Math.max(scenarioStep, Number(button.dataset.stepIndex) + 1);
+      render();
+    });
+  });
+}
+
+document.querySelectorAll("[data-action]").forEach(button => {
+  button.addEventListener("click", () => dispatch(button.dataset.action));
+});
+
+render();
+</script>
+</body>
+</html>
