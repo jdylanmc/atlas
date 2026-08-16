@@ -1,4 +1,4 @@
-import { rm, mkdir, writeFile } from "node:fs/promises";
+import { cp, rm, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -12,22 +12,25 @@ const dbPath = join(scratch, "realm-index.sqlite");
 const capturePath = join(here, "qmd-capture.json");
 await rm(scratch, { recursive: true, force: true });
 await mkdir(scratch, { recursive: true });
+await cp(join(here, "fixtures"), join(scratch, "fixtures"), {
+  recursive: true,
+});
 
 const realms = {
   local: {
-    root: resolve(here, "fixtures/local/.atlas"),
+    root: resolve(scratch, "fixtures/local/.atlas"),
     slug: "local",
     snapshot: "local-commit-a1",
     freshness: "fresh",
   },
   payments: {
-    root: resolve(here, "fixtures/cache/payments/.atlas"),
+    root: resolve(scratch, "fixtures/cache/payments/.atlas"),
     slug: "github-com-example-payments",
     snapshot: "payments-commit-b2",
     freshness: "fresh",
   },
   legacy: {
-    root: resolve(here, "fixtures/cache/legacy/.atlas"),
+    root: resolve(scratch, "fixtures/cache/legacy/.atlas"),
     slug: "github-com-example-legacy-identity",
     snapshot: "legacy-commit-c3",
     freshness: "stale",
@@ -70,6 +73,66 @@ const paymentsOnly = await provider.query({
   limit: 20,
 });
 
+const mutableInsightPath = join(
+  realms.payments.root,
+  "insights/token-validation.md",
+);
+const originalMutableInsight = await readFile(mutableInsightPath, "utf8");
+await writeFile(
+  mutableInsightPath,
+  `${originalMutableInsight}\n\nEmergency key rollover uses the current keyset epoch.\n`,
+);
+const changedUpdate = await provider.sync();
+const changedResults = await provider.query({
+  text: "emergency key rollover epoch",
+  realms: [realms.payments.slug],
+  limit: 10,
+});
+await rm(mutableInsightPath);
+const removedUpdate = await provider.sync();
+const removedResults = await provider.query({
+  text: "emergency key rollover epoch",
+  realms: [realms.payments.slug],
+  limit: 10,
+});
+
+const fakeProvider = {
+  async sync() {
+    return { indexed: 0, updated: 0, unchanged: 1, removed: 0 };
+  },
+  async status() {
+    return {
+      engine: "fake",
+      mode: "lexical",
+      indexedRealms: [{ realm: "local", documents: 1 }],
+    };
+  },
+  async query() {
+    return [
+      {
+        resultId: "local:fake",
+        realm: "local",
+        snapshot: "fake-snapshot",
+        freshness: "fresh",
+        path: "index.md",
+        objectId: "fake",
+        archetype: "bonfire",
+        title: "Fake provider result",
+        engineScore: 1,
+        entryScore: 1,
+        preview: "A replacement provider can emit the same Atlas contract.",
+        links: [],
+        realmContext: { manifest: "fake", laws: "fake" },
+      },
+    ];
+  },
+  async get() {
+    return "# Fake provider result";
+  },
+  async close() {},
+};
+const fakeResults = await fakeProvider.query({ text: "anything" });
+
 const capture = {
   question:
     "Can QMD provide a Realm-local lexical index whose results Atlas can wrap with sovereignty, freshness, and Bonfire context?",
@@ -78,6 +141,8 @@ const capture = {
     "SDK inline config + explicit Realm-local SQLite path + BM25 only, wrapped behind Atlas SearchProvider",
   firstUpdate,
   secondUpdate,
+  changedUpdate,
+  removedUpdate,
   status,
   searches,
   assertions: {
@@ -112,6 +177,21 @@ const capture = {
     bonfireIsPromotedAsEntryPoint:
       searches["authentication session token rotation"][0]?.archetype ===
       "bonfire",
+    changedDocumentIsReindexed:
+      changedUpdate.updated === 1 &&
+      changedResults.some(
+        (result) => result.objectId === "insight-payment-token-validation",
+      ),
+    removedDocumentLeavesTheIndex:
+      removedUpdate.removed === 1 &&
+      !removedResults.some(
+        (result) => result.objectId === "insight-payment-token-validation",
+      ),
+    replacementProviderSatisfiesTheSameContract:
+      fakeResults[0]?.resultId === "local:fake" &&
+      searchProviderContract.methods.every(
+        (method) => typeof fakeProvider[method] === "function",
+      ),
   },
 };
 

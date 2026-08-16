@@ -14,9 +14,6 @@ npm install
 npm run probe
 ```
 
-Then open `explore-prototype.html` directly in a browser for the interaction
-walkthrough.
-
 The prototype deliberately uses QMD's BM25 search only. Embeddings and LLM
 reranking remain optional accelerators rather than requirements for Explore.
 
@@ -33,7 +30,10 @@ The probe indexes three independent Realm collections behind an Atlas-owned
 - Realm filters are enforced;
 - QMD URIs and native result fields do not escape the provider;
 - lexical search works while embeddings are absent; and
-- Atlas can promote Bonfires as entry points without changing QMD.
+- Atlas can promote Bonfires as entry points without changing QMD;
+- changed and removed documents update the disposable index correctly; and
+- a fake replacement engine can satisfy the same Atlas contract.
 
 `qmd-capture.json` records the real provider output used to shape the clickable
-demo.
+probe. The HTML file records an abandoned interaction direction; it is not the
+decision surface for accepting QMD.
