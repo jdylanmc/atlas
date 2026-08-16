@@ -17,6 +17,9 @@ The directory containing a Realm's `.atlas/`. It may be a Git worktree root or a
 **Realm Initialization**:
 The human-facing workflow that proposes a new minimal Realm for one Realm Host Directory. It establishes the Realm's orientation and baseline governance in an isolated Git worktree, may derive a small amount of cited founding knowledge, and ends in one reviewable pull request.
 
+**Realm Entry**:
+The shared preflight through which an Atlas skill selects one active Realm, verifies tooling and schema compatibility, and loads only the instructions and context required by that operation. Entry classifies the Realm as ready, degraded, or blocked before the skill proceeds.
+
 **Realm Locator**:
 The normalized Git repository URL, branch, and Realm-relative path that identifies a tracked Realm. Normalization settles syntax only, never identity: host case, `.git` suffixes, trailing separators, embedded credentials, and equivalent SSH and HTTPS forms of one repository resolve together, while owner, repository, branch, and path remain significant.
 
@@ -112,6 +115,9 @@ One result reported by a Weave, attributed to the check that raised it and to wh
 
 **Challenge**:
 The adversarial review a semantic verdict must survive before it counts. A challenger receives the verdict and its cited evidence and argues against it; disagreement makes the verdict inconclusive and escalates both arguments to a human.
+
+**Operation Handoff**:
+The stable completion summary returned by every Atlas skill. It identifies the operation, active Realm and base snapshot, result or proposed changes, unresolved human decisions, validation or degradation state, review link when applicable, and recommended next action.
 
 **Explore**:
 The human-facing workflow for querying and traversing knowledge through Bonfires, Threads, and supporting nodes. Explore reads tracked Realms only through the Realm Cache and never modifies them.
