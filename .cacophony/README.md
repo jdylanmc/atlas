@@ -1,19 +1,34 @@
 # Cacophony agent prompt contract
 
-Each Atlas reviewer has three tracked artifacts:
+Each Atlas reviewer composition has four tracked artifacts:
 
-- `.cacophony/personas/<agent>.md` is an **Agent Persona**. Its frontmatter
-  declares `atlas.agent-persona/v1` and `authority: none`; its fixed sections
+- `.cacophony/personas/<persona>.md` is an **Agent Persona**. Its frontmatter
+  declares `atlas.agent-persona/v2`, a `persona` identifier, and
+  `authority: none`; its fixed sections
   contain identity, voice, tone, demeanor, and presentation fields only. Field
   values are catalog-backed identifiers, not arbitrary prompt prose; the
   trusted validator renders their approved presentation text.
-- `.cacophony/directives/<agent>.md` is an **Agent Directive**. Its frontmatter
-  declares `atlas.agent-directive/v1` and `authority: behavior`; its fixed
-  sections contain objectives, responsibilities, evidence rules, severity,
-  constraints, output contract, and handoffs.
-- `.cacophony/agents/<agent>.md` is the generated Cacophony prompt. It places
-  the Persona first, gives it no authority, and places the Directive last with
-  explicit behavioral precedence.
+- `.cacophony/directives/<intention>.md` is an **Agent Directive**. Its
+  intention-named path and frontmatter `directive` identifier are independent
+  of every Persona. It declares `atlas.agent-directive/v2` and
+  `authority: behavior`; its fixed sections contain objectives,
+  responsibilities, evidence rules, severity, constraints, output contract,
+  and handoffs.
+- `.cacophony/compositions.json` is the reference-only Agent Composition
+  layer. Each entry selects exactly one Persona and an ordered, non-empty list
+  of stable Directives. Replacing a Persona changes only the `persona`
+  reference; the Directive identifiers and order remain fixed.
+- `.cacophony/agents/<compatibility-agent>.md` is the generated Cacophony
+  prompt. It preserves existing check and report artifact identifiers, places
+  the selected Persona first with no authority, and places the intention-named
+  Directives afterward in precedence order with explicit generated provenance.
+
+| Compatibility agent | Persona | Ordered Directives |
+| --- | --- | --- |
+| `bolas` | `bolas` | `domain-architecture-review` |
+| `smaug` | `smaug` | `simplicity-and-code-truth-review` |
+| `balerion` | `balerion` | `security-and-runtime-risk-review` |
+| `fletcher` | `fletcher` | `prompt-contract-review` |
 
 Validate the complete contract:
 
@@ -29,7 +44,7 @@ python3 scripts/cacophony_agents.py sync
 
 Do not edit generated prompts directly. The reusable review worker invokes the
 validator from the trusted base revision, proves that the base prompt is the
-exact deterministic composition of its base Persona and Directive, and then
+exact deterministic composition of its base Persona and Directives, and then
 stages those verified base bytes over the relative workspace prompt before
 passing that path to Cacophony. The pinned action independently reads the path
 from the base revision. Cacophony accepts one `prompt-file`, so the generated
@@ -43,23 +58,8 @@ path, reviewers inspect proposed `.cacophony/agents/*.md` content with
 `get_diff`; `read_file` on that active generated path intentionally returns the
 trusted base.
 
-## Staged intention-identifier migration
-
-The trusted validator accepts both the current version 1 one-to-one layout and
-the version 2 composition-map layout. This compatibility must land before
-Directive files can move to intention-named paths because pull request checks
-always execute the validator from the base revision.
-
-Each version 2 composition contains reference metadata only: exactly one
-Persona identifier and an ordered, non-empty `directives` list. Directives are
-authoritative in listed order, with later Directives specializing earlier ones;
-the Persona never changes semantics or applies to authoritative artifacts.
-
-The version 2 stable mapping is:
-
-| Compatibility agent | Stable Directive |
-| --- | --- |
-| `bolas` | `domain-architecture-review` |
-| `smaug` | `simplicity-and-code-truth-review` |
-| `balerion` | `security-and-runtime-risk-review` |
-| `fletcher` | `prompt-contract-review` |
+All Directives are authoritative. They apply in listed order, and a later
+Directive wins a direct conflict with an earlier one. Persona presentation
+never changes semantic meaning or instructions and does not apply to Insights,
+Pillars, diagnostics, evidence, schemas, code, machine-consumed output, or
+other authoritative artifacts.

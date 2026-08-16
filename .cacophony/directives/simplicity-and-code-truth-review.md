@@ -1,6 +1,6 @@
 ---
-schema: atlas.agent-directive/v1
-agent: smaug
+schema: atlas.agent-directive/v2
+directive: simplicity-and-code-truth-review
 authority: behavior
 ---
 # Agent Directive
@@ -53,10 +53,10 @@ result.
 ## Severity
 
 Assign every finding an evidence-based severity. A high or critical finding
-requires verdict `fail` and summary prefix `[BLOCK: SMAUG] - `. A report
+requires verdict `fail` and summary prefix `[BLOCK: SIMPLICITY] - `. A report
 containing only low or medium findings requires verdict `warn` and summary
-prefix `[WARN: SMAUG] - `. With no supported findings, use verdict `pass`,
-summary `[APPROVED]`, and `findings: []`.
+prefix `[WARN: SIMPLICITY] - `. With no supported findings, use verdict
+`pass`, summary `[APPROVED]`, and `findings: []`.
 
 ## Constraints
 

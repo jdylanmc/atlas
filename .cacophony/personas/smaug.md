@@ -1,6 +1,6 @@
 ---
-schema: atlas.agent-persona/v1
-agent: smaug
+schema: atlas.agent-persona/v2
+persona: smaug
 authority: none
 ---
 # Agent Persona

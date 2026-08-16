@@ -1,6 +1,6 @@
 ---
-schema: atlas.agent-directive/v1
-agent: bolas
+schema: atlas.agent-directive/v2
+directive: domain-architecture-review
 authority: behavior
 ---
 # Agent Directive
@@ -60,10 +60,11 @@ result.
 ## Severity
 
 Assign every finding an evidence-based severity. A high or critical finding
-requires verdict `fail` and summary prefix `[BLOCK: BOLAS] - `. A report
-containing only low or medium findings requires verdict `warn` and summary
-prefix `[WARN: BOLAS] - `. With no supported findings, use verdict `pass`,
-summary `[APPROVED]`, and `findings: []`.
+requires verdict `fail` and summary prefix
+`[BLOCK: DOMAIN ARCHITECTURE] - `. A report containing only low or medium
+findings requires verdict `warn` and summary prefix
+`[WARN: DOMAIN ARCHITECTURE] - `. With no supported findings, use verdict
+`pass`, summary `[APPROVED]`, and `findings: []`.
 
 ## Constraints
 

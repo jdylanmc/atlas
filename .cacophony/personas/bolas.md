@@ -1,6 +1,6 @@
 ---
-schema: atlas.agent-persona/v1
-agent: bolas
+schema: atlas.agent-persona/v2
+persona: bolas
 authority: none
 ---
 # Agent Persona
