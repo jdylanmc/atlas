@@ -45,7 +45,7 @@ The curated, human-readable history of notable knowledge changes in a Realm, kep
 A human-approved, Realm-local conceptual landmark where related ideas strongly intersect. Gather and Weave may recommend Bonfires according to Realm policy, but agents do not establish them autonomously. A Bonfire provides cited orientation and named paths while Insights hold detailed understanding. A Bonfire may connect through a cross-Realm Thread to another Realm, but it is not authoritative source material.
 
 **Root Bonfire**:
-The permanent `.atlas/index.md` Bonfire through which an agent enters a Realm. A cross-Realm Thread resolves a tracked Realm's Realm Slug, lands at its Root Bonfire, and performs Rest there.
+The permanent `.atlas/index.md` Bonfire through which an agent enters a Realm. It carries orientation and additionally catalogs pages not otherwise reachable from a Bonfire. A cross-Realm Thread resolves a tracked Realm's Realm Slug, lands at its Root Bonfire, and performs Rest there.
 
 **Rest**:
 The mandatory re-anchoring checkpoint performed whenever an agent reaches a Bonfire. The agent re-reads the current Realm manifest, all active Realm Laws, the Pillars connected to that Bonfire, and the Bonfire orientation, then restates its active objective and constraints before continuing.
@@ -57,7 +57,7 @@ Source material or a pointer to source material, together with its source metada
 A Realm-configured priority class assigned to Lore according to its origin, such as official, first-party, community, or opinion. Agents use Source Authority to recommend resolutions for conflicting claims, but humans make the final decision.
 
 **Insight**:
-Derived understanding whose factual claims remain traceable through Citations to the Lore from which they were formed.
+Derived understanding of one concept, whose factual claims remain traceable through Citations to the Lore from which they were formed. Every Insight carries at least one Thread, so no page is unreachable by traversal.
 
 **Citation**:
 A claim-level reference to a Lore object that supports an agent-managed claim. Insights, Bonfires, and Threads require Citations; Pillars are exempt because their truths are established by humans. A claim's effective Source Authority is derived from its cited Lore. Citations are not Threads.
@@ -91,8 +91,14 @@ A human-approved, versioned invariant or policy that governs how agents maintain
 _Avoid_: Realm Rule
 
 **Gather**:
-The human-facing workflow for ingesting Lore and updating a Realm's derived knowledge. Gather runs inside the Realm's own repository. A source that is itself a Realm becomes a tracked Realm and a human-agreed cross-Realm Thread rather than Lore.
+The human-facing workflow for ingesting Lore and updating a Realm's derived knowledge. Gather runs inside the Realm's own repository and takes one source per invocation. A source that is itself a Realm becomes a tracked Realm and a human-agreed cross-Realm Thread rather than Lore.
 _Avoid_: Ingest, when naming the user-facing skill
+
+**Fleet**:
+The read-only subagents a Gather dispatches to crawl one source in parallel. A Fleet reports candidates and never writes to a Realm.
+
+**Candidate Graph**:
+The proposed concepts, Threads, and Citations a Fleet returns from one source, reconciled against existing knowledge before anything is written. It is working material, not Realm knowledge.
 
 **Weave**:
 The human-facing workflow for linting a Realm. Trusted deterministic validation runs before isolated Realm-owned deterministic checks and semantic verification; pure Weave reports findings without mutating knowledge.
