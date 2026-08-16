@@ -18,7 +18,22 @@ The directory containing a Realm's `.atlas/`. It may be a Git worktree root or a
 The human-facing workflow that proposes a new minimal Realm for one Realm Host Directory. It establishes the Realm's orientation and baseline governance in an isolated Git worktree, may derive a small amount of cited founding knowledge, and ends in one reviewable pull request.
 
 **Realm Entry**:
-The shared preflight through which an Atlas skill selects one active Realm, verifies tooling and schema compatibility, and loads only the instructions and context required by that operation. Entry classifies the Realm as ready, degraded, or blocked before the skill proceeds.
+The shared preflight through which an Atlas skill identifies the Home Realm for the current Realm Host Directory, verifies tooling and schema compatibility, and loads only the instructions and context required by that operation. Entry classifies the Home Realm as ready, degraded, or blocked before the skill proceeds.
+
+**Home Realm**:
+The Realm owned by the current Realm Host Directory and identified by Realm Entry. Its committed maintenance code is trusted at the same level as its host repository; every other Realm is connected through cross-Realm Threads and remains read-only cached data.
+
+**Framework Bundle**:
+The Atlas-owned, portable baseline committed inside a Realm. It contains the instructions, contracts, and maintenance tooling that make the Realm operable without joining the host application's dependency ecosystem, and it is replaced as a governed unit by Atlas upgrades.
+
+**Framework Release**:
+One exact version of the Atlas-owned runtime, core contracts, packaged skills, templates, and adapters from which a Realm's Framework Bundle is derived. A Home Realm pins one Framework Release while its Realm Schema evolves independently.
+
+**Check SDK**:
+The Framework Release's typed, read-only interface for Realm-owned deterministic checks. It exposes the parsed Home Realm model and graph-oriented utilities so checks express Realm-specific invariants without parsing knowledge files or acquiring host dependencies.
+
+**Tool Runtime**:
+An Atlas-managed machine-scoped installation of a heavyweight replaceable tool used by many Realms. A Tool Runtime is disposable, version-coupled generated state rather than part of a Realm or the host application's dependencies.
 
 **Realm Locator**:
 The normalized Git repository URL, branch, and Realm-relative path that identifies a tracked Realm. Normalization settles syntax only, never identity: host case, `.git` suffixes, trailing separators, embedded credentials, and equivalent SSH and HTTPS forms of one repository resolve together, while owner, repository, branch, and path remain significant.
@@ -27,7 +42,7 @@ The normalized Git repository URL, branch, and Realm-relative path that identifi
 The reference name of a tracked Realm, derived deterministically from its Realm Locator rather than chosen by a human. It combines host, owner, repository, and Realm-relative path, and names the branch only when it is not the repository default.
 
 **Realm Cache**:
-The generated, Git-ignored store beneath a Realm's `.atlas/` holding read-only working copies of tracked Realms, one flat entry per Realm Locator, materialized on first entry. Realm Cache entries are disposable, never edited, and never a place from which a Realm is maintained.
+The generated, Git-ignored store beneath a Realm's `.atlas/` holding read-only working copies of tracked Realms, one flat entry per Realm Locator, materialized on first entry. Realm Cache entries are disposable data: they are never edited, executed, or used as a place from which a Realm is maintained.
 
 **Realm Snapshot**:
 The exact Git commit of a Realm used during one operation. A snapshot records observed context but is not the Realm's logical identity.
@@ -123,7 +138,7 @@ One result reported by a Weave, attributed to the check that raised it and to wh
 The adversarial review a semantic verdict must survive before it counts. A challenger receives the verdict and its cited evidence and argues against it; disagreement makes the verdict inconclusive and escalates both arguments to a human.
 
 **Operation Handoff**:
-The stable completion summary returned by every Atlas skill. It identifies the operation, active Realm and base snapshot, result or proposed changes, unresolved human decisions, validation or degradation state, review link when applicable, and recommended next action.
+The stable completion summary returned by every Atlas skill. It identifies the operation, Home Realm and base snapshot, result or proposed changes, unresolved human decisions, validation or degradation state, review link when applicable, and recommended next action.
 
 **Explore**:
 The human-facing workflow for querying and traversing knowledge through Bonfires, Threads, and supporting nodes. Explore searches an Explore Index for relevant entry points, then follows a required Bonfire-to-result route through one fixed set of Realm Snapshots. It reads tracked Realms only through the Realm Cache and never modifies them.
