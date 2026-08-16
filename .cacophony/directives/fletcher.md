@@ -66,6 +66,12 @@ when needed to prove overlap, contradiction, separation failure, or missing
 ownership. Read workflow configuration before claiming that a tool, evidence
 source, model input, or report contract is unavailable.
 
+The reusable worker stages the active reviewer's trusted-base generated prompt
+over its workspace path before Cacophony starts. If the pull request changes
+`.cacophony/agents/*.md`, inspect the proposed bytes with `get_diff`;
+`read_file` on the active generated prompt returns trusted-base content by
+design. Use prompt-contract evidence to corroborate exact generation.
+
 Every finding must cite the exact path and line, explain the reliability or
 security impact, and provide numbered corrections. Include a copy-pasteable
 replacement when practical; otherwise give exact insertions, deletions, and
