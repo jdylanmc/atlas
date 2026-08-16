@@ -34,6 +34,7 @@ jobs:
     outputs:
       actionlint: ${{ steps.result.outputs.actionlint }}
       codeql: ${{ steps.result.outputs.codeql }}
+      prompt_contract: ${{ steps.result.outputs.prompt_contract }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -50,6 +51,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/council-evidence"
           touch "$RUNNER_TEMP/council-evidence/actionlint.log"
+          touch "$RUNNER_TEMP/council-evidence/prompt-contract.log"
           printf '{"version":"2.1.0","runs":[]}\n' > "$RUNNER_TEMP/council-evidence/codeql.sarif"
           jq -n \
             --arg base "$BASE_SHA" \
@@ -73,6 +75,39 @@ jobs:
           set -o pipefail
           "$RUNNER_TEMP/actionlint" 2>&1 |
             tee "$RUNNER_TEMP/council-evidence/actionlint.log"
+
+      - name: Validate Cacophony agent prompt contract
+        id: prompt-contract
+        continue-on-error: true
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -o pipefail
+          if git cat-file -e "$BASE_SHA:scripts/cacophony_agents.py"; then
+            validator="$RUNNER_TEMP/cacophony_agents.py"
+            git show "$BASE_SHA:scripts/cacophony_agents.py" > "$validator"
+            python3 "$validator" verify-revision \
+              --repository "$GITHUB_WORKSPACE" \
+              --revision "$MERGE_SHA" \
+              --agent fletcher 2>&1 |
+              tee "$RUNNER_TEMP/council-evidence/prompt-contract.log"
+          else
+            for agent in balerion bolas fletcher smaug; do
+              prompt_path=".cacophony/agents/$agent.md"
+              prompt_type="$(git ls-tree "$BASE_SHA" -- "$prompt_path" | awk '{print $1 " " $2}')"
+              prompt_bytes="$(git cat-file -s "$BASE_SHA:$prompt_path")"
+              if [[ "$prompt_type" != "100644 blob" ]] ||
+                [[ ! "$prompt_bytes" =~ ^[0-9]+$ ]] ||
+                (( prompt_bytes > 131072 )); then
+                echo "::error::Legacy trusted-base prompt is missing, invalid, or oversized: $prompt_path"
+                exit 1
+              fi
+            done
+            echo "Legacy trusted-base prompt bootstrap validated; no pull request validator was executed." |
+              tee "$RUNNER_TEMP/council-evidence/prompt-contract.log"
+          fi
 
       - name: Detect JavaScript or TypeScript sources
         id: sources
@@ -114,10 +149,12 @@ jobs:
           ACTIONLINT_OUTCOME: ${{ steps.actionlint.outcome }}
           CODEQL_INIT_OUTCOME: ${{ steps.codeql-init.outcome }}
           CODEQL_OUTCOME: ${{ steps.codeql.outcome }}
+          PROMPT_CONTRACT_OUTCOME: ${{ steps.prompt-contract.outcome }}
           SOURCES_PRESENT: ${{ steps.sources.outputs.present }}
           SARIF_DIRECTORY: ${{ steps.codeql.outputs.sarif-output }}
         run: |
           actionlint="$ACTIONLINT_OUTCOME"
+          prompt_contract="$PROMPT_CONTRACT_OUTCOME"
           if [[ "$SOURCES_PRESENT" != "true" ]]; then
             codeql=skipped
           elif [[ "$CODEQL_INIT_OUTCOME" != "success" || "$CODEQL_OUTCOME" != "success" ]]; then
@@ -134,8 +171,9 @@ jobs:
 
           printf '{"tool":"actionlint","outcome":"%s"}\n' "$actionlint" > "$RUNNER_TEMP/council-evidence/actionlint.status.json"
           printf '{"tool":"codeql","outcome":"%s"}\n' "$codeql" > "$RUNNER_TEMP/council-evidence/codeql.status.json"
-          echo "actionlint=$actionlint" >> "$GITHUB_OUTPUT"
-          echo "codeql=$codeql" >> "$GITHUB_OUTPUT"
+          printf '{"tool":"agent-prompt-contract","outcome":"%s"}\n' "$prompt_contract" > "$RUNNER_TEMP/council-evidence/prompt-contract.status.json"
+          printf 'actionlint=%s\ncodeql=%s\nprompt_contract=%s\n' \
+            "$actionlint" "$codeql" "$prompt_contract" >> "$GITHUB_OUTPUT"
 
       - name: Upload static-analysis evidence
         if: always()
@@ -221,6 +259,7 @@ jobs:
           ACTIONLINT: ${{ needs.static-analysis.outputs.actionlint }}
           CODEQL: ${{ needs.static-analysis.outputs.codeql }}
           MANIFEST: ${{ needs.unit-tests.outputs.manifest }}
+          PROMPT_CONTRACT: ${{ needs.static-analysis.outputs.prompt_contract }}
           TESTS_PRESENT: ${{ needs.unit-tests.outputs.tests }}
           UNIT: ${{ needs.unit-tests.outputs.unit }}
         run: |
@@ -235,6 +274,7 @@ jobs:
 
           if [[ "$ACTIONLINT" == "success" ]] &&
             [[ "$CODEQL" == "success" || "$CODEQL" == "skipped" ]] &&
+            [[ "$PROMPT_CONTRACT" == "success" ]] &&
             [[ "$tests" == "success" || "$tests" == "skipped" ]]; then
             echo "passed=true" >> "$GITHUB_OUTPUT"
           else
@@ -270,6 +310,8 @@ jobs:
         .cacophony/evidence/actionlint.log
         .cacophony/evidence/codeql.status.json
         .cacophony/evidence/codeql.sarif
+        .cacophony/evidence/prompt-contract.status.json
+        .cacophony/evidence/prompt-contract.log
         .cacophony/evidence/revision.json
         .cacophony/evidence/unit-tests.status.json
       deployment: gpt-5.6-luna
@@ -290,6 +332,8 @@ jobs:
         .cacophony/evidence/actionlint.log
         .cacophony/evidence/codeql.status.json
         .cacophony/evidence/codeql.sarif
+        .cacophony/evidence/prompt-contract.status.json
+        .cacophony/evidence/prompt-contract.log
         .cacophony/evidence/revision.json
         .cacophony/evidence/unit-tests.status.json
       deployment: gpt-5.6-luna
@@ -310,6 +354,8 @@ jobs:
         .cacophony/evidence/actionlint.log
         .cacophony/evidence/codeql.status.json
         .cacophony/evidence/codeql.sarif
+        .cacophony/evidence/prompt-contract.status.json
+        .cacophony/evidence/prompt-contract.log
         .cacophony/evidence/revision.json
         .cacophony/evidence/unit-tests.status.json
       deployment: gpt-5.6-luna

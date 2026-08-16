@@ -1,18 +1,43 @@
 # Cacophony Prompt Review
 
-Atlas uses Fletcher to review every new Cacophony adversary before that
-adversary joins the review council.
+Atlas separates every Cacophony reviewer into an Agent Persona and an Agent
+Directive. Persona files contain identity, voice, tone, demeanor, and
+presentation only and declare no authority. Directive files contain the literal
+review lens, evidence and severity rules, constraints, report contract, and
+handoffs.
 
-The path-gated `pull_request_target` workflow first queries the pull request
-file metadata without checking out or executing pull-request code. Fletcher
-runs only when the change adds a new Markdown prompt directly under
-`.cacophony/agents/`; edits, renames, and deletions do not invoke it. Fletcher
-uses the `gpt-5.6-luna` deployment with a 40-turn review budget.
+`scripts/cacophony_agents.py` validates the component frontmatter, fixed section
+schemas, catalog-backed Persona values, Persona/Directive content boundaries,
+and exact generated composition. Persona source files cannot inject arbitrary
+prose; the trusted validator resolves their identifiers to reviewed
+presentation text. It generates `.cacophony/agents/<agent>.md` with the Persona
+first and the authoritative Directive last. Cacophony accepts one prompt file,
+so the composition is tracked to preserve Cacophony's native trusted-base
+loader and stable report identifiers.
+
+The path-gated `pull_request_target` workflow runs for additions,
+modifications, renames, and deletions affecting prompt components, generated
+prompts, the validator, its tests, or council workflow integration. A
+deterministic job loads the validator from the trusted base commit and applies
+it to the proposed merge revision. Structurally valid changes then receive
+Fletcher's semantic separation and prompt-quality review on the
+`gpt-5.6-luna` deployment with a 40-turn budget.
 
 The reusable worker checks authorization before checkout, inspects the pull
-request merge ref without executing it, loads reviewer prompts from the trusted
-base commit, gives the Azure credential only to an immutable Cacophony action,
-and uploads each structured report separately.
+request merge ref without executing it, loads the validator from the trusted
+base commit, and proves that the selected base prompt exactly composes its base
+Persona and Directive. It replaces the relative workspace prompt with those
+exact verified base bytes and records their digest as a defense-in-depth path
+binding. The immutable Cacophony action independently loads that same generated
+prompt directly from the base commit. Only the action receives the Azure
+credential, and each structured report is uploaded separately.
+
+During the one-time migration from legacy single-file prompts, a base revision
+without the validator may use only its existing regular, size-bounded base
+prompts. Both the reusable worker and deterministic council evidence step
+validate that legacy set without executing the pull request's new validator.
+Once the validator exists in the base branch, the strict composition check is
+mandatory.
 
 Fork pull requests fail closed; council execution is limited to branches in the
 Atlas repository.
@@ -31,18 +56,19 @@ merged into the trusted base branch.
 ## Dragon council
 
 Every pull request uses the trusted-base Dragon Council workflow. Separate jobs
-perform workflow static analysis, conditional JavaScript and TypeScript CodeQL
-analysis, and the root npm unit-test script when it exists. The test job has a
-read-only token, no provider credential, a 15-minute limit, and executes
-pull-request code only inside a resource-bounded, digest-pinned container that
-does not receive GitHub runtime credentials. The container copies read-only
-source into a bounded temporary filesystem. A fresh collector runner combines
-the trusted step outcomes, checksum-verified Actionlint diagnostics, CodeQL
+perform workflow static analysis, trusted prompt-contract validation,
+conditional JavaScript and TypeScript CodeQL analysis, and the root npm
+unit-test script when it exists. The test job has a read-only token, no provider
+credential, a 15-minute limit, and executes pull-request code only inside a
+resource-bounded, digest-pinned container that does not receive GitHub runtime
+credentials. The container copies read-only source into a bounded temporary
+filesystem. A fresh collector runner combines the trusted step outcomes,
+checksum-verified Actionlint diagnostics, prompt-contract diagnostics, CodeQL
 SARIF, and exact base, head, and merge revisions into one immutable artifact.
 
 Only after collection finishes do Bolas, Smaug, and Balerion run in parallel on
-the `gpt-5.6-luna` deployment with 30-turn budgets. Each receives the
-static-analysis results, CodeQL SARIF, and unit-test result:
+the `gpt-5.6-luna` deployment with 30-turn budgets. Each receives the workflow
+and prompt-contract results, CodeQL SARIF, and unit-test result:
 
 | Dragon | Lens |
 | --- | --- |

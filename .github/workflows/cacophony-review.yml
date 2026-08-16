@@ -66,18 +66,50 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Check trusted prompt availability
-        id: prompt
+      - name: Verify and stage trusted prompt composition
         shell: bash
         env:
           AGENT_SLUG: ${{ inputs.agent-slug }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          if ! git cat-file -e "$BASE_SHA:.cacophony/agents/$AGENT_SLUG.md"; then
-            echo "::error::Trusted prompt .cacophony/agents/$AGENT_SLUG.md is missing from the base commit."
+          if [[ ! "$AGENT_SLUG" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+            echo "::error::Invalid agent slug."
             exit 1
           fi
-          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+          prompt_path=".cacophony/agents/$AGENT_SLUG.md"
+          if git cat-file -e "$BASE_SHA:scripts/cacophony_agents.py"; then
+            validator="$RUNNER_TEMP/cacophony_agents.py"
+            git show "$BASE_SHA:scripts/cacophony_agents.py" > "$validator"
+            python3 "$validator" verify-revision \
+              --repository "$GITHUB_WORKSPACE" \
+              --revision "$BASE_SHA" \
+              --agent "$AGENT_SLUG"
+          else
+            prompt_type="$(git ls-tree "$BASE_SHA" -- "$prompt_path" | awk '{print $1 " " $2}')"
+            prompt_bytes="$(git cat-file -s "$BASE_SHA:$prompt_path")"
+            if [[ "$prompt_type" != "100644 blob" ]] ||
+              [[ ! "$prompt_bytes" =~ ^[0-9]+$ ]] ||
+              (( prompt_bytes > 131072 )); then
+              echo "::error::Legacy trusted-base prompt is missing, invalid, or oversized."
+              exit 1
+            fi
+            echo "::notice::Using the legacy trusted-base prompt bootstrap; no pull request validator is executed."
+          fi
+
+          workspace_root="$(realpath "$GITHUB_WORKSPACE")"
+          agents_root="$(realpath .cacophony/agents)"
+          if [[ -L .cacophony/agents || "$agents_root" != "$workspace_root/.cacophony/agents" ]]; then
+            echo "::error::.cacophony/agents is not the expected workspace directory."
+            exit 1
+          fi
+
+          trusted_prompt="$RUNNER_TEMP/$AGENT_SLUG.md"
+          git show "$BASE_SHA:$prompt_path" > "$trusted_prompt"
+          rm -f "$prompt_path"
+          install -m 0644 "$trusted_prompt" "$prompt_path"
+          cmp --silent "$trusted_prompt" "$prompt_path"
+          sha256sum "$prompt_path"
 
       - name: Prepare evidence directory
         if: inputs.evidence-artifact != ''
@@ -97,6 +129,8 @@ jobs:
         id: review
         uses: jdylanmc/cacophony@ee9525ab23d654cf67172e178a5ab885f352c0d3
         with:
+          # The pinned action independently reads this path from the base SHA;
+          # the preceding step also binds its workspace copy to those bytes.
           prompt-file: .cacophony/agents/${{ inputs.agent-slug }}.md
           evidence-files: ${{ inputs.evidence-files }}
           endpoint: ${{ env.CACOPHONY_AZURE_ENDPOINT }}

@@ -4,6 +4,13 @@ on:
   pull_request_target:
     paths:
       - ".cacophony/agents/**"
+      - ".cacophony/directives/**"
+      - ".cacophony/personas/**"
+      - "scripts/cacophony_agents.py"
+      - "tests/test_cacophony_agents.py"
+      - ".github/workflows/cacophony-review.yml"
+      - ".github/workflows/council-fletcher.yml"
+      - ".github/workflows/dragon-council.yml"
 
 permissions:
   contents: read
@@ -14,40 +21,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  detect-new-adversaries:
+  prompt-contract:
+    name: Deterministic prompt contract
     runs-on: ubuntu-latest
-    outputs:
-      found: ${{ steps.prompts.outputs.found }}
     steps:
-      - name: Detect newly added adversary prompts
-        id: prompts
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate changed prompt contract with trusted rules
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPOSITORY: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
-          added_prompts="$(
-            gh api --paginate \
-              "repos/$REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
-              --jq '.[] | select(.status == "added") | .filename' |
-              awk '
-                /^\.cacophony\/agents\/[^/]+\.md$/ &&
-                $0 != ".cacophony/agents/fletcher.md"
-              '
-          )"
-
-          if [[ -n "$added_prompts" ]]; then
-            echo "found=true" >> "$GITHUB_OUTPUT"
-            printf 'Fletcher will review:\n%s\n' "$added_prompts"
+          if git cat-file -e "$BASE_SHA:scripts/cacophony_agents.py"; then
+            validator="$RUNNER_TEMP/cacophony_agents.py"
+            git show "$BASE_SHA:scripts/cacophony_agents.py" > "$validator"
+            python3 "$validator" verify-revision \
+              --repository "$GITHUB_WORKSPACE" \
+              --revision "$MERGE_SHA" \
+              --agent fletcher
+          elif git cat-file -e "$BASE_SHA:.cacophony/agents/fletcher.md"; then
+            echo "::notice::Validator bootstrap detected; the trusted base has only the legacy Fletcher prompt."
           else
-            echo "found=false" >> "$GITHUB_OUTPUT"
-            echo "No new adversary prompt files were added."
+            echo "::error::Neither the trusted validator nor legacy Fletcher prompt exists."
+            exit 1
           fi
 
   prompt-review:
-    needs: detect-new-adversaries
-    if: needs.detect-new-adversaries.outputs.found == 'true'
+    needs: prompt-contract
     uses: ./.github/workflows/cacophony-review.yml
     with:
       agent-slug: fletcher
