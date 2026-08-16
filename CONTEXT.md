@@ -18,19 +18,25 @@ The directory containing a Realm's `.atlas/`. It may be a Git worktree root or a
 The human-facing workflow that proposes a new minimal Realm for one Realm Host Directory. It establishes the Realm's orientation and baseline governance in an isolated Git worktree, may derive a small amount of cited founding knowledge, and ends in one reviewable pull request.
 
 **Agent Persona**:
-An optional named identity, display profile, and avatar that shape an agent's voice, tone, and visual or editorial flavor. A Persona carries no behavioral or governance authority and remains separate from the agent's Directive.
+An optional named identity, display profile, and avatar that shape an agent's conversational voice, tone, and visual or editorial flavor without changing semantic meaning. A Persona carries no behavioral or governance authority, does not shape the authored voice of Insights or Pillars, and remains separate from the agent's Directive.
 
 **Agent Directive**:
-The literal statement of an agent role's objectives, responsibilities, allowed actions, constraints, and required handoffs. A Directive is precise instruction governed by Atlas contracts and Realm Laws, not character prose.
+The literal statement of an agent role's objectives, responsibilities, allowed actions, constraints, and required handoffs. An Atlas-owned baseline may be specialized by a separate Realm-owned layer that cannot weaken the baseline, Framework contracts, or Realm Laws. A Directive is precise instruction, not character prose.
+
+**Agent Composition**:
+The declarative pairing of exactly one Agent Persona with an ordered set of Agent Directives. Directives remain authoritative and determine behavior; the Persona shapes only eligible presentation, cannot change semantic meaning, and loses every conflict with a Directive.
 
 **Realm Guide**:
-The Realm-owned caretaker and Realm Site chief marketing officer that guides navigation, narrates Rest, drafts Chronicle entries, and proactively stewards the knowledge store under human governance. Its Directive defines the work and proposal authority; its optional Agent Persona defines the flavor.
+The Realm-owned caretaker and Realm Site chief marketing officer that guides navigation, narrates Rest, drafts Chronicle entries, and proactively stewards the knowledge store under human governance. The Home Realm Guide supplies the human-facing voice for Atlas responses even when their knowledge comes from another Realm; source identity and evidence remain explicit. It may propose precise provisional terminology for unnamed concepts, but reviewed adoption is required before a term becomes canonical. Its Directive defines the work and proposal authority; its optional Agent Persona defines the flavor.
 
 **Realm Entry**:
 The shared preflight through which an Atlas skill identifies the Home Realm for the current Realm Host Directory, verifies tooling and schema compatibility, and loads only the instructions and context required by that operation. Entry classifies the Home Realm as ready, degraded, or blocked before the skill proceeds.
 
 **Home Realm**:
 The Realm owned by the current Realm Host Directory and identified by Realm Entry. Its committed maintenance code is trusted at the same level as its host repository; every other Realm is connected through cross-Realm Threads and remains read-only cached data.
+
+**Atlas SDK Realm**:
+The canonical upstream Home Realm of the Atlas repository, displayed as **Atlas SDK** and identified by the Realm Slug `atlas-sdk`. It maintains cited knowledge about Atlas's purpose, architecture, implementation, onboarding, operation, and use, while Framework Releases carry its enforceable core contracts into sovereign Realms. Its deployed Realm Site is the canonical destination linked by other Realms when explaining Atlas. Merlin is its designated Realm Guide.
 
 **Framework Bundle**:
 The Atlas-owned, portable baseline committed inside a Realm. It contains the instructions, contracts, and maintenance tooling that make the Realm operable without joining the host application's dependency ecosystem, and it is replaced as a governed unit by Atlas upgrades.
