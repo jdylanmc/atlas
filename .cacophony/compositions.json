@@ -1,0 +1,29 @@
+{
+  "schema": "atlas.agent-compositions/v1",
+  "compositions": {
+    "balerion": {
+      "persona": "balerion",
+      "directives": [
+        "security-and-runtime-risk-review"
+      ]
+    },
+    "bolas": {
+      "persona": "bolas",
+      "directives": [
+        "domain-architecture-review"
+      ]
+    },
+    "fletcher": {
+      "persona": "fletcher",
+      "directives": [
+        "prompt-contract-review"
+      ]
+    },
+    "smaug": {
+      "persona": "smaug",
+      "directives": [
+        "simplicity-and-code-truth-review"
+      ]
+    }
+  }
+}
