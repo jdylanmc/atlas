@@ -12,7 +12,10 @@ A sovereign, bounded knowledge domain rooted in one Realm Host Directory. Its kn
 _Avoid_: Region
 
 **Realm Host Directory**:
-The directory containing a Realm's `.atlas/`. It may be a Git worktree root or a subdirectory within one; a Git worktree may contain several Realm Host Directories. Atlas selects the nearest ancestor Realm unless one is explicitly chosen.
+The directory containing a Realm's `.atlas/`. It may be a Git worktree root or a subdirectory within one. A Git worktree may contain several Realm Host Directories only when they are disjoint: no Realm Host Directory may contain another. Repository root is the encouraged default, with multiple Realms reserved for exceptional monorepo boundaries.
+
+**Realm Initialization**:
+The human-facing workflow that proposes a new minimal Realm for one Realm Host Directory. It establishes the Realm's orientation and baseline governance in an isolated Git worktree, may derive a small amount of cited founding knowledge, and ends in one reviewable pull request.
 
 **Realm Locator**:
 The normalized Git repository URL, branch, and Realm-relative path that identifies a tracked Realm. Normalization settles syntax only, never identity: host case, `.git` suffixes, trailing separators, embedded credentials, and equivalent SSH and HTTPS forms of one repository resolve together, while owner, repository, branch, and path remain significant.
