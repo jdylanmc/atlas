@@ -15,7 +15,13 @@ _Avoid_: Region
 The directory containing a Realm's `.atlas/`. It may be a Git worktree root or a subdirectory within one; a Git worktree may contain several Realm Host Directories. Atlas selects the nearest ancestor Realm unless one is explicitly chosen.
 
 **Realm Locator**:
-The normalized Git repository URL, branch, and Realm-relative path that identifies a tracked Realm. A local alias maps to the locator for cross-Realm Threads.
+The normalized Git repository URL, branch, and Realm-relative path that identifies a tracked Realm. Normalization settles syntax only, never identity: host case, `.git` suffixes, trailing separators, embedded credentials, and equivalent SSH and HTTPS forms of one repository resolve together, while owner, repository, branch, and path remain significant.
+
+**Realm Slug**:
+The reference name of a tracked Realm, derived deterministically from its Realm Locator rather than chosen by a human. It combines host, owner, repository, and Realm-relative path, and names the branch only when it is not the repository default.
+
+**Realm Cache**:
+The generated, Git-ignored store beneath a Realm's `.atlas/` holding read-only working copies of tracked Realms, one flat entry per Realm Locator, materialized on first entry. Realm Cache entries are disposable, never edited, and never a place from which a Realm is maintained.
 
 **Realm Snapshot**:
 The exact Git commit of a Realm used during one operation. A snapshot records observed context but is not the Realm's logical identity.
@@ -29,6 +35,9 @@ The versioned extension contract that adds Realm-specific page types, fields, re
 **Realm Lock**:
 The generated, local record of resolved schema versions, tracked Realm Snapshots, fetch times, and other reproducibility state. Realm Lock is replaceable cache state rather than committed Realm knowledge.
 
+**Realm Refresh**:
+The pull that returns a Realm Cache entry to its tracked branch tip. Refresh happens automatically when an entry is older than the freshness window its declaration allows, and on demand when a human asks for it. Refresh never merges: divergent upstream history replaces the cached copy outright.
+
 **Realm Chronicle**:
 The append-only operational history of Gather and Weave runs, recording when each operation occurred, who performed it, its outcome, high-level metrics, and its report pointer. The Chronicle is audit history, not synthesized knowledge.
 
@@ -36,7 +45,7 @@ The append-only operational history of Gather and Weave runs, recording when eac
 A human-approved, Realm-local conceptual landmark where related ideas strongly intersect. Gather and Weave may recommend Bonfires according to Realm policy, but agents do not establish them autonomously. A Bonfire provides cited orientation and named paths while Insights hold detailed understanding. A Bonfire may connect through a cross-Realm Thread to another Realm, but it is not authoritative source material.
 
 **Root Bonfire**:
-The permanent `.atlas/index.md` Bonfire through which an agent enters a Realm. A cross-Realm Thread resolves a tracked Realm alias, lands at its Root Bonfire, and performs Rest there.
+The permanent `.atlas/index.md` Bonfire through which an agent enters a Realm. A cross-Realm Thread resolves a tracked Realm's Realm Slug, lands at its Root Bonfire, and performs Rest there.
 
 **Rest**:
 The mandatory re-anchoring checkpoint performed whenever an agent reaches a Bonfire. The agent re-reads the current Realm manifest, all active Realm Laws, the Pillars connected to that Bonfire, and the Bonfire orientation, then restates its active objective and constraints before continuing.
@@ -57,7 +66,7 @@ A claim-level reference to a Lore object that supports an agent-managed claim. I
 Derived knowledge supported by Lore whose Realm-defined refresh date has elapsed. Stale Knowledge remains traversable, but Weave surfaces it and the agentic workflow offers to re-Gather the supporting Lore.
 
 **Thread**:
-A first-class Markdown relationship used to traverse Insights, Pillars, Bonfires, and Realm-defined extensions of those archetypes. Zero or one Thread exists per unordered in-Realm page pair. It has a stable identity, canonical direction, one or more typed semantics, explanatory context, and Citations supporting the asserted relationship. A cross-Realm Thread instead connects a Bonfire to a tracked Realm alias. Threads do not connect to Lore.
+A first-class Markdown relationship used to traverse Insights, Pillars, Bonfires, and Realm-defined extensions of those archetypes. Zero or one Thread exists per unordered in-Realm page pair. It has a stable identity, canonical direction, one or more typed semantics, explanatory context, and Citations supporting the asserted relationship. A cross-Realm Thread instead connects a Bonfire to a tracked Realm identified by its Realm Slug. Threads do not connect to Lore.
 
 **Pillar**:
 A human-governed, Realm-local concept page containing individually identified active universal truths. A Pillar has a stable identity, explains the concept it represents, and keeps a Keep a Changelog-style amendment history. Agents may help modify a Pillar only under explicit human direction and approval.
@@ -82,7 +91,7 @@ A human-approved, versioned invariant or policy that governs how agents maintain
 _Avoid_: Realm Rule
 
 **Gather**:
-The human-facing workflow for ingesting Lore and updating a Realm's derived knowledge.
+The human-facing workflow for ingesting Lore and updating a Realm's derived knowledge. Gather runs inside the Realm's own repository. A source that is itself a Realm becomes a tracked Realm and a human-agreed cross-Realm Thread rather than Lore.
 _Avoid_: Ingest, when naming the user-facing skill
 
 **Weave**:
@@ -90,7 +99,7 @@ The human-facing workflow for linting a Realm. Trusted deterministic validation 
 _Avoid_: Lint, when naming the user-facing skill
 
 **Explore**:
-The human-facing workflow for querying and traversing knowledge through Bonfires, Threads, and supporting nodes.
+The human-facing workflow for querying and traversing knowledge through Bonfires, Threads, and supporting nodes. Explore reads tracked Realms only through the Realm Cache and never modifies them.
 _Avoid_: Query, when naming the user-facing skill
 
 **Degraded Explore**:
