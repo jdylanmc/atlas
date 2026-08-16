@@ -87,7 +87,7 @@ A non-persistent disagreement surfaced while an agent traverses knowledge from m
 A warning that two cited Insight claims within one Realm conflict without contradicting a Pillar. The Weave workflow surfaces the evidence and Source Authority, then works with a human to reconcile or scope the claims.
 
 **Realm Law**:
-A human-approved, versioned invariant or policy that governs how agents maintain and use a Realm. Agents may propose Laws and amendments but cannot establish them autonomously. Violating a Realm Law makes the resulting Realm invalid.
+A human-approved, versioned invariant or policy that governs how agents maintain and use a Realm. Agents may propose Laws and amendments but cannot establish them autonomously. Violating a Realm Law makes the resulting Realm invalid. Because a Law is evaluated by a model, both its failures and its passes must survive a Challenge.
 _Avoid_: Realm Rule
 
 **Gather**:
@@ -101,8 +101,14 @@ The read-only subagents a Gather dispatches to crawl one source in parallel. A F
 The proposed concepts, Threads, and Citations a Fleet returns from one source, reconciled against existing knowledge before anything is written. It is working material, not Realm knowledge.
 
 **Weave**:
-The human-facing workflow for linting a Realm. Trusted deterministic validation runs before isolated Realm-owned deterministic checks and semantic verification; pure Weave reports findings without mutating knowledge.
+The human-facing workflow for linting a Realm. Trusted deterministic validation runs before isolated Realm-owned deterministic checks and semantic verification; pure Weave reports findings without mutating knowledge. Weave also reports what a Realm is missing, and validates a Realm's edges into tracked Realms rather than their contents.
 _Avoid_: Lint, when naming the user-facing skill
+
+**Finding**:
+One result reported by a Weave, attributed to the check that raised it and to whether that check is trusted Atlas validation or Realm-owned. A finding is an error, a warning, a suggestion, an inconclusive semantic verdict, or a check skipped because one it depended on failed. A Realm-owned check may add findings; it may never suppress or downgrade a trusted one.
+
+**Challenge**:
+The adversarial review a semantic verdict must survive before it counts. A challenger receives the verdict and its cited evidence and argues against it; disagreement makes the verdict inconclusive and escalates both arguments to a human.
 
 **Explore**:
 The human-facing workflow for querying and traversing knowledge through Bonfires, Threads, and supporting nodes. Explore reads tracked Realms only through the Realm Cache and never modifies them.
