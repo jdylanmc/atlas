@@ -66,7 +66,7 @@ The read-only workflow that expands a Realm Cache by one graph layer. Scout foll
 The generated, disposable search state owned by one Realm Host Directory. It indexes that Realm and its materialized reachable Realm Snapshots behind a replaceable provider interface while Atlas retains responsibility for graph reachability, routing, validation, and context.
 
 **Realm Chronicle**:
-The curated, human-readable history of notable knowledge changes in a Realm, kept as `.atlas/CHANGELOG.md`. One entry records one merged knowledge-changing operation. The Chronicle is history a newcomer can read, not an operational ledger and not synthesized knowledge.
+The curated, human-readable history of notable knowledge changes in a Realm, kept as `.atlas/CHANGELOG.md`. One entry, identified by its stable operation ID, records one merged knowledge-changing operation and can be correlated with Git history. The Chronicle is history a newcomer can read, not an operational ledger and not synthesized knowledge.
 
 **Bonfire**:
 A human-approved, Realm-local conceptual landmark where related ideas strongly intersect. Gather and Weave may recommend Bonfires according to Realm policy, but agents do not establish them autonomously. A Bonfire provides cited orientation and named paths while Insights hold detailed understanding. A Bonfire may connect through a cross-Realm Thread to another Realm, but it is not authoritative source material.
@@ -80,8 +80,14 @@ The mandatory re-anchoring checkpoint performed whenever an agent reaches a Bonf
 **Lore**:
 Source material or a pointer to source material, together with its source metadata, gathering method, refresh history, freshness dates, immutable revision or digest, and Realm-assigned Source Authority. Lore is not synthesized understanding.
 
+**Lore Refresh**:
+The targeted re-Gather of one existing Lore object when its own refresh lifecycle is due. It records the source's latest revision and Source Revision Time, then re-interweaves affected knowledge and fully Weaves one Realm Proposal.
+
 **Source Authority**:
-A Realm-configured priority class assigned to Lore according to its origin, such as official, first-party, community, or opinion. Agents use Source Authority to recommend resolutions for conflicting claims, but humans make the final decision.
+A Realm-configured priority class assigned to Lore according to its origin, such as official, first-party, community, or opinion. Conflicting claims resolve first by Source Authority, subject to applicable Pillars and Realm Laws.
+
+**Source Revision Time**:
+The update time asserted by the exact cited source revision, such as a Git commit time or captured page metadata. It breaks conflicts between equal-Authority Lore when trustworthy and comparable; Gather time is never a substitute, and unresolved ties require human adjudication.
 
 **Insight**:
 Derived understanding of one concept, whose factual claims remain traceable through Citations to the Lore from which they were formed. Every Insight carries at least one Thread, so no page is unreachable by traversal.
@@ -139,6 +145,21 @@ The adversarial review a semantic verdict must survive before it counts. A chall
 
 **Operation Handoff**:
 The stable completion summary returned by every Atlas skill. It identifies the operation, Home Realm and base snapshot, result or proposed changes, unresolved human decisions, validation or degradation state, review link when applicable, and recommended next action.
+
+**Realm Proposal**:
+The isolated branch, worktree, and pull request through which one knowledge-changing operation proposes changes to a Home Realm. A Realm Proposal is anchored to a base commit and must reconcile against the current target branch before it can merge.
+
+**Stale Realm Proposal**:
+A Realm Proposal whose target branch has advanced since its last successful reconciliation and full Weave. It cannot merge until Atlas rebases and revalidates it against the new target state.
+
+**Realm Head**:
+The current target-branch commit containing the Home Realm's authoritative merged state. Every Realm Proposal must be reconciled and fully Woven against the current Realm Head before it can merge.
+
+**Proposal Footprint**:
+The Lore sources, Realm objects, governing truths, schema contracts, and connected knowledge neighborhood on which a Realm Proposal's meaning depends. Atlas compares this footprint with changes since the proposal's base to decide whether ordinary reconciliation is sufficient or its synthesis must be rebuilt.
+
+**Proposal Reconciliation**:
+The process that brings a Stale Realm Proposal onto the current Realm Head, resolves permitted mechanical and agent-managed overlaps, rebuilds synthesis when its Proposal Footprint has materially drifted, and requires a new full Weave before merge.
 
 **Explore**:
 The human-facing workflow for querying and traversing knowledge through Bonfires, Threads, and supporting nodes. Explore searches an Explore Index for relevant entry points, then follows a required Bonfire-to-result route through one fixed set of Realm Snapshots. It reads tracked Realms only through the Realm Cache and never modifies them.
