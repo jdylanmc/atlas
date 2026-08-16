@@ -39,10 +39,16 @@ The human-authored declaration of a Realm's intended knowledge contract and loca
 The versioned extension contract that adds Realm-specific page types, fields, relationship semantics, and validation while inheriting and preserving Atlas core archetype behavior.
 
 **Realm Lock**:
-The generated, local record of resolved schema versions, tracked Realm Snapshots, fetch times, and other reproducibility state. Realm Lock is replaceable cache state rather than committed Realm knowledge.
+The generated, local record of resolved schema versions, tracked Realm Snapshots, fetch times, and the lazily materialized Realm dependency graph. It records which Bonfire gateway and cross-Realm Thread introduced each dependency. Realm Lock is replaceable cache state rather than committed Realm knowledge.
 
 **Realm Refresh**:
 The pull that returns a Realm Cache entry to its tracked branch tip. Refresh happens automatically when an entry is older than the freshness window its declaration allows, and on demand when a human asks for it. Refresh never merges: divergent upstream history replaces the cached copy outright.
+
+**Scout**:
+The read-only workflow that expands a Realm Cache by one graph layer. Scout follows the selected Realm Snapshot's Bonfire gateway Threads, materializes its directly related Realms with human approval, and refreshes generated Lock and search state without changing Realm knowledge.
+
+**Explore Index**:
+The generated, disposable search state owned by one Realm Host Directory. It indexes that Realm and its materialized reachable Realm Snapshots behind a replaceable provider interface while Atlas retains responsibility for graph reachability, routing, validation, and context.
 
 **Realm Chronicle**:
 The curated, human-readable history of notable knowledge changes in a Realm, kept as `.atlas/CHANGELOG.md`. One entry records one merged knowledge-changing operation. The Chronicle is history a newcomer can read, not an operational ledger and not synthesized knowledge.
@@ -54,7 +60,7 @@ A human-approved, Realm-local conceptual landmark where related ideas strongly i
 The permanent `.atlas/index.md` Bonfire through which an agent enters a Realm. It carries orientation and additionally catalogs pages not otherwise reachable from a Bonfire. A cross-Realm Thread resolves a tracked Realm's Realm Slug, lands at its Root Bonfire, and performs Rest there.
 
 **Rest**:
-The mandatory re-anchoring checkpoint performed whenever an agent reaches a Bonfire. The agent re-reads the current Realm manifest, all active Realm Laws, the Pillars connected to that Bonfire, and the Bonfire orientation, then restates its active objective and constraints before continuing.
+The mandatory re-anchoring checkpoint performed whenever an agent reaches a Bonfire. The agent re-reads the Bonfire orientation and every active Pillar directly connected to it, then restates its active objective and the truths governing the path before continuing.
 
 **Lore**:
 Source material or a pointer to source material, together with its source metadata, gathering method, refresh history, freshness dates, immutable revision or digest, and Realm-assigned Source Authority. Lore is not synthesized understanding.
@@ -93,7 +99,7 @@ A non-persistent disagreement surfaced while an agent traverses knowledge from m
 A warning that two cited Insight claims within one Realm conflict without contradicting a Pillar. The Weave workflow surfaces the evidence and Source Authority, then works with a human to reconcile or scope the claims.
 
 **Realm Law**:
-A human-approved, versioned invariant or policy that governs how agents maintain and use a Realm. Agents may propose Laws and amendments but cannot establish them autonomously. Violating a Realm Law makes the resulting Realm invalid. Because a Law is evaluated by a model, both its failures and its passes must survive a Challenge.
+A human-approved, versioned invariant or policy that governs how agents maintain a Realm. Agents may propose Laws and amendments but cannot establish them autonomously. Violating a Realm Law makes the resulting Realm invalid. Because a Law is evaluated by a model, both its failures and its passes must survive a Challenge. Explore may read a relevant Law to interpret an accepted exception, but Laws do not govern ordinary read-only traversal.
 _Avoid_: Realm Rule
 
 **Gather**:
@@ -120,7 +126,7 @@ The adversarial review a semantic verdict must survive before it counts. A chall
 The stable completion summary returned by every Atlas skill. It identifies the operation, active Realm and base snapshot, result or proposed changes, unresolved human decisions, validation or degradation state, review link when applicable, and recommended next action.
 
 **Explore**:
-The human-facing workflow for querying and traversing knowledge through Bonfires, Threads, and supporting nodes. Explore reads tracked Realms only through the Realm Cache and never modifies them.
+The human-facing workflow for querying and traversing knowledge through Bonfires, Threads, and supporting nodes. Explore searches an Explore Index for relevant entry points, then follows a required Bonfire-to-result route through one fixed set of Realm Snapshots. It reads tracked Realms only through the Realm Cache and never modifies them.
 _Avoid_: Query, when naming the user-facing skill
 
 **Degraded Explore**:
