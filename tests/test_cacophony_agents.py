@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -24,7 +25,9 @@ class OverlaySource:
         return self.source.list_files(prefix)
 
     def read_text(self, path: str) -> str:
-        return self.overrides.get(path, self.source.read_text(path))
+        if path in self.overrides:
+            return self.overrides[path]
+        return self.source.read_text(path)
 
 
 class CacophonyAgentContractTests(unittest.TestCase):
@@ -76,8 +79,9 @@ class CacophonyAgentContractTests(unittest.TestCase):
             prompts.parse_component(
                 path,
                 text,
-                agent="smaug",
-                schema=prompts.PERSONA_SCHEMA,
+                identifier_key="agent",
+                identifier="smaug",
+                schema=prompts.LEGACY_PERSONA_SCHEMA,
                 authority="none",
             )
 
@@ -97,7 +101,10 @@ class CacophonyAgentContractTests(unittest.TestCase):
         ):
             prompts.validate_directive(
                 directive,
+                directive_id=contract.directive_id,
+                persona_ids=("balerion", "bolas", "fletcher", "smaug"),
                 display_names=("Balerion", "Bolas", "Fletcher", "Smaug"),
+                enforce_intention_identity=False,
             )
 
     def test_directive_rejects_persona_identity(self) -> None:
@@ -113,7 +120,96 @@ class CacophonyAgentContractTests(unittest.TestCase):
         with self.assertRaisesRegex(prompts.ContractError, "Persona identity"):
             prompts.validate_directive(
                 directive,
+                directive_id=contract.directive_id,
+                persona_ids=("balerion", "bolas", "fletcher", "smaug"),
                 display_names=("Balerion", "Bolas", "Fletcher", "Smaug"),
+                enforce_intention_identity=False,
+            )
+
+    def test_validator_recognizes_stable_intention_mapping(self) -> None:
+        document = {
+            "schema": prompts.COMPOSITION_SCHEMA,
+            "compositions": {
+                agent: {
+                    "persona": agent,
+                    "directives": list(directives),
+                }
+                for agent, directives
+                in prompts.COMPATIBILITY_DIRECTIVE_SETS.items()
+            },
+        }
+        source = OverlaySource(
+            self.source,
+            {
+                prompts.COMPOSITION_MAP_PATH: f"{json.dumps(document)}\n",
+            },
+        )
+        compositions = prompts._load_compositions(source)
+        self.assertEqual(
+            {
+                agent: composition.directive_ids
+                for agent, composition in compositions.items()
+            },
+            prompts.COMPATIBILITY_DIRECTIVE_SETS,
+        )
+
+    def test_composition_requires_ordered_nonempty_directives(self) -> None:
+        document = {
+            "schema": prompts.COMPOSITION_SCHEMA,
+            "compositions": {
+                agent: {
+                    "persona": agent,
+                    "directives": list(directives),
+                }
+                for agent, directives
+                in prompts.COMPATIBILITY_DIRECTIVE_SETS.items()
+            },
+        }
+        for invalid in ([], ["domain-architecture-review"] * 2):
+            with self.subTest(directives=invalid):
+                changed = json.loads(json.dumps(document))
+                changed["compositions"]["bolas"]["directives"] = invalid
+                source = OverlaySource(
+                    self.source,
+                    {
+                        prompts.COMPOSITION_MAP_PATH: (
+                            f"{json.dumps(changed)}\n"
+                        ),
+                    },
+                )
+                with self.assertRaisesRegex(
+                    prompts.ContractError,
+                    "ordered, non-empty list of unique slugs",
+                ):
+                    prompts._load_compositions(source)
+
+    def test_generated_composition_declares_precedence_and_neutrality(self) -> None:
+        composed = prompts.compose_agent(
+            "bolas",
+            "bolas",
+            (
+                "domain-architecture-review",
+                "simplicity-and-code-truth-review",
+            ),
+            (
+                self.contracts["bolas"].directive,
+                self.contracts["smaug"].directive,
+            ),
+            prompts.PERSONA_CATALOG["bolas"],
+        )
+        self.assertIn('directives="listed-later-wins"', composed)
+        self.assertIn('order="1" id="domain-architecture-review"', composed)
+        self.assertIn(
+            'order="2" id="simplicity-and-code-truth-review"',
+            composed,
+        )
+        self.assertIn("Insights, Pillars, diagnostics, evidence", composed)
+
+    def test_reviewers_use_diff_for_staged_generated_prompts(self) -> None:
+        for contract in self.contracts.values():
+            self.assertIn(
+                "inspect the proposed bytes with `get_diff`",
+                contract.directive.body,
             )
 
     def test_composition_gives_directive_final_precedence(self) -> None:
