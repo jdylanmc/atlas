@@ -25,14 +25,14 @@ Fletcher's semantic separation and prompt-quality review on the
 
 The reusable worker checks authorization before checkout, inspects the pull
 request merge ref without executing it, and polls the pull request API until
-GitHub supplies full current base and merge revisions. It loads the validator
-from the trusted base commit and proves that the selected base prompt exactly
-composes its base Persona and Directive. It replaces the relative workspace
-prompt with those exact verified base bytes and records their digest as a
-defense-in-depth path binding. The immutable Cacophony action independently
-loads that same generated prompt directly from the base commit. Only the action
-receives the Azure credential, and each structured report is uploaded
-separately.
+GitHub supplies full current base and merge revisions, failing closed after
+twelve five-second attempts. It loads the validator from the trusted base
+commit and proves that the selected base prompt exactly composes its base
+Persona and Directive. It replaces the relative workspace prompt with those
+exact verified base bytes and records their digest as a defense-in-depth path
+binding. The immutable Cacophony action independently loads that same generated
+prompt directly from the base commit. Only the action receives the Azure
+credential, and each structured report is uploaded separately.
 
 During the one-time migration from legacy single-file prompts, a base revision
 without the validator may use only its existing regular, size-bounded base
