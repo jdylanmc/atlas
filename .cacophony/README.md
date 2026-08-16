@@ -37,3 +37,29 @@ file is tracked to preserve its native trusted-base loader and stable
 agent/report identifiers. The migration bootstrap may use only a validated
 legacy prompt already present in a base revision that predates the validator;
 it never executes validator code from the pull request.
+
+Because the worker stages the active reviewer's base prompt over its workspace
+path, reviewers inspect proposed `.cacophony/agents/*.md` content with
+`get_diff`; `read_file` on that active generated path intentionally returns the
+trusted base.
+
+## Staged intention-identifier migration
+
+The trusted validator accepts both the current version 1 one-to-one layout and
+the version 2 composition-map layout. This compatibility must land before
+Directive files can move to intention-named paths because pull request checks
+always execute the validator from the base revision.
+
+Each version 2 composition contains reference metadata only: exactly one
+Persona identifier and an ordered, non-empty `directives` list. Directives are
+authoritative in listed order, with later Directives specializing earlier ones;
+the Persona never changes semantics or applies to authoritative artifacts.
+
+The version 2 stable mapping is:
+
+| Compatibility agent | Stable Directive |
+| --- | --- |
+| `bolas` | `domain-architecture-review` |
+| `smaug` | `simplicity-and-code-truth-review` |
+| `balerion` | `security-and-runtime-risk-review` |
+| `fletcher` | `prompt-contract-review` |
