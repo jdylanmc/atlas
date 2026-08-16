@@ -4,6 +4,7 @@ on:
   pull_request_target:
     paths:
       - ".cacophony/agents/**"
+      - ".cacophony/compositions.json"
       - ".cacophony/directives/**"
       - ".cacophony/personas/**"
       - "scripts/cacophony_agents.py"

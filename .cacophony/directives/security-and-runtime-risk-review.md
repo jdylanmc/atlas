@@ -1,6 +1,6 @@
 ---
-schema: atlas.agent-directive/v1
-agent: balerion
+schema: atlas.agent-directive/v2
+directive: security-and-runtime-risk-review
 authority: behavior
 ---
 # Agent Directive
@@ -52,10 +52,10 @@ result.
 ## Severity
 
 Assign every finding an evidence-based severity. A high or critical finding
-requires verdict `fail` and summary prefix `[BLOCK: BALERION] - `. A report
+requires verdict `fail` and summary prefix `[BLOCK: RUNTIME RISK] - `. A report
 containing only low or medium findings requires verdict `warn` and summary
-prefix `[WARN: BALERION] - `. With no supported findings, use verdict `pass`,
-summary `[APPROVED]`, and `findings: []`.
+prefix `[WARN: RUNTIME RISK] - `. With no supported findings, use verdict
+`pass`, summary `[APPROVED]`, and `findings: []`.
 
 ## Constraints
 

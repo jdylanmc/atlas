@@ -2,18 +2,32 @@
 
 Atlas separates every Cacophony reviewer into an Agent Persona and an Agent
 Directive. Persona files contain identity, voice, tone, demeanor, and
-presentation only and declare no authority. Directive files contain the literal
-review lens, evidence and severity rules, constraints, report contract, and
-handoffs.
+presentation only and declare no authority. Intention-named Directive files
+contain the literal review lens, evidence and severity rules, constraints,
+report contract, and handoffs. Directive identifiers never use Persona names.
 
 `scripts/cacophony_agents.py` validates the component frontmatter, fixed section
 schemas, catalog-backed Persona values, Persona/Directive content boundaries,
-and exact generated composition. Persona source files cannot inject arbitrary
-prose; the trusted validator resolves their identifiers to reviewed
-presentation text. It generates `.cacophony/agents/<agent>.md` with the Persona
-first and the authoritative Directive last. Cacophony accepts one prompt file,
-so the composition is tracked to preserve Cacophony's native trusted-base
-loader and stable report identifiers.
+the stable compatibility-to-Directive-set map, and exact generated composition.
+Persona source files cannot inject arbitrary prose; the trusted validator
+resolves their identifiers to reviewed presentation text.
+`.cacophony/compositions.json` is the reference-only Agent Composition layer.
+Each compatibility composition selects exactly one Persona and an ordered,
+non-empty Directive list, so Persona replacement does not rename, reorder, or
+reassign review intentions. Directives are authoritative in listed order; a
+later Directive wins a direct conflict with an earlier one, and every
+Persona/Directive conflict resolves to the Directives.
+
+Persona may affect only optional conversational or presentation surfaces that
+the Directives permit. It never changes semantics or instructions and remains
+neutral for Insights, Pillars, diagnostics, evidence, schemas, code,
+machine-consumed output, and other authoritative artifacts.
+
+The generator writes `.cacophony/agents/<compatibility-agent>.md` with explicit
+composition source, generator, Directive order, and precedence metadata.
+Cacophony accepts one prompt file, so these compatibility renderings remain
+tracked to preserve its native trusted-base loader and stable report/check
+identifiers.
 
 The path-gated `pull_request_target` workflow runs for additions,
 modifications, renames, and deletions affecting prompt components, generated
@@ -28,7 +42,7 @@ request merge ref without executing it, and polls the pull request API until
 GitHub supplies full current base and merge revisions, failing closed after
 twelve five-second attempts. It loads the validator from the trusted base
 commit and proves that the selected base prompt exactly composes its base
-Persona and Directive. It replaces the relative workspace prompt with those
+Persona and Directives. It replaces the relative workspace prompt with those
 exact verified base bytes and records their digest as a defense-in-depth path
 binding. The immutable Cacophony action independently loads that same generated
 prompt directly from the base commit. Only the action receives the Azure
@@ -72,11 +86,14 @@ Only after collection finishes do Bolas, Smaug, and Balerion run in parallel on
 the `gpt-5.6-luna` deployment with 30-turn budgets. Each receives the workflow
 and prompt-contract results, CodeQL SARIF, and unit-test result:
 
-| Dragon | Lens |
-| --- | --- |
-| Bolas | Domain-Driven Design, ownership boundaries, and architecture |
-| Smaug | Simplicity, code truth, consistency, and documentation |
-| Balerion | Security, stability, concurrency, memory, and performance |
+| Required check | Persona | Ordered Directives | Lens |
+| --- | --- | --- | --- |
+| `Bolas / review` | `bolas` | `domain-architecture-review` | Domain-Driven Design, ownership boundaries, and architecture |
+| `Smaug / review` | `smaug` | `simplicity-and-code-truth-review` | Simplicity, code truth, consistency, and documentation |
+| `Balerion / review` | `balerion` | `security-and-runtime-risk-review` | Security, stability, concurrency, memory, and performance |
+
+Fletcher remains the `Fletcher / review` compatibility identity for
+`prompt-contract-review`; its workflow check naming is unchanged.
 
 The deterministic verification check fails when an applicable analysis or test
 fails. It directly needs Static analysis and Unit tests and evaluates their
