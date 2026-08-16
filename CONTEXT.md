@@ -17,6 +17,15 @@ The directory containing a Realm's `.atlas/`. It may be a Git worktree root or a
 **Realm Initialization**:
 The human-facing workflow that proposes a new minimal Realm for one Realm Host Directory. It establishes the Realm's orientation and baseline governance in an isolated Git worktree, may derive a small amount of cited founding knowledge, and ends in one reviewable pull request.
 
+**Agent Persona**:
+An optional named identity, display profile, and avatar that shape an agent's voice, tone, and visual or editorial flavor. A Persona carries no behavioral or governance authority and remains separate from the agent's Directive.
+
+**Agent Directive**:
+The literal statement of an agent role's objectives, responsibilities, allowed actions, constraints, and required handoffs. A Directive is precise instruction governed by Atlas contracts and Realm Laws, not character prose.
+
+**Realm Guide**:
+The Realm-owned caretaker and Realm Site chief marketing officer that guides navigation, narrates Rest, drafts Chronicle entries, and proactively stewards the knowledge store under human governance. Its Directive defines the work and proposal authority; its optional Agent Persona defines the flavor.
+
 **Realm Entry**:
 The shared preflight through which an Atlas skill identifies the Home Realm for the current Realm Host Directory, verifies tooling and schema compatibility, and loads only the instructions and context required by that operation. Entry classifies the Home Realm as ready, degraded, or blocked before the skill proceeds.
 
@@ -39,7 +48,7 @@ An Atlas-managed machine-scoped installation of a heavyweight replaceable tool u
 The normalized Git repository URL, branch, and Realm-relative path that identifies a tracked Realm. Normalization settles syntax only, never identity: host case, `.git` suffixes, trailing separators, embedded credentials, and equivalent SSH and HTTPS forms of one repository resolve together, while owner, repository, branch, and path remain significant.
 
 **Realm Slug**:
-The reference name of a tracked Realm, derived deterministically from its Realm Locator rather than chosen by a human. It combines host, owner, repository, and Realm-relative path, and names the branch only when it is not the repository default.
+The deterministic reference name of a Realm, derived from its Realm Locator rather than chosen by a human. It combines host, owner, repository, and Realm-relative path, names the branch only when it is not the repository default, and identifies the Realm in caches, cross-Realm references, and publication paths.
 
 **Realm Cache**:
 The generated, Git-ignored store beneath a Realm's `.atlas/` holding read-only working copies of tracked Realms, one flat entry per Realm Locator, materialized on first entry. Realm Cache entries are disposable data: they are never edited, executed, or used as a place from which a Realm is maintained.
@@ -67,6 +76,18 @@ The generated, disposable search state owned by one Realm Host Directory. It ind
 
 **Realm Chronicle**:
 The curated, human-readable history of notable knowledge changes in a Realm, kept as `.atlas/CHANGELOG.md`. One entry, identified by its stable operation ID, records one merged knowledge-changing operation and can be correlated with Git history. The Chronicle is history a newcomer can read, not an operational ledger and not synthesized knowledge.
+
+**Realm Site**:
+An optional, read-only static projection through which humans browse one Home Realm's published knowledge, governance, history, and evolution. It is derived from validated Realm state and is neither a raw `.atlas/` mirror nor an interactive Atlas runtime.
+
+**Publication Policy**:
+The human-authored declaration that enables a Realm Site and governs which Realm knowledge, Lore, locators, Persona assets, and connected-Realm links may be exposed. Publication-specific validation enforces it independently of Persona presentation.
+
+**Knowledge Health**:
+The Realm Site's current evidence-linked view of whether the published Realm Head passes a full Weave and how fresh its supporting Lore is. Structural, governance, and connection diagnostics explain those two headline signals without collapsing them into a composite score.
+
+**Knowledge Evolution**:
+The Realm Site's reconstruction of how a Realm's knowledge, evidence, graph, and governance changed across Chronicle operation IDs in Git history. It describes durable understanding rather than agent or contributor productivity.
 
 **Bonfire**:
 A human-approved, Realm-local conceptual landmark where related ideas strongly intersect. Gather and Weave may recommend Bonfires according to Realm policy, but agents do not establish them autonomously. A Bonfire provides cited orientation and named paths while Insights hold detailed understanding. A Bonfire may connect through a cross-Realm Thread to another Realm, but it is not authoritative source material.
