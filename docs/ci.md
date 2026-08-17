@@ -77,6 +77,12 @@ Focused commands are `npm run format:check`, `npm run lint`,
 `npm run workflow:lint`. Use `npm run cacophony:sync` only after editing a
 Persona, Directive, or composition reference.
 
+Future product TypeScript under `src/` participates in formatting, linting,
+strict type checking, tests, and the existing 100% product coverage gate.
+ESLint mechanically enforces the settled inward source dependency order from
+`domain` through `interfaces`, including keeping Node.js built-ins out of the
+application core.
+
 Coverage uses `--all` over every Atlas-owned tooling source under
 `scripts/**/*.ts`, so an unimported tool remains visible instead of disappearing
 from the report. The current tooling floors are 78% statements and lines, 68%
