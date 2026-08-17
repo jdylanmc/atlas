@@ -186,7 +186,7 @@ The adversarial review a semantic verdict must survive before it counts. A chall
 The stable completion summary returned by every Atlas skill. It identifies the operation, Home Realm and base snapshot, result or proposed changes, unresolved human decisions, validation or degradation state, review link when applicable, and recommended next action.
 
 **Realm Proposal**:
-The isolated branch, worktree, and pull request through which one knowledge-changing operation proposes changes to a Home Realm. A Realm Proposal is anchored to a base commit and must reconcile against the current target branch before it can merge.
+The isolated branch, worktree, and pull request through which one knowledge-changing operation or Framework Upgrade proposes changes to a Home Realm. A Framework Upgrade uses the same reconciliation and full Weave gate without changing Realm knowledge. A Realm Proposal is anchored to a base commit and must reconcile against the current target branch before it can merge.
 
 **Stale Realm Proposal**:
 A Realm Proposal whose target branch has advanced since its last successful reconciliation and full Weave. It cannot merge until Atlas rebases and revalidates it against the new target state.
