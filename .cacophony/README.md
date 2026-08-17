@@ -50,12 +50,11 @@ stages those verified base bytes over the relative workspace prompt before
 passing that path to Cacophony. The pinned action independently reads the path
 from the base revision. Cacophony accepts one `prompt-file`, so the generated
 file is tracked to preserve its native trusted-base loader and stable
-agent/report identifiers. The migration bootstrap may use only a validated
-legacy prompt already present in a base revision that predates the validator;
-it never executes validator code from the pull request. Historical
-`scripts/cacophony_agents.py` generator identifiers remain in generated prompts
-as byte-level compatibility metadata even though Atlas no longer ships or
-executes the Python implementation.
+agent/report identifiers. Every trusted base must contain the TypeScript
+validator; review workflows fail closed rather than falling back to prompt-only
+validation. Historical `scripts/cacophony_agents.py` generator identifiers
+remain in generated prompts as byte-level compatibility metadata even though
+Atlas no longer ships or executes the Python implementation.
 
 Because the worker stages the active reviewer's base prompt over its workspace
 path, reviewers inspect proposed `.cacophony/agents/*.md` content with

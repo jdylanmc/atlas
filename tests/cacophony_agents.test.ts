@@ -604,11 +604,6 @@ test("validator is directly executable and preserves command interfaces", () => 
 test("reusable worker verifies the base TypeScript composition", () => {
   const workflow = readWorkflow(".github/workflows/cacophony-review.yml");
   assert.match(workflow, /git show "\$BASE_SHA:scripts\/cacophony_agents.ts"/);
-  assert.match(
-    workflow,
-    /if git cat-file -e "\$BASE_SHA:scripts\/cacophony_agents.ts"/,
-  );
-  assert.match(workflow, /legacy trusted-base prompt bootstrap/);
   assert.match(workflow, /--revision "\$BASE_SHA"/);
   assert.match(workflow, /git show "\$BASE_SHA:\$prompt_path"/);
   assert.match(workflow, /install -m 0644 "\$trusted_prompt" "\$prompt_path"/);
@@ -617,6 +612,8 @@ test("reusable worker verifies the base TypeScript composition", () => {
     workflow,
     /prompt-file: \.cacophony\/agents\/\$\{\{ inputs\.agent-slug \}\}\.md/,
   );
+  assert.doesNotMatch(workflow, /legacy|bootstrap/i);
+  assert.doesNotMatch(workflow, /cacophony_agents\.py/);
   assert.doesNotMatch(workflow, /python3/);
 });
 
@@ -624,7 +621,6 @@ test("Fletcher and council validate the merge contract", () => {
   const fletcherWorkflow = readWorkflow(".github/workflows/council-fletcher.yml");
   const councilWorkflow = readWorkflow(".github/workflows/dragon-council.yml");
   assert.match(fletcherWorkflow, /--revision "\$MERGE_SHA"/);
-  assert.match(fletcherWorkflow, /Validator bootstrap detected/);
   assert.match(fletcherWorkflow, /"\.cacophony\/compositions.json"/);
   assert.match(fletcherWorkflow, /needs: prompt-contract/);
   assert.match(
@@ -632,8 +628,11 @@ test("Fletcher and council validate the merge contract", () => {
     new RegExp("permissions:\\n {2}actions: read\\n {2}contents: read"),
   );
   assert.match(councilWorkflow, /prompt_contract/);
-  assert.match(councilWorkflow, /Legacy trusted-base prompt bootstrap validated/);
   assert.match(councilWorkflow, /\[\[ "\$prompt_contract" == "success" \]\]/);
+  assert.doesNotMatch(fletcherWorkflow, /legacy|bootstrap/i);
+  assert.doesNotMatch(councilWorkflow, /legacy|bootstrap/i);
+  assert.doesNotMatch(fletcherWorkflow, /cacophony_agents\.py/);
+  assert.doesNotMatch(councilWorkflow, /cacophony_agents\.py/);
   assert.doesNotMatch(fletcherWorkflow, /python3/);
   assert.doesNotMatch(councilWorkflow, /python3/);
   for (const checkName of [
@@ -661,9 +660,20 @@ test("static analysis executes workflow lint from the trusted base", () => {
   assert.doesNotMatch(workflow, /node scripts\/run_actionlint.ts/);
   assert.match(workflow, /cp -R \/source\/\. \/workspace\//);
   assert.doesNotMatch(workflow, /cp -a \/source\/\. \/workspace\//);
-  assert.match(workflow, /\.scripts\.ci\?/);
+  assert.match(workflow, /npm ci --ignore-scripts && npm run ci/);
+  assert.match(workflow, /name: Run complete Node package gate/);
+  assert.doesNotMatch(workflow, /Inspect package CI contract/);
+  assert.doesNotMatch(workflow, /outcome=skipped/);
   assert.equal(typeof packageContract.scripts?.["ci"], "string");
-  assert.equal(typeof packageContract.scripts?.["test:coverage"], "string");
+  const toolingCoverage = packageContract.scripts?.["test:coverage"];
+  const productCoverage = packageContract.scripts?.["test:coverage:product"];
+  assert.equal(typeof toolingCoverage, "string");
+  assert.equal(typeof productCoverage, "string");
+  assert.match(String(toolingCoverage), /--all/);
+  assert.match(String(toolingCoverage), /--include "scripts\/\*\*\/\*\.ts"/);
+  assert.match(String(productCoverage), /--include "src\/\*\*\/\*\.ts"/);
+  assert.match(String(productCoverage), /--100/);
+  assert.match(String(packageContract.scripts?.["ci"]), /test:coverage:product/);
   assert.equal(packageContract.scripts?.["test"], undefined);
 });
 
@@ -701,23 +711,17 @@ test("workflows resolve nonempty current merge revision", () => {
   }
 });
 
-test("workflows preserve a nonexecuting legacy-base bootstrap", () => {
+test("trusted-base workflows require the TypeScript validator", () => {
   for (const path of [
     ".github/workflows/dragon-council.yml",
     ".github/workflows/cacophony-review.yml",
     ".github/workflows/council-fletcher.yml",
   ]) {
     const workflow = readWorkflow(path);
-    assert.match(
-      workflow,
-      /scripts\/cacophony_agents\.py/,
-      `${path} must detect the legacy base`,
-    );
-    assert.doesNotMatch(
-      workflow,
-      /git show "\$BASE_SHA:scripts\/cacophony_agents\.py" > "\$validator"/,
-      `${path} must not execute the legacy validator`,
-    );
+    assert.match(workflow, /git show "\$BASE_SHA:scripts\/cacophony_agents\.ts"/, path);
+    assert.match(workflow, /node "\$validator" verify-revision/, path);
+    assert.doesNotMatch(workflow, /cacophony_agents\.py/, path);
+    assert.doesNotMatch(workflow, /legacy|bootstrap/i, path);
     assert.doesNotMatch(workflow, /python3/, path);
   }
 });

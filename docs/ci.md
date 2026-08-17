@@ -63,9 +63,9 @@ npm run ci
 ```
 
 `npm run ci` performs deterministic Prettier checks, type-aware ESLint flat
-configuration, strict TypeScript checking with `erasableSyntaxOnly`, Node.js
-test-runner tests under c8 thresholds of 80% lines/statements, 65% branches, and
-95% functions, byte-exact Cacophony prompt validation, and Actionlint `1.7.7`.
+configuration, strict TypeScript checking with `erasableSyntaxOnly`, fail-closed
+Node.js test-runner coverage, byte-exact Cacophony prompt validation, and
+Actionlint `1.7.7`.
 The Actionlint launcher also pins ShellCheck `0.11.0`, disables Python-based
 Pyflakes integration, downloads only the assets for the current supported
 platform and architecture, and verifies their release checksums before
@@ -76,6 +76,14 @@ Focused commands are `npm run format:check`, `npm run lint`,
 `npm run atlas-sdk:validate`, `npm run cacophony:validate`, and
 `npm run workflow:lint`. Use `npm run cacophony:sync` only after editing a
 Persona, Directive, or composition reference.
+
+Coverage uses `--all` over every Atlas-owned tooling source under
+`scripts/**/*.ts`, so an unimported tool remains visible instead of disappearing
+from the report. The current tooling floors are 78% statements and lines, 68%
+branches, and 93% functions. A separate `src/**/*.ts` product gate is part of
+`npm run ci` with a 100% threshold. It is empty before the first product slice,
+then automatically enforces issue #76's requirement for every Atlas-authored
+TypeScript product file introduced under `src/`.
 
 The TypeScript validator imports only Node.js built-ins. A trusted workflow
 copies that one file from the pull request base commit and executes it with
@@ -96,15 +104,11 @@ immutable Cacophony action independently loads that same generated prompt
 directly from the base commit. Only the action receives the Azure credential,
 and each structured report is uploaded separately.
 
-During the one-time Node.js migration, a base revision without the TypeScript
-validator may use only its existing regular, size-bounded base prompts. A base
-that still contains `scripts/cacophony_agents.py` is recognized only as a
-transition marker; workflows do not execute it. Both the reusable worker and
-deterministic council evidence step validate the legacy prompt set without
-executing validator code from the pull request. Once the TypeScript validator
-exists in the base branch, the strict composition check is mandatory. The
-historical Python generator path remains embedded in generated prompt
-provenance solely to preserve their established bytes.
+The TypeScript validator is mandatory in every trusted base revision. The
+reusable worker and deterministic council evidence step fail closed if it
+cannot be materialized from the base commit; neither falls back to prompt-only
+validation. The historical Python generator path remains embedded in generated
+prompt provenance solely to preserve their established bytes.
 
 Fork pull requests fail closed; council execution is limited to branches in the
 Atlas repository.
@@ -135,13 +139,12 @@ checksum-verified Actionlint diagnostics, prompt-contract diagnostics, CodeQL
 SARIF, and exact base, head, and merge revisions into one immutable artifact.
 
 The package intentionally exposes the complete gate as `scripts.ci` rather than
-the npm `test` lifecycle alias. The pre-migration trusted-base workflow probes
-only `scripts.test`; it therefore skips executing the new package during this
-one bootstrap pull request instead of reaching its metadata-preserving sandbox
-copy bug. The migrated workflow probes `scripts.ci`, copies source without
-preserving read-only checkout metadata, and then runs the full gate. This
-transition cannot execute pull-request workflow changes because
-`pull_request_target` always loads its workflow from the trusted base.
+the npm `test` lifecycle alias. The trusted workflow always copies source
+without preserving read-only checkout metadata, installs the lockfile with
+lifecycle scripts disabled, and runs `npm run ci`. A missing or invalid package
+contract fails the job rather than skipping validation. Pull-request workflow
+changes cannot alter that execution because `pull_request_target` always loads
+its workflow from the trusted base.
 
 Only after collection finishes do Bolas, Smaug, and Balerion run in parallel on
 the `gpt-5.6-luna` deployment with 30-turn budgets. Each receives the workflow

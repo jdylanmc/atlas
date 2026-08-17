@@ -136,33 +136,14 @@ jobs:
           MERGE_SHA: ${{ needs.authorize.outputs.merge_sha }}
         run: |
           set -o pipefail
-          if git cat-file -e "$BASE_SHA:scripts/cacophony_agents.ts"; then
-            validator="$RUNNER_TEMP/cacophony_agents.ts"
-            git show "$BASE_SHA:scripts/cacophony_agents.ts" > "$validator"
-            chmod 0555 "$validator"
-            node "$validator" verify-revision \
-              --repository "$GITHUB_WORKSPACE" \
-              --revision "$MERGE_SHA" \
-              --agent fletcher 2>&1 |
-              tee "$RUNNER_TEMP/council-evidence/prompt-contract.log"
-          else
-            if git cat-file -e "$BASE_SHA:scripts/cacophony_agents.py"; then
-              echo "::notice::The trusted base predates the TypeScript validator; validating only its existing prompt blobs."
-            fi
-            for agent in balerion bolas fletcher smaug; do
-              prompt_path=".cacophony/agents/$agent.md"
-              prompt_type="$(git ls-tree "$BASE_SHA" -- "$prompt_path" | awk '{print $1 " " $2}')"
-              prompt_bytes="$(git cat-file -s "$BASE_SHA:$prompt_path")"
-              if [[ "$prompt_type" != "100644 blob" ]] ||
-                [[ ! "$prompt_bytes" =~ ^[0-9]+$ ]] ||
-                (( prompt_bytes > 131072 )); then
-                echo "::error::Legacy trusted-base prompt is missing, invalid, or oversized: $prompt_path"
-                exit 1
-              fi
-            done
-            echo "Legacy trusted-base prompt bootstrap validated; no pull request validator was executed." |
-              tee "$RUNNER_TEMP/council-evidence/prompt-contract.log"
-          fi
+          validator="$RUNNER_TEMP/cacophony_agents.ts"
+          git show "$BASE_SHA:scripts/cacophony_agents.ts" > "$validator"
+          chmod 0555 "$validator"
+          node "$validator" verify-revision \
+            --repository "$GITHUB_WORKSPACE" \
+            --revision "$MERGE_SHA" \
+            --agent fletcher 2>&1 |
+            tee "$RUNNER_TEMP/council-evidence/prompt-contract.log"
 
       - name: Detect JavaScript or TypeScript sources
         id: sources
@@ -254,10 +235,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
-      manifest: ${{ steps.manifest.outcome }}
       outcome: ${{ steps.result.outputs.outcome }}
       passed: ${{ steps.result.outputs.passed }}
-      tests: ${{ steps.manifest.outputs.tests }}
       unit: ${{ steps.unit.outcome }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -265,26 +244,8 @@ jobs:
           ref: ${{ needs.authorize.outputs.merge_sha }}
           persist-credentials: false
 
-      - name: Inspect package CI contract
-        id: manifest
-        continue-on-error: true
-        shell: bash
-        run: |
-          if [[ ! -f package.json ]]; then
-            echo "tests=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          jq -e . package.json > /dev/null
-          jq -r '
-            if (.scripts.ci? | type == "string" and length > 0)
-            then "tests=true"
-            else "tests=false"
-            end
-          ' package.json >> "$GITHUB_OUTPUT"
-
-      - name: Install dependencies and run unit tests
+      - name: Run complete Node package gate
         id: unit
-        if: steps.manifest.outcome == 'success' && steps.manifest.outputs.tests == 'true'
         continue-on-error: true
         shell: bash
         run: |
@@ -308,18 +269,10 @@ jobs:
         if: always()
         shell: bash
         env:
-          MANIFEST: ${{ steps.manifest.outcome }}
-          TESTS_PRESENT: ${{ steps.manifest.outputs.tests }}
           UNIT: ${{ steps.unit.outcome }}
         run: |
-          if [[ "$MANIFEST" != "success" ]]; then
-            outcome=invalid-package-manifest
-          elif [[ "$TESTS_PRESENT" != "true" ]]; then
-            outcome=skipped
-          else
-            outcome="$UNIT"
-          fi
-          if [[ "$outcome" == "success" || "$outcome" == "skipped" ]]; then
+          outcome="$UNIT"
+          if [[ "$outcome" == "success" ]]; then
             passed=true
           else
             passed=false

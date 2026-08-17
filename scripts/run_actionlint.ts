@@ -51,28 +51,32 @@ const SHELLCHECK_CHECKSUMS = {
 
 type SupportedShellCheckAsset = keyof typeof SHELLCHECK_CHECKSUMS;
 
-function platformName(): "darwin" | "linux" | "windows" {
-  if (process.platform === "darwin" || process.platform === "linux") {
-    return process.platform;
+export function platformName(
+  platform: NodeJS.Platform = process.platform,
+): "darwin" | "linux" | "windows" {
+  if (platform === "darwin" || platform === "linux") {
+    return platform;
   }
-  if (process.platform === "win32") {
+  if (platform === "win32") {
     return "windows";
   }
-  throw new Error(`Actionlint is not pinned for platform ${process.platform}`);
+  throw new Error(`Actionlint is not pinned for platform ${platform}`);
 }
 
-function architectureName(): "amd64" | "arm64" {
-  if (process.arch === "x64" || process.arch === "arm64") {
-    return ARCHES[process.arch];
+export function architectureName(
+  architecture: NodeJS.Architecture = process.arch,
+): "amd64" | "arm64" {
+  if (architecture === "x64" || architecture === "arm64") {
+    return ARCHES[architecture];
   }
-  throw new Error(`Actionlint is not pinned for architecture ${process.arch}`);
+  throw new Error(`Actionlint is not pinned for architecture ${architecture}`);
 }
 
-function sha256(data: Uint8Array): string {
+export function sha256(data: Uint8Array): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-async function downloadArchive(
+export async function downloadArchive(
   path: string,
   releaseBase: string,
   asset: string,
@@ -191,14 +195,31 @@ async function prepareShellCheck(): Promise<string> {
   return binaryPath;
 }
 
-async function main(): Promise<number> {
+type ActionlintDependencies = {
+  prepareActionlint: () => Promise<string>;
+  prepareShellCheck: () => Promise<string>;
+  execute: (
+    file: string,
+    args: readonly string[],
+    options: { cwd: string; stdio: "inherit" },
+  ) => unknown;
+};
+
+export async function runActionlint(
+  args: string[] = process.argv.slice(2),
+  dependencies: ActionlintDependencies = {
+    prepareActionlint,
+    prepareShellCheck,
+    execute: execFileSync,
+  },
+): Promise<number> {
   const [actionlintPath, shellCheckPath] = await Promise.all([
-    prepareActionlint(),
-    prepareShellCheck(),
+    dependencies.prepareActionlint(),
+    dependencies.prepareShellCheck(),
   ]);
-  execFileSync(
+  dependencies.execute(
     actionlintPath,
-    ["-shellcheck", shellCheckPath, "-pyflakes", "", ...process.argv.slice(2)],
+    ["-shellcheck", shellCheckPath, "-pyflakes", "", ...args],
     {
       cwd: REPOSITORY_ROOT,
       stdio: "inherit",
@@ -207,4 +228,6 @@ async function main(): Promise<number> {
   return 0;
 }
 
-process.exitCode = await main();
+if (import.meta.main) {
+  process.exitCode = await runActionlint();
+}
