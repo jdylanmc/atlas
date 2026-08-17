@@ -19,6 +19,7 @@ export type RealmLoadErrorCode =
   | "INVALID_BUDGET"
   | "INVALID_PATH"
   | "INVALID_UTF8"
+  | "SHARED_BYTES_NOT_ALLOWED"
   | "TOTAL_TOO_LARGE";
 
 const messages: Readonly<Record<RealmLoadErrorCode, string>> = Object.freeze({
@@ -27,6 +28,7 @@ const messages: Readonly<Record<RealmLoadErrorCode, string>> = Object.freeze({
   INVALID_BUDGET: "Realm byte budgets must be non-negative safe integers.",
   INVALID_PATH: "A captured Realm file has an invalid path.",
   INVALID_UTF8: "A captured Realm file is not valid UTF-8.",
+  SHARED_BYTES_NOT_ALLOWED: "Captured Realm file bytes must not use shared memory.",
   TOTAL_TOO_LARGE: "Captured Realm files exceed the total byte budget.",
 });
 
@@ -83,21 +85,17 @@ export function loadRealmText(
   capturedFiles: readonly CapturedRealmFile[],
   budgets: RealmTextBudgets,
 ): readonly RealmTextFile[] {
-  const copied = capturedFiles.map((file) => ({
-    bytes: new Uint8Array(file.bytes),
-    path: file.path,
-  }));
-  copied.sort((left, right) => compareCodePoints(left.path, right.path));
+  if (capturedFiles.some((file) => file.bytes.buffer instanceof SharedArrayBuffer)) {
+    throw new RealmLoadError("SHARED_BYTES_NOT_ALLOWED");
+  }
   assertBudgets(budgets);
 
-  const normalized = copied.map((file) => ({
+  const normalized = [...capturedFiles].map((file) => ({
     bytes: file.bytes,
     path: normalizePath(file.path),
   }));
   normalized.sort((left, right) => compareCodePoints(left.path, right.path));
 
-  const decoder = new TextDecoder("utf-8", { fatal: true });
-  const files: RealmTextFile[] = [];
   let previousPath: string | undefined;
   let totalBytes = 0;
   for (const file of normalized) {
@@ -112,7 +110,11 @@ export function loadRealmText(
     if (totalBytes > budgets.maxTotalBytes) {
       throw new RealmLoadError("TOTAL_TOO_LARGE");
     }
+  }
 
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const files: RealmTextFile[] = [];
+  for (const file of normalized) {
     let content: string;
     try {
       content = decoder.decode(file.bytes);

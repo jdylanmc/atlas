@@ -53,14 +53,19 @@ test("reversed input produces identical success and error results", () => {
   );
 
   const invalid = [
-    captured(".atlas/z.md", "valid"),
+    {
+      bytes: new Uint8Array([0xc3, 0x28]),
+      path: ".atlas/z.md",
+    },
     captured(".atlas/a.md", "oversized"),
   ];
   const budgets = { maxFileBytes: 4, maxTotalBytes: 100 };
+  const forwardError = errorCode(() => loadRealmText(invalid, budgets));
   assert.equal(
-    errorCode(() => loadRealmText(invalid, budgets)),
+    forwardError,
     errorCode(() => loadRealmText([...invalid].reverse(), budgets)),
   );
+  assert.equal(forwardError, "FILE_TOO_LARGE");
 });
 
 test("normalizes paths and rejects duplicate normalized paths", () => {
@@ -95,7 +100,7 @@ test("rejects absolute, traversal, backslash, and non-Realm paths", () => {
   }
 });
 
-test("copies caller records and bytes without mutation aliases", () => {
+test("returned text has no caller mutation aliases", () => {
   const bytes = encoder.encode("original");
   const input: CapturedRealmFile[] = [{ bytes, path: ".atlas/index.md" }];
   const loaded = loadRealmText(input, BUDGETS);
@@ -103,6 +108,14 @@ test("copies caller records and bytes without mutation aliases", () => {
   bytes.fill(0);
   input[0] = captured(".atlas/changed.md", "changed");
   assert.deepEqual(loaded, [{ content: "original", path: ".atlas/index.md" }]);
+});
+
+test("rejects bytes backed by shared memory", () => {
+  const bytes = new Uint8Array(new SharedArrayBuffer(4));
+  assert.equal(
+    errorCode(() => loadRealmText([{ bytes, path: ".atlas/shared.md" }], BUDGETS)),
+    "SHARED_BYTES_NOT_ALLOWED",
+  );
 });
 
 test("strictly rejects invalid UTF-8", () => {
