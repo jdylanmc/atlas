@@ -371,6 +371,26 @@ test("JSON value schema accepts only nested JSON-compatible values", () => {
   }
 });
 
+test("validates canonical date-time calendar and clock values", () => {
+  const withCreatedAt = (timestamp: string): RealmTextFile =>
+    text(
+      ".atlas/index.md",
+      validPage("bonfire:root").replace("2026-08-17T00:00:00Z", timestamp),
+    );
+
+  assert.equal(parseRealmPages([withCreatedAt("2024-02-29T23:59:59Z")]).length, 1);
+  for (const timestamp of [
+    "not-a-date",
+    "2026-99-99T00:00:00Z",
+    "2026-02-30T00:00:00Z",
+    "2026-01-01T24:00:00Z",
+    "2026-01-01T00:60:00Z",
+    "2026-01-01T00:00:60Z",
+  ]) {
+    assert.equal(parseError(withCreatedAt(timestamp)).code, "INVALID_PAGE_ENVELOPE");
+  }
+});
+
 test("accepts an empty body after an end-of-file delimiter", () => {
   const [parsed] = parseRealmPages([
     text(".atlas/index.md", validPage("bonfire:root")),
