@@ -39,13 +39,13 @@ The Realm owned by the current Realm Host Directory and identified by Realm Entr
 The canonical upstream Home Realm of the Atlas repository, displayed as **Atlas SDK** and identified by the Realm Slug `atlas-sdk`. It maintains cited knowledge about Atlas's purpose, architecture, implementation, onboarding, operation, and use, while Framework Releases carry its enforceable core contracts into sovereign Realms. Its deployed Realm Site is the canonical destination linked by other Realms when explaining Atlas. Merlin is its designated Realm Guide.
 
 **Framework Bundle**:
-The Atlas-owned, portable baseline committed inside a Realm. Its manifest-owned files are complete immutable units containing the instructions, contracts, and maintenance tooling that make the Realm operable without joining the host application's dependency ecosystem.
+The Atlas-owned, portable baseline committed inside a Realm. It contains the installed Framework Release Manifest and that manifest's complete inventory of Atlas-owned files, whose bytes remain immutable while the release is pinned. Together they provide the instructions, contracts, and maintenance tooling that make the Realm operable without joining the host application's dependency ecosystem, and an upgrade replaces them atomically as one governed unit.
 
 **Framework Release**:
 One exact version of the Atlas-owned runtime, core contracts, packaged skills, templates, and adapters from which a Realm's Framework Bundle is derived. A Home Realm pins one Framework Release while its Realm Schema evolves independently.
 
 **Framework Release Manifest**:
-The immutable inventory and compatibility contract for one Framework Release. It identifies every complete Atlas-owned file and digest, supported environments and Realm contracts, and the explicit migration paths to and from other supported releases.
+The immutable inventory and compatibility contract included in one Framework Release and installed in its Framework Bundle. It identifies every complete Atlas-owned file and its digest, supported environments and Realm contracts, and the explicit migration paths to and from other supported releases.
 
 **Framework Upgrade**:
 The governed workflow that replaces a Home Realm's pinned Framework Release as one isolated, fully Woven Realm Proposal while preserving Realm-owned state. A completed upgrade operation has proposed the change for review; the target release becomes active only when that proposal merges.
