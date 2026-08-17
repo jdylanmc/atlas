@@ -140,7 +140,7 @@ test("Merlin persona rejects imperative workflow examples", () => {
       "Realm Refresh updates the Realm Cache to the tracked branch tip, so a subsequent operation can resolve a new Realm Snapshot while the original Realm Snapshot remains unchanged.",
       "The tracked Realm Snapshot is stale; perform Realm Refresh.",
     ],
-  ]) {
+  ] as const) {
     const changed = PERSONA_TEXT.replace(original, imperative);
     assert.throws(() => validatePersona(changed), /imperative workflow language/);
   }

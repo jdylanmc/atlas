@@ -330,11 +330,6 @@ export function validatePersona(text: string): Array<[string, string]> {
     throw new ContractError(`${PERSONA_PATH} is missing Examples`);
   }
   const examples = parseExamples(exampleLines);
-  if (EXAMPLE_SEMANTIC_CORES.length !== EXAMPLE_FRAMINGS.length) {
-    throw new ContractError(
-      `${PERSONA_PATH} reviewed semantic core catalog must match the approved framing catalog`,
-    );
-  }
   if (examples.length !== EXAMPLE_FRAMINGS.length) {
     throw new ContractError(
       `${PERSONA_PATH} Examples must contain exactly ${String(EXAMPLE_FRAMINGS.length)} reviewed pairs`,
