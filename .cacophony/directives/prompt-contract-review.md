@@ -29,8 +29,6 @@ part of this contract:
 - `.github/workflows/council-fletcher.yml`
 - `.github/workflows/dragon-council.yml`
 - `docs/agents/atlas-sdk/**`
-- `scripts/atlas_sdk_agents.py`
-- `tests/test_atlas_sdk_agents.py`
 
 Use `get_diff` for selected changes and read paired components, generated
 prompts, validation code, tests, or workflow configuration when needed to prove

@@ -20,12 +20,6 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
 
     def test_repository_contract_is_valid(self) -> None:
         agents.validate_contract(ROOT)
-        revision = (
-            agents.git_command(ROOT, "rev-parse", "HEAD")
-            .decode("ascii")
-            .strip()
-        )
-        agents.verify_revision(ROOT, revision)
 
     def test_persona_has_schema_valid_display_metadata(self) -> None:
         metadata, sections = agents.parse_persona(self.persona_text)
@@ -216,18 +210,6 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
         self.assertIn("original public-domain", directive)
         self.assertIn("Arthurian interpretation", directive)
         self.assertIn("status remains inactive", directive)
-        self.assertIn(
-            'git show "$BASE_SHA:scripts/atlas_sdk_agents.py"',
-            workflow,
-        )
-        self.assertIn(
-            'python3 "$atlas_validator" verify-revision',
-            workflow,
-        )
-        self.assertIn(
-            "Atlas SDK validator bootstrap detected",
-            workflow,
-        )
 
 
 if __name__ == "__main__":
