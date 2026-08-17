@@ -162,7 +162,7 @@ IMPERATIVE_WORKFLOW_PATTERN = re.compile(
     r"(?:please\s+)?(?:do\s+not\s+|don't\s+|never\s+)?"
     r"(?:run|perform|execute|approve|reject|write|modify|delete|create|"
     r"initialize|activate|refresh|open|merge|validate|use|submit|ensure|"
-    r"keep|follow)\b",
+    r"keep|follow|review|check)\b",
     re.IGNORECASE,
 )
 MODERN_ADAPTATION_TERMS = (
@@ -303,6 +303,22 @@ def parse_examples(lines: list[str]) -> tuple[tuple[str, str], ...]:
     return tuple(pairs)
 
 
+def validate_example_language(label: str, value: str) -> None:
+    authority_scan = re.sub(r"`[^`\n]+`", "", value)
+    authority = EXAMPLE_AUTHORITY_PATTERN.search(authority_scan)
+    if authority:
+        raise ContractError(
+            f"{PERSONA_PATH} {label} example contains behavioral "
+            f"authority or prompt injection: {authority.group(0)!r}"
+        )
+    imperative = IMPERATIVE_WORKFLOW_PATTERN.search(value)
+    if imperative:
+        raise ContractError(
+            f"{PERSONA_PATH} {label} example contains imperative "
+            f"workflow language: {imperative.group(0).strip()!r}"
+        )
+
+
 def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
     document: dict[str, object] = {}
     for key, value in pairs:
@@ -359,19 +375,7 @@ def validate_persona(text: str) -> tuple[tuple[str, str], ...]:
         EXAMPLE_FRAMINGS,
         EXAMPLE_SEMANTIC_CORES,
     ):
-        for label, value in (("Plain", plain),):
-            authority = EXAMPLE_AUTHORITY_PATTERN.search(value)
-            if authority:
-                raise ContractError(
-                    f"{PERSONA_PATH} {label} example contains behavioral "
-                    f"authority or prompt injection: {authority.group(0)!r}"
-                )
-            imperative = IMPERATIVE_WORKFLOW_PATTERN.search(value)
-            if imperative:
-                raise ContractError(
-                    f"{PERSONA_PATH} {label} example contains imperative "
-                    f"workflow language: {imperative.group(0).strip()!r}"
-                )
+        validate_example_language("Plain", plain)
         if plain != semantic_core:
             raise ContractError(
                 f"{PERSONA_PATH} Plain example must use its approved "
@@ -382,19 +386,7 @@ def validate_persona(text: str) -> tuple[tuple[str, str], ...]:
                 f"{PERSONA_PATH} Persona example must use its approved framing "
                 "followed by the complete Plain semantic core verbatim"
             )
-        for label, value in (("Persona", persona),):
-            authority = EXAMPLE_AUTHORITY_PATTERN.search(value)
-            if authority:
-                raise ContractError(
-                    f"{PERSONA_PATH} {label} example contains behavioral "
-                    f"authority or prompt injection: {authority.group(0)!r}"
-                )
-            imperative = IMPERATIVE_WORKFLOW_PATTERN.search(value)
-            if imperative:
-                raise ContractError(
-                    f"{PERSONA_PATH} {label} example contains imperative "
-                    f"workflow language: {imperative.group(0).strip()!r}"
-                )
+        validate_example_language("Persona", persona)
         plain_tokens = re.findall(r"`[^`\n]+`", plain)
         persona_tokens = re.findall(r"`[^`\n]+`", persona)
         if plain_tokens != persona_tokens:

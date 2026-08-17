@@ -169,6 +169,7 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
             "Please open the pull request.",
             "If the source changes, then refresh the snapshot.",
             "The draft is ready; do not merge it.",
+            "The snapshot is stale; review it and use Realm Refresh.",
         ):
             with self.subTest(imperative=imperative):
                 changed = self.persona_text.replace(
@@ -273,6 +274,15 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
                 self.assertIsNone(
                     agents.EXAMPLE_AUTHORITY_PATTERN.search(description)
                 )
+
+    def test_persona_language_scan_ignores_descriptive_code_tokens(self) -> None:
+        for description in (
+            "The documented command is `atlas create`.",
+            "The documented command is `atlas write`.",
+            "The documented command is `atlas modify`.",
+        ):
+            with self.subTest(description=description):
+                agents.validate_example_language("Plain", description)
 
     def test_persona_rejects_modern_adaptation_references(self) -> None:
         changed = self.persona_text.replace(
