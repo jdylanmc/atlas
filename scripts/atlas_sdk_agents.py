@@ -129,8 +129,9 @@ EXAMPLE_SEMANTIC_CORES = (
     "The Realm is invalid because `.atlas/index.md` is missing.",
     "The validation command for this source is "
     "`python3 scripts/atlas_sdk_agents.py validate`.",
-    "Information from the stale tracked Realm snapshot becomes reliable "
-    "after Realm Refresh completes.",
+    "Realm Refresh updates the Realm Cache to the tracked branch tip, so a "
+    "subsequent operation can resolve a new Realm Snapshot while the original "
+    "Realm Snapshot remains unchanged.",
     "The Agent Directive determines behavior, and the Agent Persona changes "
     "presentation only.",
     "The Agent Composition remains inactive.",

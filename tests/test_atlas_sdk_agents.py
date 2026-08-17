@@ -149,8 +149,9 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
                 "Run `python3 scripts/atlas_sdk_agents.py validate`.",
             ),
             (
-                "Information from the stale tracked Realm snapshot becomes "
-                "reliable after Realm Refresh completes.",
+                "Realm Refresh updates the Realm Cache to the tracked branch "
+                "tip, so a subsequent operation can resolve a new Realm "
+                "Snapshot while the original Realm Snapshot remains unchanged.",
                 "The tracked Realm snapshot is stale; perform Realm Refresh.",
             ),
         )
@@ -265,7 +266,8 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
     def test_persona_allows_descriptive_workflow_language(self) -> None:
         examples = (
             "The latest validation run reported no Findings.",
-            "Realm Refresh completes before stale information becomes reliable.",
+            "Realm Refresh updates the Realm Cache without changing an "
+            "existing Realm Snapshot.",
             "Opening the pull request starts review.",
             "The Realm performs validation automatically.",
             "The validation command may fail when the source is invalid.",
@@ -278,6 +280,16 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
                 self.assertIsNone(
                     agents.EXAMPLE_AUTHORITY_PATTERN.search(description)
                 )
+
+    def test_persona_preserves_realm_snapshot_immutability(self) -> None:
+        refresh_example = agents.validate_persona(self.persona_text)[2][0]
+        self.assertIn("updates the Realm Cache", refresh_example)
+        self.assertIn("subsequent operation", refresh_example)
+        self.assertIn("resolve a new Realm Snapshot", refresh_example)
+        self.assertIn(
+            "original Realm Snapshot remains unchanged",
+            refresh_example,
+        )
 
     def test_persona_language_scan_ignores_descriptive_code_tokens(self) -> None:
         for description in (
