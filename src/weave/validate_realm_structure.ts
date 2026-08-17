@@ -5,7 +5,6 @@ import type {
 } from "mdast-util-from-markdown";
 import type { Nodes } from "mdast";
 import { gfmFootnoteFromMarkdown } from "mdast-util-gfm-footnote";
-import { toString } from "mdast-util-to-string";
 import type { Token } from "micromark-util-types";
 import { gfmFootnote } from "micromark-extension-gfm-footnote";
 import { syntax as wikiLinkSyntax } from "micromark-extension-wiki-link";
@@ -40,6 +39,7 @@ type SourceRange = {
   readonly start: number;
 };
 type MarkdownNode = {
+  readonly alt?: string;
   readonly children?: readonly MarkdownNode[];
   readonly identifier?: string;
   readonly position?: MarkdownPosition;
@@ -220,6 +220,24 @@ function customTypeName(path: string): string | undefined {
   return /^\.atlas\/types\/([^/]+)\/.+\.md$/u.exec(path)?.[1];
 }
 
+function visibleHeadingText(heading: MarkdownNode): string {
+  const parts: string[] = [];
+  const pending: MarkdownNode[] = [heading];
+  while (pending.length > 0) {
+    const node = pending.pop() as MarkdownNode;
+    if ("value" in node) {
+      parts.push(node.value);
+      continue;
+    }
+    if ("alt" in node && node.alt) {
+      parts.push(node.alt);
+      continue;
+    }
+    pushChildren(pending, node);
+  }
+  return parts.join("");
+}
+
 function markdownHeadingFinding(
   parsed: ParsedRealmPage,
   content: string,
@@ -248,7 +266,9 @@ function markdownHeadingFinding(
       location,
     );
   }
-  if (toString(first) === parsed.page.atlas.title) return undefined;
+  if (visibleHeadingText(first as MarkdownNode) === parsed.page.atlas.title) {
+    return undefined;
+  }
   const position = first.position as NonNullable<typeof first.position>;
   return finding(
     "ATLAS_PAGE_TITLE_H1_MISMATCH",
@@ -303,6 +323,7 @@ type CitationMarker = {
 type MarkerCell = {
   readonly character: string;
   readonly end: number;
+  readonly escaped: boolean;
   readonly start: number;
 };
 
@@ -340,16 +361,21 @@ function nodeRange(node: MarkdownNode): SourceRange {
  */
 function markerCells(source: string): readonly MarkerCell[] {
   const cells: MarkerCell[] = [];
+  let backslashes = 0;
   let index = 0;
   while (index < source.length) {
     characterReference.lastIndex = index;
     const reference = source[index] === "&" ? characterReference.exec(source) : null;
     const end = reference === null ? index + 1 : index + reference[0].length;
+    const character =
+      reference === null ? (source[index] as string) : ambiguousCharacter;
     cells.push({
-      character: reference === null ? (source[index] as string) : ambiguousCharacter,
+      character,
       end,
+      escaped: backslashes % 2 === 1,
       start: index,
     });
+    backslashes = reference === null && character === "\\" ? backslashes + 1 : 0;
     index = end;
   }
   return cells;
@@ -357,14 +383,6 @@ function markerCells(source: string): readonly MarkerCell[] {
 
 function rendersAs(cell: MarkerCell, character: string): boolean {
   return cell.character === character || cell.character === ambiguousCharacter;
-}
-
-function isEscaped(source: string, offset: number): boolean {
-  let escapes = 0;
-  for (let before = offset - 1; before >= 0 && source[before] === "\\"; before -= 1) {
-    escapes += 1;
-  }
-  return escapes % 2 === 1;
 }
 
 function citationMarkers(
@@ -375,19 +393,19 @@ function citationMarkers(
   const markers: CitationMarker[] = [];
   const source = body.slice(range.start, range.end);
   const cells = markerCells(source);
+  const nextClose = new Int32Array(cells.length);
+  let nearestClose = -1;
+  for (let index = cells.length - 1; index >= 0; index -= 1) {
+    if (rendersAs(cells[index] as MarkerCell, "]")) nearestClose = index;
+    nextClose[index] = nearestClose;
+  }
   for (let index = 0; index + 3 < cells.length; index += 1) {
     const open = cells[index] as MarkerCell;
     if (!rendersAs(open, "[") || !rendersAs(cells[index + 1] as MarkerCell, "^")) {
       continue;
     }
-    if (escapable && isEscaped(source, open.start)) continue;
-    let close = -1;
-    for (let scan = index + 2; scan < cells.length; scan += 1) {
-      if (rendersAs(cells[scan] as MarkerCell, "]")) {
-        close = scan;
-        break;
-      }
-    }
+    if (escapable && open.escaped) continue;
+    const close = nextClose[index + 2] as number;
     if (close < index + 3) continue;
     const identifier = source.slice(
       (cells[index + 2] as MarkerCell).start,

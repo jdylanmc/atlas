@@ -724,6 +724,32 @@ test("validates deeply nested CommonMark without exhausting the stack", () => {
   );
 });
 
+test("validates deeply nested inline H1 formatting without exhausting the stack", () => {
+  const depth = 8000;
+  const title = `${"a ".repeat(depth)}Page${" a".repeat(depth)}`;
+  const body = `# ${"*a ".repeat(depth)}![Page](image.png)${" a*".repeat(depth)}`;
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      page(".atlas/insights/deep-heading.md", body, { title }),
+    ]),
+    [],
+  );
+});
+
+test("handles repeated unterminated Citation prefixes deterministically", () => {
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      page(
+        ".atlas/insights/unterminated-citations.md",
+        `# Page\n\n${"[^".repeat(50_000)}`,
+      ),
+    ]),
+    [],
+  );
+});
+
 test("fails closed on encoded and escaped Citation markers in raw HTML", () => {
   const body = [
     "# Page",
