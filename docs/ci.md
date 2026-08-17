@@ -77,6 +77,19 @@ Focused commands are `npm run format:check`, `npm run lint`,
 `npm run workflow:lint`. Use `npm run cacophony:sync` only after editing a
 Persona, Directive, or composition reference.
 
+The first product slice exposes the canonical source-tree Weave command:
+
+```sh
+npm run atlas -- weave --json --realm <realm-host-directory>
+```
+
+Machine mode returns `atlas.operation-result/v1` and always includes an
+`atlas.operation-handoff/v1`. Structural Realm failures are blocked results
+with ordered, attributed Findings; unexpected loading faults fail closed.
+ESLint module-specific import restrictions enforce the settled inward
+`domain` → `realm` → `graph` → `weave` → `operations` → `platform` →
+`adapters` → `framework` → `interfaces` dependency direction.
+
 Coverage uses `--all` over every Atlas-owned tooling source under
 `scripts/**/*.ts`, so an unimported tool remains visible instead of disappearing
 from the report. The current tooling floors are 78% statements and lines, 68%

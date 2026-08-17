@@ -1,0 +1,6 @@
+atlas-schema: 1.0.0
+realm:
+  id: realm:atlas-minimal
+  title: Atlas Minimal Realm
+realm-schema: 1.0.0
+schema: atlas.realm-manifest/v1
