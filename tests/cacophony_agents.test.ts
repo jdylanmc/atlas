@@ -665,7 +665,15 @@ test("static analysis executes workflow lint from the trusted base", () => {
   assert.doesNotMatch(workflow, /Inspect package CI contract/);
   assert.doesNotMatch(workflow, /outcome=skipped/);
   assert.equal(typeof packageContract.scripts?.["ci"], "string");
-  assert.equal(typeof packageContract.scripts?.["test:coverage"], "string");
+  const toolingCoverage = packageContract.scripts?.["test:coverage"];
+  const productCoverage = packageContract.scripts?.["test:coverage:product"];
+  assert.equal(typeof toolingCoverage, "string");
+  assert.equal(typeof productCoverage, "string");
+  assert.match(String(toolingCoverage), /--all/);
+  assert.match(String(toolingCoverage), /--include "scripts\/\*\*\/\*\.ts"/);
+  assert.match(String(productCoverage), /--include "src\/\*\*\/\*\.ts"/);
+  assert.match(String(productCoverage), /--100/);
+  assert.match(String(packageContract.scripts?.["ci"]), /test:coverage:product/);
   assert.equal(packageContract.scripts?.["test"], undefined);
 });
 

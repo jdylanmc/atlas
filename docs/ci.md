@@ -63,9 +63,9 @@ npm run ci
 ```
 
 `npm run ci` performs deterministic Prettier checks, type-aware ESLint flat
-configuration, strict TypeScript checking with `erasableSyntaxOnly`, Node.js
-test-runner tests under c8 thresholds of 80% lines/statements, 65% branches, and
-95% functions, byte-exact Cacophony prompt validation, and Actionlint `1.7.7`.
+configuration, strict TypeScript checking with `erasableSyntaxOnly`, fail-closed
+Node.js test-runner coverage, byte-exact Cacophony prompt validation, and
+Actionlint `1.7.7`.
 The Actionlint launcher also pins ShellCheck `0.11.0`, disables Python-based
 Pyflakes integration, downloads only the assets for the current supported
 platform and architecture, and verifies their release checksums before
@@ -76,6 +76,14 @@ Focused commands are `npm run format:check`, `npm run lint`,
 `npm run atlas-sdk:validate`, `npm run cacophony:validate`, and
 `npm run workflow:lint`. Use `npm run cacophony:sync` only after editing a
 Persona, Directive, or composition reference.
+
+Coverage uses `--all` over every Atlas-owned tooling source under
+`scripts/**/*.ts`, so an unimported tool remains visible instead of disappearing
+from the report. The current tooling floors are 78% statements and lines, 68%
+branches, and 93% functions. A separate `src/**/*.ts` product gate is part of
+`npm run ci` with a 100% threshold. It is empty before the first product slice,
+then automatically enforces issue #76's requirement for every Atlas-authored
+TypeScript product file introduced under `src/`.
 
 The TypeScript validator imports only Node.js built-ins. A trusted workflow
 copies that one file from the pull request base commit and executes it with
