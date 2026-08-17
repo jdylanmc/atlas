@@ -39,10 +39,16 @@ The Realm owned by the current Realm Host Directory and identified by Realm Entr
 The canonical upstream Home Realm of the Atlas repository, displayed as **Atlas SDK** and identified by the Realm Slug `atlas-sdk`. It maintains cited knowledge about Atlas's purpose, architecture, implementation, onboarding, operation, and use, while Framework Releases carry its enforceable core contracts into sovereign Realms. Its deployed Realm Site is the canonical destination linked by other Realms when explaining Atlas. Merlin is its designated Realm Guide.
 
 **Framework Bundle**:
-The Atlas-owned, portable baseline committed inside a Realm. It contains the instructions, contracts, and maintenance tooling that make the Realm operable without joining the host application's dependency ecosystem, and it is replaced as a governed unit by Atlas upgrades.
+The Atlas-owned, portable baseline committed inside a Realm. Its manifest-owned files are complete immutable units containing the instructions, contracts, and maintenance tooling that make the Realm operable without joining the host application's dependency ecosystem.
 
 **Framework Release**:
 One exact version of the Atlas-owned runtime, core contracts, packaged skills, templates, and adapters from which a Realm's Framework Bundle is derived. A Home Realm pins one Framework Release while its Realm Schema evolves independently.
+
+**Framework Release Manifest**:
+The immutable inventory and compatibility contract for one Framework Release. It identifies every complete Atlas-owned file and digest, supported environments and Realm contracts, and the explicit migration paths to and from other supported releases.
+
+**Framework Upgrade**:
+The governed workflow that replaces a Home Realm's pinned Framework Release as one isolated, fully Woven Realm Proposal while preserving Realm-owned state. A completed upgrade operation has proposed the change for review; the target release becomes active only when that proposal merges.
 
 **Check SDK**:
 The Framework Release's typed, read-only interface for Realm-owned deterministic checks. It exposes the parsed Home Realm model and graph-oriented utilities so checks express Realm-specific invariants without parsing knowledge files or acquiring host dependencies.
