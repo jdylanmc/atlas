@@ -1,0 +1,4 @@
+freshness:
+  default: P30D
+source-authorities:
+  - official
