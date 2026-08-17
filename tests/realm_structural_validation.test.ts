@@ -698,6 +698,138 @@ test("validates Citation markers in link labels and rejects raw HTML markers", (
   );
 });
 
+test("validates deeply nested CommonMark without exhausting the stack", () => {
+  const findings = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    page(".atlas/insights/deep.md", `${"> ".repeat(8000)}Claim.[^missing]`),
+  ]);
+  assert.deepEqual(
+    findings.map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_PAGE_TITLE_H1_REQUIRED",
+        location: {
+          end: { column: 16017, line: 15 },
+          start: { column: 1, line: 15 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 16017, line: 15 },
+          start: { column: 16007, line: 15 },
+        },
+      },
+    ],
+  );
+});
+
+test("fails closed on encoded and escaped Citation markers in raw HTML", () => {
+  const body = [
+    "# Page",
+    "",
+    "<div>&#91;^encoded]</div>",
+    "",
+    "<div>&#x5B;^hex]</div>",
+    "",
+    "<div>Tom &amp; Jerry &  Co.</div>",
+    "",
+    "<div>Trailing [^open</div>",
+    "",
+    'Inline <span title="\\[^escaped-html]">text</span>.',
+    "",
+    "<!-- \\[^comment] -->",
+  ].join("\n");
+  const findings = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    page(".atlas/insights/page.md", body),
+  ]);
+  assert.deepEqual(
+    findings.map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
+        location: {
+          end: { column: 20, line: 17 },
+          start: { column: 6, line: 17 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
+        location: {
+          end: { column: 17, line: 19 },
+          start: { column: 6, line: 19 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
+        location: {
+          end: { column: 37, line: 25 },
+          start: { column: 22, line: 25 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
+        location: {
+          end: { column: 17, line: 27 },
+          start: { column: 7, line: 27 },
+        },
+      },
+    ],
+  );
+});
+
+test("validates rendered wiki-link alias text for titles and Citations", () => {
+  const spoofed = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    page(".atlas/insights/spoof.md", "# [[Trusted Title|Spoofed Heading]]", {
+      title: "Trusted Title",
+    }),
+  ]);
+  assert.deepEqual(
+    spoofed.map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_PAGE_TITLE_H1_MISMATCH",
+        location: {
+          end: { column: 36, line: 15 },
+          start: { column: 1, line: 15 },
+        },
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      page(".atlas/insights/honest.md", "# [[Trusted Title]]", {
+        title: "Trusted Title",
+      }),
+    ]),
+    [],
+  );
+
+  const aliased = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    page(
+      ".atlas/insights/aliased.md",
+      "# Page\n\nClaim [[.atlas/lore/parser-source|see [^missing] note]].",
+    ),
+  ]);
+  assert.deepEqual(
+    aliased.map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 49, line: 17 },
+          start: { column: 39, line: 17 },
+        },
+      },
+    ],
+  );
+});
+
 test("supports extensible attribution with severity as the only state", () => {
   const base = {
     code: "REALM_CHECK_EXAMPLE",

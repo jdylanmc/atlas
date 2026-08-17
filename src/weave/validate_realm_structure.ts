@@ -35,16 +35,24 @@ type MarkdownPosition = {
     readonly offset?: number;
   };
 };
+type SourceRange = {
+  readonly end: number;
+  readonly start: number;
+};
 type MarkdownNode = {
   readonly children?: readonly MarkdownNode[];
   readonly identifier?: string;
   readonly position?: MarkdownPosition;
+  readonly target?: string;
   readonly type: string;
   readonly value?: string;
+  readonly visible?: SourceRange;
 };
 type MutableWikiLinkNode = {
+  target: string;
   type: "wikiLink";
   value: string;
+  visible: SourceRange;
 };
 
 const attribution = Object.freeze({
@@ -76,10 +84,20 @@ const coreTypeNames: ReadonlySet<string> = new Set(Object.values(corePathTypes))
 
 function wikiLinkFromMarkdown(): MdastExtension {
   let current: MutableWikiLinkNode | undefined;
+  function rendered(context: CompileContext, token: Token): void {
+    const node = current as MutableWikiLinkNode;
+    node.value = context.sliceSerialize(token);
+    node.visible = { end: token.end.offset, start: token.start.offset };
+  }
   return {
     enter: {
       wikiLink(this: CompileContext, token: Token): void {
-        current = { type: "wikiLink", value: "" };
+        current = {
+          target: "",
+          type: "wikiLink",
+          value: "",
+          visible: { end: 0, start: 0 },
+        };
         this.enter(current as unknown as Nodes, token);
       },
     },
@@ -88,8 +106,12 @@ function wikiLinkFromMarkdown(): MdastExtension {
         this.exit(token);
         current = undefined;
       },
+      wikiLinkAlias(this: CompileContext, token: Token): void {
+        rendered(this, token);
+      },
       wikiLinkTarget(this: CompileContext, token: Token): void {
-        (current as MutableWikiLinkNode).value = this.sliceSerialize(token);
+        (current as MutableWikiLinkNode).target = this.sliceSerialize(token);
+        rendered(this, token);
       },
     },
   };
@@ -265,13 +287,23 @@ function visitMarkdown(
   node: MarkdownNode,
   visitor: (node: MarkdownNode) => void,
 ): void {
-  visitor(node);
-  for (const child of node.children ?? []) visitMarkdown(child, visitor);
+  const pending: MarkdownNode[] = [node];
+  while (pending.length > 0) {
+    const current = pending.pop() as MarkdownNode;
+    visitor(current);
+    pushChildren(pending, current);
+  }
 }
 
 type CitationMarker = {
   readonly identifier: string;
   readonly position: MarkdownPosition;
+};
+
+type MarkerCell = {
+  readonly character: string;
+  readonly end: number;
+  readonly start: number;
 };
 
 const hiddenNodeTypes: ReadonlySet<string> = new Set([
@@ -282,28 +314,93 @@ const hiddenNodeTypes: ReadonlySet<string> = new Set([
   "inlineCode",
 ]);
 const labelNodeTypes: ReadonlySet<string> = new Set(["link", "linkReference"]);
+const ambiguousCharacter = "\u0000";
+const characterReference =
+  /&(?:#\d{1,7}|#[Xx][\dA-Fa-f]{1,6}|[A-Za-z][\dA-Za-z]{0,31});/uy;
+
+function pushChildren(pending: MarkdownNode[], node: MarkdownNode): void {
+  const children = node.children ?? [];
+  for (let index = children.length - 1; index >= 0; index -= 1) {
+    pending.push(children[index] as MarkdownNode);
+  }
+}
+
+function nodeRange(node: MarkdownNode): SourceRange {
+  const position = node.position as MarkdownPosition;
+  return {
+    end: position.end.offset as number,
+    start: position.start.offset as number,
+  };
+}
+
+/**
+ * Splits source into rendered cells. A character reference renders as a
+ * character this validator cannot resolve without an HTML renderer, so it
+ * matches every Citation marker character and fails closed.
+ */
+function markerCells(source: string): readonly MarkerCell[] {
+  const cells: MarkerCell[] = [];
+  let index = 0;
+  while (index < source.length) {
+    characterReference.lastIndex = index;
+    const reference = source[index] === "&" ? characterReference.exec(source) : null;
+    const end = reference === null ? index + 1 : index + reference[0].length;
+    cells.push({
+      character: reference === null ? (source[index] as string) : ambiguousCharacter,
+      end,
+      start: index,
+    });
+    index = end;
+  }
+  return cells;
+}
+
+function rendersAs(cell: MarkerCell, character: string): boolean {
+  return cell.character === character || cell.character === ambiguousCharacter;
+}
+
+function isEscaped(source: string, offset: number): boolean {
+  let escapes = 0;
+  for (let before = offset - 1; before >= 0 && source[before] === "\\"; before -= 1) {
+    escapes += 1;
+  }
+  return escapes % 2 === 1;
+}
 
 function citationMarkers(
   body: string,
-  position: MarkdownPosition,
+  range: SourceRange,
+  escapable: boolean,
 ): readonly CitationMarker[] {
   const markers: CitationMarker[] = [];
-  const startOffset = position.start.offset as number;
-  const source = body.slice(startOffset, position.end.offset);
-  for (let index = 0; index < source.length - 3; index += 1) {
-    if (source[index] !== "[" || source[index + 1] !== "^") continue;
-    let escapes = 0;
-    for (let before = index - 1; before >= 0 && source[before] === "\\"; before -= 1) {
-      escapes += 1;
+  const source = body.slice(range.start, range.end);
+  const cells = markerCells(source);
+  for (let index = 0; index + 3 < cells.length; index += 1) {
+    const open = cells[index] as MarkerCell;
+    if (!rendersAs(open, "[") || !rendersAs(cells[index + 1] as MarkerCell, "^")) {
+      continue;
     }
-    if (escapes % 2 === 1) continue;
-    const close = source.indexOf("]", index + 2);
+    if (escapable && isEscaped(source, open.start)) continue;
+    let close = -1;
+    for (let scan = index + 2; scan < cells.length; scan += 1) {
+      if (rendersAs(cells[scan] as MarkerCell, "]")) {
+        close = scan;
+        break;
+      }
+    }
     if (close < index + 3) continue;
-    const identifier = source.slice(index + 2, close);
+    const identifier = source.slice(
+      (cells[index + 2] as MarkerCell).start,
+      (cells[close] as MarkerCell).start,
+    );
     if (/[\r\n[\]]/u.test(identifier)) continue;
     markers.push({
       identifier: identifier.trim().replace(/\s+/gu, " ").toLowerCase(),
-      position: rangeAt(body, startOffset + index, startOffset + close + 1),
+      position: rangeAt(
+        body,
+        range.start + open.start,
+        range.start + (cells[close] as MarkerCell).end,
+      ),
     });
     index = close;
   }
@@ -319,28 +416,29 @@ function visibleCitationMarkers(
 } {
   const rawHtml: MarkdownPosition[] = [];
   const references: CitationMarker[] = [];
-  function visitVisibleText(node: MarkdownNode): void {
-    if (hiddenNodeTypes.has(node.type)) return;
-    const position = node.position as MarkdownPosition;
+  const pending: MarkdownNode[] = [tree];
+  while (pending.length > 0) {
+    const node = pending.pop() as MarkdownNode;
+    if (hiddenNodeTypes.has(node.type)) continue;
     if (node.type === "html") {
-      for (const marker of citationMarkers(body, position)) {
+      for (const marker of citationMarkers(body, nodeRange(node), false)) {
         rawHtml.push(marker.position);
       }
-      return;
+      continue;
     }
-    if (
-      labelNodeTypes.has(node.type) &&
-      body[position.start.offset as number] !== "["
-    ) {
-      return;
+    if (node.type === "wikiLink") {
+      references.push(...citationMarkers(body, node.visible as SourceRange, false));
+      continue;
+    }
+    if (labelNodeTypes.has(node.type) && body[nodeRange(node).start] !== "[") {
+      continue;
     }
     if (node.type === "text") {
-      references.push(...citationMarkers(body, position));
-      return;
+      references.push(...citationMarkers(body, nodeRange(node), true));
+      continue;
     }
-    for (const child of node.children ?? []) visitVisibleText(child);
+    pushChildren(pending, node);
   }
-  visitVisibleText(tree);
   return { rawHtml, references };
 }
 
@@ -369,12 +467,13 @@ function citationTargetPath(target: string):
 
 function definitionWikilinks(definition: MarkdownNode): readonly MarkdownNode[] {
   const targets: MarkdownNode[] = [];
-  function visitDirectContent(node: MarkdownNode): void {
-    if (node !== definition && node.type === "footnoteDefinition") return;
+  const pending: MarkdownNode[] = [definition];
+  while (pending.length > 0) {
+    const node = pending.pop() as MarkdownNode;
+    if (node !== definition && node.type === "footnoteDefinition") continue;
     if (node.type === "wikiLink") targets.push(node);
-    for (const child of node.children ?? []) visitDirectContent(child);
+    pushChildren(pending, node);
   }
-  visitDirectContent(definition);
   return targets;
 }
 
@@ -464,7 +563,7 @@ function validateCitations(
       }
 
       const target = targets[0] as MarkdownNode;
-      const targetValue = target.value as string;
+      const targetValue = target.target as string;
       const resolution = citationTargetPath(targetValue);
       if (resolution.kind === "invalid") {
         findings.push(
