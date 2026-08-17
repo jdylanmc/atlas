@@ -104,5 +104,19 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
         self.assertIn(".atlas/agents/realm-guide.yaml", readme)
         self.assertIn("intentionally contains no", readme)
 
+    def test_fletcher_covers_the_inactive_contract(self) -> None:
+        directive = (
+            ROOT / ".cacophony/directives/prompt-contract-review.md"
+        ).read_text(encoding="utf-8")
+        workflow = (
+            ROOT / ".github/workflows/council-fletcher.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("docs/agents/atlas-sdk/**", directive)
+        self.assertIn('"docs/agents/atlas-sdk/**"', workflow)
+        self.assertIn("original public-domain", directive)
+        self.assertIn("Arthurian interpretation", directive)
+        self.assertIn("status remains inactive", directive)
+
+
 if __name__ == "__main__":
     unittest.main()
