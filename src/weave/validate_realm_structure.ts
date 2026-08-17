@@ -1,5 +1,14 @@
 import { fromMarkdown } from "mdast-util-from-markdown";
+import type {
+  CompileContext,
+  Extension as MdastExtension,
+} from "mdast-util-from-markdown";
+import type { Nodes } from "mdast";
+import { gfmFootnoteFromMarkdown } from "mdast-util-gfm-footnote";
 import { toString } from "mdast-util-to-string";
+import type { Token } from "micromark-util-types";
+import { gfmFootnote } from "micromark-extension-gfm-footnote";
+import { syntax as wikiLinkSyntax } from "micromark-extension-wiki-link";
 import { isScalar, parseDocument, type Node, type Pair, type YAMLMap } from "yaml";
 import type { Finding } from "../domain/finding.ts";
 import type { RealmTextFile } from "../realm/load_realm_text.ts";
@@ -11,6 +20,29 @@ import {
 } from "../realm/parse_realm_pages.ts";
 
 type FindingLocation = NonNullable<Finding["location"]>;
+type MarkdownPosition = {
+  readonly end: {
+    readonly column: number;
+    readonly line: number;
+    readonly offset?: number;
+  };
+  readonly start: {
+    readonly column: number;
+    readonly line: number;
+    readonly offset?: number;
+  };
+};
+type MarkdownNode = {
+  readonly children?: readonly MarkdownNode[];
+  readonly identifier?: string;
+  readonly position?: MarkdownPosition;
+  readonly type: string;
+  readonly value?: string;
+};
+type MutableWikiLinkNode = {
+  type: "wikiLink";
+  value: string;
+};
 
 const attribution = Object.freeze({
   checkId: "atlas-core.structural-validation",
@@ -38,6 +70,32 @@ const corePathTypes = Object.freeze({
   threads: "thread",
 } as const);
 const coreTypeNames: ReadonlySet<string> = new Set(Object.values(corePathTypes));
+
+function wikiLinkFromMarkdown(): MdastExtension {
+  let current: MutableWikiLinkNode | undefined;
+  return {
+    enter: {
+      wikiLink(this: CompileContext, token: Token): void {
+        current = { type: "wikiLink", value: "" };
+        this.enter(current as unknown as Nodes, token);
+      },
+    },
+    exit: {
+      wikiLink(this: CompileContext, token: Token): void {
+        this.exit(token);
+        current = undefined;
+      },
+      wikiLinkTarget(this: CompileContext, token: Token): void {
+        (current as MutableWikiLinkNode).value = this.sliceSerialize(token);
+      },
+    },
+  };
+}
+
+const markdownOptions = {
+  extensions: [gfmFootnote(), wikiLinkSyntax({ aliasDivider: "|" })],
+  mdastExtensions: [gfmFootnoteFromMarkdown(), wikiLinkFromMarkdown()],
+};
 
 function compareCodePoints(left: string, right: string): number {
   const leftPoints = Array.from(left, (point) => point.codePointAt(0) as number);
@@ -139,7 +197,7 @@ function markdownHeadingFinding(
   parsed: ParsedRealmPage,
   content: string,
 ): Finding | undefined {
-  const tree = fromMarkdown(parsed.page.body);
+  const tree = fromMarkdown(parsed.page.body, markdownOptions);
   const first = tree.children[0];
   if (first?.type !== "heading" || first.depth !== 1) {
     const position = first?.position;
@@ -180,6 +238,203 @@ function markdownHeadingFinding(
       },
     },
   );
+}
+
+function markdownLocation(
+  parsed: ParsedRealmPage,
+  position: MarkdownPosition,
+): FindingLocation {
+  return {
+    end: {
+      column: position.end.column,
+      line: parsed.source.body.startLine + position.end.line - 1,
+    },
+    start: {
+      column: position.start.column,
+      line: parsed.source.body.startLine + position.start.line - 1,
+    },
+  };
+}
+
+function visitMarkdown(
+  node: MarkdownNode,
+  visitor: (node: MarkdownNode) => void,
+): void {
+  visitor(node);
+  for (const child of node.children ?? []) visitMarkdown(child, visitor);
+}
+
+function unresolvedReferences(
+  tree: MarkdownNode,
+  body: string,
+): readonly { readonly identifier: string; readonly position: MarkdownPosition }[] {
+  const references: { identifier: string; position: MarkdownPosition }[] = [];
+  function visitVisibleText(node: MarkdownNode): void {
+    if (
+      ["code", "footnoteDefinition", "html", "image", "inlineCode"].includes(node.type)
+    ) {
+      return;
+    }
+    if (node.type !== "text" || node.position?.start.offset === undefined) {
+      for (const child of node.children ?? []) visitVisibleText(child);
+      return;
+    }
+    const startOffset = node.position.start.offset;
+    const endOffset = node.position.end.offset as number;
+    const source = body.slice(startOffset, endOffset);
+    for (let index = 0; index < source.length - 3; index += 1) {
+      if (source[index] !== "[" || source[index + 1] !== "^") continue;
+      let escapes = 0;
+      for (
+        let before = index - 1;
+        before >= 0 && source[before] === "\\";
+        before -= 1
+      ) {
+        escapes += 1;
+      }
+      if (escapes % 2 === 1) continue;
+      const close = source.indexOf("]", index + 2);
+      if (close < index + 3) continue;
+      const identifier = source.slice(index + 2, close);
+      if (/[\r\n[\]]/u.test(identifier)) continue;
+      references.push({
+        identifier: identifier.trim().replace(/\s+/gu, " ").toLowerCase(),
+        position: rangeAt(body, startOffset + index, startOffset + close + 1),
+      });
+      index = close;
+    }
+  }
+  visitVisibleText(tree);
+  return references;
+}
+
+function citationTargetPath(target: string): string | undefined {
+  const path = target.split("#", 1)[0] as string;
+  if (
+    path === "" ||
+    path.startsWith("/") ||
+    path.includes("\\") ||
+    path.includes(":") ||
+    path.split("/").some((segment) => segment === "." || segment === "..")
+  ) {
+    return undefined;
+  }
+  if (!path.startsWith(".atlas/lore/")) return path;
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  if (name.includes(".") && !name.endsWith(".md")) return path;
+  return path.endsWith(".md") ? path : `${path}.md`;
+}
+
+function validateCitations(
+  parsedPages: readonly {
+    readonly file: RealmTextFile;
+    readonly page: ParsedRealmPage;
+  }[],
+  pagePaths: ReadonlySet<string>,
+  findings: Finding[],
+): void {
+  for (const { file, page } of parsedPages) {
+    const tree = fromMarkdown(page.page.body, markdownOptions) as MarkdownNode;
+    const references: MarkdownNode[] = [];
+    const unresolved = unresolvedReferences(tree, page.page.body);
+    const definitions = new Map<string, MarkdownNode[]>();
+    visitMarkdown(tree, (node) => {
+      if (node.type === "footnoteReference" && node.identifier !== undefined) {
+        references.push(node);
+      }
+      if (node.type === "footnoteDefinition" && node.identifier !== undefined) {
+        const existing = definitions.get(node.identifier);
+        if (existing === undefined) definitions.set(node.identifier, [node]);
+        else existing.push(node);
+      }
+    });
+
+    for (const reference of unresolved) {
+      findings.push(
+        finding(
+          "ATLAS_CITATION_DEFINITION_MISSING",
+          "Citation reference must have a matching footnote definition.",
+          file.path,
+          markdownLocation(page, reference.position),
+        ),
+      );
+    }
+
+    const referenced = new Set(
+      references.map(({ identifier }) => identifier as string),
+    );
+    for (const { identifier } of unresolved) {
+      referenced.add(identifier);
+    }
+    for (const identifier of referenced) {
+      const matches = definitions.get(identifier) ?? [];
+      if (matches.length > 1) {
+        for (const definition of matches) {
+          findings.push(
+            finding(
+              "ATLAS_CITATION_DEFINITION_DUPLICATE",
+              "Citation reference must resolve to exactly one footnote definition.",
+              file.path,
+              markdownLocation(page, definition.position as MarkdownPosition),
+            ),
+          );
+        }
+        continue;
+      }
+      const definition = matches[0];
+      if (definition === undefined) continue;
+      const targets: MarkdownNode[] = [];
+      visitMarkdown(definition, (node) => {
+        if (node.type === "wikiLink") targets.push(node);
+      });
+      if (targets.length !== 1) {
+        findings.push(
+          finding(
+            "ATLAS_CITATION_DEFINITION_MALFORMED",
+            "Citation definition must contain exactly one Realm-local Lore wikilink.",
+            file.path,
+            markdownLocation(page, definition.position as MarkdownPosition),
+          ),
+        );
+        continue;
+      }
+
+      const target = targets[0] as MarkdownNode;
+      const targetValue = target.value as string;
+      const targetPath = citationTargetPath(targetValue);
+      if (targetPath === undefined) {
+        findings.push(
+          finding(
+            "ATLAS_CITATION_TARGET_INVALID",
+            "Citation target must be a Realm-local root-relative forward-slash path.",
+            file.path,
+            markdownLocation(page, target.position as MarkdownPosition),
+          ),
+        );
+      } else if (
+        !targetPath.startsWith(".atlas/lore/") ||
+        !targetPath.endsWith(".md")
+      ) {
+        findings.push(
+          finding(
+            "ATLAS_CITATION_TARGET_NOT_LORE",
+            "Citation target must classify as a Realm Lore Markdown page.",
+            file.path,
+            markdownLocation(page, target.position as MarkdownPosition),
+          ),
+        );
+      } else if (!pagePaths.has(targetPath)) {
+        findings.push(
+          finding(
+            "ATLAS_CITATION_TARGET_MISSING",
+            "Citation target must resolve to an existing local Lore page.",
+            file.path,
+            markdownLocation(page, target.position as MarkdownPosition),
+          ),
+        );
+      }
+    }
+  }
 }
 
 function validatePage(
@@ -345,6 +600,8 @@ export function validateRealmStructure(
       );
     }
   }
+
+  validateCitations(parsed, new Set(pageRecords.map(({ path }) => path)), findings);
 
   return Object.freeze(findings.toSorted(compareFindings));
 }

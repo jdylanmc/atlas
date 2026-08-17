@@ -15,3 +15,7 @@ realm:
 ---
 
 # Parsing
+
+Atlas parses Markdown into an abstract syntax tree.[^parser]
+
+[^parser]: [[.atlas/lore/parser-source#api]] Maintained parser documentation.

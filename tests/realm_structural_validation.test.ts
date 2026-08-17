@@ -52,6 +52,7 @@ const validFiles = [
   ".atlas/CHANGELOG.md",
   ".atlas/index.md",
   ".atlas/insights/parsing.md",
+  ".atlas/lore/parser-source.md",
 ].map((path) => fixture("realm-pages", path));
 
 const invalidFiles = [
@@ -273,6 +274,7 @@ test("sanitizes hostile captured records without accepting stale parse results",
     },
     path: ".atlas/insights/hostile.md",
   });
+
   const hostilePath = Object.freeze({
     content: "# ignored",
     get path(): string {
@@ -299,6 +301,196 @@ test("sanitizes hostile captured records without accepting stale parse results",
     ],
   );
   assert.equal(JSON.stringify(findings).includes("secret hostile"), false);
+});
+
+test("validates visible Citation markers and ignores non-visible syntax", () => {
+  const body = [
+    "# Page",
+    "",
+    "Visible claim.[^missing]",
+    "",
+    "`inline[^code]`",
+    "\\[^escaped]",
+    "\\\\[^also-missing]",
+    "Broken [^ and [^]. Nested [^a[b].",
+    "![hidden[^image]](image.png)",
+    "",
+    "```markdown",
+    "fenced[^fence]",
+    "```",
+    "",
+    "<!-- hidden[^comment] -->",
+    "",
+    "[^code]: [[.atlas/lore/missing]]",
+    "[^fence]: [[.atlas/lore/missing]]",
+    "[^comment]: [[.atlas/lore/missing]]",
+  ].join("\n");
+  const findings = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    page(".atlas/insights/page.md", body),
+  ]);
+  assert.deepEqual(
+    findings.map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 25, line: 17 },
+          start: { column: 15, line: 17 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 18, line: 21 },
+          start: { column: 3, line: 21 },
+        },
+      },
+    ],
+  );
+});
+
+test("reports malformed, non-Lore, missing, unsafe, and ambiguous Citations", () => {
+  const body = [
+    "# Page",
+    "",
+    "Claims.[^malformed][^multiple][^non-lore][^missing][^unsafe][^duplicate]",
+    "",
+    "[^malformed]: prose only",
+    "[^multiple]: [[.atlas/lore/parser-source]] and [[.atlas/lore/parser-source]]",
+    "[^non-lore]: [[.atlas/insights/other]]",
+    "[^missing]: [[.atlas/lore/absent]]",
+    "[^unsafe]: [[../.atlas/lore/source]]",
+    "[^duplicate]: [[.atlas/lore/parser-source]]",
+    "[^duplicate]: [[.atlas/lore/parser-source]] again",
+  ].join("\n");
+  const findings = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    validFiles[4] as RealmTextFile,
+    page(".atlas/insights/page.md", body),
+  ]);
+  assert.deepEqual(
+    findings.map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MALFORMED",
+        location: {
+          end: { column: 25, line: 19 },
+          start: { column: 1, line: 19 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_MALFORMED",
+        location: {
+          end: { column: 77, line: 20 },
+          start: { column: 1, line: 20 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_TARGET_NOT_LORE",
+        location: {
+          end: { column: 39, line: 21 },
+          start: { column: 14, line: 21 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_TARGET_MISSING",
+        location: {
+          end: { column: 35, line: 22 },
+          start: { column: 13, line: 22 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_TARGET_INVALID",
+        location: {
+          end: { column: 37, line: 23 },
+          start: { column: 12, line: 23 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_DUPLICATE",
+        location: {
+          end: { column: 44, line: 24 },
+          start: { column: 1, line: 24 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_DUPLICATE",
+        location: {
+          end: { column: 50, line: 25 },
+          start: { column: 1, line: 25 },
+        },
+      },
+    ],
+  );
+  assert.deepEqual(
+    validateRealmStructure(
+      [
+        validFiles[2] as RealmTextFile,
+        validFiles[4] as RealmTextFile,
+        page(".atlas/insights/page.md", body),
+      ].toReversed(),
+    ),
+    findings,
+  );
+  assert.equal(Object.isFrozen(findings), true);
+  assert.equal(Object.isFrozen(findings[0]), true);
+  assert.equal(Object.isFrozen(findings[0]?.location), true);
+  assert.equal(Object.isFrozen(findings[0]?.location?.start), true);
+  assert.throws(() => {
+    (findings[0] as { message: string }).message = "changed";
+  }, TypeError);
+});
+
+test("accepts optional Citation fragments, notes, and .md omission", () => {
+  const body = [
+    "# Page",
+    "",
+    "One.[^one] Two.[^two]",
+    "",
+    "[^one]: [[.atlas/lore/parser-source]]",
+    "[^two]: [[.atlas/lore/parser-source.md#section]] Human note.",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      validFiles[4] as RealmTextFile,
+      page(".atlas/insights/page.md", body),
+    ]),
+    [],
+  );
+});
+
+test("rejects absolute, backslash, cross-Realm, traversal, and opaque targets", () => {
+  const targets = [
+    "/.atlas/lore/source",
+    ".atlas\\lore\\source",
+    "other:.atlas/lore/source",
+    ".atlas/lore/../source",
+    ".atlas/lore/source.pdf",
+  ];
+  const body = [
+    "# Page",
+    "",
+    targets.map((_, index) => `Claim.[^bad-${String(index)}]`).join(" "),
+    "",
+    ...targets.map((target, index) => `[^bad-${String(index)}]: [[${target}]]`),
+  ].join("\n");
+  const findings = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    page(".atlas/insights/page.md", body),
+  ]);
+  assert.deepEqual(
+    findings.map(({ code }) => code),
+    [
+      "ATLAS_CITATION_TARGET_INVALID",
+      "ATLAS_CITATION_TARGET_INVALID",
+      "ATLAS_CITATION_TARGET_INVALID",
+      "ATLAS_CITATION_TARGET_INVALID",
+      "ATLAS_CITATION_TARGET_NOT_LORE",
+    ],
+  );
+  assert.equal(JSON.stringify(findings).includes("source.pdf"), false);
 });
 
 test("supports extensible attribution with severity as the only state", () => {
