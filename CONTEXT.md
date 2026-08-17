@@ -92,6 +92,9 @@ The read-only workflow that expands a Realm Cache by one graph layer. Scout foll
 **Explore Index**:
 The generated, disposable search state owned by one Realm Host Directory. It indexes that Realm and its materialized reachable Realm Snapshots behind a replaceable provider interface while Atlas retains responsibility for graph reachability, routing, validation, and context.
 
+**Search Provider**:
+A replaceable candidate-ranking capability that indexes deterministic Realm projections and returns scored Realm objects. It never owns Realm reachability, Bonfire routing, Rest, evidence, graph traversal, or final context loading.
+
 **Realm Chronicle**:
 The curated, human-readable history of notable knowledge changes in a Realm, kept as `.atlas/CHANGELOG.md`. One entry, identified by its stable operation ID, records one merged knowledge-changing operation and can be correlated with Git history. The Chronicle is history a newcomer can read, not an operational ledger and not synthesized knowledge.
 
@@ -196,6 +199,18 @@ The adversarial review a semantic verdict must survive before it counts. A chall
 
 **Operation Handoff**:
 The stable completion summary returned by every Atlas skill. It identifies the operation, Home Realm and base snapshot, result or proposed changes, unresolved human decisions, validation or degradation state, review link when applicable, and recommended next action.
+
+**Operation Workflow**:
+The versioned resumable state machine for one Atlas operation. It consumes typed events and yields typed effects while the deterministic runtime retains authority over state transitions, evidence, allowed writes, and validation gates.
+
+**Realm View**:
+The immutable operation-scoped model parsed from exact Home and tracked Realm Snapshots. It carries normalized Realm objects, source locations, file digests, ownership, validation state, and Atlas-owned graph indexes.
+
+**Realm Change Set**:
+The typed proposal of intended Realm file and graph changes against one Realm View's base digests. A validated Change Set is the only input from which the proposal writer may serialize Realm changes.
+
+**Operation Workspace**:
+The ephemeral repository-local state for one resumable operation, including checkpoints, effect receipts, temporary evidence, locks, and proposal-worktree references. It lives outside Realm knowledge and may be resumed or explicitly discarded.
 
 **Realm Readiness Report**:
 The Realm Initialization handoff and pull-request description that explains the proposed Realm boundary, Guide, governance, founding evidence and graph, integrations, degradations, uninspected areas, first Weave Stamp, and recommended next actions.
