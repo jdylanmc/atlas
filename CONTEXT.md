@@ -86,6 +86,12 @@ The generated, local record of resolved schema versions, tracked Realm Snapshots
 **Realm Refresh**:
 The pull that returns a Realm Cache entry to its tracked branch tip. Refresh happens automatically when an entry is older than the freshness window its declaration allows, and on demand when a human asks for it. Refresh never merges: divergent upstream history replaces the cached copy outright.
 
+**Realm Pruning**:
+The local removal of disposable Realm Cache entries and their generated references without changing committed Realm knowledge. A pruned Realm that remains tracked is materialized again when next entered.
+
+**Realm Untracking**:
+The human-approved knowledge change that ends a Home Realm's active relationship with one Realm Slug by removing its declaration and cross-Realm Threads and repairing affected orientation. Untracking preserves independent knowledge, Git history, and disposable cache state.
+
 **Scout**:
 The read-only workflow that expands a Realm Cache by one graph layer. Scout follows the selected Realm Snapshot's Bonfire gateway Threads, materializes its directly related Realms with human approval, and refreshes generated Lock and search state without changing Realm knowledge.
 
