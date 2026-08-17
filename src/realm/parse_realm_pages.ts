@@ -95,22 +95,31 @@ function cloneAndFreezeJson(value: unknown): unknown {
   throw new TypeError("Frontmatter contains a non-JSON value.");
 }
 
-function lineAt(content: string, offset: number): number {
-  let line = 1;
-  for (let index = 0; index < offset; index += 1) {
-    if (content[index] === "\n") {
-      line += 1;
+function lineEndCount(text: string): number {
+  let count = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (character === "\n") {
+      count += 1;
+    } else if (character === "\r") {
+      count += 1;
+      if (text[index + 1] === "\n") {
+        index += 1;
+      }
     }
   }
-  return line;
+  return count;
+}
+
+function lineAt(content: string, offset: number): number {
+  return lineEndCount(content.slice(0, offset)) + 1;
 }
 
 function bodyEndLine(body: string, startLine: number): number {
   if (body === "") {
     return startLine;
   }
-  const newlines = Array.from(body).filter((character) => character === "\n").length;
-  return startLine + newlines - (body.endsWith("\n") ? 1 : 0);
+  return startLine + lineEndCount(body) - (/[\n\r]$/u.test(body) ? 1 : 0);
 }
 
 function parsePage(file: RealmTextFile): ParsedRealmPage {

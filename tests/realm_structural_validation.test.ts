@@ -612,6 +612,33 @@ test("locates Citations across CR, LF, and CRLF line endings", () => {
     end: { column: 1, line: 15 },
     start: { column: 1, line: 15 },
   });
+
+  const carriage = page(".atlas/lore/shifted.md", "# Page\n\nClaim.[^missing]");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      {
+        content: carriage.content.replace("  id: insight:page", "  id: a\rb"),
+        path: carriage.path,
+      },
+    ]).map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_PAGE_TYPE_PATH_MISMATCH",
+        location: {
+          end: { column: 7, line: 7 },
+          start: { column: 3, line: 7 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 17, line: 18 },
+          start: { column: 7, line: 18 },
+        },
+      },
+    ],
+  );
 });
 
 test("validates Citation markers in link labels and rejects raw HTML markers", () => {

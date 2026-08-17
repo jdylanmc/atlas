@@ -281,6 +281,29 @@ test("preserves body bytes and stable source lines", () => {
   });
 });
 
+test("counts bare carriage returns as line endings in source lines", () => {
+  const [parsed] = parseRealmPages([
+    text(".atlas/index.md", `${validPage("root")}\n# Page\r\rClaim\r`),
+  ]);
+  assert.ok(parsed);
+  assert.equal(parsed.page.body, "# Page\r\rClaim\r");
+  assert.deepEqual(parsed.source.body, { endLine: 17, startLine: 15 });
+
+  const [shifted] = parseRealmPages([
+    text(
+      ".atlas/index.md",
+      `${validPage("root").replace("  title: Page", "  title: a\rb")}\n# Page\n`,
+    ),
+  ]);
+  assert.ok(shifted);
+  assert.equal(shifted.page.atlas.title, "a\rb");
+  assert.deepEqual(shifted.source, {
+    body: { endLine: 16, startLine: 16 },
+    frontmatter: { endLine: 14, startLine: 2 },
+    path: ".atlas/index.md",
+  });
+});
+
 test("reversed record input produces identical ordered pages and errors", () => {
   const valid = [fixture(".atlas/insights/parsing.md"), fixture(".atlas/index.md")];
   assert.deepEqual(parseRealmPages(valid), parseRealmPages([...valid].reverse()));
