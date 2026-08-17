@@ -81,13 +81,22 @@ function assertBudgets(budgets: RealmTextBudgets): void {
   }
 }
 
-// The intrinsic brand-checks the explicit receiver supplied through Reflect.
+// Captured accessors are invoked only with explicit Reflect receivers.
 // eslint-disable-next-line @typescript-eslint/unbound-method
-const sharedArrayBufferSlice = SharedArrayBuffer.prototype.slice;
+const typedArrayBufferGetter = Object.getOwnPropertyDescriptor(
+  Object.getPrototypeOf(Uint8Array.prototype) as object,
+  "buffer",
+)?.get as (this: Uint8Array) => ArrayBufferLike;
+// eslint-disable-next-line @typescript-eslint/unbound-method
+const sharedArrayBufferByteLengthGetter = Object.getOwnPropertyDescriptor(
+  SharedArrayBuffer.prototype,
+  "byteLength",
+)?.get as (this: SharedArrayBuffer) => number;
 
-function isSharedArrayBuffer(buffer: ArrayBufferLike): boolean {
+function hasSharedBackingBuffer(bytes: Uint8Array): boolean {
+  const buffer = Reflect.apply(typedArrayBufferGetter, bytes, []);
   try {
-    Reflect.apply(sharedArrayBufferSlice, buffer, [0, 0]);
+    Reflect.apply(sharedArrayBufferByteLengthGetter, buffer, []);
     return true;
   } catch {
     return false;
@@ -98,7 +107,7 @@ export function loadRealmText(
   capturedFiles: readonly CapturedRealmFile[],
   budgets: RealmTextBudgets,
 ): readonly RealmTextFile[] {
-  if (capturedFiles.some((file) => isSharedArrayBuffer(file.bytes.buffer))) {
+  if (capturedFiles.some((file) => hasSharedBackingBuffer(file.bytes))) {
     throw new RealmLoadError("SHARED_BYTES_NOT_ALLOWED");
   }
   assertBudgets(budgets);

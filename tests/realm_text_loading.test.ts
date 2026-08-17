@@ -119,6 +119,38 @@ test("rejects bytes backed by shared memory", () => {
   );
 });
 
+test("rejects species-poisoned shared memory", () => {
+  const buffer = new SharedArrayBuffer(4);
+  Object.defineProperty(buffer, "constructor", {
+    value: {
+      get [Symbol.species](): never {
+        throw new Error("poisoned species");
+      },
+    },
+  });
+  const bytes = new Uint8Array(buffer);
+  assert.equal(
+    errorCode(() => loadRealmText([{ bytes, path: ".atlas/shared.md" }], BUDGETS)),
+    "SHARED_BYTES_NOT_ALLOWED",
+  );
+});
+
+test("rejects shared memory hidden by an overridden buffer getter", () => {
+  class MisleadingBytes extends Uint8Array {
+    override get buffer(): ArrayBuffer {
+      return new ArrayBuffer(4);
+    }
+  }
+
+  const bytes = new Uint8Array(new SharedArrayBuffer(4));
+  Object.setPrototypeOf(bytes, MisleadingBytes.prototype);
+  assert.ok(bytes.buffer instanceof ArrayBuffer);
+  assert.equal(
+    errorCode(() => loadRealmText([{ bytes, path: ".atlas/shared.md" }], BUDGETS)),
+    "SHARED_BYTES_NOT_ALLOWED",
+  );
+});
+
 test("rejects cross-context shared memory", () => {
   const bytes = runInNewContext(
     "new Uint8Array(new SharedArrayBuffer(4))",
