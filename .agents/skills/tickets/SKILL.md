@@ -17,11 +17,30 @@ Work from the repository root.
 1. Read `AGENTS.md`, `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, and `CONTEXT.md`.
 2. Confirm that `docs/agents/issue-tracker.md` configures GitHub Issues, the `gh` command-line interface, native sub-issues, and native issue dependencies.
 3. Confirm that `gh` is installed and authenticated for the current repository.
-4. Run `gh label list --limit 200 --json name --jq '.[].name'` and confirm that `ready-for-agent` exists.
+4. Ensure the Atlas-owned implementation label exists:
 
-If any tracker instruction is absent or incompatible, authentication is unavailable, or the label is missing, stop without creating issues or tracker metadata. Tell the user exactly:
+   ```sh
+   label_count="$(
+     gh label list --limit 200 --json name \
+       --jq '[.[] | select(.name == "ready-for-agent")] | length'
+   )"
+   case "$label_count" in
+     0)
+       gh label create ready-for-agent \
+         --color 0E8A16 \
+         --description "Implementation-ready Atlas tracer-bullet ticket"
+       ;;
+     1) ;;
+     *)
+       echo "Expected at most one ready-for-agent label; found $label_count." >&2
+       exit 1
+       ;;
+   esac
+   ```
 
-`Run /setup-matt-pocock-skills.`
+   Read the labels again and require exactly one `ready-for-agent` match before continuing.
+
+If a required repository instruction is absent or incompatible, authentication is unavailable, or label creation/verification fails, stop before creating ticket issues. Report the specific failed prerequisite or command and exact remediation. Do not refer the user to an external setup skill.
 
 GitHub Issues is authoritative for Atlas. Do not silently fall back to local files.
 
@@ -55,6 +74,7 @@ Create the smallest coherent set of tickets that delivers the approved scope:
 6. Ensure work can begin from the frontier: tickets with no incomplete blockers.
 7. Write acceptance criteria around external behavior and completion, not internal implementation minutiae.
 8. Avoid specific file paths and code snippets. A trimmed prototype-derived decision artifact is allowed only when it communicates a settled decision more clearly than prose; identify its provenance.
+9. For every acceptance criterion, identify an observation that fails at the ticket's starting commit and passes only after that ticket's own behavior lands. A criterion that is already true or depends on another ticket's unfinished work is invalid.
 
 Never create a combined mega-ticket. Every ticket must be agent-grabbable and independently verifiable.
 
@@ -79,9 +99,10 @@ Present a numbered proposed breakdown. For every ticket include:
 After the list:
 
 1. Surface every unresolved scope question, architecture decision record conflict, or specification-versus-Wayfinder contradiction.
-2. Ask whether the granularity is right.
-3. Ask whether every blocking edge is genuine.
-4. Ask whether any tickets should merge or split.
+2. Surface every existing issue whose title or outcome overlaps a proposed ticket and recommend reuse, replacement, or a distinct title.
+3. Ask whether the granularity is right.
+4. Ask whether every blocking edge is genuine.
+5. Ask whether any tickets should merge or split.
 
 Iterate on the numbered breakdown until the user explicitly approves publication. Approval of a plan or specification is not approval to publish tickets. Never infer approval from silence or from the `/tickets` invocation itself.
 
@@ -113,25 +134,34 @@ Use a concise Atlas title matching:
 
 Apply exactly the `ready-for-agent` label. Do not assign, milestone, project, close, rewrite, relabel, or otherwise modify a source parent issue.
 
+Before publication, search all existing issues for every approved title with:
+
+`gh issue list --state all --limit 1000 --json number,title,url`
+
+An exact-title match must have been explicitly resolved during the approval quiz. Never silently create a duplicate or silently adopt an existing issue.
+
 ## 6. Publish in dependency order
 
 Publish only the explicitly approved revision.
 
 1. Topologically sort the tickets so blockers are created before tickets they block. Preserve approved order among tickets that are otherwise parallel.
 2. Create one GitHub issue per ticket with `gh issue create`, the approved title and body, and only `--label ready-for-agent`.
-3. Record each created issue's number, URL, and numeric database `id`. The database ID is not the issue number or GraphQL node ID:
+3. Read each created issue back immediately. Verify its exact title, required section order, parent link when applicable, and sole `ready-for-agent` label before creating the next issue.
+4. Record each created issue's number, URL, and numeric database `id`. The database ID is not the issue number or GraphQL node ID:
 
    `gh api repos/{owner}/{repo}/issues/{number} --jq .id`
 
-4. If the source is an existing specification or Wayfinder map and the tickets are appropriately its children, add each issue as a native sub-issue without changing the parent:
+5. If the source is an existing specification or Wayfinder map and the tickets are appropriately its children, add each issue as a native sub-issue without changing the parent:
 
    `gh api --method POST repos/{owner}/{repo}/issues/{parent-number}/sub_issues -F sub_issue_id={child-database-id}`
 
-5. After all issues exist, add every approved native blocking edge in a second pass:
+6. After all issues exist, add every approved native blocking edge in a second pass:
 
    `gh api --method POST repos/{owner}/{repo}/issues/{blocked-issue-number}/dependencies/blocked_by -F issue_id={blocker-database-id}`
 
-Native dependency edges are canonical. The `## Blocked by` links mirror them for readability.
+7. Read the parent's sub-issues and every ticket's open blockers back from GitHub. Verify that the native graph exactly matches the approved graph before reporting success.
+
+Native sub-issue and dependency edges are canonical. The `## Blocked by` links mirror them for readability.
 
 Do not create a combined issue, unapproved ticket, local planning file, implementation branch, commit, or pull request. Do not implement generated tickets.
 
@@ -148,6 +178,7 @@ Return:
 
 - If evidence is missing, ask for the missing decision during the quiz; do not publish a guessed requirement.
 - If the dependency graph contains a cycle, revise the proposal with the user before publication.
+- If an exact-title issue already exists and was not explicitly resolved during the quiz, stop before publication and return to the quiz.
 - If an issue creation fails, stop creating further issues. Report exactly which issues were created and the failing command; do not retry unless the output proves no duplicate issue was created.
 - If a sub-issue or dependency request fails, preserve the created issues, report the failed relationship, and retry only when the operation can be shown to be absent. Never create replacement issues to repair a relationship failure.
 - If the user changes scope after approval but before publication completes, stop and return to the quiz with a revised breakdown.

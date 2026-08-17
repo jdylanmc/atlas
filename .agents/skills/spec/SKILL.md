@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Synthesize the current conversation and repository evidence into one implementation-ready GitHub issue. Do not interview the user, ask for confirmation, invoke `/grilling`, or pause before publishing.
 
-Do not implement the specified work. This skill produces exactly one issue and applies exactly one triage label: `ready-for-agent`.
+Do not implement the specified work. This skill produces exactly one unlabeled parent specification issue. Implementation agents work from the tracer-bullet children produced later by `/tickets`, never from the parent specification itself.
 
 ## 1. Verify repository setup
 
@@ -16,11 +16,9 @@ Work from the repository root.
 
 1. Read `AGENTS.md`, `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, and `CONTEXT.md`.
 2. Confirm that `docs/agents/issue-tracker.md` identifies GitHub Issues as the tracker and requires the `gh` CLI.
-3. Run `gh label list --limit 200 --json name --jq '.[].name'` and confirm that `ready-for-agent` exists.
+3. Confirm that `gh` is installed, authenticated, and resolves the current GitHub repository.
 
-If the tracker instructions are absent or incompatible, `gh` is unavailable or unauthenticated, or the label is missing, stop without creating or modifying tracker metadata. Tell the user exactly:
-
-`Run /setup-matt-pocock-skills.`
+If a required repository instruction is absent or incompatible, or `gh` is unavailable or unauthenticated, stop without creating or modifying tracker metadata. Report the specific missing file, incompatible instruction, command, or authentication failure and the exact remediation. Do not refer the user to an external setup skill.
 
 ## 2. Gather only relevant evidence
 
@@ -30,6 +28,8 @@ Explore enough of the repository to understand the current implementation and vo
 - Read architecture decision records under `docs/adr/` that touch the proposed change. Surface conflicts rather than silently overriding them.
 - Inspect the highest-level relevant modules, interfaces, tests, and similar implementations.
 - Use `gh issue view <number> --comments` for issues named in the conversation. Use `gh issue list` when existing issues are needed to understand prior decisions or scope.
+- When the source is a completed Wayfinder map, read the map and every linked resolution needed to recover the complete decisions. The map gists are an index, not sufficient specification evidence.
+- Search existing issues for overlapping or identical implementation specifications before drafting. Reuse a closed decision only as evidence; do not create a second implementation specification with the same outcome.
 
 Treat the current conversation, repository state, domain glossary, relevant architecture decision records, and relevant GitHub issues as the complete evidence boundary. Do not invent requirements or decisions.
 
@@ -88,21 +88,27 @@ Before publishing, verify that the issue is coherent and implementation-ready, c
 
 ## 5. Publish exactly one issue
 
-Use one `gh issue create` command with:
+Before creation, compare the validated title with all existing issue titles from:
+
+`gh issue list --state all --limit 1000 --json number,title,url`
+
+If an issue with the exact title already exists, do not create another issue. Return its title and URL and explain that the duplicate guard stopped publication.
+
+Otherwise use one `gh issue create` command with:
 
 - the validated title;
 - the complete Markdown body supplied through a heredoc or `--body-file`;
-- `--label ready-for-agent`;
-- no other labels, assignment, milestone, project, or triage action.
+- no label, assignment, milestone, project, or other triage action.
 
 Do not create draft issues, companion issues, subtasks, pull requests, or local planning files. Do not edit or implement the feature described by the specification.
 
-After creation, return the issue title and URL.
+After creation, read the created issue back and verify its exact title, every required heading, and that it has no labels. Return the issue title and URL.
 
 ## Failure handling
 
 - If repository evidence conflicts, preserve the conflict in **Further Notes** rather than choosing a side without support.
 - If the proposed issue cannot be made implementation-ready from existing evidence, publish the best supported specification and list the unresolved matters in **Further Notes**; do not ask questions.
+- If the duplicate guard finds an exact existing title, return that issue instead of creating or modifying anything.
 - If `gh issue create` fails, report the error and stop. Do not retry by creating a second issue unless the failure output proves that no issue was created.
 
 ---
