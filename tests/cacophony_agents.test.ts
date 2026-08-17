@@ -47,7 +47,7 @@ const EXPECTED_DIRECTIVE_SETS = {
 const EXPECTED_PROMPT_HASHES = {
   balerion: "6b69f3c6af654e0bbccf55d212ebc19c57d0c5f069e017d0f7c5eb649dcf1724",
   bolas: "32f9f2cb778e83361ad462a6308504fc2395272eb48ccc755f0cefc8b95a90ce",
-  fletcher: "2d2acf7c98228f8287b04f80a5ce43824a72d0bbc73256d453c64a158539721e",
+  fletcher: "2a8aa40979c85fcbbc32a994dff3dbd85dea69a02e834dd8af218ab6514b811b",
   smaug: "34863bc7736edcf5abc943ea38f88d29db447b5753478d2a4b56d17ba8be6f2a",
 } as const;
 
