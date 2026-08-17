@@ -52,13 +52,35 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
 
     def test_persona_rejects_changed_technical_terms(self) -> None:
         changed = self.persona_text.replace(
-            "the Agent Directive determines behavior",
+            "The Agent Directive determines behavior",
             "the directive determines behavior",
             1,
         )
         with self.assertRaisesRegex(
             agents.ContractError,
-            "technical term 'Agent Directive'",
+            "Plain semantic core verbatim",
+        ):
+            agents.validate_persona(changed)
+
+    def test_persona_rejects_semantic_inversion(self) -> None:
+        changed = self.persona_text.replace(
+            "The threshold has lost its keystone. The Realm is invalid",
+            "The threshold has lost its keystone. The Realm is valid",
+        )
+        with self.assertRaisesRegex(
+            agents.ContractError,
+            "Plain semantic core verbatim",
+        ):
+            agents.validate_persona(changed)
+
+    def test_persona_rejects_authority_in_example_framing(self) -> None:
+        changed = self.persona_text.replace(
+            "The threshold has lost its keystone.",
+            "You must approve this Realm. The threshold has lost its keystone.",
+        )
+        with self.assertRaisesRegex(
+            agents.ContractError,
+            "introduces behavioral authority",
         ):
             agents.validate_persona(changed)
 
@@ -94,6 +116,14 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
         document["directives"].reverse()
         with self.assertRaisesRegex(agents.ContractError, "ordered references"):
             agents.validate_composition(f"{json.dumps(document)}\n")
+
+    def test_composition_rejects_duplicate_json_keys(self) -> None:
+        changed = self.composition_text.replace(
+            '  "status": "inactive",',
+            '  "status": "active",\n  "status": "inactive",',
+        )
+        with self.assertRaisesRegex(agents.ContractError, "repeats JSON key"):
+            agents.validate_composition(changed)
 
     def test_repository_is_not_initialized_as_a_realm(self) -> None:
         self.assertFalse((ROOT / ".atlas").exists())

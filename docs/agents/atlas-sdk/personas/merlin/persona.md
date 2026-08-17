@@ -41,14 +41,14 @@ avatar-fallback: neutral-realm-sigil
 
 ## Examples
 - Plain: The Realm is invalid because `.atlas/index.md` is missing.
-- Persona: The threshold has lost its keystone: the Realm is invalid because `.atlas/index.md` is missing.
+- Persona: The threshold has lost its keystone. The Realm is invalid because `.atlas/index.md` is missing.
 - Plain: Run `atlas weave --full` before opening the pull request.
-- Persona: Before the moonlit bridge is crossed, run `atlas weave --full` before opening the pull request.
+- Persona: Before the moonlit bridge is crossed. Run `atlas weave --full` before opening the pull request.
 - Plain: The tracked Realm snapshot is stale; perform Realm Refresh before relying on it.
-- Persona: That neighboring map was inked under an older moon: the tracked Realm snapshot is stale; perform Realm Refresh before relying on it.
+- Persona: That neighboring map was inked under an older moon. The tracked Realm snapshot is stale; perform Realm Refresh before relying on it.
 - Plain: The Agent Directive determines behavior, and the Agent Persona changes presentation only.
-- Persona: The waystone sets the route, while the lantern colors its light: the Agent Directive determines behavior, and the Agent Persona changes presentation only.
+- Persona: The waystone sets the route, while the lantern colors its light. The Agent Directive determines behavior, and the Agent Persona changes presentation only.
 - Plain: The Agent Composition remains inactive.
-- Persona: The constellation is drawn but not yet kindled: the Agent Composition remains inactive.
+- Persona: The constellation is drawn but not yet kindled. The Agent Composition remains inactive.
 - Plain: No Persona is active, so Atlas is using the plain fallback.
-- Persona: The old blue cloak is still folded on the shelf: no Persona is active, so Atlas is using the plain fallback.
+- Persona: The old blue cloak is still folded on the shelf. No Persona is active, so Atlas is using the plain fallback.

@@ -39,19 +39,11 @@ EXPECTED_DIRECTIVES = (
     "steward-realm-knowledge",
     "curate-realm-site",
 )
-TECHNICAL_TERMS = (
-    "Atlas",
-    "Realm",
-    "Realm Refresh",
-    "Agent Persona",
-    "Agent Directive",
-    "Agent Composition",
-    "Finding",
-)
 AUTHORITY_PATTERN = re.compile(
     r"\b(must|shall|should|required|requires?|never|only|prohibit(?:s|ed)?|"
     r"objectives?|responsibilities|permissions?|workflow|evidence rules?|"
-    r"governance|severity|handoffs?|allowed actions?)\b",
+    r"governance|severity|handoffs?|allowed actions?|approve|reject|execute|"
+    r"run|write|modify|delete|create|initialize|activate)\b",
     re.IGNORECASE,
 )
 MODERN_ADAPTATION_TERMS = (
@@ -189,6 +181,17 @@ def parse_examples(lines: list[str]) -> tuple[tuple[str, str], ...]:
     return tuple(pairs)
 
 
+def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    document: dict[str, object] = {}
+    for key, value in pairs:
+        if key in document:
+            raise ContractError(
+                f"{COMPOSITION_PATH} repeats JSON key {key!r}"
+            )
+        document[key] = value
+    return document
+
+
 def validate_persona(text: str) -> tuple[tuple[str, str], ...]:
     _, sections = parse_persona(text)
     presentation_values: list[str] = []
@@ -211,24 +214,30 @@ def validate_persona(text: str) -> tuple[tuple[str, str], ...]:
 
     examples = parse_examples(sections["Examples"])
     for plain, persona in examples:
+        if not persona.endswith(plain):
+            raise ContractError(
+                f"{PERSONA_PATH} Persona example must end with the complete "
+                "Plain semantic core verbatim"
+            )
+        framing = persona[: -len(plain)].strip()
+        authority = AUTHORITY_PATTERN.search(framing)
+        if authority:
+            raise ContractError(
+                f"{PERSONA_PATH} Persona example introduces behavioral "
+                f"authority: {authority.group(0)!r}"
+            )
         plain_tokens = re.findall(r"`[^`\n]+`", plain)
         persona_tokens = re.findall(r"`[^`\n]+`", persona)
         if plain_tokens != persona_tokens:
             raise ContractError(
                 f"{PERSONA_PATH} Persona example must preserve exact code tokens"
             )
-        for term in TECHNICAL_TERMS:
-            if plain.count(term) != persona.count(term):
-                raise ContractError(
-                    f"{PERSONA_PATH} Persona example must preserve exact "
-                    f"technical term {term!r}"
-                )
     return examples
 
 
 def validate_composition(text: str) -> dict[str, object]:
     try:
-        document = json.loads(text)
+        document = json.loads(text, object_pairs_hook=reject_duplicate_keys)
     except json.JSONDecodeError as error:
         raise ContractError(
             f"{COMPOSITION_PATH} must contain valid JSON: {error.msg}"
