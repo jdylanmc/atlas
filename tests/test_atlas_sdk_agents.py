@@ -4,6 +4,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -83,7 +84,7 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             agents.ContractError,
-            "approved framing",
+            "approved presentation-only semantic core",
         ):
             agents.validate_persona(changed)
 
@@ -140,13 +141,166 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
         ):
             agents.validate_persona(changed)
 
-    def test_persona_rejects_undocumented_command_example(self) -> None:
-        changed = self.persona_text.replace(
-            "python3 scripts/atlas_sdk_agents.py validate",
-            "atlas weave --full",
+    def test_persona_rejects_imperative_workflow_examples(self) -> None:
+        regressions = (
+            (
+                "The validation command for this source is "
+                "`python3 scripts/atlas_sdk_agents.py validate`.",
+                "Run `python3 scripts/atlas_sdk_agents.py validate`.",
+            ),
+            (
+                "Realm Refresh updates the Realm Cache to the tracked branch "
+                "tip, so a subsequent operation can resolve a new Realm "
+                "Snapshot while the original Realm Snapshot remains unchanged.",
+                "The tracked Realm snapshot is stale; perform Realm Refresh.",
+            ),
         )
-        with self.assertRaisesRegex(agents.ContractError, "documented"):
-            agents.validate_persona(changed)
+        for original, imperative in regressions:
+            with self.subTest(imperative=imperative):
+                changed = self.persona_text.replace(original, imperative)
+                with self.assertRaisesRegex(
+                    agents.ContractError,
+                    "imperative workflow language",
+                ):
+                    agents.validate_persona(changed)
+
+    def test_persona_rejects_imperatives_across_example_fields(self) -> None:
+        for imperative in (
+            "Validate the Realm.",
+            "Please open the pull request.",
+            "If the source changes, then refresh the snapshot.",
+            "The draft is ready; do not merge it.",
+            "The snapshot is stale; review it and use Realm Refresh.",
+            "Inspect the source and refresh the snapshot.",
+            "Inspect the source, and refresh the snapshot.",
+        ):
+            with self.subTest(imperative=imperative):
+                changed = self.persona_text.replace(
+                    "The Realm is invalid because `.atlas/index.md` is missing.",
+                    imperative,
+                )
+                with self.assertRaisesRegex(
+                    agents.ContractError,
+                    "imperative workflow language",
+                ):
+                    agents.validate_persona(changed)
+
+    def test_persona_rejects_authority_across_example_fields(self) -> None:
+        authority_examples = (
+            "The Agent has permission to update the Realm.",
+            "The Agent governs Realm policy.",
+            "The Agent modifies Realm content.",
+            "The Agent may modify Realm Laws without human approval.",
+            "Changes proceed without human approval.",
+        )
+        for authority in authority_examples:
+            with self.subTest(authority=authority):
+                changed = self.persona_text.replace(
+                    "The Realm is invalid because `.atlas/index.md` is missing.",
+                    authority,
+                )
+                with self.assertRaisesRegex(
+                    agents.ContractError,
+                    "behavioral authority",
+                ):
+                    agents.validate_persona(changed)
+
+    def test_persona_rejects_uncataloged_semantic_core_authority(self) -> None:
+        imperative_examples = (
+            "Use Realm Refresh before continuing.",
+            "Submit the validation report.",
+            "Ensure the Realm is valid.",
+            "Keep the snapshot current.",
+            "Follow the workflow.",
+        )
+        authority_examples = (
+            "The Agent is authorized to change Realm policy.",
+            "The Agent controls Realm policy.",
+            "The Agent has authority over Realm policy.",
+            "The Agent owns Realm governance.",
+            "The Agent sets policy.",
+            "The Agent can update Realm policy.",
+            "The Agent is permitted to update Realm policy.",
+        )
+        for imperative in imperative_examples:
+            with self.subTest(imperative=imperative):
+                self.assertIsNotNone(
+                    agents.IMPERATIVE_WORKFLOW_PATTERN.search(imperative)
+                )
+                changed = self.persona_text.replace(
+                    "The Realm is invalid because `.atlas/index.md` is missing.",
+                    imperative,
+                )
+                with self.assertRaisesRegex(
+                    agents.ContractError,
+                    "imperative workflow language",
+                ):
+                    agents.validate_persona(changed)
+        for authority in authority_examples:
+            with self.subTest(authority=authority):
+                self.assertIsNotNone(
+                    agents.EXAMPLE_AUTHORITY_PATTERN.search(authority)
+                )
+                changed = self.persona_text.replace(
+                    "The Realm is invalid because `.atlas/index.md` is missing.",
+                    authority,
+                )
+                with self.assertRaisesRegex(
+                    agents.ContractError,
+                    "behavioral authority",
+                ):
+                    agents.validate_persona(changed)
+
+    def test_persona_rejects_shortened_semantic_core_catalog(self) -> None:
+        with mock.patch.object(
+            agents,
+            "EXAMPLE_SEMANTIC_CORES",
+            agents.EXAMPLE_SEMANTIC_CORES[:-1],
+        ):
+            with self.assertRaisesRegex(
+                agents.ContractError,
+                "semantic core catalog must match",
+            ):
+                agents.validate_persona(self.persona_text)
+
+    def test_persona_allows_descriptive_workflow_language(self) -> None:
+        examples = (
+            "The latest validation run reported no Findings.",
+            "Realm Refresh updates the Realm Cache without changing an "
+            "existing Realm Snapshot.",
+            "Opening the pull request starts review.",
+            "The Realm performs validation automatically.",
+            "The validation command may fail when the source is invalid.",
+        )
+        for description in examples:
+            with self.subTest(description=description):
+                self.assertIsNone(
+                    agents.IMPERATIVE_WORKFLOW_PATTERN.search(description)
+                )
+                self.assertIsNone(
+                    agents.EXAMPLE_AUTHORITY_PATTERN.search(description)
+                )
+
+    def test_persona_preserves_realm_snapshot_immutability(self) -> None:
+        refresh_example = agents.validate_persona(self.persona_text)[2][0]
+        self.assertIn("updates the Realm Cache", refresh_example)
+        self.assertIn("subsequent operation", refresh_example)
+        self.assertIn("resolve a new Realm Snapshot", refresh_example)
+        self.assertIn(
+            "original Realm Snapshot remains unchanged",
+            refresh_example,
+        )
+
+    def test_persona_language_scan_ignores_descriptive_code_tokens(self) -> None:
+        for description in (
+            "The documented command is `atlas create`.",
+            "The documented command is `atlas write`.",
+            "The documented command is `atlas modify`.",
+            "The documented syntax is `atlas; create`.",
+            "The documented syntax is `and then refresh`.",
+        ):
+            with self.subTest(description=description):
+                agents.validate_example_language("Plain", description)
 
     def test_persona_rejects_modern_adaptation_references(self) -> None:
         changed = self.persona_text.replace(

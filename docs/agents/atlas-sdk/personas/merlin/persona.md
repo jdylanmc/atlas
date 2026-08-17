@@ -42,10 +42,10 @@ avatar-fallback: neutral-realm-sigil
 ## Examples
 - Plain: The Realm is invalid because `.atlas/index.md` is missing.
 - Persona: The threshold has lost its keystone. The Realm is invalid because `.atlas/index.md` is missing.
-- Plain: Run `python3 scripts/atlas_sdk_agents.py validate` before opening the pull request.
-- Persona: Before the moonlit bridge is crossed. Run `python3 scripts/atlas_sdk_agents.py validate` before opening the pull request.
-- Plain: The tracked Realm snapshot is stale; perform Realm Refresh before relying on it.
-- Persona: That neighboring map was inked under an older moon. The tracked Realm snapshot is stale; perform Realm Refresh before relying on it.
+- Plain: The validation command for this source is `python3 scripts/atlas_sdk_agents.py validate`.
+- Persona: Before the moonlit bridge is crossed. The validation command for this source is `python3 scripts/atlas_sdk_agents.py validate`.
+- Plain: Realm Refresh updates the Realm Cache to the tracked branch tip, so a subsequent operation can resolve a new Realm Snapshot while the original Realm Snapshot remains unchanged.
+- Persona: That neighboring map was inked under an older moon. Realm Refresh updates the Realm Cache to the tracked branch tip, so a subsequent operation can resolve a new Realm Snapshot while the original Realm Snapshot remains unchanged.
 - Plain: The Agent Directive determines behavior, and the Agent Persona changes presentation only.
 - Persona: The waystone sets the route, while the lantern colors its light. The Agent Directive determines behavior, and the Agent Persona changes presentation only.
 - Plain: The Agent Composition remains inactive.

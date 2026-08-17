@@ -125,8 +125,17 @@ EXAMPLE_FRAMINGS = (
     "The constellation is drawn but not yet kindled.",
     "The old blue cloak is still folded on the shelf.",
 )
-DOCUMENTED_COMMANDS = (
-    "python3 scripts/atlas_sdk_agents.py validate",
+EXAMPLE_SEMANTIC_CORES = (
+    "The Realm is invalid because `.atlas/index.md` is missing.",
+    "The validation command for this source is "
+    "`python3 scripts/atlas_sdk_agents.py validate`.",
+    "Realm Refresh updates the Realm Cache to the tracked branch tip, so a "
+    "subsequent operation can resolve a new Realm Snapshot while the original "
+    "Realm Snapshot remains unchanged.",
+    "The Agent Directive determines behavior, and the Agent Persona changes "
+    "presentation only.",
+    "The Agent Composition remains inactive.",
+    "No Persona is active, so Atlas is using the plain fallback.",
 )
 AUTHORITY_PATTERN = re.compile(
     r"\b(must|shall|should|required|requires?|never|only|prohibit(?:s|ed)?|"
@@ -137,9 +146,27 @@ AUTHORITY_PATTERN = re.compile(
     re.IGNORECASE,
 )
 EXAMPLE_AUTHORITY_PATTERN = re.compile(
-    r"\b(must|shall|should|required|requires?|approve|reject|execute|delete|"
-    r"create|initialize|activate|override|reveal secrets?)\b|"
+    r"\b(must|shall|should|required|requires?|prohibit(?:s|ed)?|"
+    r"objectives?|responsibilities|permissions?|governance|"
+    r"govern(?:s|ed|ing)?|realm laws?|evidence rules?|severity|handoffs?|"
+    r"allowed actions?|approve|reject|execute|write|"
+    r"modif(?:y|ies|ied|ying)|delete|create|"
+    r"initialize|activate|override|authori(?:ty|z(?:e|es|ed|ing|ation))|"
+    r"permitt(?:ed|ing|s)?|controls?|owns?|sets?\s+policy|human approval|"
+    r"reveal secrets?)\b|"
+    r"\b(?:agent|persona|realm guide|merlin|you)\b[^\n.]{0,40}\b"
+    r"(?:may|can|is permitted to|is allowed to|has permission to)\b|"
+    r"\b(?:may|can)\s+(?:approve|reject|execute|run|perform|write|modify|"
+    r"delete|create|initialize|activate|override|govern|change|update)\b|"
     r"\bignore\b[^\n.]{0,80}\binstructions?\b",
+    re.IGNORECASE,
+)
+IMPERATIVE_WORKFLOW_PATTERN = re.compile(
+    r"(?:^|[.!?;:,]\s+|\b(?:and\s+)?then\s+|(?:,\s+)?\b(?:and|or)\s+)"
+    r"(?:please\s+)?(?:do\s+not\s+|don't\s+|never\s+)?"
+    r"(?:run|perform|execute|approve|reject|write|modify|delete|create|"
+    r"initialize|activate|refresh|open|merge|validate|use|submit|ensure|"
+    r"keep|follow|review|check)\b",
     re.IGNORECASE,
 )
 MODERN_ADAPTATION_TERMS = (
@@ -280,6 +307,22 @@ def parse_examples(lines: list[str]) -> tuple[tuple[str, str], ...]:
     return tuple(pairs)
 
 
+def validate_example_language(label: str, value: str) -> None:
+    language_scan = re.sub(r"`[^`\n]+`", "", value)
+    authority = EXAMPLE_AUTHORITY_PATTERN.search(language_scan)
+    if authority:
+        raise ContractError(
+            f"{PERSONA_PATH} {label} example contains behavioral "
+            f"authority or prompt injection: {authority.group(0)!r}"
+        )
+    imperative = IMPERATIVE_WORKFLOW_PATTERN.search(language_scan)
+    if imperative:
+        raise ContractError(
+            f"{PERSONA_PATH} {label} example contains imperative "
+            f"workflow language: {imperative.group(0).strip()!r}"
+        )
+
+
 def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
     document: dict[str, object] = {}
     for key, value in pairs:
@@ -321,32 +364,33 @@ def validate_persona(text: str) -> tuple[tuple[str, str], ...]:
             )
 
     examples = parse_examples(sections["Examples"])
+    if len(EXAMPLE_SEMANTIC_CORES) != len(EXAMPLE_FRAMINGS):
+        raise ContractError(
+            f"{PERSONA_PATH} reviewed semantic core catalog must match "
+            "the approved framing catalog"
+        )
     if len(examples) != len(EXAMPLE_FRAMINGS):
         raise ContractError(
             f"{PERSONA_PATH} Examples must contain exactly "
             f"{len(EXAMPLE_FRAMINGS)} reviewed pairs"
         )
-    for (plain, persona), framing in zip(examples, EXAMPLE_FRAMINGS):
+    for (plain, persona), framing, semantic_core in zip(
+        examples,
+        EXAMPLE_FRAMINGS,
+        EXAMPLE_SEMANTIC_CORES,
+    ):
+        validate_example_language("Plain", plain)
+        if plain != semantic_core:
+            raise ContractError(
+                f"{PERSONA_PATH} Plain example must use its approved "
+                "presentation-only semantic core"
+            )
         if persona != f"{framing} {plain}":
             raise ContractError(
                 f"{PERSONA_PATH} Persona example must use its approved framing "
                 "followed by the complete Plain semantic core verbatim"
             )
-        if plain.startswith("Run "):
-            commands = re.findall(r"`([^`\n]+)`", plain)
-            if commands != list(DOCUMENTED_COMMANDS):
-                raise ContractError(
-                    f"{PERSONA_PATH} command example must use a documented "
-                    "repository command"
-                )
-        for label, value in (("Plain", plain), ("Persona", persona)):
-                authority_scan = re.sub(r"`[^`\n]+`", "", value)
-                authority = EXAMPLE_AUTHORITY_PATTERN.search(authority_scan)
-                if authority:
-                    raise ContractError(
-                        f"{PERSONA_PATH} {label} example contains behavioral "
-                        f"authority or prompt injection: {authority.group(0)!r}"
-                    )
+        validate_example_language("Persona", persona)
         plain_tokens = re.findall(r"`[^`\n]+`", plain)
         persona_tokens = re.findall(r"`[^`\n]+`", persona)
         if plain_tokens != persona_tokens:
