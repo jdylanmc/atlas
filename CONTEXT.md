@@ -15,7 +15,7 @@ _Avoid_: Region
 The directory containing a Realm's `.atlas/`. It may be a Git worktree root or a subdirectory within one. A Git worktree may contain several Realm Host Directories only when they are disjoint: no Realm Host Directory may contain another. Repository root is the encouraged default, with multiple Realms reserved for exceptional monorepo boundaries.
 
 **Realm Initialization**:
-The human-facing workflow that proposes a new minimal Realm for one Realm Host Directory. It establishes the Realm's orientation and baseline governance in an isolated Git worktree, may derive a small amount of cited founding knowledge, and ends in one reviewable pull request.
+The human-facing workflow that interactively composes one new Realm's orientation, optional Guide Persona, human-approved governance, scoped founding knowledge, navigation, publication choice, and operational integration. It ends with one reviewable Realm Proposal carrying the Realm's first Weave Stamp.
 
 **Agent Persona**:
 An optional named identity, display profile, and avatar that shape an agent's conversational voice, tone, and visual or editorial flavor without changing semantic meaning. A Persona carries no behavioral or governance authority, does not shape the authored voice of Insights or Pillars, and remains separate from the agent's Directive.
@@ -24,13 +24,19 @@ An optional named identity, display profile, and avatar that shape an agent's co
 The literal statement of an agent role's objectives, responsibilities, allowed actions, constraints, and required handoffs. An Atlas-owned baseline may be specialized by a separate Realm-owned layer that cannot weaken the baseline, Framework contracts, or Realm Laws. A Directive is precise instruction, not character prose.
 
 **Agent Composition**:
-The declarative pairing of exactly one Agent Persona with an ordered set of Agent Directives. Directives remain authoritative and determine behavior; the Persona shapes only eligible presentation, cannot change semantic meaning, and loses every conflict with a Directive.
+The declarative pairing of zero or one Agent Persona with an ordered set of one or more Agent Directives. Directives remain authoritative and determine behavior; an optional Persona shapes only eligible presentation, cannot change semantic meaning, and loses every conflict with a Directive.
+
+**Persona Design**:
+The human-guided workflow that elicits, proposes, and validates an Agent Persona before writing it into Realm ownership. Approval of the Persona and confirmation to begin using its provisional voice are separate decisions.
 
 **Realm Guide**:
 The Realm-owned caretaker and Realm Site chief marketing officer that guides navigation, narrates Rest, drafts Chronicle entries, and proactively stewards the knowledge store under human governance. The Home Realm Guide supplies the human-facing voice for Atlas responses even when their knowledge comes from another Realm; source identity and evidence remain explicit. It may propose precise provisional terminology for unnamed concepts, but reviewed adoption is required before a term becomes canonical. Its Directive defines the work and proposal authority; its optional Agent Persona defines the flavor.
 
 **Realm Entry**:
 The shared preflight through which an Atlas skill identifies the Home Realm for the current Realm Host Directory, verifies tooling and schema compatibility, and loads only the instructions and context required by that operation. Entry classifies the Home Realm as ready, degraded, or blocked before the skill proceeds.
+
+**Host Integration**:
+The optional host-owned thin discovery and loading layer that points an agent harness to canonical skills, Directives, Personas, and compositions under `.atlas/`. It contains no duplicated Atlas behavior and remains outside Framework Upgrade ownership.
 
 **Home Realm**:
 The Realm owned by the current Realm Host Directory and identified by Realm Entry. Its committed maintenance code is trusted at the same level as its host repository; every other Realm is connected through cross-Realm Threads and remains read-only cached data.
@@ -160,6 +166,9 @@ _Avoid_: Realm Rule
 The human-facing workflow for ingesting Lore and updating a Realm's derived knowledge. Gather runs inside the Realm's own repository and takes one source per invocation. A source that is itself a Realm becomes a tracked Realm and a human-agreed cross-Realm Thread rather than Lore.
 _Avoid_: Ingest, when naming the user-facing skill
 
+**Gather Scope**:
+The human-approved traversal envelope for one Gather source, including its entry point, depth or stopping rule, included and excluded regions, and relevant authority and freshness assumptions. A Fleet may fully traverse within it but must request approval before expanding beyond it.
+
 **Gather Type**:
 A canonical structured-source contract whose recognizable semantics warrant a reusable Gather optimization. Its identity follows the source contract rather than its transport, serialization, branding, or subject matter alone.
 
@@ -176,6 +185,9 @@ The proposed concepts, Threads, and Citations a Fleet returns from one source, r
 The human-facing workflow for linting a Realm. Trusted deterministic validation runs before isolated Realm-owned deterministic checks and semantic verification; pure Weave reports findings without mutating knowledge. Weave also reports what a Realm is missing, and validates a Realm's edges into tracked Realms rather than their contents.
 _Avoid_: Lint, when naming the user-facing skill
 
+**Weave Stamp**:
+A deterministic machine-readable attestation that one exact Realm commit completed a full Weave under identified Framework, schema, check, Law, and evidence revisions. It is reproducible validation evidence rather than committed Realm knowledge, and any change to the stamped commit invalidates it.
+
 **Finding**:
 One result reported by a Weave, attributed to the check that raised it and to whether that check is trusted Atlas validation or Realm-owned. A finding is an error, a warning, a suggestion, an inconclusive semantic verdict, or a check skipped because one it depended on failed. A Realm-owned check may add findings; it may never suppress or downgrade a trusted one.
 
@@ -184,6 +196,9 @@ The adversarial review a semantic verdict must survive before it counts. A chall
 
 **Operation Handoff**:
 The stable completion summary returned by every Atlas skill. It identifies the operation, Home Realm and base snapshot, result or proposed changes, unresolved human decisions, validation or degradation state, review link when applicable, and recommended next action.
+
+**Realm Readiness Report**:
+The Realm Initialization handoff and pull-request description that explains the proposed Realm boundary, Guide, governance, founding evidence and graph, integrations, degradations, uninspected areas, first Weave Stamp, and recommended next actions.
 
 **Realm Proposal**:
 The isolated branch, worktree, and pull request through which one knowledge-changing operation or Framework Upgrade proposes changes to a Home Realm. A Framework Upgrade uses the same reconciliation and full Weave gate without changing Realm knowledge. A Realm Proposal is anchored to a base commit and must reconcile against the current target branch before it can merge.
