@@ -79,33 +79,13 @@ jobs:
           BASE_SHA: ${{ steps.revision.outputs.base_sha }}
           MERGE_SHA: ${{ steps.revision.outputs.merge_sha }}
         run: |
-          if git cat-file -e "$BASE_SHA:scripts/cacophony_agents.ts"; then
-            validator="$RUNNER_TEMP/cacophony_agents.ts"
-            git show "$BASE_SHA:scripts/cacophony_agents.ts" > "$validator"
-            chmod 0555 "$validator"
-            node "$validator" verify-revision \
-              --repository "$GITHUB_WORKSPACE" \
-              --revision "$MERGE_SHA" \
-              --agent fletcher
-          else
-            prompt_path=".cacophony/agents/fletcher.md"
-            if git cat-file -e "$BASE_SHA:scripts/cacophony_agents.py"; then
-              echo "::notice::Validator bootstrap detected; the trusted base predates the TypeScript validator, so only its existing Fletcher prompt is trusted."
-            elif git cat-file -e "$BASE_SHA:$prompt_path"; then
-              echo "::notice::Validator bootstrap detected; the trusted base has only the legacy Fletcher prompt."
-            else
-              echo "::error::Neither the trusted validator nor legacy Fletcher prompt exists."
-              exit 1
-            fi
-            prompt_type="$(git ls-tree "$BASE_SHA" -- "$prompt_path" | awk '{print $1 " " $2}')"
-            prompt_bytes="$(git cat-file -s "$BASE_SHA:$prompt_path")"
-            if [[ "$prompt_type" != "100644 blob" ]] ||
-              [[ ! "$prompt_bytes" =~ ^[0-9]+$ ]] ||
-              (( prompt_bytes > 131072 )); then
-              echo "::error::Legacy trusted-base Fletcher prompt is missing, invalid, or oversized."
-              exit 1
-            fi
-          fi
+          validator="$RUNNER_TEMP/cacophony_agents.ts"
+          git show "$BASE_SHA:scripts/cacophony_agents.ts" > "$validator"
+          chmod 0555 "$validator"
+          node "$validator" verify-revision \
+            --repository "$GITHUB_WORKSPACE" \
+            --revision "$MERGE_SHA" \
+            --agent fletcher
 
   prompt-review:
     needs: prompt-contract

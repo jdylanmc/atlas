@@ -109,29 +109,13 @@ jobs:
           fi
 
           prompt_path=".cacophony/agents/$AGENT_SLUG.md"
-          if git cat-file -e "$BASE_SHA:scripts/cacophony_agents.ts"; then
-            validator="$RUNNER_TEMP/cacophony_agents.ts"
-            git show "$BASE_SHA:scripts/cacophony_agents.ts" > "$validator"
-            chmod 0555 "$validator"
-            node "$validator" verify-revision \
-              --repository "$GITHUB_WORKSPACE" \
-              --revision "$BASE_SHA" \
-              --agent "$AGENT_SLUG"
-          else
-            if git cat-file -e "$BASE_SHA:scripts/cacophony_agents.py"; then
-              echo "::notice::Using the legacy trusted-base prompt bootstrap; the base predates the TypeScript validator and no Python code is executed."
-            else
-              echo "::notice::Using the legacy trusted-base prompt bootstrap; no pull request validator is executed."
-            fi
-            prompt_type="$(git ls-tree "$BASE_SHA" -- "$prompt_path" | awk '{print $1 " " $2}')"
-            prompt_bytes="$(git cat-file -s "$BASE_SHA:$prompt_path")"
-            if [[ "$prompt_type" != "100644 blob" ]] ||
-              [[ ! "$prompt_bytes" =~ ^[0-9]+$ ]] ||
-              (( prompt_bytes > 131072 )); then
-              echo "::error::Legacy trusted-base prompt is missing, invalid, or oversized."
-              exit 1
-            fi
-          fi
+          validator="$RUNNER_TEMP/cacophony_agents.ts"
+          git show "$BASE_SHA:scripts/cacophony_agents.ts" > "$validator"
+          chmod 0555 "$validator"
+          node "$validator" verify-revision \
+            --repository "$GITHUB_WORKSPACE" \
+            --revision "$BASE_SHA" \
+            --agent "$AGENT_SLUG"
 
           workspace_root="$(realpath "$GITHUB_WORKSPACE")"
           agents_root="$(realpath .cacophony/agents)"
