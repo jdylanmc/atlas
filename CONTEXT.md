@@ -154,6 +154,12 @@ _Avoid_: Realm Rule
 The human-facing workflow for ingesting Lore and updating a Realm's derived knowledge. Gather runs inside the Realm's own repository and takes one source per invocation. A source that is itself a Realm becomes a tracked Realm and a human-agreed cross-Realm Thread rather than Lore.
 _Avoid_: Ingest, when naming the user-facing skill
 
+**Gather Type**:
+A canonical structured-source contract whose recognizable semantics warrant a reusable Gather optimization. Its identity follows the source contract rather than its transport, serialization, branding, or subject matter alone.
+
+**Gather Type Skill**:
+A reusable `gather-<type>` source adapter that makes repeated Gather operations for one Gather Type cheaper and more consistent. Whether Framework-provided, downloaded, or learned, it may specialize source handling but never owns Realm synthesis or governance.
+
 **Fleet**:
 The read-only subagents a Gather dispatches to crawl one source in parallel. A Fleet reports candidates and never writes to a Realm.
 
