@@ -327,6 +327,8 @@ test("validates visible Citation markers and ignores non-visible syntax", () => 
     "[^code]: [[.atlas/lore/missing]]",
     "[^fence]: [[.atlas/lore/missing]]",
     "[^comment]: [[.atlas/lore/missing]]",
+    "",
+    "Plain 😀 &#x; &#91^not-a-citation] &amp &; &unknown; &NotEqualTilde;",
   ].join("\n");
   const findings = validateRealmStructure([
     validFiles[2] as RealmTextFile,
@@ -750,13 +752,17 @@ test("handles repeated unterminated Citation prefixes deterministically", () => 
   );
 });
 
-test("fails closed on encoded and escaped Citation markers in raw HTML", () => {
+test("decodes padded and semicolonless numeric Citation markers in raw HTML", () => {
   const body = [
     "# Page",
     "",
-    "<div>&#91;^encoded]</div>",
+    "<div>&#000000091;^decimal-padded]</div>",
     "",
-    "<div>&#x5B;^hex]</div>",
+    "<div>&#91^decimal-unterminated]</div>",
+    "",
+    "<div>&#x0000005B;^hex-padded]</div>",
+    "",
+    "<div>&#x5b^hex-unterminated]</div>",
     "",
     "<div>Tom &amp; Jerry &  Co.</div>",
     "",
@@ -776,29 +782,43 @@ test("fails closed on encoded and escaped Citation markers in raw HTML", () => {
       {
         code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
         location: {
-          end: { column: 20, line: 17 },
+          end: { column: 34, line: 17 },
           start: { column: 6, line: 17 },
         },
       },
       {
         code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
         location: {
-          end: { column: 17, line: 19 },
+          end: { column: 32, line: 19 },
           start: { column: 6, line: 19 },
         },
       },
       {
         code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
         location: {
-          end: { column: 37, line: 25 },
-          start: { column: 22, line: 25 },
+          end: { column: 30, line: 21 },
+          start: { column: 6, line: 21 },
         },
       },
       {
         code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
         location: {
-          end: { column: 17, line: 27 },
-          start: { column: 7, line: 27 },
+          end: { column: 29, line: 23 },
+          start: { column: 6, line: 23 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
+        location: {
+          end: { column: 37, line: 29 },
+          start: { column: 22, line: 29 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
+        location: {
+          end: { column: 17, line: 31 },
+          start: { column: 7, line: 31 },
         },
       },
     ],
@@ -835,6 +855,18 @@ test("validates rendered wiki-link alias text for titles and Citations", () => {
     [],
   );
 
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      page(
+        ".atlas/insights/entity-title.md",
+        "# [[.atlas/lore/parser-source|A &amp; B]]",
+        { title: "A & B" },
+      ),
+    ]),
+    [],
+  );
+
   const aliased = validateRealmStructure([
     validFiles[2] as RealmTextFile,
     page(
@@ -850,6 +882,54 @@ test("validates rendered wiki-link alias text for titles and Citations", () => {
         location: {
           end: { column: 49, line: 17 },
           start: { column: 39, line: 17 },
+        },
+      },
+    ],
+  );
+});
+
+test("renders numeric and named character references in wiki-link aliases", () => {
+  const title = "€ � � � 😀 Æ ½ ≂̸ 😀";
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      page(
+        ".atlas/insights/entity-values.md",
+        "# [[.atlas/lore/parser-source|&#x80; &#0; &#xD800; &#1114112; &#X1F600; &AElig; &frac12; &NotEqualTilde; 😀]]",
+        { title },
+      ),
+    ]),
+    [],
+  );
+});
+
+test("decodes numeric Citation markers in wiki-link aliases", () => {
+  const body = [
+    "# Page",
+    "",
+    "Claim [[.atlas/lore/parser-source|&#000000091;^decimal-padded]]].",
+    "",
+    "Claim [[.atlas/lore/parser-source|&#x5b^hex-unterminated]]].",
+  ].join("\n");
+  const findings = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    page(".atlas/insights/page.md", body),
+  ]);
+  assert.deepEqual(
+    findings.map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 65, line: 17 },
+          start: { column: 35, line: 17 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 60, line: 19 },
+          start: { column: 35, line: 19 },
         },
       },
     ],
@@ -907,7 +987,7 @@ test("detects Citation markers split across rendered visible nodes", () => {
   );
 });
 
-test("reports split Citation markers that no definition can bind", () => {
+test("resolves split Citation markers to existing definitions", () => {
   const body = [
     "# Page",
     "",
@@ -916,29 +996,13 @@ test("reports split Citation markers that no definition can bind", () => {
     "[^split]: [[.atlas/lore/parser-source]]",
     "[^aliased]: [[.atlas/lore/parser-source]]",
   ].join("\n");
-  const findings = validateRealmStructure([
-    validFiles[2] as RealmTextFile,
-    validFiles[4] as RealmTextFile,
-    page(".atlas/insights/page.md", body),
-  ]);
   assert.deepEqual(
-    findings.map(({ code, location }) => ({ code, location })),
-    [
-      {
-        code: "ATLAS_CITATION_DEFINITION_MISSING",
-        location: {
-          end: { column: 17, line: 17 },
-          start: { column: 7, line: 17 },
-        },
-      },
-      {
-        code: "ATLAS_CITATION_DEFINITION_MISSING",
-        location: {
-          end: { column: 64, line: 17 },
-          start: { column: 24, line: 17 },
-        },
-      },
-    ],
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      validFiles[4] as RealmTextFile,
+      page(".atlas/insights/page.md", body),
+    ]),
+    [],
   );
 });
 
@@ -962,6 +1026,31 @@ test("keeps hidden, destination, and block content out of rendered runs", () => 
       page(".atlas/insights/page.md", body),
     ]),
     [],
+  );
+});
+
+test("bridges contiguous link labels but never hidden destinations", () => {
+  const body = [
+    "# Page",
+    "",
+    "Claim [^open [link](https://example.test/a) tail]",
+    "",
+    "Claim [^open [link](https://example.test/a]b) tail",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      page(".atlas/insights/page.md", body),
+    ]).map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 50, line: 17 },
+          start: { column: 7, line: 17 },
+        },
+      },
+    ],
   );
 });
 

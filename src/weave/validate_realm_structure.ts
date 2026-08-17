@@ -4,6 +4,7 @@ import type {
   Extension as MdastExtension,
 } from "mdast-util-from-markdown";
 import type { Nodes } from "mdast";
+import { decodeNamedCharacterReference } from "decode-named-character-reference";
 import { gfmFootnoteFromMarkdown } from "mdast-util-gfm-footnote";
 import type { Token } from "micromark-util-types";
 import { gfmFootnote } from "micromark-extension-gfm-footnote";
@@ -42,6 +43,7 @@ type MarkdownNode = {
   readonly alt?: string;
   readonly children?: readonly MarkdownNode[];
   readonly identifier?: string;
+  readonly label?: string;
   readonly position?: MarkdownPosition;
   readonly target?: string;
   readonly type: string;
@@ -86,7 +88,7 @@ function wikiLinkFromMarkdown(): MdastExtension {
   let current: MutableWikiLinkNode | undefined;
   function rendered(context: CompileContext, token: Token): void {
     const node = current as MutableWikiLinkNode;
-    node.value = context.sliceSerialize(token);
+    node.value = decodeRenderedText(context.sliceSerialize(token));
     node.visible = { end: token.end.offset, start: token.start.offset };
   }
   return {
@@ -347,12 +349,137 @@ const transparentNodeTypes: ReadonlySet<string> = new Set([
   "emphasis",
   "strong",
 ]);
-const breakEntry = "break";
-type PendingEntry = MarkdownNode | typeof breakEntry;
-const ambiguousCharacter = "\u0000";
-const characterReference =
-  /&(?:#\d{1,7}|#[Xx][\dA-Fa-f]{1,6}|[A-Za-z][\dA-Za-z]{0,31});/uy;
+type PendingEntry = MarkdownNode;
 const markerBoundary = /[\r\n[]/u;
+const c1CharacterReferenceReplacements: ReadonlyMap<number, string> = new Map([
+  [0x80, "\u20ac"],
+  [0x82, "\u201a"],
+  [0x83, "\u0192"],
+  [0x84, "\u201e"],
+  [0x85, "\u2026"],
+  [0x86, "\u2020"],
+  [0x87, "\u2021"],
+  [0x88, "\u02c6"],
+  [0x89, "\u2030"],
+  [0x8a, "\u0160"],
+  [0x8b, "\u2039"],
+  [0x8c, "\u0152"],
+  [0x8e, "\u017d"],
+  [0x91, "\u2018"],
+  [0x92, "\u2019"],
+  [0x93, "\u201c"],
+  [0x94, "\u201d"],
+  [0x95, "\u2022"],
+  [0x96, "\u2013"],
+  [0x97, "\u2014"],
+  [0x98, "\u02dc"],
+  [0x99, "\u2122"],
+  [0x9a, "\u0161"],
+  [0x9b, "\u203a"],
+  [0x9c, "\u0153"],
+  [0x9e, "\u017e"],
+  [0x9f, "\u0178"],
+]);
+
+type DecodedCharacterReference = {
+  readonly character: string;
+  readonly end: number;
+};
+
+function digitValue(character: number, radix: 10 | 16): number {
+  if (character >= 0x30 && character <= 0x39) return character - 0x30;
+  if (radix === 16 && character >= 0x41 && character <= 0x46) {
+    return character - 0x41 + 10;
+  }
+  if (radix === 16 && character >= 0x61 && character <= 0x66) {
+    return character - 0x61 + 10;
+  }
+  return -1;
+}
+
+function isAsciiAlphaNumeric(character: number): boolean {
+  return (
+    (character >= 0x30 && character <= 0x39) ||
+    (character >= 0x41 && character <= 0x5a) ||
+    (character >= 0x61 && character <= 0x7a)
+  );
+}
+
+function renderedNumericCharacter(value: number, overflowed: boolean): string {
+  if (overflowed || value === 0 || (value >= 0xd800 && value <= 0xdfff)) {
+    return "\ufffd";
+  }
+  return c1CharacterReferenceReplacements.get(value) ?? String.fromCodePoint(value);
+}
+
+function decodedCharacterReference(
+  source: string,
+  start: number,
+  allowMissingNumericSemicolon: boolean,
+): DecodedCharacterReference | undefined {
+  let index = start + 1;
+  if (source.charCodeAt(index) === 0x23) {
+    index += 1;
+    let radix: 10 | 16 = 10;
+    const hexMarker = source.charCodeAt(index);
+    if (hexMarker === 0x58 || hexMarker === 0x78) {
+      radix = 16;
+      index += 1;
+    }
+    const digitsStart = index;
+    let overflowed = false;
+    let value = 0;
+    for (;;) {
+      const digit = digitValue(source.charCodeAt(index), radix);
+      if (digit < 0) break;
+      if (!overflowed) {
+        if (value > Math.floor((0x10ffff - digit) / radix)) {
+          overflowed = true;
+        } else {
+          value = value * radix + digit;
+        }
+      }
+      index += 1;
+    }
+    if (index === digitsStart) return undefined;
+    if (source[index] === ";") {
+      index += 1;
+    } else if (!allowMissingNumericSemicolon) {
+      return undefined;
+    }
+    return {
+      character: renderedNumericCharacter(value, overflowed),
+      end: index,
+    };
+  }
+
+  const nameStart = index;
+  while (isAsciiAlphaNumeric(source.charCodeAt(index))) index += 1;
+  if (index === nameStart || source[index] !== ";") return undefined;
+  const character = decodeNamedCharacterReference(source.slice(nameStart, index));
+  return character === false ? undefined : { character, end: index + 1 };
+}
+
+function decodeRenderedText(source: string): string {
+  const characters: string[] = [];
+  let index = 0;
+  while (index < source.length) {
+    const reference =
+      source[index] === "&"
+        ? decodedCharacterReference(source, index, true)
+        : undefined;
+    if (reference !== undefined) {
+      characters.push(reference.character);
+      index = reference.end;
+      continue;
+    }
+    const point = source.codePointAt(index) as number;
+    const end = index + (point > 0xffff ? 2 : 1);
+    characters.push(source.slice(index, end));
+    index = end;
+  }
+  return characters.join("");
+}
 
 function pushChildren(pending: PendingEntry[], node: MarkdownNode): void {
   const children = node.children ?? [];
@@ -369,28 +496,40 @@ function nodeRange(node: MarkdownNode): SourceRange {
   };
 }
 
-/**
- * Appends one rendered-visible source range to a cell stream, keeping absolute
- * source offsets. A character reference renders as a character this validator
- * cannot resolve without an HTML renderer, so it matches every Citation marker
- * character and fails closed.
- */
 function appendCells(
   cells: MarkerCell[],
   body: string,
   range: SourceRange,
   escapable: boolean,
   html: boolean,
+  allowMissingNumericSemicolon: boolean,
 ): void {
   const source = body.slice(range.start, range.end);
   let backslashes = 0;
   let index = 0;
   while (index < source.length) {
-    characterReference.lastIndex = index;
-    const reference = source[index] === "&" ? characterReference.exec(source) : null;
-    const end = reference === null ? index + 1 : index + reference[0].length;
-    const character =
-      reference === null ? (source[index] as string) : ambiguousCharacter;
+    const reference =
+      source[index] === "&"
+        ? decodedCharacterReference(source, index, allowMissingNumericSemicolon)
+        : undefined;
+    if (reference !== undefined) {
+      for (const character of Array.from(reference.character)) {
+        cells.push({
+          character,
+          end: range.start + reference.end,
+          escapable,
+          escaped: false,
+          html,
+          start: range.start + index,
+        });
+      }
+      backslashes = 0;
+      index = reference.end;
+      continue;
+    }
+    const point = source.codePointAt(index) as number;
+    const end = index + (point > 0xffff ? 2 : 1);
+    const character = source.slice(index, end);
     cells.push({
       character,
       end: range.start + end,
@@ -399,13 +538,17 @@ function appendCells(
       html,
       start: range.start + index,
     });
-    backslashes = reference === null && character === "\\" ? backslashes + 1 : 0;
+    backslashes = character === "\\" ? backslashes + 1 : 0;
     index = end;
   }
 }
 
 function rendersAs(cell: MarkerCell, character: string): boolean {
-  return cell.character === character || cell.character === ambiguousCharacter;
+  return cell.character === character;
+}
+
+function normalizedCitationIdentifier(identifier: string): string {
+  return identifier.trim().replace(/\s+/gu, " ").toLowerCase();
 }
 
 /**
@@ -444,17 +587,17 @@ function collectMarkers(
     if (close < index + 3) continue;
     const boundary = nextBoundary[index + 2] as number;
     if (boundary >= 0 && boundary < close) continue;
-    let identifier = "";
+    const identifier: string[] = [];
     for (let cursor = index + 2; cursor < close; cursor += 1) {
       const cell = cells[cursor] as MarkerCell;
-      identifier += body.slice(cell.start, cell.end);
+      identifier.push(cell.character);
     }
     const position = rangeAt(body, open.start, (cells[close] as MarkerCell).end);
     if ((htmlBefore[close + 1] as number) > (htmlBefore[index] as number)) {
       found.rawHtml.push(position);
     } else {
       found.references.push({
-        identifier: identifier.trim().replace(/\s+/gu, " ").toLowerCase(),
+        identifier: normalizedCitationIdentifier(identifier.join("")),
         position,
       });
     }
@@ -480,41 +623,43 @@ function visibleCitationMarkers(tree: MarkdownNode, body: string): VisibleMarker
     }
     previousEnd = -1;
   }
-  function emit(range: SourceRange, escapable: boolean, html: boolean): void {
+  function emit(
+    range: SourceRange,
+    escapable: boolean,
+    html: boolean,
+    allowMissingNumericSemicolon: boolean,
+  ): void {
     if (previousEnd >= 0 && lineEndings.test(body.slice(previousEnd, range.start))) {
       flush();
     }
-    appendCells(cells, body, range, escapable, html);
+    appendCells(cells, body, range, escapable, html, allowMissingNumericSemicolon);
     previousEnd = range.end;
   }
   while (pending.length > 0) {
     const entry = pending.pop() as PendingEntry;
-    if (entry === breakEntry) {
-      flush();
-      continue;
-    }
     if (entry.type === "text") {
-      emit(nodeRange(entry), true, false);
+      emit(nodeRange(entry), true, false, false);
       continue;
     }
     if (entry.type === "html") {
-      emit(nodeRange(entry), false, true);
+      emit(nodeRange(entry), false, true, true);
       continue;
     }
     if (entry.type === "wikiLink") {
-      emit(entry.visible as SourceRange, false, false);
+      emit(entry.visible as SourceRange, false, false, true);
       continue;
     }
     if (transparentNodeTypes.has(entry.type)) {
       pushChildren(pending, entry);
       continue;
     }
+    if (labelNodeTypes.has(entry.type) && body[nodeRange(entry).start] === "[") {
+      pushChildren(pending, entry);
+      continue;
+    }
     flush();
     if (hiddenNodeTypes.has(entry.type)) continue;
-    if (labelNodeTypes.has(entry.type)) {
-      if (body[nodeRange(entry).start] !== "[") continue;
-      pending.push(breakEntry);
-    }
+    if (labelNodeTypes.has(entry.type)) continue;
     pushChildren(pending, entry);
   }
   flush();
@@ -556,6 +701,10 @@ function definitionWikilinks(definition: MarkdownNode): readonly MarkdownNode[] 
   return targets;
 }
 
+function citationNodeIdentifier(node: MarkdownNode): string {
+  return normalizedCitationIdentifier(node.label as string);
+}
+
 function validateCitations(
   parsedPages: readonly {
     readonly file: RealmTextFile;
@@ -566,7 +715,7 @@ function validateCitations(
 ): void {
   for (const { file, page } of parsedPages) {
     const tree = fromMarkdown(page.page.body, markdownOptions) as MarkdownNode;
-    const references: MarkdownNode[] = [];
+    const references: string[] = [];
     const { rawHtml, references: unresolved } = visibleCitationMarkers(
       tree,
       page.page.body,
@@ -574,11 +723,12 @@ function validateCitations(
     const definitions = new Map<string, MarkdownNode[]>();
     visitMarkdown(tree, (node) => {
       if (node.type === "footnoteReference" && node.identifier !== undefined) {
-        references.push(node);
+        references.push(citationNodeIdentifier(node));
       }
       if (node.type === "footnoteDefinition" && node.identifier !== undefined) {
-        const existing = definitions.get(node.identifier);
-        if (existing === undefined) definitions.set(node.identifier, [node]);
+        const identifier = citationNodeIdentifier(node);
+        const existing = definitions.get(identifier);
+        if (existing === undefined) definitions.set(identifier, [node]);
         else existing.push(node);
       }
     });
@@ -595,6 +745,7 @@ function validateCitations(
     }
 
     for (const reference of unresolved) {
+      if ((definitions.get(reference.identifier) ?? []).length > 0) continue;
       findings.push(
         finding(
           "ATLAS_CITATION_DEFINITION_MISSING",
@@ -605,9 +756,7 @@ function validateCitations(
       );
     }
 
-    const referenced = new Set(
-      references.map(({ identifier }) => identifier as string),
-    );
+    const referenced = new Set(references);
     for (const { identifier } of unresolved) {
       referenced.add(identifier);
     }
