@@ -81,11 +81,24 @@ function assertBudgets(budgets: RealmTextBudgets): void {
   }
 }
 
+// The intrinsic brand-checks the explicit receiver supplied through Reflect.
+// eslint-disable-next-line @typescript-eslint/unbound-method
+const sharedArrayBufferSlice = SharedArrayBuffer.prototype.slice;
+
+function isSharedArrayBuffer(buffer: ArrayBufferLike): boolean {
+  try {
+    Reflect.apply(sharedArrayBufferSlice, buffer, [0, 0]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function loadRealmText(
   capturedFiles: readonly CapturedRealmFile[],
   budgets: RealmTextBudgets,
 ): readonly RealmTextFile[] {
-  if (capturedFiles.some((file) => file.bytes.buffer instanceof SharedArrayBuffer)) {
+  if (capturedFiles.some((file) => isSharedArrayBuffer(file.bytes.buffer))) {
     throw new RealmLoadError("SHARED_BYTES_NOT_ALLOWED");
   }
   assertBudgets(budgets);

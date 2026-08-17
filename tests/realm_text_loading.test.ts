@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 import {
   loadRealmText,
   RealmLoadError,
@@ -112,6 +113,16 @@ test("returned text has no caller mutation aliases", () => {
 
 test("rejects bytes backed by shared memory", () => {
   const bytes = new Uint8Array(new SharedArrayBuffer(4));
+  assert.equal(
+    errorCode(() => loadRealmText([{ bytes, path: ".atlas/shared.md" }], BUDGETS)),
+    "SHARED_BYTES_NOT_ALLOWED",
+  );
+});
+
+test("rejects cross-context shared memory", () => {
+  const bytes = runInNewContext(
+    "new Uint8Array(new SharedArrayBuffer(4))",
+  ) as Uint8Array;
   assert.equal(
     errorCode(() => loadRealmText([{ bytes, path: ".atlas/shared.md" }], BUDGETS)),
     "SHARED_BYTES_NOT_ALLOWED",
