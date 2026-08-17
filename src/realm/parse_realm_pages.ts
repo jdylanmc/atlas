@@ -1,7 +1,6 @@
-import { Value } from "@sinclair/typebox/value";
 import { parseDocument } from "yaml";
 import {
-  RealmPageEnvelopeSchema,
+  checkRealmPageEnvelope,
   type RealmPageEnvelope,
 } from "../domain/realm_page.ts";
 import type { RealmTextFile } from "./load_realm_text.ts";
@@ -165,7 +164,7 @@ function parsePage(file: RealmTextFile): ParsedRealmPage {
     throw new RealmPageParseError("MALFORMED_FRONTMATTER", file.path, 2);
   }
   const page = isRecord(frontmatter) ? { ...frontmatter, body } : undefined;
-  if (page === undefined || !Value.Check(RealmPageEnvelopeSchema, page)) {
+  if (page === undefined || !checkRealmPageEnvelope(page)) {
     throw new RealmPageParseError("INVALID_PAGE_ENVELOPE", file.path, 2);
   }
   const frozenPage = cloneAndFreezeJson(page) as RealmPageEnvelope;

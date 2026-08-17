@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
-import { Value } from "@sinclair/typebox/value";
-import { RealmPageEnvelopeSchema } from "../src/domain/realm_page.ts";
+import { FormatRegistry } from "@sinclair/typebox";
+import {
+  checkRealmPageEnvelope,
+  RealmPageEnvelopeSchema,
+} from "../src/domain/realm_page.ts";
 import {
   classifyRealmTextPath,
   parseRealmPages,
@@ -325,7 +328,7 @@ test("schema and inferred TypeScript type describe the same envelope", () => {
     realm: { nested: { enabled: true } },
   };
 
-  assert.equal(Value.Check(RealmPageEnvelopeSchema, page), true);
+  assert.equal(checkRealmPageEnvelope(page), true);
   assert.equal(
     RealmPageEnvelopeSchema.$schema,
     "https://json-schema.org/draft/2020-12/schema",
@@ -351,7 +354,7 @@ test("JSON value schema accepts only nested JSON-compatible values", () => {
     body: "",
     realm: { nested: [null, true, 3, "text", { value: false }] },
   };
-  assert.equal(Value.Check(RealmPageEnvelopeSchema, valid), true);
+  assert.equal(checkRealmPageEnvelope(valid), true);
 
   for (const value of [
     undefined,
@@ -362,7 +365,7 @@ test("JSON value schema accepts only nested JSON-compatible values", () => {
     Buffer.from("binary"),
   ]) {
     assert.equal(
-      Value.Check(RealmPageEnvelopeSchema, {
+      checkRealmPageEnvelope({
         ...valid,
         realm: { value },
       }),
@@ -378,7 +381,14 @@ test("validates canonical date-time calendar and clock values", () => {
       validPage("bonfire:root").replace("2026-08-17T00:00:00Z", timestamp),
     );
 
-  assert.equal(parseRealmPages([withCreatedAt("2024-02-29T23:59:59Z")]).length, 1);
+  for (const timestamp of [
+    "2024-02-29T23:59:59Z",
+    "1990-12-31T23:59:60Z",
+    "2026-08-17t12:34:56z",
+    "2026-08-17T12:34:56+05:30",
+  ]) {
+    assert.equal(parseRealmPages([withCreatedAt(timestamp)]).length, 1);
+  }
   for (const timestamp of [
     "not-a-date",
     "2026-99-99T00:00:00Z",
@@ -388,6 +398,23 @@ test("validates canonical date-time calendar and clock values", () => {
     "2026-01-01T00:00:60Z",
   ]) {
     assert.equal(parseError(withCreatedAt(timestamp)).code, "INVALID_PAGE_ENVELOPE");
+  }
+});
+
+test("does not mutate TypeBox date-time format registration", async () => {
+  const previous = FormatRegistry.Get("date-time");
+  const sentinel = (): boolean => false;
+  FormatRegistry.Set("date-time", sentinel);
+  try {
+    const modulePath = "../src/domain/realm_page.ts?format-registry-isolation";
+    await import(modulePath);
+    assert.equal(FormatRegistry.Get("date-time"), sentinel);
+  } finally {
+    if (previous === undefined) {
+      FormatRegistry.Delete("date-time");
+    } else {
+      FormatRegistry.Set("date-time", previous);
+    }
   }
 });
 

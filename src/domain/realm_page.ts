@@ -1,41 +1,8 @@
-import {
-  FormatRegistry,
-  Kind,
-  Type,
-  TypeRegistry,
-  type Static,
-} from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type, type Static } from "@sinclair/typebox";
+import Ajv2020Module from "ajv/dist/2020.js";
+import addFormatsModule from "ajv-formats";
 
 const nonBlank = ".*\\S.*";
-const dateTimePattern =
-  /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})T(?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2})(?:\.\d+)?(?:Z|[+-](?<offsetHour>\d{2}):(?<offsetMinute>\d{2}))$/u;
-
-FormatRegistry.Set("date-time", (value) => {
-  const groups = dateTimePattern.exec(value)?.groups;
-  if (groups === undefined) {
-    return false;
-  }
-  const year = Number(groups["year"]);
-  const month = Number(groups["month"]);
-  const day = Number(groups["day"]);
-  const hour = Number(groups["hour"]);
-  const minute = Number(groups["minute"]);
-  const second = Number(groups["second"]);
-  const offsetHour = Number(groups["offsetHour"] ?? 0);
-  const offsetMinute = Number(groups["offsetMinute"] ?? 0);
-  return (
-    month >= 1 &&
-    month <= 12 &&
-    day >= 1 &&
-    day <= new Date(Date.UTC(year, month, 0)).getUTCDate() &&
-    hour <= 23 &&
-    minute <= 59 &&
-    second <= 59 &&
-    offsetHour <= 23 &&
-    offsetMinute <= 59
-  );
-});
 
 const ActorSchema = Type.Object(
   {
@@ -76,7 +43,6 @@ export type ReadonlyJsonValue =
   | readonly ReadonlyJsonValue[]
   | { readonly [key: string]: ReadonlyJsonValue };
 
-const jsonObjectKind = "AtlasJsonObject";
 const JsonValueSchema = Type.Recursive((value) =>
   Type.Union([
     Type.Null(),
@@ -84,29 +50,11 @@ const JsonValueSchema = Type.Recursive((value) =>
     Type.Number(),
     Type.String(),
     Type.Unsafe<readonly ReadonlyJsonValue[]>(Type.Array(value)),
-    Type.Unsafe<Readonly<Record<string, ReadonlyJsonValue>>>({
-      [Kind]: jsonObjectKind,
-      additionalProperties: value,
-      type: "object",
-    }),
+    Type.Unsafe<Readonly<Record<string, ReadonlyJsonValue>>>(
+      Type.Record(Type.String(), value),
+    ),
   ]),
 );
-
-if (!TypeRegistry.Has(jsonObjectKind)) {
-  TypeRegistry.Set(jsonObjectKind, (_schema, value) => {
-    if (
-      typeof value !== "object" ||
-      value === null ||
-      Array.isArray(value) ||
-      Object.getPrototypeOf(value) !== Object.prototype
-    ) {
-      return false;
-    }
-    return Object.values(value as Record<string, unknown>).every((entry) =>
-      Value.Check(JsonValueSchema, entry),
-    );
-  });
-}
 
 export const RealmPageEnvelopeSchema = Type.Object(
   {
@@ -126,3 +74,31 @@ export const RealmPageEnvelopeSchema = Type.Object(
 );
 
 export type RealmPageEnvelope = Static<typeof RealmPageEnvelopeSchema>;
+
+const Ajv2020 = Ajv2020Module.default;
+const addFormats = addFormatsModule.default;
+const ajv = new Ajv2020({ strict: true });
+addFormats(ajv);
+const validateRealmPageEnvelope = ajv.compile(RealmPageEnvelopeSchema);
+
+function isJsonCompatible(value: unknown): boolean {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value))
+  ) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.every(isJsonCompatible);
+  }
+  if (typeof value !== "object" || Object.getPrototypeOf(value) !== Object.prototype) {
+    return false;
+  }
+  return Object.values(value as Record<string, unknown>).every(isJsonCompatible);
+}
+
+export function checkRealmPageEnvelope(value: unknown): value is RealmPageEnvelope {
+  return isJsonCompatible(value) && validateRealmPageEnvelope(value);
+}
