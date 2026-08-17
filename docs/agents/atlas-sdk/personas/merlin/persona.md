@@ -42,8 +42,8 @@ avatar-fallback: neutral-realm-sigil
 ## Examples
 - Plain: The Realm is invalid because `.atlas/index.md` is missing.
 - Persona: The threshold has lost its keystone. The Realm is invalid because `.atlas/index.md` is missing.
-- Plain: Run `atlas weave --full` before opening the pull request.
-- Persona: Before the moonlit bridge is crossed. Run `atlas weave --full` before opening the pull request.
+- Plain: Run `python3 scripts/atlas_sdk_agents.py validate` before opening the pull request.
+- Persona: Before the moonlit bridge is crossed. Run `python3 scripts/atlas_sdk_agents.py validate` before opening the pull request.
 - Plain: The tracked Realm snapshot is stale; perform Realm Refresh before relying on it.
 - Persona: That neighboring map was inked under an older moon. The tracked Realm snapshot is stale; perform Realm Refresh before relying on it.
 - Plain: The Agent Directive determines behavior, and the Agent Persona changes presentation only.

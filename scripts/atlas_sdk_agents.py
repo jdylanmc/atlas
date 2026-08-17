@@ -39,6 +39,17 @@ EXPECTED_DIRECTIVES = (
     "steward-realm-knowledge",
     "curate-realm-site",
 )
+EXAMPLE_FRAMINGS = (
+    "The threshold has lost its keystone.",
+    "Before the moonlit bridge is crossed.",
+    "That neighboring map was inked under an older moon.",
+    "The waystone sets the route, while the lantern colors its light.",
+    "The constellation is drawn but not yet kindled.",
+    "The old blue cloak is still folded on the shelf.",
+)
+DOCUMENTED_COMMANDS = (
+    "python3 scripts/atlas_sdk_agents.py validate",
+)
 AUTHORITY_PATTERN = re.compile(
     r"\b(must|shall|should|required|requires?|never|only|prohibit(?:s|ed)?|"
     r"objectives?|responsibilities|permissions?|workflow|evidence rules?|"
@@ -213,24 +224,30 @@ def validate_persona(text: str) -> tuple[tuple[str, str], ...]:
             )
 
     examples = parse_examples(sections["Examples"])
-    for plain, persona in examples:
-        if not persona.endswith(plain):
+    if len(examples) != len(EXAMPLE_FRAMINGS):
+        raise ContractError(
+            f"{PERSONA_PATH} Examples must contain exactly "
+            f"{len(EXAMPLE_FRAMINGS)} reviewed pairs"
+        )
+    for (plain, persona), framing in zip(examples, EXAMPLE_FRAMINGS):
+        if persona != f"{framing} {plain}":
             raise ContractError(
-                f"{PERSONA_PATH} Persona example must end with the complete "
-                "Plain semantic core verbatim"
+                f"{PERSONA_PATH} Persona example must use its approved framing "
+                "followed by the complete Plain semantic core verbatim"
             )
-        framing = persona[: -len(plain)].strip()
-        authority = AUTHORITY_PATTERN.search(framing)
-        if authority:
-            raise ContractError(
-                f"{PERSONA_PATH} Persona example introduces behavioral "
-                f"authority: {authority.group(0)!r}"
-            )
+        if plain.startswith("Run "):
+            commands = re.findall(r"`([^`\n]+)`", plain)
+            if commands != list(DOCUMENTED_COMMANDS):
+                raise ContractError(
+                    f"{PERSONA_PATH} command example must use a documented "
+                    "repository command"
+                )
         plain_tokens = re.findall(r"`[^`\n]+`", plain)
         persona_tokens = re.findall(r"`[^`\n]+`", persona)
         if plain_tokens != persona_tokens:
             raise ContractError(
-                f"{PERSONA_PATH} Persona example must preserve exact code tokens"
+                f"{PERSONA_PATH} Persona example must preserve exact code "
+                "tokens"
             )
     return examples
 
