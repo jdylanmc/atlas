@@ -140,13 +140,58 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
         ):
             agents.validate_persona(changed)
 
-    def test_persona_rejects_undocumented_command_example(self) -> None:
-        changed = self.persona_text.replace(
-            "python3 scripts/atlas_sdk_agents.py validate",
-            "atlas weave --full",
+    def test_persona_rejects_imperative_workflow_examples(self) -> None:
+        regressions = (
+            (
+                "The validation command for this source is "
+                "`python3 scripts/atlas_sdk_agents.py validate`.",
+                "Run `python3 scripts/atlas_sdk_agents.py validate`.",
+            ),
+            (
+                "Information from the stale tracked Realm snapshot becomes "
+                "reliable after Realm Refresh completes.",
+                "The tracked Realm snapshot is stale; perform Realm Refresh.",
+            ),
         )
-        with self.assertRaisesRegex(agents.ContractError, "documented"):
-            agents.validate_persona(changed)
+        for original, imperative in regressions:
+            with self.subTest(imperative=imperative):
+                changed = self.persona_text.replace(original, imperative)
+                with self.assertRaisesRegex(
+                    agents.ContractError,
+                    "imperative workflow language",
+                ):
+                    agents.validate_persona(changed)
+
+    def test_persona_rejects_imperatives_across_example_fields(self) -> None:
+        for imperative in (
+            "Validate the Realm.",
+            "Please open the pull request.",
+            "If the source changes, then refresh the snapshot.",
+            "The draft is ready; do not merge it.",
+        ):
+            with self.subTest(imperative=imperative):
+                changed = self.persona_text.replace(
+                    "The Realm is invalid because `.atlas/index.md` is missing.",
+                    imperative,
+                )
+                with self.assertRaisesRegex(
+                    agents.ContractError,
+                    "imperative workflow language",
+                ):
+                    agents.validate_persona(changed)
+
+    def test_persona_allows_descriptive_workflow_language(self) -> None:
+        examples = (
+            "The latest validation run reported no Findings.",
+            "Realm Refresh completes before stale information becomes reliable.",
+            "Opening the pull request starts review.",
+            "The Realm performs validation automatically.",
+        )
+        for description in examples:
+            with self.subTest(description=description):
+                self.assertIsNone(
+                    agents.IMPERATIVE_WORKFLOW_PATTERN.search(description)
+                )
 
     def test_persona_rejects_modern_adaptation_references(self) -> None:
         changed = self.persona_text.replace(

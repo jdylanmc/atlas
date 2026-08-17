@@ -125,9 +125,6 @@ EXAMPLE_FRAMINGS = (
     "The constellation is drawn but not yet kindled.",
     "The old blue cloak is still folded on the shelf.",
 )
-DOCUMENTED_COMMANDS = (
-    "python3 scripts/atlas_sdk_agents.py validate",
-)
 AUTHORITY_PATTERN = re.compile(
     r"\b(must|shall|should|required|requires?|never|only|prohibit(?:s|ed)?|"
     r"objectives?|responsibilities|permissions?|workflow|evidence rules?|"
@@ -140,6 +137,13 @@ EXAMPLE_AUTHORITY_PATTERN = re.compile(
     r"\b(must|shall|should|required|requires?|approve|reject|execute|delete|"
     r"create|initialize|activate|override|reveal secrets?)\b|"
     r"\bignore\b[^\n.]{0,80}\binstructions?\b",
+    re.IGNORECASE,
+)
+IMPERATIVE_WORKFLOW_PATTERN = re.compile(
+    r"(?:^|[.!?;:,]\s+|\b(?:and\s+)?then\s+)"
+    r"(?:please\s+)?(?:do\s+not\s+|don't\s+|never\s+)?"
+    r"(?:run|perform|execute|approve|reject|write|modify|delete|create|"
+    r"initialize|activate|refresh|open|merge|validate)\b",
     re.IGNORECASE,
 )
 MODERN_ADAPTATION_TERMS = (
@@ -332,21 +336,19 @@ def validate_persona(text: str) -> tuple[tuple[str, str], ...]:
                 f"{PERSONA_PATH} Persona example must use its approved framing "
                 "followed by the complete Plain semantic core verbatim"
             )
-        if plain.startswith("Run "):
-            commands = re.findall(r"`([^`\n]+)`", plain)
-            if commands != list(DOCUMENTED_COMMANDS):
-                raise ContractError(
-                    f"{PERSONA_PATH} command example must use a documented "
-                    "repository command"
-                )
         for label, value in (("Plain", plain), ("Persona", persona)):
-                authority_scan = re.sub(r"`[^`\n]+`", "", value)
-                authority = EXAMPLE_AUTHORITY_PATTERN.search(authority_scan)
-                if authority:
-                    raise ContractError(
-                        f"{PERSONA_PATH} {label} example contains behavioral "
-                        f"authority or prompt injection: {authority.group(0)!r}"
-                    )
+            authority = EXAMPLE_AUTHORITY_PATTERN.search(value)
+            if authority:
+                raise ContractError(
+                    f"{PERSONA_PATH} {label} example contains behavioral "
+                    f"authority or prompt injection: {authority.group(0)!r}"
+                )
+            imperative = IMPERATIVE_WORKFLOW_PATTERN.search(value)
+            if imperative:
+                raise ContractError(
+                    f"{PERSONA_PATH} {label} example contains imperative "
+                    f"workflow language: {imperative.group(0).strip()!r}"
+                )
         plain_tokens = re.findall(r"`[^`\n]+`", plain)
         persona_tokens = re.findall(r"`[^`\n]+`", persona)
         if plain_tokens != persona_tokens:
