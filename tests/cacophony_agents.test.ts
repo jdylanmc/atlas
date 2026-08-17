@@ -585,6 +585,10 @@ test("Fletcher and council validate the merge contract", () => {
   assert.match(fletcherWorkflow, /Validator bootstrap detected/);
   assert.match(fletcherWorkflow, /"\.cacophony\/compositions.json"/);
   assert.match(fletcherWorkflow, /needs: prompt-contract/);
+  assert.match(
+    fletcherWorkflow,
+    new RegExp("permissions:\\n {2}actions: read\\n {2}contents: read"),
+  );
   assert.match(councilWorkflow, /prompt_contract/);
   assert.match(councilWorkflow, /Legacy trusted-base prompt bootstrap validated/);
   assert.match(councilWorkflow, /\[\[ "\$prompt_contract" == "success" \]\]/);
