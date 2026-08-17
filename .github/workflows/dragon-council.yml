@@ -77,6 +77,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.13.0
+
       - name: Prepare static-analysis evidence
         shell: bash
         env:
@@ -99,17 +103,29 @@ jobs:
         id: actionlint
         continue-on-error: true
         shell: bash
+        env:
+          BASE_SHA: ${{ needs.authorize.outputs.base_sha }}
         run: |
-          archive="$RUNNER_TEMP/actionlint.tar.gz"
-          curl --fail --location --silent --show-error \
-            --output "$archive" \
-            https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
-          echo "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757  $archive" |
-            sha256sum --check
-          tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
           set -o pipefail
-          "$RUNNER_TEMP/actionlint" 2>&1 |
-            tee "$RUNNER_TEMP/council-evidence/actionlint.log"
+          if git cat-file -e "$BASE_SHA:scripts/run_actionlint.ts"; then
+            runner="$RUNNER_TEMP/run_actionlint.ts"
+            git show "$BASE_SHA:scripts/run_actionlint.ts" > "$runner"
+            chmod 0555 "$runner"
+            ATLAS_REPOSITORY_ROOT="$GITHUB_WORKSPACE" \
+              ATLAS_TOOL_CACHE="$RUNNER_TEMP/atlas-tools" \
+              node "$runner" 2>&1 |
+              tee "$RUNNER_TEMP/council-evidence/actionlint.log"
+          else
+            archive="$RUNNER_TEMP/actionlint.tar.gz"
+            curl --fail --location --silent --show-error \
+              --output "$archive" \
+              https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+            echo "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757  $archive" |
+              sha256sum --check
+            tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+            "$RUNNER_TEMP/actionlint" -pyflakes "" 2>&1 |
+              tee "$RUNNER_TEMP/council-evidence/actionlint.log"
+          fi
 
       - name: Validate Cacophony agent prompt contract
         id: prompt-contract
@@ -120,15 +136,19 @@ jobs:
           MERGE_SHA: ${{ needs.authorize.outputs.merge_sha }}
         run: |
           set -o pipefail
-          if git cat-file -e "$BASE_SHA:scripts/cacophony_agents.py"; then
-            validator="$RUNNER_TEMP/cacophony_agents.py"
-            git show "$BASE_SHA:scripts/cacophony_agents.py" > "$validator"
-            python3 "$validator" verify-revision \
+          if git cat-file -e "$BASE_SHA:scripts/cacophony_agents.ts"; then
+            validator="$RUNNER_TEMP/cacophony_agents.ts"
+            git show "$BASE_SHA:scripts/cacophony_agents.ts" > "$validator"
+            chmod 0555 "$validator"
+            node "$validator" verify-revision \
               --repository "$GITHUB_WORKSPACE" \
               --revision "$MERGE_SHA" \
               --agent fletcher 2>&1 |
               tee "$RUNNER_TEMP/council-evidence/prompt-contract.log"
           else
+            if git cat-file -e "$BASE_SHA:scripts/cacophony_agents.py"; then
+              echo "::notice::The trusted base predates the TypeScript validator; validating only its existing prompt blobs."
+            fi
             for agent in balerion bolas fletcher smaug; do
               prompt_path=".cacophony/agents/$agent.md"
               prompt_type="$(git ls-tree "$BASE_SHA" -- "$prompt_path" | awk '{print $1 " " $2}')"
@@ -245,7 +265,7 @@ jobs:
           ref: ${{ needs.authorize.outputs.merge_sha }}
           persist-credentials: false
 
-      - name: Inspect package test contract
+      - name: Inspect package CI contract
         id: manifest
         continue-on-error: true
         shell: bash
@@ -256,7 +276,7 @@ jobs:
           fi
           jq -e . package.json > /dev/null
           jq -r '
-            if (.scripts.test? | type == "string" and length > 0)
+            if (.scripts.ci? | type == "string" and length > 0)
             then "tests=true"
             else "tests=false"
             end
@@ -280,8 +300,8 @@ jobs:
             --user "$(id -u):$(id -g)" \
             --volume "$GITHUB_WORKSPACE:/source:ro" \
             --workdir /workspace \
-            node:24-bookworm-slim@sha256:65932751ed4073ed02f5c04e494e4b2572a891b7dbea0568a863dc80341bf848 \
-            sh -euc 'cp -a /source/. /workspace/ && npm ci --ignore-scripts && npm test'
+            node:24.13.0-bookworm-slim@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f \
+            sh -euc 'cp -R /source/. /workspace/ && npm ci --ignore-scripts && npm run ci'
 
       - name: Normalize unit-test result
         id: result

@@ -23,23 +23,24 @@ Each Atlas reviewer composition has four tracked artifacts:
   the selected Persona first with no authority, and places the intention-named
   Directives afterward in precedence order with explicit generated provenance.
 
-| Compatibility agent | Persona | Ordered Directives |
-| --- | --- | --- |
-| `bolas` | `bolas` | `domain-architecture-review` |
-| `smaug` | `smaug` | `simplicity-and-code-truth-review` |
-| `balerion` | `balerion` | `security-and-runtime-risk-review` |
-| `fletcher` | `fletcher` | `prompt-contract-review` |
+| Compatibility agent | Persona    | Ordered Directives                 |
+| ------------------- | ---------- | ---------------------------------- |
+| `bolas`             | `bolas`    | `domain-architecture-review`       |
+| `smaug`             | `smaug`    | `simplicity-and-code-truth-review` |
+| `balerion`          | `balerion` | `security-and-runtime-risk-review` |
+| `fletcher`          | `fletcher` | `prompt-contract-review`           |
 
-Validate the complete contract:
+The validator is directly executable erasable TypeScript on Node.js 24. Validate
+the complete contract:
 
 ```sh
-python3 scripts/cacophony_agents.py validate
+node scripts/cacophony_agents.ts validate
 ```
 
 After editing a component, regenerate and validate the tracked prompts:
 
 ```sh
-python3 scripts/cacophony_agents.py sync
+node scripts/cacophony_agents.ts sync
 ```
 
 Do not edit generated prompts directly. The reusable review worker invokes the
@@ -51,7 +52,10 @@ from the base revision. Cacophony accepts one `prompt-file`, so the generated
 file is tracked to preserve its native trusted-base loader and stable
 agent/report identifiers. The migration bootstrap may use only a validated
 legacy prompt already present in a base revision that predates the validator;
-it never executes validator code from the pull request.
+it never executes validator code from the pull request. Historical
+`scripts/cacophony_agents.py` generator identifiers remain in generated prompts
+as byte-level compatibility metadata even though Atlas no longer ships or
+executes the Python implementation.
 
 Because the worker stages the active reviewer's base prompt over its workspace
 path, reviewers inspect proposed `.cacophony/agents/*.md` content with

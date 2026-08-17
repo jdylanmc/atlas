@@ -8,8 +8,17 @@ on:
       - ".cacophony/directives/**"
       - ".cacophony/personas/**"
       - "docs/agents/atlas-sdk/**"
-      - "scripts/cacophony_agents.py"
-      - "tests/test_cacophony_agents.py"
+      - "scripts/atlas_sdk_agents.ts"
+      - "scripts/cacophony_agents.ts"
+      - "scripts/run_actionlint.ts"
+      - "tests/atlas_sdk_agents.test.ts"
+      - "tests/cacophony_agents.test.ts"
+      - ".npmrc"
+      - "eslint.config.js"
+      - "package-lock.json"
+      - "package.json"
+      - "prettier.config.js"
+      - "tsconfig.json"
       - ".github/workflows/cacophony-review.yml"
       - ".github/workflows/council-fletcher.yml"
       - ".github/workflows/dragon-council.yml"
@@ -60,24 +69,42 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.13.0
+
       - name: Validate changed prompt contract with trusted rules
         shell: bash
         env:
           BASE_SHA: ${{ steps.revision.outputs.base_sha }}
           MERGE_SHA: ${{ steps.revision.outputs.merge_sha }}
         run: |
-          if git cat-file -e "$BASE_SHA:scripts/cacophony_agents.py"; then
-            validator="$RUNNER_TEMP/cacophony_agents.py"
-            git show "$BASE_SHA:scripts/cacophony_agents.py" > "$validator"
-            python3 "$validator" verify-revision \
+          if git cat-file -e "$BASE_SHA:scripts/cacophony_agents.ts"; then
+            validator="$RUNNER_TEMP/cacophony_agents.ts"
+            git show "$BASE_SHA:scripts/cacophony_agents.ts" > "$validator"
+            chmod 0555 "$validator"
+            node "$validator" verify-revision \
               --repository "$GITHUB_WORKSPACE" \
               --revision "$MERGE_SHA" \
               --agent fletcher
-          elif git cat-file -e "$BASE_SHA:.cacophony/agents/fletcher.md"; then
-            echo "::notice::Validator bootstrap detected; the trusted base has only the legacy Fletcher prompt."
           else
-            echo "::error::Neither the trusted validator nor legacy Fletcher prompt exists."
-            exit 1
+            prompt_path=".cacophony/agents/fletcher.md"
+            if git cat-file -e "$BASE_SHA:scripts/cacophony_agents.py"; then
+              echo "::notice::Validator bootstrap detected; the trusted base predates the TypeScript validator, so only its existing Fletcher prompt is trusted."
+            elif git cat-file -e "$BASE_SHA:$prompt_path"; then
+              echo "::notice::Validator bootstrap detected; the trusted base has only the legacy Fletcher prompt."
+            else
+              echo "::error::Neither the trusted validator nor legacy Fletcher prompt exists."
+              exit 1
+            fi
+            prompt_type="$(git ls-tree "$BASE_SHA" -- "$prompt_path" | awk '{print $1 " " $2}')"
+            prompt_bytes="$(git cat-file -s "$BASE_SHA:$prompt_path")"
+            if [[ "$prompt_type" != "100644 blob" ]] ||
+              [[ ! "$prompt_bytes" =~ ^[0-9]+$ ]] ||
+              (( prompt_bytes > 131072 )); then
+              echo "::error::Legacy trusted-base Fletcher prompt is missing, invalid, or oversized."
+              exit 1
+            fi
           fi
 
   prompt-review:
