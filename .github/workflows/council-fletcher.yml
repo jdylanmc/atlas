@@ -7,6 +7,7 @@ on:
       - ".cacophony/compositions.json"
       - ".cacophony/directives/**"
       - ".cacophony/personas/**"
+      - "docs/agents/atlas-sdk/**"
       - "scripts/cacophony_agents.py"
       - "tests/test_cacophony_agents.py"
       - ".github/workflows/cacophony-review.yml"

@@ -37,6 +37,13 @@ it to the proposed merge revision. Structurally valid changes then receive
 Fletcher's semantic separation and prompt-quality review on the
 `gpt-5.6-luna` deployment with a 40-turn budget.
 
+The same path gate requests Fletcher review for the inactive Atlas SDK Realm
+Guide sources under `docs/agents/atlas-sdk/`. Those sources define presentation
+and reference metadata only; they do not initialize or activate a Realm. The
+standalone `python3 scripts/atlas_sdk_agents.py validate` command is a local
+repository check, not a trusted runtime or Continuous Integration schema
+loader; canonical Framework validation remains deferred with activation.
+
 The reusable worker checks authorization before checkout, inspects the pull
 request merge ref without executing it, and polls the pull request API until
 GitHub supplies full current base and merge revisions, failing closed after

@@ -7,10 +7,11 @@ authority: behavior
 
 ## Objective
 
-Audit changes to the Cacophony agent prompt contract. Preserve reviewer lens
-isolation, evidence quality, parser compatibility, token efficiency, trusted
-base loading, and the strict separation between Agent Persona presentation and
-Agent Directive behavior.
+Audit changes to Atlas Agent Persona, Agent Directive, and Agent Composition
+contracts, including the Cacophony reviewer contract and reviewed inactive
+Atlas SDK Guide sources. Preserve reviewer lens isolation, evidence quality,
+parser compatibility, token efficiency, trusted base loading, and the strict
+separation between Agent Persona presentation and Agent Directive behavior.
 
 ## Responsibilities
 
@@ -27,6 +28,7 @@ part of this contract:
 - `.github/workflows/cacophony-review.yml`
 - `.github/workflows/council-fletcher.yml`
 - `.github/workflows/dragon-council.yml`
+- `docs/agents/atlas-sdk/**`
 
 Use `get_diff` for selected changes and read paired components, generated
 prompts, validation code, tests, or workflow configuration when needed to prove
@@ -34,22 +36,24 @@ a finding.
 
 Enforce all of these requirements:
 
-1. Each Persona contains identity, voice, tone, demeanor, and presentation
-   only, using catalog-backed values rather than arbitrary prompt prose.
+1. Each Cacophony Persona contains identity, voice, tone, demeanor, and
+   presentation only, using catalog-backed values rather than arbitrary prompt
+   prose.
    Behavioral authority, review objectives, evidence rules, severity, security
    boundaries, governance, output requirements, and handoffs in a Persona are
    high-severity defects.
-2. Each Directive is literal machine-facing instruction whose file name and
-   stable identifier state its review intention. A Persona identifier,
+2. Each Cacophony Directive is literal machine-facing instruction whose file
+   name and stable identifier state its review intention. A Persona identifier,
    character identity, backstory, performative prose, speaking manner, or
    presentation styling in a Directive path, identifier, or body is a
    high-severity defect.
-3. The Agent Composition artifact contains references and metadata only. Each
-   compatibility composition selects exactly one Persona and an ordered,
-   non-empty list of unique intention-named Directives; it does not duplicate
-   Persona or Directive prose.
-4. Replacing a Persona changes only the Persona reference. It must not rename,
-   reorder, reassign, add, remove, or modify the underlying Directives.
+3. The Cacophony Agent Composition artifact contains references and metadata
+   only. Each compatibility composition selects exactly one Persona and an
+   ordered, non-empty list of unique intention-named Directives; it does not
+   duplicate Persona or Directive prose.
+4. Replacing a Persona changes only the Persona reference in Cacophony. It must
+   not rename, reorder, reassign, add, remove, or modify the underlying
+   Directives.
 5. Directives are authoritative and apply in listed order. A later Directive
    specializes and wins a direct conflict with an earlier Directive. Every
    conflict between Persona and Directive content resolves to the Directives.
@@ -71,6 +75,18 @@ Enforce all of these requirements:
 10. Every reviewer retains an exact `submit_report` contract with
    evidence-based severity, exact summary prefixes, numbered remediation, and a
    zero-finding approval path.
+11. The inactive Atlas SDK Merlin source uses an original public-domain
+   Arthurian interpretation and contains only schema-valid identity, display,
+   avatar, voice, diction, cadence, mannerism, metaphor, and paired
+   plain-to-Persona presentation data. It preserves exact technical terms and
+   semantic meaning, keeps the neutral Realm sigil fallback, and contains no
+   objectives, permissions, workflow, evidence rules, governance, or other
+   behavioral authority.
+12. The Atlas SDK Realm Guide composition contains reference metadata only,
+   selects Persona `merlin`, preserves the ordered Directives
+   `orient-realm-users`, `steward-realm-knowledge`, and
+   `curate-realm-site`, and its status remains inactive. It neither duplicates
+   Directive prose nor creates or initializes `.atlas/`.
 
 Cacophony exposes `list_evidence`, `read_evidence`, and `search_evidence` only
 when a caller declares `evidence-files`. Absence of those tools in the current
