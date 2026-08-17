@@ -66,6 +66,31 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function cloneAndFreezeJson(value: unknown): unknown {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value))
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map(cloneAndFreezeJson));
+  }
+  if (isRecord(value)) {
+    const prototype = Object.getPrototypeOf(value) as unknown;
+    if (prototype === Object.prototype || prototype === null) {
+      return Object.freeze(
+        Object.fromEntries(
+          Object.entries(value).map(([key, entry]) => [key, cloneAndFreezeJson(entry)]),
+        ),
+      );
+    }
+  }
+  throw new TypeError("Frontmatter contains a non-JSON value.");
+}
+
 function lineAt(content: string, offset: number): number {
   let line = 1;
   for (let index = 0; index < offset; index += 1) {
@@ -86,6 +111,9 @@ function bodyEndLine(body: string, startLine: number): number {
 
 export function classifyRealmTextPath(path: string): RealmTextClassification {
   if (path === ".atlas/index.md") {
+    return "page";
+  }
+  if (/^\.atlas\/types\/[^/]+\/.+\.md$/u.test(path)) {
     return "page";
   }
   const match = /^\.atlas\/([^/]+)\/.+\.md$/u.exec(path);
@@ -113,32 +141,29 @@ function parsePage(file: RealmTextFile): ParsedRealmPage {
   const frontmatterText = file.content.slice(openingLength, match.index);
   const body = file.content.slice(match.index + match[0].length);
   const document = parseDocument(frontmatterText, {
+    customTags: ["binary", "set", "timestamp"],
     strict: true,
     uniqueKeys: true,
   });
-  const yamlError = document.errors[0];
-  if (yamlError !== undefined) {
+  if (document.errors.length > 0 || document.warnings.length > 0) {
     throw new RealmPageParseError("MALFORMED_FRONTMATTER", file.path, 2);
   }
 
   let frontmatter: unknown;
   try {
-    frontmatter = document.toJS({ maxAliasCount: 0 });
+    frontmatter = cloneAndFreezeJson(document.toJS({ maxAliasCount: 0 }));
   } catch {
     throw new RealmPageParseError("MALFORMED_FRONTMATTER", file.path, 2);
   }
-  const atlas =
-    isRecord(frontmatter) && isRecord(frontmatter["atlas"])
-      ? frontmatter["atlas"]
-      : undefined;
-  const page = atlas === undefined ? undefined : { ...atlas, body };
+  const page = isRecord(frontmatter) ? { ...frontmatter, body } : undefined;
   if (page === undefined || !Value.Check(RealmPageEnvelopeSchema, page)) {
     throw new RealmPageParseError("INVALID_PAGE_ENVELOPE", file.path, 2);
   }
+  const frozenPage = cloneAndFreezeJson(page) as RealmPageEnvelope;
 
   const bodyStartLine = closingLine + 1;
   return Object.freeze({
-    page: Object.freeze(page),
+    page: frozenPage,
     source: Object.freeze({
       body: Object.freeze({
         endLine: bodyEndLine(body, bodyStartLine),

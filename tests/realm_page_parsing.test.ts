@@ -25,7 +25,7 @@ function fixture(path: string): RealmTextFile {
 }
 
 function validPage(id: string): string {
-  return `---\natlas:\n  schema: '1'\n  id: ${id}\n  type: custom\n  title: Page\n---`;
+  return `---\natlas:\n  schema: '1'\n  realm-schema: '2'\n  id: ${id}\n  type: custom\n  title: Page\nrealm: {}\n---`;
 }
 
 function parseError(file: RealmTextFile): RealmPageParseError {
@@ -46,6 +46,8 @@ test("classifies only settled core Realm page locations", () => {
     ".atlas/lore/source.md",
     ".atlas/pillars/truth.md",
     ".atlas/threads/path.md",
+    ".atlas/types/field-guide/page.md",
+    ".atlas/types/field-guide/nested/page.md",
   ]) {
     assert.equal(classifyRealmTextPath(path), "page", path);
   }
@@ -57,6 +59,7 @@ test("classifies only settled core Realm page locations", () => {
     ".atlas/skills/gather.md",
     ".atlas/directives/guide.md",
     ".atlas/realm/schemas/page.md",
+    ".atlas/types/page.md",
     ".atlas/notes.md",
     ".atlas/insights/not-markdown.txt",
   ]) {
@@ -75,9 +78,9 @@ test("parses the canonical fixture and ignores opaque Markdown", () => {
   const pages = parseRealmPages(records);
   assert.deepEqual(
     pages.map(({ page, source }) => ({
-      id: page.id,
+      id: page.atlas.id,
       path: source.path,
-      type: page.type,
+      type: page.atlas.type,
     })),
     [
       {
@@ -93,22 +96,25 @@ test("parses the canonical fixture and ignores opaque Markdown", () => {
     ],
   );
   assert.ok(pages[1]);
-  assert.equal(pages[1].page["confidence"], "reviewed");
+  assert.equal(pages[1].page.realm["confidence"], "reviewed");
 });
 
-test("accepts an open custom archetype with extension fields", () => {
+test("preserves canonical Atlas and Realm mappings for a custom type", () => {
   const [parsed] = parseRealmPages([
     text(
-      ".atlas/insights/custom.md",
+      ".atlas/types/field-guide/custom.md",
       [
         "---",
         "atlas:",
-        "  schema: next",
+        "  schema: atlas-next",
+        "  realm-schema: realm-next",
         "  id: field-guide:custom",
         "  type: field-guide",
         "  title: Custom Guide",
-        "  custom:",
-        "    rank: 2",
+        "realm:",
+        "  rank: 2",
+        "  nested:",
+        "    labels: [one, two]",
         "---",
         "Custom body",
       ].join("\n"),
@@ -116,8 +122,44 @@ test("accepts an open custom archetype with extension fields", () => {
   ]);
 
   assert.ok(parsed);
-  assert.deepEqual(parsed.page["custom"], { rank: 2 });
-  assert.equal(parsed.page.type, "field-guide");
+  assert.deepEqual(parsed.page, {
+    atlas: {
+      id: "field-guide:custom",
+      "realm-schema": "realm-next",
+      schema: "atlas-next",
+      title: "Custom Guide",
+      type: "field-guide",
+    },
+    body: "Custom body",
+    realm: { nested: { labels: ["one", "two"] }, rank: 2 },
+  });
+});
+
+test("returns a deeply immutable page tree", () => {
+  const [parsed] = parseRealmPages([
+    text(
+      ".atlas/types/field-guide/custom.md",
+      validPage("field-guide:custom").replace(
+        "realm: {}",
+        "realm:\n  nested:\n    labels: [one, two]",
+      ),
+    ),
+  ]);
+  assert.ok(parsed);
+  const realm = parsed.page.realm as {
+    readonly nested: { readonly labels: readonly string[] };
+  };
+
+  assert.equal(Object.isFrozen(parsed.page), true);
+  assert.equal(Object.isFrozen(parsed.page.atlas), true);
+  assert.equal(Object.isFrozen(realm.nested), true);
+  assert.equal(Object.isFrozen(realm.nested.labels), true);
+  assert.throws(() => {
+    (parsed.page.atlas as { title: string }).title = "Changed";
+  }, TypeError);
+  assert.throws(() => {
+    (realm.nested.labels as string[]).push("changed");
+  }, TypeError);
 });
 
 test("rejects missing, malformed, and invalid frontmatter", () => {
@@ -136,7 +178,7 @@ test("rejects missing, malformed, and invalid frontmatter", () => {
   const invalid = parseError(
     text(
       ".atlas/index.md",
-      "---\natlas:\n  schema: 1.0.0\n  id: root\n  type: ' '\n  title: Root\n---\n",
+      "---\natlas:\n  schema: 1.0.0\n  realm-schema: 1.0.0\n  id: root\n  type: ' '\n  title: Root\nrealm: {}\n---\n",
     ),
   );
   assert.equal(invalid.code, "INVALID_PAGE_ENVELOPE");
@@ -146,7 +188,7 @@ test("rejects missing, malformed, and invalid frontmatter", () => {
     parseError(text(".atlas/index.md", "---\natlas:\n  schema: 1\n")).code,
     "MALFORMED_FRONTMATTER",
   );
-  for (const frontmatter of ["[]", "atlas: []", "atlas: null"]) {
+  for (const frontmatter of ["[]", "atlas: []\nrealm: {}", "atlas: null\nrealm: {}"]) {
     assert.equal(
       parseError(text(".atlas/index.md", `---\n${frontmatter}\n---\n`)).code,
       "INVALID_PAGE_ENVELOPE",
@@ -156,26 +198,55 @@ test("rejects missing, malformed, and invalid frontmatter", () => {
     parseError(
       text(
         ".atlas/index.md",
-        "---\natlas: &page\n  schema: '1'\n  id: root\n  type: custom\n  title: Root\ncopy: *page\n---\n",
+        "---\natlas: &page\n  schema: '1'\n  realm-schema: '1'\n  id: root\n  type: custom\n  title: Root\nrealm: *page\n---\n",
       ),
     ).code,
     "MALFORMED_FRONTMATTER",
   );
+
+  const atlasExtension = validPage("custom:page").replace(
+    "  title: Page",
+    "  title: Page\n  extension: misplaced",
+  );
+  assert.equal(
+    parseError(text(".atlas/index.md", atlasExtension)).code,
+    "INVALID_PAGE_ENVELOPE",
+  );
+});
+
+test("rejects non-JSON and unresolved YAML tags", () => {
+  for (const taggedValue of [
+    "!!timestamp 2026-08-17T00:00:00Z",
+    "!!set { one: null }",
+    "!!binary SGVsbG8=",
+    ".nan",
+    "!custom value",
+  ]) {
+    const content = validPage("custom:tagged").replace(
+      "realm: {}",
+      `realm:\n  value: ${taggedValue}`,
+    );
+    assert.equal(
+      parseError(text(".atlas/types/custom/tagged.md", content)).code,
+      "MALFORMED_FRONTMATTER",
+      taggedValue,
+    );
+  }
 });
 
 test("preserves body bytes and stable source lines", () => {
   const [parsed] = parseRealmPages([
     text(
       ".atlas/index.md",
-      "---\r\natlas:\r\n  schema: '1'\r\n  id: root\r\n  type: custom\r\n  title: Root\r\n---\r\nfirst\r\nsecond\r\n",
+      "---\r\natlas:\r\n  schema: '1'\r\n  realm-schema: '2'\r\n  id: root\r\n  type: custom\r\n  title: Root\r\nrealm: {}\r\n---\r\nfirst\r\nsecond\r\n",
     ),
   ]);
 
   assert.ok(parsed);
   assert.equal(parsed.page.body, "first\r\nsecond\r\n");
   assert.deepEqual(parsed.source, {
-    body: { endLine: 9, startLine: 8 },
-    frontmatter: { endLine: 6, startLine: 2 },
+    body: { endLine: 11, startLine: 10 },
+    frontmatter: { endLine: 8, startLine: 2 },
     path: ".atlas/index.md",
   });
 });
@@ -211,11 +282,15 @@ test("reversed record input produces identical ordered pages and errors", () => 
 
 test("schema and inferred TypeScript type describe the same envelope", () => {
   const page: RealmPageEnvelope = {
+    atlas: {
+      id: "custom:page",
+      "realm-schema": "2.0.0",
+      schema: "1.0.0",
+      title: "Page",
+      type: "custom",
+    },
     body: "Body",
-    id: "custom:page",
-    schema: "1.0.0",
-    title: "Page",
-    type: "custom",
+    realm: { nested: { enabled: true } },
   };
 
   assert.equal(Value.Check(RealmPageEnvelopeSchema, page), true);
@@ -223,7 +298,8 @@ test("schema and inferred TypeScript type describe the same envelope", () => {
     RealmPageEnvelopeSchema.$schema,
     "https://json-schema.org/draft/2020-12/schema",
   );
-  assert.notEqual(RealmPageEnvelopeSchema.additionalProperties, false);
+  assert.equal(RealmPageEnvelopeSchema.additionalProperties, false);
+  assert.equal(RealmPageEnvelopeSchema.properties.atlas.additionalProperties, false);
 });
 
 test("accepts an empty body after an end-of-file delimiter", () => {
@@ -232,5 +308,5 @@ test("accepts an empty body after an end-of-file delimiter", () => {
   ]);
   assert.ok(parsed);
   assert.equal(parsed.page.body, "");
-  assert.deepEqual(parsed.source.body, { endLine: 8, startLine: 8 });
+  assert.deepEqual(parsed.source.body, { endLine: 10, startLine: 10 });
 });
