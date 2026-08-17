@@ -6,6 +6,7 @@ on:
 permissions:
   actions: read
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -15,6 +16,10 @@ jobs:
   authorize:
     name: Authorize council resources
     runs-on: ubuntu-latest
+    outputs:
+      base_sha: ${{ steps.revision.outputs.base_sha }}
+      head_sha: ${{ steps.revision.outputs.head_sha }}
+      merge_sha: ${{ steps.revision.outputs.merge_sha }}
     steps:
       - name: Check pull request trust
         shell: bash
@@ -27,6 +32,35 @@ jobs:
             exit 1
           fi
 
+      - name: Resolve current pull request revision
+        id: revision
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          for attempt in {1..12}; do
+            pull_request="$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER")"
+            base_sha="$(jq -r '.base.sha // empty' <<< "$pull_request")"
+            head_sha="$(jq -r '.head.sha // empty' <<< "$pull_request")"
+            merge_sha="$(jq -r '.merge_commit_sha // empty' <<< "$pull_request")"
+            if [[ "$base_sha" =~ ^[0-9a-f]{40}$ ]] &&
+              [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] &&
+              [[ "$merge_sha" =~ ^[0-9a-f]{40}$ ]]; then
+              {
+                echo "base_sha=$base_sha"
+                echo "head_sha=$head_sha"
+                echo "merge_sha=$merge_sha"
+              } >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::notice::Merge revision is not ready (attempt $attempt of 12)."
+            sleep 5
+          done
+          echo "::error::GitHub did not produce a current pull request merge revision."
+          exit 1
+
   static-analysis:
     name: Static analysis
     needs: authorize
@@ -34,20 +68,21 @@ jobs:
     outputs:
       actionlint: ${{ steps.result.outputs.actionlint }}
       codeql: ${{ steps.result.outputs.codeql }}
+      passed: ${{ steps.result.outputs.passed }}
       prompt_contract: ${{ steps.result.outputs.prompt_contract }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          ref: ${{ needs.authorize.outputs.merge_sha }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Prepare static-analysis evidence
         shell: bash
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          BASE_SHA: ${{ needs.authorize.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.authorize.outputs.head_sha }}
+          MERGE_SHA: ${{ needs.authorize.outputs.merge_sha }}
         run: |
           mkdir -p "$RUNNER_TEMP/council-evidence"
           touch "$RUNNER_TEMP/council-evidence/actionlint.log"
@@ -81,8 +116,8 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          BASE_SHA: ${{ needs.authorize.outputs.base_sha }}
+          MERGE_SHA: ${{ needs.authorize.outputs.merge_sha }}
         run: |
           set -o pipefail
           if git cat-file -e "$BASE_SHA:scripts/cacophony_agents.py"; then
@@ -172,8 +207,18 @@ jobs:
           printf '{"tool":"actionlint","outcome":"%s"}\n' "$actionlint" > "$RUNNER_TEMP/council-evidence/actionlint.status.json"
           printf '{"tool":"codeql","outcome":"%s"}\n' "$codeql" > "$RUNNER_TEMP/council-evidence/codeql.status.json"
           printf '{"tool":"agent-prompt-contract","outcome":"%s"}\n' "$prompt_contract" > "$RUNNER_TEMP/council-evidence/prompt-contract.status.json"
-          printf 'actionlint=%s\ncodeql=%s\nprompt_contract=%s\n' \
-            "$actionlint" "$codeql" "$prompt_contract" >> "$GITHUB_OUTPUT"
+          if [[ "$actionlint" == "success" ]] &&
+            [[ "$codeql" == "success" || "$codeql" == "skipped" ]] &&
+            [[ "$prompt_contract" == "success" ]]; then
+            passed=true
+          else
+            passed=false
+          fi
+          {
+            printf 'actionlint=%s\ncodeql=%s\nprompt_contract=%s\n' \
+              "$actionlint" "$codeql" "$prompt_contract"
+            echo "passed=$passed"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upload static-analysis evidence
         if: always()
@@ -190,12 +235,14 @@ jobs:
     timeout-minutes: 15
     outputs:
       manifest: ${{ steps.manifest.outcome }}
+      outcome: ${{ steps.result.outputs.outcome }}
+      passed: ${{ steps.result.outputs.passed }}
       tests: ${{ steps.manifest.outputs.tests }}
       unit: ${{ steps.unit.outcome }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          ref: ${{ needs.authorize.outputs.merge_sha }}
           persist-credentials: false
 
       - name: Inspect package test contract
@@ -236,6 +283,32 @@ jobs:
             node:24-bookworm-slim@sha256:65932751ed4073ed02f5c04e494e4b2572a891b7dbea0568a863dc80341bf848 \
             sh -euc 'cp -a /source/. /workspace/ && npm ci --ignore-scripts && npm test'
 
+      - name: Normalize unit-test result
+        id: result
+        if: always()
+        shell: bash
+        env:
+          MANIFEST: ${{ steps.manifest.outcome }}
+          TESTS_PRESENT: ${{ steps.manifest.outputs.tests }}
+          UNIT: ${{ steps.unit.outcome }}
+        run: |
+          if [[ "$MANIFEST" != "success" ]]; then
+            outcome=invalid-package-manifest
+          elif [[ "$TESTS_PRESENT" != "true" ]]; then
+            outcome=skipped
+          else
+            outcome="$UNIT"
+          fi
+          if [[ "$outcome" == "success" || "$outcome" == "skipped" ]]; then
+            passed=true
+          else
+            passed=false
+          fi
+          {
+            echo "outcome=$outcome"
+            echo "passed=$passed"
+          } >> "$GITHUB_OUTPUT"
+
   collect-evidence:
     name: Collect council evidence
     if: always() && needs.authorize.result == 'success'
@@ -244,8 +317,6 @@ jobs:
       - static-analysis
       - unit-tests
     runs-on: ubuntu-latest
-    outputs:
-      passed: ${{ steps.result.outputs.passed }}
     steps:
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
@@ -256,30 +327,9 @@ jobs:
         id: result
         shell: bash
         env:
-          ACTIONLINT: ${{ needs.static-analysis.outputs.actionlint }}
-          CODEQL: ${{ needs.static-analysis.outputs.codeql }}
-          MANIFEST: ${{ needs.unit-tests.outputs.manifest }}
-          PROMPT_CONTRACT: ${{ needs.static-analysis.outputs.prompt_contract }}
-          TESTS_PRESENT: ${{ needs.unit-tests.outputs.tests }}
-          UNIT: ${{ needs.unit-tests.outputs.unit }}
+          TEST_OUTCOME: ${{ needs.unit-tests.outputs.outcome }}
         run: |
-          if [[ "$MANIFEST" != "success" ]]; then
-            tests=invalid-package-manifest
-          elif [[ "$TESTS_PRESENT" != "true" ]]; then
-            tests=skipped
-          else
-            tests="$UNIT"
-          fi
-          printf '{"tool":"unit-tests","outcome":"%s"}\n' "$tests" > council-evidence/unit-tests.status.json
-
-          if [[ "$ACTIONLINT" == "success" ]] &&
-            [[ "$CODEQL" == "success" || "$CODEQL" == "skipped" ]] &&
-            [[ "$PROMPT_CONTRACT" == "success" ]] &&
-            [[ "$tests" == "success" || "$tests" == "skipped" ]]; then
-            echo "passed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "passed=false" >> "$GITHUB_OUTPUT"
-          fi
+          printf '{"tool":"unit-tests","outcome":"%s"}\n' "$TEST_OUTCOME" > council-evidence/unit-tests.status.json
 
       - name: Upload complete council evidence
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
@@ -290,13 +340,26 @@ jobs:
 
   deterministic-verification:
     name: Deterministic verification
-    needs: collect-evidence
+    if: always()
+    needs:
+      - authorize
+      - static-analysis
+      - unit-tests
     runs-on: ubuntu-latest
     steps:
       - name: Enforce static analysis and unit tests
         env:
-          PASSED: ${{ needs.collect-evidence.outputs.passed }}
-        run: test "$PASSED" = "true"
+          AUTHORIZE_RESULT: ${{ needs.authorize.result }}
+          STATIC_ANALYSIS_PASSED: ${{ needs.static-analysis.outputs.passed }}
+          STATIC_ANALYSIS_RESULT: ${{ needs.static-analysis.result }}
+          UNIT_TESTS_PASSED: ${{ needs.unit-tests.outputs.passed }}
+          UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
+        run: |
+          test "$AUTHORIZE_RESULT" = "success"
+          test "$STATIC_ANALYSIS_RESULT" = "success"
+          test "$UNIT_TESTS_RESULT" = "success"
+          test "$STATIC_ANALYSIS_PASSED" = "true"
+          test "$UNIT_TESTS_PASSED" = "true"
 
   bolas:
     name: Bolas

@@ -36,6 +36,7 @@ on:
 permissions:
   actions: read
   contents: read
+  pull-requests: read
 
 jobs:
   review:
@@ -60,9 +61,35 @@ jobs:
             exit 1
           fi
 
+      - name: Resolve current pull request revision
+        id: revision
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          for attempt in {1..12}; do
+            pull_request="$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER")"
+            base_sha="$(jq -r '.base.sha // empty' <<< "$pull_request")"
+            merge_sha="$(jq -r '.merge_commit_sha // empty' <<< "$pull_request")"
+            if [[ "$base_sha" =~ ^[0-9a-f]{40}$ ]] &&
+              [[ "$merge_sha" =~ ^[0-9a-f]{40}$ ]]; then
+              {
+                echo "base_sha=$base_sha"
+                echo "merge_sha=$merge_sha"
+              } >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::notice::Merge revision is not ready (attempt $attempt of 12)."
+            sleep 5
+          done
+          echo "::error::GitHub did not produce a current pull request merge revision."
+          exit 1
+
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          ref: ${{ steps.revision.outputs.merge_sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -70,7 +97,7 @@ jobs:
         shell: bash
         env:
           AGENT_SLUG: ${{ inputs.agent-slug }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ steps.revision.outputs.base_sha }}
         run: |
           if [[ ! "$AGENT_SLUG" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
             echo "::error::Invalid agent slug."

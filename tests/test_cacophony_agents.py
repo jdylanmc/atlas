@@ -359,6 +359,7 @@ class CacophonyAgentContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn('--revision "$MERGE_SHA"', fletcher_workflow)
         self.assertIn("Validator bootstrap detected", fletcher_workflow)
+        self.assertIn('".cacophony/compositions.json"', fletcher_workflow)
         self.assertIn("needs: prompt-contract", fletcher_workflow)
         self.assertIn("prompt_contract", council_workflow)
         self.assertIn(
@@ -366,7 +367,7 @@ class CacophonyAgentContractTests(unittest.TestCase):
             council_workflow,
         )
         self.assertIn(
-            '[[ "$PROMPT_CONTRACT" == "success" ]]',
+            '[[ "$prompt_contract" == "success" ]]',
             council_workflow,
         )
         for check_name in (
@@ -377,6 +378,60 @@ class CacophonyAgentContractTests(unittest.TestCase):
             "Council gate",
         ):
             self.assertIn(f"name: {check_name}", council_workflow)
+
+    def test_deterministic_gate_uses_direct_current_job_outputs(self) -> None:
+        workflow = (
+            ROOT / ".github/workflows/dragon-council.yml"
+        ).read_text(encoding="utf-8")
+        start = workflow.index("  deterministic-verification:")
+        end = workflow.index("\n  bolas:", start)
+        gate = workflow[start:end]
+        self.assertIn("      - static-analysis", gate)
+        self.assertIn("      - unit-tests", gate)
+        self.assertNotIn("needs.collect-evidence", gate)
+        self.assertIn(
+            "needs.static-analysis.outputs.passed",
+            gate,
+        )
+        self.assertIn(
+            "needs.unit-tests.outputs.passed",
+            gate,
+        )
+        self.assertIn('test "$STATIC_ANALYSIS_PASSED" = "true"', gate)
+        self.assertIn('test "$UNIT_TESTS_PASSED" = "true"', gate)
+        self.assertIn(
+            "passed: ${{ steps.result.outputs.passed }}",
+            workflow,
+        )
+        self.assertIn(
+            "outcome: ${{ steps.result.outputs.outcome }}",
+            workflow,
+        )
+
+    def test_workflows_resolve_nonempty_current_merge_revision(self) -> None:
+        for path in (
+            ".github/workflows/dragon-council.yml",
+            ".github/workflows/cacophony-review.yml",
+            ".github/workflows/council-fletcher.yml",
+        ):
+            workflow = (ROOT / path).read_text(encoding="utf-8")
+            with self.subTest(path=path):
+                self.assertIn(
+                    "Resolve current pull request revision",
+                    workflow,
+                )
+                self.assertIn(
+                    'gh api "repos/$REPOSITORY/pulls/$PR_NUMBER"',
+                    workflow,
+                )
+                self.assertIn(
+                    '[[ "$merge_sha" =~ ^[0-9a-f]{40}$ ]]',
+                    workflow,
+                )
+                self.assertNotIn(
+                    "ref: ${{ github.event.pull_request.merge_commit_sha }}",
+                    workflow,
+                )
 
 
 if __name__ == "__main__":
