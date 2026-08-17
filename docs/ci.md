@@ -38,8 +38,10 @@ Fletcher's semantic separation and prompt-quality review on the
 `gpt-5.6-luna` deployment with a 40-turn budget.
 
 The reusable worker checks authorization before checkout, inspects the pull
-request merge ref without executing it, loads the validator from the trusted
-base commit, and proves that the selected base prompt exactly composes its base
+request merge ref without executing it, and polls the pull request API until
+GitHub supplies full current base and merge revisions, failing closed after
+twelve five-second attempts. It loads the validator from the trusted base
+commit and proves that the selected base prompt exactly composes its base
 Persona and Directives. It replaces the relative workspace prompt with those
 exact verified base bytes and records their digest as a defense-in-depth path
 binding. The immutable Cacophony action independently loads that same generated
@@ -94,8 +96,12 @@ Fletcher remains the `Fletcher / review` compatibility identity for
 `prompt-contract-review`; its workflow check naming is unchanged.
 
 The deterministic verification check fails when an applicable analysis or test
-fails. The dragons still receive failed results so their reports can explain
-the relevant changed-code impact rather than losing that evidence.
+fails. It directly needs Static analysis and Unit tests and evaluates their
+normalized current outputs; it does not consume a transitive aggregate from the
+evidence collector. This keeps failed-job and partial reruns ordered behind the
+producer jobs and prevents a reused collector output from deciding the gate.
+The dragons still receive failed results so their reports can explain the
+relevant changed-code impact rather than losing that evidence.
 
 Each run retains `dragon-council-evidence` plus separate
 `cacophony-bolas`, `cacophony-smaug`, and `cacophony-balerion` report artifacts
