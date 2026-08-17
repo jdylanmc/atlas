@@ -1,13 +1,6 @@
-export type FileTreeEntryKind = "directory" | "file" | "symbolic-link" | "unsupported";
-
-export interface FileTreeEntry {
-  readonly kind: FileTreeEntryKind;
-  readonly name: string;
-}
-
-export interface ReadOnlyFileTree {
-  listDirectory(segments: readonly string[]): Promise<readonly FileTreeEntry[]>;
-  readFile(segments: readonly string[]): Promise<Uint8Array>;
+export interface CapturedRealmFile {
+  readonly bytes: Uint8Array;
+  readonly path: string;
 }
 
 export interface RealmTextFile {
@@ -21,24 +14,20 @@ export interface RealmTextBudgets {
 }
 
 export type RealmLoadErrorCode =
+  | "DUPLICATE_PATH"
+  | "FILE_TOO_LARGE"
   | "INVALID_BUDGET"
   | "INVALID_PATH"
   | "INVALID_UTF8"
-  | "IO_ERROR"
-  | "SYMLINK_NOT_ALLOWED"
-  | "TOTAL_TOO_LARGE"
-  | "UNSUPPORTED_ENTRY"
-  | "FILE_TOO_LARGE";
+  | "TOTAL_TOO_LARGE";
 
 const messages: Readonly<Record<RealmLoadErrorCode, string>> = Object.freeze({
-  FILE_TOO_LARGE: "A Realm file exceeds the byte budget.",
+  DUPLICATE_PATH: "Captured Realm files contain a duplicate normalized path.",
+  FILE_TOO_LARGE: "A captured Realm file exceeds the byte budget.",
   INVALID_BUDGET: "Realm byte budgets must be non-negative safe integers.",
-  INVALID_PATH: "The Realm file tree contains an invalid path.",
-  INVALID_UTF8: "A Realm file is not valid UTF-8.",
-  IO_ERROR: "The Realm file tree could not be read.",
-  SYMLINK_NOT_ALLOWED: "Symbolic links are not allowed in the Realm file tree.",
-  TOTAL_TOO_LARGE: "The Realm file tree exceeds the total byte budget.",
-  UNSUPPORTED_ENTRY: "The Realm file tree contains an unsupported entry.",
+  INVALID_PATH: "A captured Realm file has an invalid path.",
+  INVALID_UTF8: "A captured Realm file is not valid UTF-8.",
+  TOTAL_TOO_LARGE: "Captured Realm files exceed the total byte budget.",
 });
 
 export class RealmLoadError extends Error {
@@ -52,31 +41,31 @@ export class RealmLoadError extends Error {
 }
 
 function compareCodePoints(left: string, right: string): number {
-  let leftIndex = 0;
-  let rightIndex = 0;
-  while (leftIndex < left.length && rightIndex < right.length) {
-    const leftPoint = left.codePointAt(leftIndex) as number;
-    const rightPoint = right.codePointAt(rightIndex) as number;
-    if (leftPoint !== rightPoint) {
-      return leftPoint - rightPoint;
+  const leftPoints = Array.from(left, (point) => point.codePointAt(0) as number);
+  const rightPoints = Array.from(right, (point) => point.codePointAt(0) as number);
+  const length = Math.min(leftPoints.length, rightPoints.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (leftPoints[index] as number) - (rightPoints[index] as number);
+    if (difference !== 0) {
+      return difference;
     }
-    leftIndex += leftPoint > 0xffff ? 2 : 1;
-    rightIndex += rightPoint > 0xffff ? 2 : 1;
   }
-  return left.length - leftIndex - (right.length - rightIndex);
+  return leftPoints.length - rightPoints.length;
 }
 
-function assertSegment(name: string): void {
-  if (
-    name.length === 0 ||
-    name === "." ||
-    name === ".." ||
-    name.includes("/") ||
-    name.includes("\\") ||
-    name.includes("\0")
-  ) {
+function normalizePath(path: string): string {
+  if (path.startsWith("/") || path.includes("\\") || path.includes("\0")) {
     throw new RealmLoadError("INVALID_PATH");
   }
+  const segments = path.split("/");
+  if (segments.includes("..")) {
+    throw new RealmLoadError("INVALID_PATH");
+  }
+  const normalized = segments.filter((segment) => segment !== "" && segment !== ".");
+  if (normalized.length < 2 || normalized[0] !== ".atlas") {
+    throw new RealmLoadError("INVALID_PATH");
+  }
+  return normalized.join("/");
 }
 
 function assertBudgets(budgets: RealmTextBudgets): void {
@@ -90,74 +79,47 @@ function assertBudgets(budgets: RealmTextBudgets): void {
   }
 }
 
-export async function loadRealmText(
-  tree: ReadOnlyFileTree,
+export function loadRealmText(
+  capturedFiles: readonly CapturedRealmFile[],
   budgets: RealmTextBudgets,
-): Promise<readonly RealmTextFile[]> {
+): readonly RealmTextFile[] {
+  const copied = capturedFiles.map((file) => ({
+    bytes: new Uint8Array(file.bytes),
+    path: file.path,
+  }));
+  copied.sort((left, right) => compareCodePoints(left.path, right.path));
   assertBudgets(budgets);
-  const paths: string[][] = [];
 
-  async function collect(segments: readonly string[]): Promise<void> {
-    let entries: readonly FileTreeEntry[];
-    try {
-      entries = await tree.listDirectory(segments);
-    } catch (error: unknown) {
-      if (error instanceof RealmLoadError) {
-        throw error;
-      }
-      throw new RealmLoadError("IO_ERROR");
-    }
-
-    for (const entry of entries) {
-      assertSegment(entry.name);
-      const child = [...segments, entry.name];
-      switch (entry.kind) {
-        case "directory":
-          await collect(child);
-          break;
-        case "file":
-          paths.push(child);
-          break;
-        case "symbolic-link":
-          throw new RealmLoadError("SYMLINK_NOT_ALLOWED");
-        case "unsupported":
-          throw new RealmLoadError("UNSUPPORTED_ENTRY");
-      }
-    }
-  }
-
-  await collect([".atlas"]);
-  paths.sort((left, right) => compareCodePoints(left.join("/"), right.join("/")));
+  const normalized = copied.map((file) => ({
+    bytes: file.bytes,
+    path: normalizePath(file.path),
+  }));
+  normalized.sort((left, right) => compareCodePoints(left.path, right.path));
 
   const decoder = new TextDecoder("utf-8", { fatal: true });
   const files: RealmTextFile[] = [];
+  let previousPath: string | undefined;
   let totalBytes = 0;
-  for (const segments of paths) {
-    let bytes: Uint8Array;
-    try {
-      bytes = await tree.readFile(segments);
-    } catch (error: unknown) {
-      if (error instanceof RealmLoadError) {
-        throw error;
-      }
-      throw new RealmLoadError("IO_ERROR");
+  for (const file of normalized) {
+    if (file.path === previousPath) {
+      throw new RealmLoadError("DUPLICATE_PATH");
     }
-    if (bytes.byteLength > budgets.maxFileBytes) {
+    previousPath = file.path;
+    if (file.bytes.byteLength > budgets.maxFileBytes) {
       throw new RealmLoadError("FILE_TOO_LARGE");
     }
-    totalBytes += bytes.byteLength;
+    totalBytes += file.bytes.byteLength;
     if (totalBytes > budgets.maxTotalBytes) {
       throw new RealmLoadError("TOTAL_TOO_LARGE");
     }
 
     let content: string;
     try {
-      content = decoder.decode(bytes);
+      content = decoder.decode(file.bytes);
     } catch {
       throw new RealmLoadError("INVALID_UTF8");
     }
-    files.push(Object.freeze({ content, path: segments.join("/") }));
+    files.push(Object.freeze({ content, path: file.path }));
   }
-
   return Object.freeze(files);
 }
