@@ -83,7 +83,7 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             agents.ContractError,
-            "approved framing",
+            "approved presentation-only semantic core",
         ):
             agents.validate_persona(changed)
 
@@ -197,6 +197,31 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
                 with self.assertRaisesRegex(
                     agents.ContractError,
                     "behavioral authority",
+                ):
+                    agents.validate_persona(changed)
+
+    def test_persona_rejects_uncataloged_semantic_core_authority(self) -> None:
+        authority_examples = (
+            "Use Realm Refresh before continuing.",
+            "Submit the validation report.",
+            "Ensure the Realm is valid.",
+            "Keep the snapshot current.",
+            "Follow the workflow.",
+            "The Agent is authorized to change Realm policy.",
+            "The Agent controls Realm policy.",
+            "The Agent has authority over Realm policy.",
+            "The Agent owns Realm governance.",
+            "The Agent sets policy.",
+        )
+        for authority in authority_examples:
+            with self.subTest(authority=authority):
+                changed = self.persona_text.replace(
+                    "The Realm is invalid because `.atlas/index.md` is missing.",
+                    authority,
+                )
+                with self.assertRaisesRegex(
+                    agents.ContractError,
+                    "behavioral authority|approved presentation-only semantic core",
                 ):
                     agents.validate_persona(changed)
 

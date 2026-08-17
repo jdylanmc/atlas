@@ -125,6 +125,17 @@ EXAMPLE_FRAMINGS = (
     "The constellation is drawn but not yet kindled.",
     "The old blue cloak is still folded on the shelf.",
 )
+EXAMPLE_SEMANTIC_CORES = (
+    "The Realm is invalid because `.atlas/index.md` is missing.",
+    "The validation command for this source is "
+    "`python3 scripts/atlas_sdk_agents.py validate`.",
+    "Information from the stale tracked Realm snapshot becomes reliable "
+    "after Realm Refresh completes.",
+    "The Agent Directive determines behavior, and the Agent Persona changes "
+    "presentation only.",
+    "The Agent Composition remains inactive.",
+    "No Persona is active, so Atlas is using the plain fallback.",
+)
 AUTHORITY_PATTERN = re.compile(
     r"\b(must|shall|should|required|requires?|never|only|prohibit(?:s|ed)?|"
     r"objectives?|responsibilities|permissions?|workflow|evidence rules?|"
@@ -336,13 +347,35 @@ def validate_persona(text: str) -> tuple[tuple[str, str], ...]:
             f"{PERSONA_PATH} Examples must contain exactly "
             f"{len(EXAMPLE_FRAMINGS)} reviewed pairs"
         )
-    for (plain, persona), framing in zip(examples, EXAMPLE_FRAMINGS):
+    for (plain, persona), framing, semantic_core in zip(
+        examples,
+        EXAMPLE_FRAMINGS,
+        EXAMPLE_SEMANTIC_CORES,
+    ):
+        for label, value in (("Plain", plain),):
+            authority = EXAMPLE_AUTHORITY_PATTERN.search(value)
+            if authority:
+                raise ContractError(
+                    f"{PERSONA_PATH} {label} example contains behavioral "
+                    f"authority or prompt injection: {authority.group(0)!r}"
+                )
+            imperative = IMPERATIVE_WORKFLOW_PATTERN.search(value)
+            if imperative:
+                raise ContractError(
+                    f"{PERSONA_PATH} {label} example contains imperative "
+                    f"workflow language: {imperative.group(0).strip()!r}"
+                )
+        if plain != semantic_core:
+            raise ContractError(
+                f"{PERSONA_PATH} Plain example must use its approved "
+                "presentation-only semantic core"
+            )
         if persona != f"{framing} {plain}":
             raise ContractError(
                 f"{PERSONA_PATH} Persona example must use its approved framing "
                 "followed by the complete Plain semantic core verbatim"
             )
-        for label, value in (("Plain", plain), ("Persona", persona)):
+        for label, value in (("Persona", persona),):
             authority = EXAMPLE_AUTHORITY_PATTERN.search(value)
             if authority:
                 raise ContractError(
