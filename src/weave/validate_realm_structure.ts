@@ -135,9 +135,11 @@ function finding(
   });
 }
 
+const lineEndings = /\r\n|[\n\r]/u;
+
 function positionAt(content: string, offset: number): FindingLocation["start"] {
   const before = content.slice(0, offset);
-  const lines = before.split(/\r?\n/u);
+  const lines = before.split(lineEndings);
   return {
     column: (lines.at(-1) as string).length + 1,
     line: lines.length,
@@ -149,7 +151,7 @@ function rangeAt(content: string, start: number, end: number): FindingLocation {
 }
 
 function lineLocation(content: string, line: number): FindingLocation | undefined {
-  const lines = content.split(/\r?\n/u);
+  const lines = content.split(lineEndings);
   const text = lines[line - 1];
   if (text === undefined) return undefined;
   return {
@@ -267,56 +269,79 @@ function visitMarkdown(
   for (const child of node.children ?? []) visitMarkdown(child, visitor);
 }
 
-function unresolvedReferences(
+type CitationMarker = {
+  readonly identifier: string;
+  readonly position: MarkdownPosition;
+};
+
+const hiddenNodeTypes: ReadonlySet<string> = new Set([
+  "code",
+  "definition",
+  "footnoteDefinition",
+  "image",
+  "inlineCode",
+]);
+const labelNodeTypes: ReadonlySet<string> = new Set(["link", "linkReference"]);
+
+function citationMarkers(
+  body: string,
+  position: MarkdownPosition,
+): readonly CitationMarker[] {
+  const markers: CitationMarker[] = [];
+  const startOffset = position.start.offset as number;
+  const source = body.slice(startOffset, position.end.offset);
+  for (let index = 0; index < source.length - 3; index += 1) {
+    if (source[index] !== "[" || source[index + 1] !== "^") continue;
+    let escapes = 0;
+    for (let before = index - 1; before >= 0 && source[before] === "\\"; before -= 1) {
+      escapes += 1;
+    }
+    if (escapes % 2 === 1) continue;
+    const close = source.indexOf("]", index + 2);
+    if (close < index + 3) continue;
+    const identifier = source.slice(index + 2, close);
+    if (/[\r\n[\]]/u.test(identifier)) continue;
+    markers.push({
+      identifier: identifier.trim().replace(/\s+/gu, " ").toLowerCase(),
+      position: rangeAt(body, startOffset + index, startOffset + close + 1),
+    });
+    index = close;
+  }
+  return markers;
+}
+
+function visibleCitationMarkers(
   tree: MarkdownNode,
   body: string,
-): readonly { readonly identifier: string; readonly position: MarkdownPosition }[] {
-  const references: { identifier: string; position: MarkdownPosition }[] = [];
+): {
+  readonly rawHtml: readonly MarkdownPosition[];
+  readonly references: readonly CitationMarker[];
+} {
+  const rawHtml: MarkdownPosition[] = [];
+  const references: CitationMarker[] = [];
   function visitVisibleText(node: MarkdownNode): void {
+    if (hiddenNodeTypes.has(node.type)) return;
+    const position = node.position as MarkdownPosition;
+    if (node.type === "html") {
+      for (const marker of citationMarkers(body, position)) {
+        rawHtml.push(marker.position);
+      }
+      return;
+    }
     if (
-      [
-        "code",
-        "footnoteDefinition",
-        "html",
-        "image",
-        "inlineCode",
-        "link",
-        "linkReference",
-      ].includes(node.type)
+      labelNodeTypes.has(node.type) &&
+      body[position.start.offset as number] !== "["
     ) {
       return;
     }
-    if (node.type !== "text" || node.position?.start.offset === undefined) {
-      for (const child of node.children ?? []) visitVisibleText(child);
+    if (node.type === "text") {
+      references.push(...citationMarkers(body, position));
       return;
     }
-    const startOffset = node.position.start.offset;
-    const endOffset = node.position.end.offset as number;
-    const source = body.slice(startOffset, endOffset);
-    for (let index = 0; index < source.length - 3; index += 1) {
-      if (source[index] !== "[" || source[index + 1] !== "^") continue;
-      let escapes = 0;
-      for (
-        let before = index - 1;
-        before >= 0 && source[before] === "\\";
-        before -= 1
-      ) {
-        escapes += 1;
-      }
-      if (escapes % 2 === 1) continue;
-      const close = source.indexOf("]", index + 2);
-      if (close < index + 3) continue;
-      const identifier = source.slice(index + 2, close);
-      if (/[\r\n[\]]/u.test(identifier)) continue;
-      references.push({
-        identifier: identifier.trim().replace(/\s+/gu, " ").toLowerCase(),
-        position: rangeAt(body, startOffset + index, startOffset + close + 1),
-      });
-      index = close;
-    }
+    for (const child of node.children ?? []) visitVisibleText(child);
   }
   visitVisibleText(tree);
-  return references;
+  return { rawHtml, references };
 }
 
 function citationTargetPath(target: string):
@@ -336,17 +361,10 @@ function citationTargetPath(target: string):
   if (normalized.slice(normalized.lastIndexOf("/") + 1).includes(".")) {
     return { kind: "not-lore" };
   }
-  const pagePath = `${normalized}.md`;
-  if (classifyRealmTextPath(pagePath) !== "page") {
+  if (!normalized.startsWith(".atlas/lore/")) {
     return { kind: "not-lore" };
   }
-  if (
-    !normalized.startsWith(".atlas/lore/") &&
-    !normalized.startsWith(".atlas/types/")
-  ) {
-    return { kind: "not-lore" };
-  }
-  return { kind: "candidate", path: pagePath };
+  return { kind: "candidate", path: `${normalized}.md` };
 }
 
 function definitionWikilinks(definition: MarkdownNode): readonly MarkdownNode[] {
@@ -371,7 +389,10 @@ function validateCitations(
   for (const { file, page } of parsedPages) {
     const tree = fromMarkdown(page.page.body, markdownOptions) as MarkdownNode;
     const references: MarkdownNode[] = [];
-    const unresolved = unresolvedReferences(tree, page.page.body);
+    const { rawHtml, references: unresolved } = visibleCitationMarkers(
+      tree,
+      page.page.body,
+    );
     const definitions = new Map<string, MarkdownNode[]>();
     visitMarkdown(tree, (node) => {
       if (node.type === "footnoteReference" && node.identifier !== undefined) {
@@ -383,6 +404,17 @@ function validateCitations(
         else existing.push(node);
       }
     });
+
+    for (const position of rawHtml) {
+      findings.push(
+        finding(
+          "ATLAS_CITATION_MARKER_IN_RAW_HTML",
+          "Citation markers must not appear in raw HTML.",
+          file.path,
+          markdownLocation(page, position),
+        ),
+      );
+    }
 
     for (const reference of unresolved) {
       findings.push(

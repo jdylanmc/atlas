@@ -356,6 +356,13 @@ test("validates visible Citation markers and ignores non-visible syntax", () => 
           start: { column: 3, line: 22 },
         },
       },
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
+        location: {
+          end: { column: 22, line: 32 },
+          start: { column: 12, line: 32 },
+        },
+      },
     ],
   );
 });
@@ -545,7 +552,7 @@ test("does not borrow or double-count nested Citation definition targets", () =>
   );
 });
 
-test("defers custom target ancestry while rejecting missing custom pages", () => {
+test("rejects custom type Citation targets until Realm Schema ancestry exists", () => {
   const custom = page(".atlas/types/evidence/source.md", "# Custom Evidence", {
     id: "evidence:source",
     title: "Custom Evidence",
@@ -554,9 +561,9 @@ test("defers custom target ancestry while rejecting missing custom pages", () =>
   const body = [
     "# Page",
     "",
-    "Known.[^known] Missing.[^missing]",
+    "Present.[^present] Missing.[^missing]",
     "",
-    "[^known]: [[.atlas/types/evidence/source]]",
+    "[^present]: [[.atlas/types/evidence/source]]",
     "[^missing]: [[.atlas/types/evidence/absent]]",
   ].join("\n");
   const findings = validateRealmStructure([
@@ -566,7 +573,101 @@ test("defers custom target ancestry while rejecting missing custom pages", () =>
   ]);
   assert.deepEqual(
     findings.map(({ code }) => code),
-    ["ATLAS_CITATION_TARGET_MISSING"],
+    ["ATLAS_CITATION_TARGET_NOT_LORE", "ATLAS_CITATION_TARGET_NOT_LORE"],
+  );
+});
+
+test("locates Citations across CR, LF, and CRLF line endings", () => {
+  const body = "# Page\n\r\nClaim.[^missing]\r\rSecond.[^also]";
+  const findings = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    page(".atlas/insights/page.md", body),
+  ]);
+  assert.deepEqual(
+    findings.map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 17, line: 17 },
+          start: { column: 7, line: 17 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 15, line: 19 },
+          start: { column: 8, line: 19 },
+        },
+      },
+    ],
+  );
+
+  const [blank] = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    page(".atlas/insights/blank.md", "\r\r"),
+  ]);
+  assert.equal(blank?.code, "ATLAS_PAGE_TITLE_H1_REQUIRED");
+  assert.deepEqual(blank.location, {
+    end: { column: 1, line: 15 },
+    start: { column: 1, line: 15 },
+  });
+});
+
+test("validates Citation markers in link labels and rejects raw HTML markers", () => {
+  const body = [
+    "# Page",
+    "",
+    "[label [^link-label]](https://example.test/x)",
+    "",
+    "[ref label [^reference-label]][ref]",
+    "",
+    "[ref]: https://example.test/y",
+    "",
+    "<https://example.test/[^autolink]>",
+    "",
+    "<div>",
+    "Hidden claim [^html-block]",
+    "</div>",
+    "",
+    'Inline <span title="[^html-attribute]">text</span>.',
+  ].join("\n");
+  const findings = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    page(".atlas/insights/page.md", body),
+  ]);
+  assert.deepEqual(
+    findings.map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 21, line: 17 },
+          start: { column: 8, line: 17 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 30, line: 19 },
+          start: { column: 12, line: 19 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
+        location: {
+          end: { column: 27, line: 26 },
+          start: { column: 14, line: 26 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
+        location: {
+          end: { column: 38, line: 29 },
+          start: { column: 21, line: 29 },
+        },
+      },
+    ],
   );
 });
 
