@@ -40,10 +40,11 @@ Fletcher's semantic separation and prompt-quality review on the
 The same path gate requests Fletcher review for the inactive Atlas SDK Realm
 Guide sources under `docs/agents/atlas-sdk/` and their repository validator.
 Those sources define presentation and reference metadata only; they do not
-initialize or activate a Realm. The trusted deterministic job continues to
-validate the Cacophony contract; validate the inactive Atlas SDK source
-separately with `python3 scripts/atlas_sdk_agents.py validate` until Framework
-schema validation owns that gate.
+initialize or activate a Realm. Once the Atlas SDK validator exists in the
+trusted base revision, the deterministic job loads that exact base copy and
+applies it to the proposed merge revision. Its introduction uses an explicit
+bootstrap notice rather than executing pull-request validator code. Validate
+the local source with `python3 scripts/atlas_sdk_agents.py validate`.
 
 The reusable worker checks authorization before checkout, inspects the pull
 request merge ref without executing it, and polls the pull request API until

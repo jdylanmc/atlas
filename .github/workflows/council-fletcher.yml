@@ -81,6 +81,16 @@ jobs:
             exit 1
           fi
 
+          if git cat-file -e "$BASE_SHA:scripts/atlas_sdk_agents.py"; then
+            atlas_validator="$RUNNER_TEMP/atlas_sdk_agents.py"
+            git show "$BASE_SHA:scripts/atlas_sdk_agents.py" > "$atlas_validator"
+            python3 "$atlas_validator" verify-revision \
+              --repository "$GITHUB_WORKSPACE" \
+              --revision "$MERGE_SHA"
+          elif git cat-file -e "$MERGE_SHA:scripts/atlas_sdk_agents.py"; then
+            echo "::notice::Atlas SDK validator bootstrap detected; the pull request validator was not executed."
+          fi
+
   prompt-review:
     needs: prompt-contract
     uses: ./.github/workflows/cacophony-review.yml

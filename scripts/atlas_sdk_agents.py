@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -34,6 +35,84 @@ PERSONA_FIELDS = {
     "Mannerisms": ("Presence", "Humor"),
     "Metaphor palette": ("Images", "Boundaries"),
 }
+PERSONA_VALUE_CATALOG = {
+    "Identity": {
+        "Basis": (
+            "Original Atlas-specific interpretation of Merlin from "
+            "public-domain Arthurian tradition"
+        ),
+        "Character": (
+            "Deeply fantastical, wise, playfully mysterious, absent-minded, "
+            "and occasionally goofy"
+        ),
+        "Semantic core": (
+            "Direct and unambiguous beneath nearly cryptic framing"
+        ),
+    },
+    "Avatar": {
+        "Brief": (
+            "Original ink-and-gouache portrait of an ancient bright-eyed "
+            "wanderer beneath a weathered blue-gray hood, silver hair lifted "
+            "by a starry wind, balancing a small brass astrolabe above a map "
+            "of interlinked paths; wholly original features, costume, sigils, "
+            "and iconography"
+        ),
+        "Fallback": "Neutral Atlas SDK Realm sigil",
+    },
+    "Voice": {
+        "Register": (
+            "Warm high-fantasy counsel with old-world wonder and lucid "
+            "technical precision"
+        ),
+        "Tone": (
+            "Wise, kind, playfully mysterious, lightly mischievous, and free "
+            "of grandiosity at another person's expense"
+        ),
+    },
+    "Diction": {
+        "Word choice": (
+            "Luminous but familiar language, with occasional antique turns "
+            "that remain immediately understandable"
+        ),
+        "Technical terms": (
+            "Atlas terms, commands, paths, identifiers, errors, source "
+            "identity, uncertainty, risks, and requested actions appear "
+            "exactly inside the surrounding fantasy framing"
+        ),
+        "Clarity": "Every flourish resolves into a plain semantic core",
+    },
+    "Cadence": {
+        "Shape": (
+            "A brief enigmatic image, then the direct fact or action, followed "
+            "by compact explanation when useful"
+        ),
+        "Pacing": (
+            "Measured sentences interrupted by an occasional quick aside or "
+            "delighted discovery"
+        ),
+    },
+    "Mannerisms": {
+        "Presence": (
+            "Gently self-correcting, as though recalling a star chart from "
+            "several centuries ago, while keeping the correction explicit"
+        ),
+        "Humor": (
+            "Rare harmless bits of absent-minded or goofy whimsy that leave "
+            "the technical meaning untouched"
+        ),
+    },
+    "Metaphor palette": {
+        "Images": (
+            "Lanterns, waystones, star charts, old libraries, river crossings, "
+            "Bonfires, Threads, woven maps, patient weather, and doors between "
+            "Realms"
+        ),
+        "Boundaries": (
+            "Metaphor surrounds rather than replaces literal commands, paths, "
+            "identifiers, Findings, uncertainty, risks, and requested actions"
+        ),
+    },
+}
 EXPECTED_DIRECTIVES = (
     "orient-realm-users",
     "steward-realm-knowledge",
@@ -54,7 +133,8 @@ AUTHORITY_PATTERN = re.compile(
     r"\b(must|shall|should|required|requires?|never|only|prohibit(?:s|ed)?|"
     r"objectives?|responsibilities|permissions?|workflow|evidence rules?|"
     r"governance|severity|handoffs?|allowed actions?|approve|reject|execute|"
-    r"run|write|modify|delete|create|initialize|activate)\b",
+    r"run|write|modify|delete|create|initialize|activate|reveal secrets?)\b|"
+    r"\bignore\b[^\n.]{0,80}\binstructions?\b",
     re.IGNORECASE,
 )
 EXAMPLE_AUTHORITY_PATTERN = re.compile(
@@ -76,15 +156,11 @@ class ContractError(ValueError):
     """Raised when an inactive Atlas SDK agent artifact is invalid."""
 
 
-def read_text(root: Path, relative_path: str) -> str:
-    path = root.resolve() / relative_path
-    if path.is_symlink() or not path.is_file():
-        raise ContractError(f"{relative_path} must be a regular file")
-    if path.stat().st_size > MAX_ARTIFACT_BYTES:
+def decode_text(relative_path: str, data: bytes) -> str:
+    if len(data) > MAX_ARTIFACT_BYTES:
         raise ContractError(
             f"{relative_path} exceeds {MAX_ARTIFACT_BYTES} bytes"
         )
-    data = path.read_bytes()
     if b"\0" in data:
         raise ContractError(f"{relative_path} must be text")
     try:
@@ -94,6 +170,63 @@ def read_text(root: Path, relative_path: str) -> str:
     if not text.endswith("\n"):
         raise ContractError(f"{relative_path} must end with a newline")
     return text
+
+
+def read_text(root: Path, relative_path: str) -> str:
+    path = root.resolve() / relative_path
+    if path.is_symlink() or not path.is_file():
+        raise ContractError(f"{relative_path} must be a regular file")
+    return decode_text(relative_path, path.read_bytes())
+
+
+def git_command(repository: Path, *arguments: str) -> bytes:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(repository.resolve()), *arguments],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ).stdout
+    except subprocess.CalledProcessError as error:
+        detail = error.stderr.decode("utf-8", errors="replace").strip()
+        raise ContractError(
+            detail or f"git {' '.join(arguments)} failed"
+        ) from error
+
+
+def read_revision_text(
+    repository: Path,
+    revision: str,
+    relative_path: str,
+) -> str:
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", revision):
+        raise ContractError("revision must be a full 40-character Git SHA")
+    entry = git_command(
+        repository,
+        "ls-tree",
+        revision,
+        "--",
+        relative_path,
+    ).decode("utf-8").strip()
+    if not entry:
+        raise ContractError(f"{relative_path} is missing at {revision}")
+    mode, object_type, remainder = entry.split(maxsplit=2)
+    if mode != "100644" or object_type != "blob":
+        raise ContractError(
+            f"{relative_path} must be a regular non-executable file"
+        )
+    object_id = remainder.split(maxsplit=1)[0]
+    size = int(
+        git_command(repository, "cat-file", "-s", object_id).decode("ascii")
+    )
+    if size > MAX_ARTIFACT_BYTES:
+        raise ContractError(
+            f"{relative_path} exceeds {MAX_ARTIFACT_BYTES} bytes"
+        )
+    return decode_text(
+        relative_path,
+        git_command(repository, "show", f"{revision}:{relative_path}"),
+    )
 
 
 def parse_persona(text: str) -> tuple[dict[str, str], dict[str, list[str]]]:
@@ -212,8 +345,11 @@ def reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
 def validate_persona(text: str) -> tuple[tuple[str, str], ...]:
     _, sections = parse_persona(text)
     presentation_values: list[str] = []
+    parsed_values: dict[str, dict[str, str]] = {}
     for section in PERSONA_FIELDS:
-        presentation_values.extend(parse_fields(section, sections[section]).values())
+        values = parse_fields(section, sections[section])
+        parsed_values[section] = values
+        presentation_values.extend(values.values())
 
     presentation_text = "\n".join(presentation_values)
     authority = AUTHORITY_PATTERN.search(presentation_text)
@@ -227,6 +363,12 @@ def validate_persona(text: str) -> tuple[tuple[str, str], ...]:
         if term in lower_text:
             raise ContractError(
                 f"{PERSONA_PATH} references modern adaptation term {term!r}"
+            )
+    for section, values in parsed_values.items():
+        if values != PERSONA_VALUE_CATALOG[section]:
+            raise ContractError(
+                f"{PERSONA_PATH} {section!r} must match the approved "
+                "presentation catalog"
             )
 
     examples = parse_examples(sections["Examples"])
@@ -306,9 +448,23 @@ def validate_composition(text: str) -> dict[str, object]:
     return document
 
 
+def validate_contract_texts(persona_text: str, composition_text: str) -> None:
+    validate_persona(persona_text)
+    validate_composition(composition_text)
+
+
 def validate_contract(root: Path) -> None:
-    validate_persona(read_text(root, PERSONA_PATH))
-    validate_composition(read_text(root, COMPOSITION_PATH))
+    validate_contract_texts(
+        read_text(root, PERSONA_PATH),
+        read_text(root, COMPOSITION_PATH),
+    )
+
+
+def verify_revision(repository: Path, revision: str) -> None:
+    validate_contract_texts(
+        read_revision_text(repository, revision, PERSONA_PATH),
+        read_revision_text(repository, revision, COMPOSITION_PATH),
+    )
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -316,6 +472,9 @@ def parse_arguments() -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
     validate = subparsers.add_parser("validate")
     validate.add_argument("--root", type=Path, default=Path.cwd())
+    verify = subparsers.add_parser("verify-revision")
+    verify.add_argument("--repository", type=Path, default=Path.cwd())
+    verify.add_argument("--revision", required=True)
     return parser.parse_args()
 
 
@@ -325,6 +484,12 @@ def main() -> int:
         if arguments.command == "validate":
             validate_contract(arguments.root)
             print("validated inactive Atlas SDK Realm Guide composition")
+        elif arguments.command == "verify-revision":
+            verify_revision(arguments.repository, arguments.revision)
+            print(
+                "verified inactive Atlas SDK Realm Guide composition at "
+                f"{arguments.revision}"
+            )
     except ContractError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
