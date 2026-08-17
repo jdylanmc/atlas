@@ -1,3 +1,5 @@
+import { normalizeRealmRelativePath } from "./realm_path.ts";
+
 export interface CapturedRealmFile {
   readonly bytes: Uint8Array;
   readonly path: string;
@@ -55,21 +57,6 @@ function compareCodePoints(left: string, right: string): number {
   return leftPoints.length - rightPoints.length;
 }
 
-function normalizePath(path: string): string {
-  if (path.startsWith("/") || path.includes("\\") || path.includes("\0")) {
-    throw new RealmLoadError("INVALID_PATH");
-  }
-  const segments = path.split("/");
-  if (segments.includes("..")) {
-    throw new RealmLoadError("INVALID_PATH");
-  }
-  const normalized = segments.filter((segment) => segment !== "" && segment !== ".");
-  if (normalized.length < 2 || normalized[0] !== ".atlas") {
-    throw new RealmLoadError("INVALID_PATH");
-  }
-  return normalized.join("/");
-}
-
 function assertBudgets(budgets: RealmTextBudgets): void {
   if (
     !Number.isSafeInteger(budgets.maxFileBytes) ||
@@ -114,13 +101,20 @@ export function loadRealmText(
 
   const normalized = [...capturedFiles].map((file) => ({
     bytes: file.bytes,
-    path: normalizePath(file.path),
+    path: normalizeRealmRelativePath(file.path),
   }));
-  normalized.sort((left, right) => compareCodePoints(left.path, right.path));
+  if (normalized.some(({ path }) => path === undefined)) {
+    throw new RealmLoadError("INVALID_PATH");
+  }
+  const normalizedFiles = normalized as {
+    readonly bytes: Uint8Array;
+    readonly path: string;
+  }[];
+  normalizedFiles.sort((left, right) => compareCodePoints(left.path, right.path));
 
   let previousPath: string | undefined;
   let totalBytes = 0;
-  for (const file of normalized) {
+  for (const file of normalizedFiles) {
     if (file.path === previousPath) {
       throw new RealmLoadError("DUPLICATE_PATH");
     }
@@ -136,7 +130,7 @@ export function loadRealmText(
 
   const decoder = new TextDecoder("utf-8", { fatal: true });
   const files: RealmTextFile[] = [];
-  for (const file of normalized) {
+  for (const file of normalizedFiles) {
     let content: string;
     try {
       content = decoder.decode(file.bytes);

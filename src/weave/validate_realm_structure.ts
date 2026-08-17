@@ -14,6 +14,9 @@ import type { Finding } from "../domain/finding.ts";
 import type { RealmTextFile } from "../realm/load_realm_text.ts";
 import {
   classifyRealmTextPath,
+  normalizeRealmRelativePath,
+} from "../realm/realm_path.ts";
+import {
   parseRealmPages,
   RealmPageParseError,
   type ParsedRealmPage,
@@ -271,7 +274,15 @@ function unresolvedReferences(
   const references: { identifier: string; position: MarkdownPosition }[] = [];
   function visitVisibleText(node: MarkdownNode): void {
     if (
-      ["code", "footnoteDefinition", "html", "image", "inlineCode"].includes(node.type)
+      [
+        "code",
+        "footnoteDefinition",
+        "html",
+        "image",
+        "inlineCode",
+        "link",
+        "linkReference",
+      ].includes(node.type)
     ) {
       return;
     }
@@ -308,21 +319,45 @@ function unresolvedReferences(
   return references;
 }
 
-function citationTargetPath(target: string): string | undefined {
+function citationTargetPath(target: string):
+  | { readonly kind: "candidate"; readonly path: string }
+  | { readonly kind: "invalid" }
+  | {
+      readonly kind: "not-lore";
+    } {
   const path = target.split("#", 1)[0] as string;
-  if (
-    path === "" ||
-    path.startsWith("/") ||
-    path.includes("\\") ||
-    path.includes(":") ||
-    path.split("/").some((segment) => segment === "." || segment === "..")
-  ) {
-    return undefined;
+  if (path.endsWith(".md")) {
+    return { kind: "invalid" };
   }
-  if (!path.startsWith(".atlas/lore/")) return path;
-  const name = path.slice(path.lastIndexOf("/") + 1);
-  if (name.includes(".") && !name.endsWith(".md")) return path;
-  return path.endsWith(".md") ? path : `${path}.md`;
+  const normalized = normalizeRealmRelativePath(path);
+  if (normalized === undefined || normalized !== path) {
+    return { kind: "invalid" };
+  }
+  if (normalized.slice(normalized.lastIndexOf("/") + 1).includes(".")) {
+    return { kind: "not-lore" };
+  }
+  const pagePath = `${normalized}.md`;
+  if (classifyRealmTextPath(pagePath) !== "page") {
+    return { kind: "not-lore" };
+  }
+  if (
+    !normalized.startsWith(".atlas/lore/") &&
+    !normalized.startsWith(".atlas/types/")
+  ) {
+    return { kind: "not-lore" };
+  }
+  return { kind: "candidate", path: pagePath };
+}
+
+function definitionWikilinks(definition: MarkdownNode): readonly MarkdownNode[] {
+  const targets: MarkdownNode[] = [];
+  function visitDirectContent(node: MarkdownNode): void {
+    if (node !== definition && node.type === "footnoteDefinition") return;
+    if (node.type === "wikiLink") targets.push(node);
+    for (const child of node.children ?? []) visitDirectContent(child);
+  }
+  visitDirectContent(definition);
+  return targets;
 }
 
 function validateCitations(
@@ -383,10 +418,7 @@ function validateCitations(
       }
       const definition = matches[0];
       if (definition === undefined) continue;
-      const targets: MarkdownNode[] = [];
-      visitMarkdown(definition, (node) => {
-        if (node.type === "wikiLink") targets.push(node);
-      });
+      const targets = definitionWikilinks(definition);
       if (targets.length !== 1) {
         findings.push(
           finding(
@@ -401,8 +433,8 @@ function validateCitations(
 
       const target = targets[0] as MarkdownNode;
       const targetValue = target.value as string;
-      const targetPath = citationTargetPath(targetValue);
-      if (targetPath === undefined) {
+      const resolution = citationTargetPath(targetValue);
+      if (resolution.kind === "invalid") {
         findings.push(
           finding(
             "ATLAS_CITATION_TARGET_INVALID",
@@ -411,10 +443,7 @@ function validateCitations(
             markdownLocation(page, target.position as MarkdownPosition),
           ),
         );
-      } else if (
-        !targetPath.startsWith(".atlas/lore/") ||
-        !targetPath.endsWith(".md")
-      ) {
+      } else if (resolution.kind === "not-lore") {
         findings.push(
           finding(
             "ATLAS_CITATION_TARGET_NOT_LORE",
@@ -423,7 +452,7 @@ function validateCitations(
             markdownLocation(page, target.position as MarkdownPosition),
           ),
         );
-      } else if (!pagePaths.has(targetPath)) {
+      } else if (!pagePaths.has(resolution.path)) {
         findings.push(
           finding(
             "ATLAS_CITATION_TARGET_MISSING",

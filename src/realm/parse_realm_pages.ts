@@ -4,10 +4,8 @@ import {
   type RealmPageEnvelope,
 } from "../domain/realm_page.ts";
 import type { RealmTextFile } from "./load_realm_text.ts";
-
-const pageDirectories = new Set(["bonfires", "insights", "lore", "pillars", "threads"]);
-
-export type RealmTextClassification = "page" | "opaque";
+import { classifyRealmTextPath } from "./realm_path.ts";
+export { classifyRealmTextPath } from "./realm_path.ts";
 
 export interface SourceLines {
   readonly endLine: number;
@@ -113,17 +111,6 @@ function bodyEndLine(body: string, startLine: number): number {
   }
   const newlines = Array.from(body).filter((character) => character === "\n").length;
   return startLine + newlines - (body.endsWith("\n") ? 1 : 0);
-}
-
-export function classifyRealmTextPath(path: string): RealmTextClassification {
-  if (path === ".atlas/index.md") {
-    return "page";
-  }
-  if (/^\.atlas\/types\/[^/]+\/.+\.md$/u.test(path)) {
-    return "page";
-  }
-  const match = /^\.atlas\/([^/]+)\/.+\.md$/u.exec(path);
-  return match !== null && pageDirectories.has(match[1] as string) ? "page" : "opaque";
 }
 
 function parsePage(file: RealmTextFile): ParsedRealmPage {

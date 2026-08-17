@@ -308,12 +308,15 @@ test("validates visible Citation markers and ignores non-visible syntax", () => 
     "# Page",
     "",
     "Visible claim.[^missing]",
+    "Visible **formatted claim[^formatted]**.",
     "",
     "`inline[^code]`",
     "\\[^escaped]",
     "\\\\[^also-missing]",
     "Broken [^ and [^]. Nested [^a[b].",
     "![hidden[^image]](image.png)",
+    "[linked text](https://example.test/[^link-url])",
+    "<https://example.test/autolink>",
     "",
     "```markdown",
     "fenced[^fence]",
@@ -342,8 +345,15 @@ test("validates visible Citation markers and ignores non-visible syntax", () => 
       {
         code: "ATLAS_CITATION_DEFINITION_MISSING",
         location: {
-          end: { column: 18, line: 21 },
-          start: { column: 3, line: 21 },
+          end: { column: 38, line: 18 },
+          start: { column: 26, line: 18 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 18, line: 22 },
+          start: { column: 3, line: 22 },
         },
       },
     ],
@@ -442,14 +452,14 @@ test("reports malformed, non-Lore, missing, unsafe, and ambiguous Citations", ()
   }, TypeError);
 });
 
-test("accepts optional Citation fragments, notes, and .md omission", () => {
+test("accepts optional Citation fragments and notes with canonical targets", () => {
   const body = [
     "# Page",
     "",
     "One.[^one] Two.[^two]",
     "",
     "[^one]: [[.atlas/lore/parser-source]]",
-    "[^two]: [[.atlas/lore/parser-source.md#section]] Human note.",
+    "[^two]: [[.atlas/lore/parser-source#section]] Human note.",
   ].join("\n");
   assert.deepEqual(
     validateRealmStructure([
@@ -467,7 +477,10 @@ test("rejects absolute, backslash, cross-Realm, traversal, and opaque targets", 
     ".atlas\\lore\\source",
     "other:.atlas/lore/source",
     ".atlas/lore/../source",
+    ".atlas/lore//source",
+    ".atlas/lore/source.md",
     ".atlas/lore/source.pdf",
+    ".atlas/unknown/source",
   ];
   const body = [
     "# Page",
@@ -487,10 +500,74 @@ test("rejects absolute, backslash, cross-Realm, traversal, and opaque targets", 
       "ATLAS_CITATION_TARGET_INVALID",
       "ATLAS_CITATION_TARGET_INVALID",
       "ATLAS_CITATION_TARGET_INVALID",
+      "ATLAS_CITATION_TARGET_INVALID",
+      "ATLAS_CITATION_TARGET_INVALID",
+      "ATLAS_CITATION_TARGET_NOT_LORE",
       "ATLAS_CITATION_TARGET_NOT_LORE",
     ],
   );
   assert.equal(JSON.stringify(findings).includes("source.pdf"), false);
+});
+
+test("does not borrow or double-count nested Citation definition targets", () => {
+  const borrowed = [
+    "# Page",
+    "",
+    "Claim.[^outer]",
+    "",
+    "[^outer]: Outer note.",
+    "",
+    "    [^nested]: [[.atlas/lore/parser-source]]",
+  ].join("\n");
+  const [finding] = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    validFiles[4] as RealmTextFile,
+    page(".atlas/insights/page.md", borrowed),
+  ]);
+  assert.equal(finding?.code, "ATLAS_CITATION_DEFINITION_MALFORMED");
+
+  const directAndNested = [
+    "# Page",
+    "",
+    "Claim.[^outer]",
+    "",
+    "[^outer]: [[.atlas/lore/parser-source]]",
+    "",
+    "    [^nested]: [[.atlas/lore/parser-source]]",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      validFiles[4] as RealmTextFile,
+      page(".atlas/insights/page.md", directAndNested),
+    ]),
+    [],
+  );
+});
+
+test("defers custom target ancestry while rejecting missing custom pages", () => {
+  const custom = page(".atlas/types/evidence/source.md", "# Custom Evidence", {
+    id: "evidence:source",
+    title: "Custom Evidence",
+    type: "evidence",
+  });
+  const body = [
+    "# Page",
+    "",
+    "Known.[^known] Missing.[^missing]",
+    "",
+    "[^known]: [[.atlas/types/evidence/source]]",
+    "[^missing]: [[.atlas/types/evidence/absent]]",
+  ].join("\n");
+  const findings = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    custom,
+    page(".atlas/insights/page.md", body),
+  ]);
+  assert.deepEqual(
+    findings.map(({ code }) => code),
+    ["ATLAS_CITATION_TARGET_MISSING"],
+  );
 });
 
 test("supports extensible attribution with severity as the only state", () => {
