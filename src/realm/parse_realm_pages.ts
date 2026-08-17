@@ -78,15 +78,22 @@ function cloneAndFreezeJson(value: unknown): unknown {
   if (Array.isArray(value)) {
     return Object.freeze(value.map(cloneAndFreezeJson));
   }
-  if (isRecord(value)) {
-    const prototype = Object.getPrototypeOf(value) as unknown;
-    if (prototype === Object.prototype || prototype === null) {
-      return Object.freeze(
-        Object.fromEntries(
-          Object.entries(value).map(([key, entry]) => [key, cloneAndFreezeJson(entry)]),
-        ),
-      );
+  if (value instanceof Map) {
+    const entries: [string, unknown][] = [];
+    for (const [key, entry] of value) {
+      if (typeof key !== "string") {
+        throw new TypeError("Frontmatter mapping keys must be strings.");
+      }
+      entries.push([key, cloneAndFreezeJson(entry)]);
     }
+    return Object.freeze(Object.fromEntries(entries));
+  }
+  if (isRecord(value) && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.freeze(
+      Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => [key, cloneAndFreezeJson(entry)]),
+      ),
+    );
   }
   throw new TypeError("Frontmatter contains a non-JSON value.");
 }
@@ -151,7 +158,9 @@ function parsePage(file: RealmTextFile): ParsedRealmPage {
 
   let frontmatter: unknown;
   try {
-    frontmatter = cloneAndFreezeJson(document.toJS({ maxAliasCount: 0 }));
+    frontmatter = cloneAndFreezeJson(
+      document.toJS({ mapAsMap: true, maxAliasCount: 0 }),
+    );
   } catch {
     throw new RealmPageParseError("MALFORMED_FRONTMATTER", file.path, 2);
   }
