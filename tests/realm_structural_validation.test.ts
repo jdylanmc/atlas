@@ -856,6 +856,115 @@ test("validates rendered wiki-link alias text for titles and Citations", () => {
   );
 });
 
+test("detects Citation markers split across rendered visible nodes", () => {
+  const body = [
+    "# Page",
+    "",
+    "Visible claim.[*^emphasis-split*]",
+    "",
+    "Visible claim.[**^strong-split**]",
+    "",
+    "Claim [^[[.atlas/lore/parser-source|alias-boundary]]] tail",
+    "",
+    "Inline [^<span>html-split</span>] text.",
+  ].join("\n");
+  const findings = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    page(".atlas/insights/page.md", body),
+  ]);
+  assert.deepEqual(
+    findings.map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 34, line: 17 },
+          start: { column: 15, line: 17 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 34, line: 19 },
+          start: { column: 15, line: 19 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 54, line: 21 },
+          start: { column: 7, line: 21 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
+        location: {
+          end: { column: 34, line: 23 },
+          start: { column: 8, line: 23 },
+        },
+      },
+    ],
+  );
+});
+
+test("reports split Citation markers that no definition can bind", () => {
+  const body = [
+    "# Page",
+    "",
+    "Claim.[*^split*] Claim.[^[[.atlas/lore/parser-source|aliased]]]",
+    "",
+    "[^split]: [[.atlas/lore/parser-source]]",
+    "[^aliased]: [[.atlas/lore/parser-source]]",
+  ].join("\n");
+  const findings = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    validFiles[4] as RealmTextFile,
+    page(".atlas/insights/page.md", body),
+  ]);
+  assert.deepEqual(
+    findings.map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 17, line: 17 },
+          start: { column: 7, line: 17 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 64, line: 17 },
+          start: { column: 24, line: 17 },
+        },
+      },
+    ],
+  );
+});
+
+test("keeps hidden, destination, and block content out of rendered runs", () => {
+  const body = [
+    "# Page",
+    "",
+    "Claim [^open ![alt](image.png) more]",
+    "",
+    "Claim [^open `code` more]",
+    "",
+    "Claim [^open [link](https://example.test/a]b) tail",
+    "",
+    "<div>Trailing [^open</div>",
+    "",
+    "<div>closes]</div>",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      page(".atlas/insights/page.md", body),
+    ]),
+    [],
+  );
+});
+
 test("supports extensible attribution with severity as the only state", () => {
   const base = {
     code: "REALM_CHECK_EXAMPLE",

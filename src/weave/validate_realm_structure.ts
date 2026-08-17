@@ -323,8 +323,15 @@ type CitationMarker = {
 type MarkerCell = {
   readonly character: string;
   readonly end: number;
+  readonly escapable: boolean;
   readonly escaped: boolean;
+  readonly html: boolean;
   readonly start: number;
+};
+
+type VisibleMarkers = {
+  readonly rawHtml: MarkdownPosition[];
+  readonly references: CitationMarker[];
 };
 
 const hiddenNodeTypes: ReadonlySet<string> = new Set([
@@ -335,11 +342,19 @@ const hiddenNodeTypes: ReadonlySet<string> = new Set([
   "inlineCode",
 ]);
 const labelNodeTypes: ReadonlySet<string> = new Set(["link", "linkReference"]);
+const transparentNodeTypes: ReadonlySet<string> = new Set([
+  "delete",
+  "emphasis",
+  "strong",
+]);
+const breakEntry = "break";
+type PendingEntry = MarkdownNode | typeof breakEntry;
 const ambiguousCharacter = "\u0000";
 const characterReference =
   /&(?:#\d{1,7}|#[Xx][\dA-Fa-f]{1,6}|[A-Za-z][\dA-Za-z]{0,31});/uy;
+const markerBoundary = /[\r\n[]/u;
 
-function pushChildren(pending: MarkdownNode[], node: MarkdownNode): void {
+function pushChildren(pending: PendingEntry[], node: MarkdownNode): void {
   const children = node.children ?? [];
   for (let index = children.length - 1; index >= 0; index -= 1) {
     pending.push(children[index] as MarkdownNode);
@@ -355,12 +370,19 @@ function nodeRange(node: MarkdownNode): SourceRange {
 }
 
 /**
- * Splits source into rendered cells. A character reference renders as a
- * character this validator cannot resolve without an HTML renderer, so it
- * matches every Citation marker character and fails closed.
+ * Appends one rendered-visible source range to a cell stream, keeping absolute
+ * source offsets. A character reference renders as a character this validator
+ * cannot resolve without an HTML renderer, so it matches every Citation marker
+ * character and fails closed.
  */
-function markerCells(source: string): readonly MarkerCell[] {
-  const cells: MarkerCell[] = [];
+function appendCells(
+  cells: MarkerCell[],
+  body: string,
+  range: SourceRange,
+  escapable: boolean,
+  html: boolean,
+): void {
+  const source = body.slice(range.start, range.end);
   let backslashes = 0;
   let index = 0;
   while (index < source.length) {
@@ -371,93 +393,132 @@ function markerCells(source: string): readonly MarkerCell[] {
       reference === null ? (source[index] as string) : ambiguousCharacter;
     cells.push({
       character,
-      end,
+      end: range.start + end,
+      escapable,
       escaped: backslashes % 2 === 1,
-      start: index,
+      html,
+      start: range.start + index,
     });
     backslashes = reference === null && character === "\\" ? backslashes + 1 : 0;
     index = end;
   }
-  return cells;
 }
 
 function rendersAs(cell: MarkerCell, character: string): boolean {
   return cell.character === character || cell.character === ambiguousCharacter;
 }
 
-function citationMarkers(
+/**
+ * Scans one rendered-visible run for Citation markers. Nearest following close,
+ * nearest following boundary, and raw-HTML counts are precomputed once, so
+ * repeated candidates stay linear and accepted markers never overlap.
+ */
+function collectMarkers(
   body: string,
-  range: SourceRange,
-  escapable: boolean,
-): readonly CitationMarker[] {
-  const markers: CitationMarker[] = [];
-  const source = body.slice(range.start, range.end);
-  const cells = markerCells(source);
+  cells: readonly MarkerCell[],
+  found: VisibleMarkers,
+): void {
   const nextClose = new Int32Array(cells.length);
+  const nextBoundary = new Int32Array(cells.length);
+  const htmlBefore = new Int32Array(cells.length + 1);
   let nearestClose = -1;
+  let nearestBoundary = -1;
   for (let index = cells.length - 1; index >= 0; index -= 1) {
-    if (rendersAs(cells[index] as MarkerCell, "]")) nearestClose = index;
+    const cell = cells[index] as MarkerCell;
+    if (rendersAs(cell, "]")) nearestClose = index;
+    if (markerBoundary.test(cell.character)) nearestBoundary = index;
     nextClose[index] = nearestClose;
+    nextBoundary[index] = nearestBoundary;
+  }
+  for (let index = 0; index < cells.length; index += 1) {
+    htmlBefore[index + 1] =
+      (htmlBefore[index] as number) + ((cells[index] as MarkerCell).html ? 1 : 0);
   }
   for (let index = 0; index + 3 < cells.length; index += 1) {
     const open = cells[index] as MarkerCell;
     if (!rendersAs(open, "[") || !rendersAs(cells[index + 1] as MarkerCell, "^")) {
       continue;
     }
-    if (escapable && open.escaped) continue;
+    if (open.escapable && open.escaped) continue;
     const close = nextClose[index + 2] as number;
     if (close < index + 3) continue;
-    const identifier = source.slice(
-      (cells[index + 2] as MarkerCell).start,
-      (cells[close] as MarkerCell).start,
-    );
-    if (/[\r\n[\]]/u.test(identifier)) continue;
-    markers.push({
-      identifier: identifier.trim().replace(/\s+/gu, " ").toLowerCase(),
-      position: rangeAt(
-        body,
-        range.start + open.start,
-        range.start + (cells[close] as MarkerCell).end,
-      ),
-    });
+    const boundary = nextBoundary[index + 2] as number;
+    if (boundary >= 0 && boundary < close) continue;
+    let identifier = "";
+    for (let cursor = index + 2; cursor < close; cursor += 1) {
+      const cell = cells[cursor] as MarkerCell;
+      identifier += body.slice(cell.start, cell.end);
+    }
+    const position = rangeAt(body, open.start, (cells[close] as MarkerCell).end);
+    if ((htmlBefore[close + 1] as number) > (htmlBefore[index] as number)) {
+      found.rawHtml.push(position);
+    } else {
+      found.references.push({
+        identifier: identifier.trim().replace(/\s+/gu, " ").toLowerCase(),
+        position,
+      });
+    }
     index = close;
   }
-  return markers;
 }
 
-function visibleCitationMarkers(
-  tree: MarkdownNode,
-  body: string,
-): {
-  readonly rawHtml: readonly MarkdownPosition[];
-  readonly references: readonly CitationMarker[];
-} {
-  const rawHtml: MarkdownPosition[] = [];
-  const references: CitationMarker[] = [];
-  const pending: MarkdownNode[] = [tree];
-  while (pending.length > 0) {
-    const node = pending.pop() as MarkdownNode;
-    if (hiddenNodeTypes.has(node.type)) continue;
-    if (node.type === "html") {
-      for (const marker of citationMarkers(body, nodeRange(node), false)) {
-        rawHtml.push(marker.position);
-      }
-      continue;
+/**
+ * Streams the rendered-visible text of adjacent inline nodes into one cell run,
+ * so a marker split across formatting or a wiki-link alias cannot bypass
+ * detection. Hidden content, link destinations, autolinks, block boundaries,
+ * and gaps holding a line ending flush the run instead of bridging it.
+ */
+function visibleCitationMarkers(tree: MarkdownNode, body: string): VisibleMarkers {
+  const found: VisibleMarkers = { rawHtml: [], references: [] };
+  const pending: PendingEntry[] = [tree];
+  let cells: MarkerCell[] = [];
+  let previousEnd = -1;
+  function flush(): void {
+    if (cells.length > 0) {
+      collectMarkers(body, cells, found);
+      cells = [];
     }
-    if (node.type === "wikiLink") {
-      references.push(...citationMarkers(body, node.visible as SourceRange, false));
-      continue;
-    }
-    if (labelNodeTypes.has(node.type) && body[nodeRange(node).start] !== "[") {
-      continue;
-    }
-    if (node.type === "text") {
-      references.push(...citationMarkers(body, nodeRange(node), true));
-      continue;
-    }
-    pushChildren(pending, node);
+    previousEnd = -1;
   }
-  return { rawHtml, references };
+  function emit(range: SourceRange, escapable: boolean, html: boolean): void {
+    if (previousEnd >= 0 && lineEndings.test(body.slice(previousEnd, range.start))) {
+      flush();
+    }
+    appendCells(cells, body, range, escapable, html);
+    previousEnd = range.end;
+  }
+  while (pending.length > 0) {
+    const entry = pending.pop() as PendingEntry;
+    if (entry === breakEntry) {
+      flush();
+      continue;
+    }
+    if (entry.type === "text") {
+      emit(nodeRange(entry), true, false);
+      continue;
+    }
+    if (entry.type === "html") {
+      emit(nodeRange(entry), false, true);
+      continue;
+    }
+    if (entry.type === "wikiLink") {
+      emit(entry.visible as SourceRange, false, false);
+      continue;
+    }
+    if (transparentNodeTypes.has(entry.type)) {
+      pushChildren(pending, entry);
+      continue;
+    }
+    flush();
+    if (hiddenNodeTypes.has(entry.type)) continue;
+    if (labelNodeTypes.has(entry.type)) {
+      if (body[nodeRange(entry).start] !== "[") continue;
+      pending.push(breakEntry);
+    }
+    pushChildren(pending, entry);
+  }
+  flush();
+  return found;
 }
 
 function citationTargetPath(target: string):
