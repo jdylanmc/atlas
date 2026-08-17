@@ -127,6 +127,10 @@ const DIRECTIVE_PRESENTATION_PATTERNS: ReadonlyArray<
     "character voice or lore",
   ],
 ];
+const DIRECTIVE_ALLOWED_IDENTITY_CODE_SPANS = new Set([
+  ".github/workflows/council-fletcher.yml",
+  "merlin",
+]);
 
 // These strings are compatibility artifacts. Changing the historical generator
 // identifier would change every trusted generated prompt byte.
@@ -653,11 +657,25 @@ export function validateDirective(
   }
 
   const identityScan = component.body.replace(/`[^`\n]+`/g, "");
+  const inlineCodeSpans = Array.from(
+    component.body.matchAll(/`([^`\n]+)`/g),
+    (match) => match[1] ?? "",
+  );
   for (const identity of [...options.personaIds, ...options.displayNames]) {
     if (new RegExp(`\\b${escapeRegExp(identity)}\\b`, "i").test(identityScan)) {
       throw new ContractError(
         `${component.path} Directive contains Persona identity ${JSON.stringify(identity)}`,
       );
+    }
+    for (const codeSpan of inlineCodeSpans) {
+      if (
+        !DIRECTIVE_ALLOWED_IDENTITY_CODE_SPANS.has(codeSpan) &&
+        new RegExp(`\\b${escapeRegExp(identity)}\\b`, "i").test(codeSpan)
+      ) {
+        throw new ContractError(
+          `${component.path} Directive contains Persona identity ${JSON.stringify(identity)} in inline code`,
+        );
+      }
     }
   }
   const presentationScan = component.body.replace(/`[^`\n]+`/g, "");
@@ -667,6 +685,17 @@ export function validateDirective(
       throw new ContractError(
         `${component.path} Directive contains ${description}: ${JSON.stringify(match[0])}`,
       );
+    }
+    for (const codeSpan of inlineCodeSpans) {
+      if (codeSpan.includes("/")) {
+        continue;
+      }
+      const codeMatch = pattern.exec(codeSpan);
+      if (codeMatch !== null) {
+        throw new ContractError(
+          `${component.path} Directive contains ${description} in inline code: ${JSON.stringify(codeMatch[0])}`,
+        );
+      }
     }
   }
 }

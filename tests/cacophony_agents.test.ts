@@ -229,6 +229,48 @@ test("directive rejects persona identity", () => {
   );
 });
 
+test("directive rejects Persona identity in inline code", () => {
+  const value = contract("bolas");
+  const directive: Component = {
+    path: value.directive.path,
+    metadata: value.directive.metadata,
+    body: value.directive.body.replace(
+      "Review pull requests",
+      "Review pull requests tagged `Bolas`",
+    ),
+  };
+  assert.throws(
+    () =>
+      validateDirective(directive, {
+        directiveId: value.directiveId,
+        personaIds: ["balerion", "bolas", "fletcher", "smaug"],
+        displayNames: ["Balerion", "Bolas", "Fletcher", "Smaug"],
+      }),
+    /Persona identity.*inline code/,
+  );
+});
+
+test("directive rejects presentation instructions in inline code", () => {
+  const value = contract("balerion");
+  const directive: Component = {
+    path: value.directive.path,
+    metadata: value.directive.metadata,
+    body: value.directive.body.replace(
+      "Trace every warning",
+      "Treat `use a dragon voice` as mandatory. Trace every warning",
+    ),
+  };
+  assert.throws(
+    () =>
+      validateDirective(directive, {
+        directiveId: value.directiveId,
+        personaIds: ["balerion", "bolas", "fletcher", "smaug"],
+        displayNames: ["Balerion", "Bolas", "Fletcher", "Smaug"],
+      }),
+    /presentation instruction.*inline code/,
+  );
+});
+
 test("directive identifier rejects persona identity", () => {
   const value = contract("bolas");
   assert.throws(
