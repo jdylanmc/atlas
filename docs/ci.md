@@ -86,6 +86,12 @@ npm run atlas -- weave --json --realm <realm-host-directory>
 Machine mode returns `atlas.operation-result/v1` and always includes an
 `atlas.operation-handoff/v1`. Structural Realm failures are blocked results
 with ordered, attributed Findings; unexpected loading faults fail closed.
+The Realm host argument is mandatory: the command never derives semantic input
+from the current working directory. Finding lines and columns are explicitly
+one-based, and columns count Unicode code points. Findings use a total,
+field-complete order. Canonical files are UTF-8 without a byte-order mark,
+Unicode NFC, LF-only, and end in exactly one newline; mapping keys and file paths
+use fixed Unicode code-point order.
 ESLint module-specific import restrictions enforce the settled inward
 `domain` → `realm` → `graph` → `weave` → `operations` → `platform` →
 `adapters` → `framework` → `interfaces` dependency direction.

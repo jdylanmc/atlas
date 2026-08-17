@@ -109,7 +109,14 @@ function finding(
     severity: "error",
     code,
     message,
-    location: Object.freeze({ path, line, column }),
+    location: Object.freeze({
+      path,
+      line,
+      column,
+      lineBase: 1,
+      columnBase: 1,
+      columnEncoding: "unicode-code-point",
+    }),
     remediation,
   });
 }
@@ -132,22 +139,52 @@ function freezeValue(value: unknown): unknown {
   return value;
 }
 
-function canonicalJsonValue(value: unknown): unknown {
+function canonicalYamlValue(value: unknown): unknown {
   if (Array.isArray(value)) {
-    return value.map((item) => canonicalJsonValue(item));
+    return value.map((item) => canonicalYamlValue(item));
   }
   if (isRecord(value)) {
-    return Object.fromEntries(
+    return new Map(
       Object.keys(value)
         .sort(compareText)
-        .map((key) => [key, canonicalJsonValue(value[key])]),
+        .map((key) => [key, canonicalYamlValue(value[key])]),
     );
   }
   return value;
 }
 
 function canonicalYaml(value: unknown): string {
-  return stringify(canonicalJsonValue(value), YAML_FORMAT);
+  return stringify(canonicalYamlValue(value), YAML_FORMAT);
+}
+
+function canonicalJson(value: unknown, depth = 0): string {
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return "[]";
+    }
+    const indentation = "  ".repeat(depth + 1);
+    return `[\n${value
+      .map((item) => `${indentation}${canonicalJson(item, depth + 1)}`)
+      .join(",\n")}\n${"  ".repeat(depth)}]`;
+  }
+  if (isRecord(value)) {
+    const keys = Object.keys(value).sort(compareText);
+    if (keys.length === 0) {
+      return "{}";
+    }
+    const indentation = "  ".repeat(depth + 1);
+    return `{\n${keys
+      .map(
+        (key) =>
+          `${indentation}${JSON.stringify(key)}: ${canonicalJson(value[key], depth + 1)}`,
+      )
+      .join(",\n")}\n${"  ".repeat(depth)}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function codePointColumn(line: string, utf16Index: number): number {
+  return Array.from(line.slice(0, Math.max(0, utf16Index))).length + 1;
 }
 
 function containsUnsafeSchemaRegex(value: unknown): boolean {
@@ -177,7 +214,16 @@ function keyLocation(path: string, text: string, key: string): SourceLocation {
   return Object.freeze({
     path,
     line: index < 0 ? 1 : index + 1,
-    column: index < 0 ? 1 : (lines[index] as string).indexOf(key) + 1,
+    column:
+      index < 0
+        ? 1
+        : codePointColumn(
+            lines[index] as string,
+            (lines[index] as string).indexOf(key),
+          ),
+    lineBase: 1,
+    columnBase: 1,
+    columnEncoding: "unicode-code-point",
   });
 }
 
@@ -220,6 +266,9 @@ function keyPathLocation(path: string, text: string, keyPath: string): SourceLoc
         path,
         line: index + 1,
         column: indent + 1,
+        lineBase: 1,
+        columnBase: 1,
+        columnEncoding: "unicode-code-point",
       });
     }
   }
@@ -271,6 +320,18 @@ function decodeFile(file: SourceFile, findings: Finding[]): string | null {
     return null;
   }
   let text: string;
+  if (file.bytes[0] === 0xef && file.bytes[1] === 0xbb && file.bytes[2] === 0xbf) {
+    findings.push(
+      finding(
+        "ATLAS_REALM_BOM",
+        `${file.path} must not contain a byte-order mark.`,
+        file.path,
+        1,
+        1,
+        "Remove the UTF-8 byte-order mark.",
+      ),
+    );
+  }
   try {
     text = decoder.decode(file.bytes);
   } catch {
@@ -311,6 +372,18 @@ function decodeFile(file: SourceFile, findings: Finding[]): string | null {
       ),
     );
   }
+  if (text !== text.normalize("NFC")) {
+    findings.push(
+      finding(
+        "ATLAS_REALM_UNICODE_NORMALIZATION",
+        `${file.path} must use Unicode Normalization Form C.`,
+        file.path,
+        1,
+        1,
+        "Normalize the complete file as Unicode NFC.",
+      ),
+    );
+  }
   if (!text.endsWith("\n")) {
     findings.push(
       finding(
@@ -320,6 +393,17 @@ function decodeFile(file: SourceFile, findings: Finding[]): string | null {
         text.split("\n").length,
         1,
         "Add one final newline.",
+      ),
+    );
+  } else if (text.endsWith("\n\n")) {
+    findings.push(
+      finding(
+        "ATLAS_REALM_FINAL_NEWLINE",
+        `${file.path} must end with exactly one newline.`,
+        file.path,
+        text.split("\n").length - 1,
+        1,
+        "Remove trailing blank lines so exactly one final newline remains.",
       ),
     );
   }
@@ -361,13 +445,14 @@ export function parseYaml(
       readonly pos: readonly [number, number];
     };
     const position = lineCounter.linePos(error.pos[0]);
+    const sourceLine = text.split("\n")[position.line - 1] as string;
     findings.push(
       finding(
         "ATLAS_REALM_YAML_SYNTAX",
         `${path} contains invalid YAML: ${error.message}`,
         path,
         position.line + lineOffset,
-        position.col,
+        codePointColumn(sourceLine, position.col - 1),
         "Correct the YAML syntax and remove duplicate keys.",
       ),
     );
@@ -945,10 +1030,14 @@ function pageLocation(
     index = page.sourceLines.findIndex((line) => hasYamlKey(line, key));
   }
   const line = page.sourceLines[index] ?? "";
+  const target = sequenceValue ?? key;
   return Object.freeze({
     path: page.path,
     line: index < 0 ? 1 : index + 1,
-    column: index < 0 ? 1 : Math.max(1, line.indexOf(sequenceValue ?? key) + 1),
+    column: index < 0 ? 1 : codePointColumn(line, Math.max(0, line.indexOf(target))),
+    lineBase: 1,
+    columnBase: 1,
+    columnEncoding: "unicode-code-point",
   });
 }
 
@@ -964,13 +1053,25 @@ function realmFieldLocation(page: RealmPage, key: string): SourceLocation {
   const closingIndex = page.sourceLines.findIndex(
     (line, position) => position > realmIndex && line === "---",
   );
-  const index = page.sourceLines.findIndex(
-    (line, position) =>
+  const directIndent = Math.min(
+    ...page.sourceLines
+      .slice(realmIndex + 1, closingIndex)
+      .map((line) => yamlLineKey(line))
+      .filter(
+        (entry): entry is { readonly indent: number; readonly key: string } =>
+          entry !== null && entry.indent > realmIndent,
+      )
+      .map((entry) => entry.indent),
+  );
+  const index = page.sourceLines.findIndex((line, position) => {
+    const parsed = yamlLineKey(line);
+    return (
       position > realmIndex &&
       position < closingIndex &&
-      (line.match(/^\s*/) as RegExpMatchArray)[0].length > realmIndent &&
-      hasYamlKey(line, key),
-  );
+      parsed?.indent === directIndent &&
+      parsed.key === key
+    );
+  });
   if (index < 0) {
     return page.location;
   }
@@ -978,7 +1079,10 @@ function realmFieldLocation(page: RealmPage, key: string): SourceLocation {
   return Object.freeze({
     path: page.path,
     line: index + 1,
-    column: line.indexOf(key) + 1,
+    column: codePointColumn(line, Math.max(0, line.indexOf(key))),
+    lineBase: 1,
+    columnBase: 1,
+    columnEncoding: "unicode-code-point",
   });
 }
 
@@ -1043,12 +1147,13 @@ function markdownEvidence(body: string): string {
       visibleLines.push(line);
     }
   }
+  const mask = (value: string): string => value.replace(/[^\n]/g, " ");
   return visibleLines
     .join("\n")
-    .replace(/<!--[\s\S]*(?:-->|$)/g, "")
-    .replace(/\]\([^)\n]*\)/g, "]")
-    .replace(/<[^>\n]*>/g, "")
-    .replace(/(`+)[\s\S]*?\1/g, "");
+    .replace(/<!--[\s\S]*(?:-->|$)/g, mask)
+    .replace(/\]\([^)\n]*\)/g, mask)
+    .replace(/<[^>\n]*>/g, mask)
+    .replace(/(`+)[\s\S]*?\1/g, mask);
 }
 
 function validatePages(
@@ -1405,10 +1510,7 @@ function validatePages(
     ["bonfire", "insight", "thread"].includes(candidate.envelope.type),
   )) {
     const evidence = markdownEvidence(page.body);
-    const references = Array.from(
-      evidence.matchAll(/\[\^([^\]\n]+)\](?!:)/g),
-      (match) => match[1] as string,
-    );
+    const references = Array.from(evidence.matchAll(/\[\^([^\]\n]+)\](?!:)/g));
     const definitions = new Map(
       Array.from(
         evidence.matchAll(/^\[\^([^\]\n]+)\]:\s+\[\[([^\]#\n]+)(?:#[^\]\n]*)?\]\]/gm),
@@ -1428,16 +1530,20 @@ function validatePages(
         ),
       );
     }
-    for (const reference of references) {
+    for (const referenceMatch of references) {
+      const reference = referenceMatch[1] as string;
       const link = definitions.get(reference);
-      const lineIndex = page.sourceLines.findIndex((line) =>
-        line.includes(`[^${reference}]`),
-      );
+      const evidenceLineIndex =
+        evidence.slice(0, referenceMatch.index).split("\n").length - 1;
+      const evidenceLineStart =
+        evidence.lastIndexOf("\n", referenceMatch.index - 1) + 1;
+      const lineIndex =
+        page.sourceLines.length - page.body.split("\n").length + evidenceLineIndex;
       const line = page.sourceLines[lineIndex] as string;
       const location = Object.freeze({
         path: page.path,
         line: lineIndex + 1,
-        column: Math.max(1, line.indexOf(`[^${reference}]`) + 1),
+        column: codePointColumn(line, referenceMatch.index - evidenceLineStart),
       });
       if (link === undefined) {
         findings.push(
@@ -1477,6 +1583,26 @@ export function loadRealm(
   const files = [...inputFiles].sort((left, right) =>
     compareText(left.path, right.path),
   );
+  for (const file of files) {
+    const segments = file.path.split("/");
+    if (
+      !file.path.startsWith(".atlas/") ||
+      file.path.includes("\\") ||
+      file.path !== file.path.normalize("NFC") ||
+      segments.some((segment) => segment === "" || segment === "." || segment === "..")
+    ) {
+      findings.push(
+        finding(
+          "ATLAS_REALM_PATH_INVALID",
+          "Realm input contains a non-canonical path outside .atlas/.",
+          ".atlas",
+          1,
+          1,
+          "Supply only NFC-normalized, slash-separated paths beneath .atlas/.",
+        ),
+      );
+    }
+  }
   const duplicatePaths = files.filter(
     (file, index) => index > 0 && file.path === files[index - 1]?.path,
   );
@@ -1584,10 +1710,7 @@ export function loadRealm(
       try {
         const value = JSON.parse(text) as unknown;
         parsedJsonFiles.set(path, value);
-        canonicalFiles.set(
-          path,
-          encoder.encode(`${JSON.stringify(canonicalJsonValue(value), null, 2)}\n`),
-        );
+        canonicalFiles.set(path, encoder.encode(`${canonicalJson(value)}\n`));
       } catch (error) {
         findings.push(
           finding(

@@ -69,7 +69,10 @@ export function isStableContainedPath(
   after: string,
   realAtlasRoot: string,
 ): boolean {
-  return before === after && after.startsWith(`${realAtlasRoot}${sep}`);
+  return (
+    before === after &&
+    (after === realAtlasRoot || after.startsWith(`${realAtlasRoot}${sep}`))
+  );
 }
 
 interface FileSnapshot {
@@ -97,6 +100,31 @@ export function assertStableFileRead(
     ].every(Boolean)
   ) {
     throw new Error(`Realm file changed while loading: ${path}`);
+  }
+}
+
+export function assertStableDirectoryRead(
+  before: FileSnapshot,
+  after: FileSnapshot,
+  pathAfter: FileSnapshot,
+  realPathBefore: string,
+  realPathAfter: string,
+  realAtlasRoot: string,
+  path: string,
+): void {
+  if (
+    ![
+      before.dev === after.dev,
+      before.ino === after.ino,
+      before.size === after.size,
+      before.mtimeMs === after.mtimeMs,
+      before.ctimeMs === after.ctimeMs,
+      after.dev === pathAfter.dev,
+      after.ino === pathAfter.ino,
+      isStableContainedPath(realPathBefore, realPathAfter, realAtlasRoot),
+    ].every(Boolean)
+  ) {
+    throw new Error(`Realm directory changed while loading: ${path}`);
   }
 }
 
@@ -162,41 +190,70 @@ export function readRealmFiles(realmHost: string): readonly SourceFile[] {
   let visitedEntries = 0;
   const visit = (directory: string): void => {
     assertRealmDirectory(directory, realAtlasRoot);
-    const handle = opendirSync(directory);
-    const entries: Dirent[] = [];
+    const descriptor = openSync(
+      directory,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_DIRECTORY,
+    );
     try {
-      let entry = handle.readSync();
-      while (entry !== null) {
-        visitedEntries += 1;
-        enforceRealmBudget(visitedEntries, totalBytes);
-        entries.push(entry);
-        entry = handle.readSync();
+      const before = fstatSync(descriptor);
+      const realPathBefore = realpathSync(directory);
+      const pathBefore = statSync(directory);
+      assertStableDirectoryRead(
+        before,
+        before,
+        pathBefore,
+        realPathBefore,
+        realPathBefore,
+        realAtlasRoot,
+        directory,
+      );
+      const handle = opendirSync(directory);
+      const entries: Dirent[] = [];
+      try {
+        let entry = handle.readSync();
+        while (entry !== null) {
+          visitedEntries += 1;
+          enforceRealmBudget(visitedEntries, totalBytes);
+          entries.push(entry);
+          entry = handle.readSync();
+        }
+      } finally {
+        handle.closeSync();
       }
+      entries.sort((left, right) => compareText(left.name, right.name));
+      for (const entry of entries) {
+        const path = resolve(directory, entry.name);
+        if (entry.isSymbolicLink()) {
+          throw new Error(`Realm path must not be a symbolic link: ${path}`);
+        }
+        if (entry.isDirectory()) {
+          visit(path);
+        } else if (entry.isFile()) {
+          const bytes = readRegularFile(path, realAtlasRoot);
+          totalBytes += bytes.byteLength;
+          enforceRealmBudget(files.length + 1, totalBytes);
+          files.push(
+            Object.freeze({
+              path: relative(host, path).split(sep).join("/"),
+              bytes,
+              digest: sha256(bytes),
+            }),
+          );
+        } else {
+          throw new Error(`Realm path must be a regular file: ${path}`);
+        }
+      }
+      assertStableDirectoryRead(
+        before,
+        fstatSync(descriptor),
+        statSync(directory),
+        realPathBefore,
+        realpathSync(directory),
+        realAtlasRoot,
+        directory,
+      );
     } finally {
-      handle.closeSync();
-    }
-    entries.sort((left, right) => compareText(left.name, right.name));
-    for (const entry of entries) {
-      const path = resolve(directory, entry.name);
-      if (entry.isSymbolicLink()) {
-        throw new Error(`Realm path must not be a symbolic link: ${path}`);
-      }
-      if (entry.isDirectory()) {
-        visit(path);
-      } else if (entry.isFile()) {
-        const bytes = readRegularFile(path, realAtlasRoot);
-        totalBytes += bytes.byteLength;
-        enforceRealmBudget(files.length + 1, totalBytes);
-        files.push(
-          Object.freeze({
-            path: relative(host, path).split(sep).join("/"),
-            bytes,
-            digest: sha256(bytes),
-          }),
-        );
-      } else {
-        throw new Error(`Realm path must be a regular file: ${path}`);
-      }
+      closeSync(descriptor);
     }
   };
   visit(atlasRoot);
@@ -208,26 +265,21 @@ export function serializeOperationResult(result: OperationResult): string {
 }
 
 function usage(io: CommandIo): number {
-  io.stderr("usage: atlas weave --json [--realm PATH]\n");
+  io.stderr("usage: atlas weave --json --realm PATH\n");
   return 2;
 }
 
 export function main(arguments_: readonly string[], io: CommandIo): number {
-  if (arguments_[0] !== "weave" || arguments_[1] !== "--json") {
+  const realmHost = arguments_[3];
+  if (
+    arguments_.length !== 4 ||
+    arguments_[0] !== "weave" ||
+    arguments_[1] !== "--json" ||
+    arguments_[2] !== "--realm" ||
+    realmHost === undefined ||
+    realmHost.startsWith("-")
+  ) {
     return usage(io);
-  }
-  let realmHost = process.cwd();
-  if (arguments_.length !== 2) {
-    const value = arguments_[3];
-    if (
-      arguments_.length !== 4 ||
-      arguments_[2] !== "--realm" ||
-      value === undefined ||
-      value.startsWith("-")
-    ) {
-      return usage(io);
-    }
-    realmHost = value;
   }
   let result: OperationResult;
   try {

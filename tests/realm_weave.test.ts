@@ -31,6 +31,7 @@ import {
 } from "../src/domain/contracts.ts";
 import {
   assertRealmDirectory,
+  assertStableDirectoryRead,
   assertStableFileRead,
   combineRealmDigest,
   enforceRealmBudget,
@@ -146,6 +147,13 @@ test("public contracts are schema-first and frozen", () => {
   const validateResult = ajv.getSchema(OPERATION_RESULT_SCHEMA);
   assert.ok(validateResult);
   assert.equal(validateResult(weaveRealm(files(), combineRealmDigest)), true);
+  assert.equal(
+    validateResult(
+      weaveRealm(removeFile(files(), ".atlas/realm/config.yaml"), combineRealmDigest),
+    ),
+    true,
+  );
+  assert.equal(validateResult(failedWeaveResult("failed closed")), true);
   const validatePage = ajv.getSchema("atlas.realm-page/v1");
   assert.ok(validatePage);
   const audit = {
@@ -263,15 +271,38 @@ test("minimal Realm round-trips canonically through an immutable Realm View", ()
 test("valid Weave and machine serialization are byte-stable", () => {
   const first = weaveRealm(files(), combineRealmDigest);
   const second = weaveRealm(files(), combineRealmDigest);
+  const reversed = weaveRealm([...files()].reverse(), combineRealmDigest);
   assert.equal(first.status, "completed");
   assert.equal(first.schema, OPERATION_RESULT_SCHEMA);
   assert.equal(first.handoff.schema, OPERATION_HANDOFF_SCHEMA);
   assert.equal(first.handoff.validation.state, "valid");
   assert.equal(first.findings.length, 0);
   assert.equal(serializeOperationResult(first), serializeOperationResult(second));
+  assert.equal(serializeOperationResult(first), serializeOperationResult(reversed));
   assert.equal(first.output.realm.id, "realm:atlas-minimal");
   assert.equal(first.output.serialization.files, files().length);
   assert.ok(first.output.serialization.bytes > 0);
+});
+
+test("canonical mapping order includes numeric-looking keys", () => {
+  const relationships = 'relationships:\n  - "10": ten\n    "2": two\n    id: custom\n';
+  const schema = readFileSync(
+    join(FIXTURE, ".atlas/realm/schemas/1.0.0/schema.json"),
+    "utf8",
+  ).replace('"properties": {}', '"properties": {\n    "10": {},\n    "2": {}\n  }');
+  const loaded = loadRealm(
+    replaceFile(
+      replaceFile(
+        files(),
+        ".atlas/realm/schemas/1.0.0/relationships.yaml",
+        relationships,
+      ),
+      ".atlas/realm/schemas/1.0.0/schema.json",
+      schema,
+    ),
+    combineRealmDigest,
+  );
+  assert.equal(loaded.valid, true);
 });
 
 test("invalid Realm Findings are attributed, located, ordered, and stable", () => {
@@ -748,6 +779,22 @@ test("text and canonical input failures are stable Findings", () => {
       "ATLAS_REALM_INVALID_UTF8",
     ],
     [
+      replaceFile(
+        files(),
+        ".atlas/realm/config.yaml",
+        Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(config)]),
+      ),
+      "ATLAS_REALM_BOM",
+    ],
+    [
+      replaceFile(
+        files(),
+        ".atlas/realm/config.yaml",
+        config.replace("official", "officia\u006c\u0301"),
+      ),
+      "ATLAS_REALM_UNICODE_NORMALIZATION",
+    ],
+    [
       replaceFile(files(), ".atlas/realm/config.yaml", "source-authorities:\0 []\n"),
       "ATLAS_REALM_BINARY_FILE",
     ],
@@ -757,6 +804,10 @@ test("text and canonical input failures are stable Findings", () => {
     ],
     [
       replaceFile(files(), ".atlas/realm/config.yaml", config.trimEnd()),
+      "ATLAS_REALM_FINAL_NEWLINE",
+    ],
+    [
+      replaceFile(files(), ".atlas/realm/config.yaml", `${config}\n`),
       "ATLAS_REALM_FINAL_NEWLINE",
     ],
     [
@@ -1481,6 +1532,56 @@ test("Realm schema, graph, catalog, and Citation contracts fail closed", () => {
     ),
     false,
   );
+  const citationSource = insight.replace(
+    "Realm knowledge remains directly readable beneath `.atlas/`.[^atlas-contract]\n\n[^atlas-contract]: [[lore/atlas-contract]] supports this claim.",
+    "```markdown\n[^missing]\n```\n\n😀 visible claim [^missing]",
+  );
+  const citationLocation = loadRealm(
+    replaceFile(files(), ".atlas/insights/realm-files.md", citationSource),
+    combineRealmDigest,
+  ).findings.find(
+    (finding) => finding.code === "ATLAS_REALM_CITATION_DEFINITION_MISSING",
+  )?.location;
+  const citationLine = citationSource
+    .split("\n")
+    .findIndex((line) => line.includes("😀 visible claim"));
+  assert.ok(citationLocation);
+  assert.equal(citationLocation.line, citationLine + 1);
+  assert.equal(citationLocation.column, 17);
+  const sameLineCitation = insight.replace(
+    "Realm knowledge remains directly readable beneath `.atlas/`.[^atlas-contract]\n\n[^atlas-contract]: [[lore/atlas-contract]] supports this claim.",
+    "`[^missing]` 😀 visible claim [^missing]",
+  );
+  const sameLineLocation = loadRealm(
+    replaceFile(files(), ".atlas/insights/realm-files.md", sameLineCitation),
+    combineRealmDigest,
+  ).findings.find(
+    (finding) => finding.code === "ATLAS_REALM_CITATION_DEFINITION_MISSING",
+  )?.location;
+  assert.ok(sameLineLocation);
+  assert.equal(sameLineLocation.column, 30);
+  const loreWithNestedKind = readFileSync(
+    join(FIXTURE, ".atlas/lore/atlas-contract.md"),
+    "utf8",
+  );
+  const duplicateDepth = loreWithNestedKind.replace(
+    "  source:\n    kind: repository",
+    "  kind: invalid-extension\n  source:\n    kind: repository",
+  );
+  const duplicateDepthResult = loadRealm(
+    replaceFile(files(), ".atlas/lore/atlas-contract.md", duplicateDepth),
+    combineRealmDigest,
+  );
+  const duplicateDepthLocation = duplicateDepthResult.findings.find(
+    (finding) => finding.code === "ATLAS_REALM_SCHEMA_VALIDATION",
+  )?.location;
+  assert.ok(duplicateDepthLocation);
+  assert.equal(
+    duplicateDepthLocation.line,
+    duplicateDepth
+      .split("\n")
+      .findIndex((line) => line === "  kind: invalid-extension") + 1,
+  );
   const inlineThread = thread.replace(
     "  endpoints:\n    - bonfire:root\n    - insight:realm-files",
     "  endpoints: [bonfire:root, insight:missing]",
@@ -1691,7 +1792,14 @@ test("Finding comparison reaches every stable tie-breaker", () => {
     severity: "error",
     code: "B",
     message: "message",
-    location: { path: "b", line: 2, column: 2 },
+    location: {
+      path: "b",
+      line: 2,
+      column: 2,
+      lineBase: 1,
+      columnBase: 1,
+      columnEncoding: "unicode-code-point",
+    },
     remediation: "repair",
   };
   assert.ok(
@@ -1709,6 +1817,12 @@ test("Finding comparison reaches every stable tie-breaker", () => {
   );
   assert.ok(compareFindings({ ...base, code: "A" }, base) < 0);
   assert.ok(compareFindings({ ...base, check: { ...base.check, id: "a" } }, base) < 0);
+  assert.ok(
+    compareFindings({ ...base, severity: "error" }, { ...base, severity: "warning" }) <
+      0,
+  );
+  assert.ok(compareFindings({ ...base, message: "a" }, base) < 0);
+  assert.ok(compareFindings({ ...base, remediation: "a" }, base) < 0);
   assert.equal(compareFindings(base, base), 0);
 });
 
@@ -1717,6 +1831,10 @@ test("canonical CLI handles success, blocked results, usage, and failures", () =
   assert.equal(success.code, 0);
   assert.equal(success.stderr, "");
   assert.equal(resultStatus(success.stdout), "completed");
+  assert.equal(
+    success.stdout,
+    serializeOperationResult(weaveRealm(files(), combineRealmDigest)),
+  );
 
   const invalid = join(WORKSPACES, "invalid");
   cpSync(FIXTURE, invalid, { recursive: true });
@@ -1726,6 +1844,7 @@ test("canonical CLI handles success, blocked results, usage, and failures", () =
   assert.equal(resultStatus(blocked.stdout), "blocked");
 
   assert.equal(captureMain([]).code, 2);
+  assert.equal(captureMain(["weave", "--json"]).code, 2);
   assert.equal(captureMain(["weave", "--json", "--realm"]).code, 2);
   assert.equal(captureMain(["weave", "--json", "--realm", "--json"]).code, 2);
   assert.equal(captureMain(["weave", "--json", "--unknown"]).code, 2);
@@ -1791,6 +1910,20 @@ test("filesystem loader rejects symlinks and non-regular Realm entries", () => {
     false,
   );
   assert.equal(isStableContainedPath(ROOT, ROOT, realAtlasRoot), false);
+  assert.equal(
+    isStableContainedPath(realAtlasRoot, realAtlasRoot, realAtlasRoot),
+    true,
+  );
+  assert.ok(
+    findingCodes([
+      ...files(),
+      {
+        path: "../escape.md",
+        bytes: Buffer.from("not trusted\n"),
+        digest: "ignored",
+      },
+    ]).includes("ATLAS_REALM_PATH_INVALID"),
+  );
   const snapshot = {
     dev: 1,
     ino: 2,
@@ -1811,6 +1944,30 @@ test("filesystem loader rejects symlinks and non-regular Realm entries", () => {
       ),
     /changed/,
   );
+  assert.doesNotThrow(() =>
+    assertStableDirectoryRead(
+      snapshot,
+      snapshot,
+      snapshot,
+      realAtlasRoot,
+      realAtlasRoot,
+      realAtlasRoot,
+      "realm",
+    ),
+  );
+  assert.throws(
+    () =>
+      assertStableDirectoryRead(
+        snapshot,
+        { ...snapshot, mtimeMs: snapshot.mtimeMs + 1 },
+        snapshot,
+        realAtlasRoot,
+        realAtlasRoot,
+        realAtlasRoot,
+        "realm",
+      ),
+    /changed/,
+  );
 
   const oversizedRealm = join(WORKSPACES, "oversized");
   cpSync(FIXTURE, oversizedRealm, { recursive: true });
@@ -1822,6 +1979,26 @@ test("filesystem loader rejects symlinks and non-regular Realm entries", () => {
   assert.doesNotThrow(() => enforceRealmBudget(MAX_REALM_FILES, MAX_REALM_TOTAL_BYTES));
   assert.throws(() => enforceRealmBudget(MAX_REALM_FILES + 1, 0), /files/);
   assert.throws(() => enforceRealmBudget(1, MAX_REALM_TOTAL_BYTES + 1), /aggregate/);
+});
+
+test("ESLint mechanically rejects outward domain imports", () => {
+  const command = spawnSync(
+    process.execPath,
+    [
+      join(ROOT, "node_modules/eslint/bin/eslint.js"),
+      "--stdin",
+      "--stdin-filename",
+      "src/domain/contracts.ts",
+    ],
+    {
+      cwd: ROOT,
+      encoding: "utf8",
+      input:
+        'import { readFileSync } from "fs";\nimport { statSync } from "node:fs";\nimport "../realm/load.ts";\nvoid import("fs");\nvoid import("node:fs");\nvoid import("../realm/load.ts");\nvoid readFileSync;\nvoid statSync;\n',
+    },
+  );
+  assert.equal(command.status, 1, command.stderr);
+  assert.match(command.stdout, /Domain contracts must remain independent/);
 });
 
 test("YAML parser faults become stable Findings", () => {

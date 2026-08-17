@@ -1,6 +1,70 @@
 import eslint from "@eslint/js";
 import globals from "globals";
+import { builtinModules } from "node:module";
+import { dirname, relative, resolve } from "node:path";
 import tseslint from "typescript-eslint";
+
+const LAYERS = [
+  "domain",
+  "realm",
+  "graph",
+  "weave",
+  "operations",
+  "platform",
+  "adapters",
+  "framework",
+  "interfaces",
+];
+const NODE_BUILTIN_NAMES = new Set(
+  builtinModules.flatMap((name) => [name, `node:${name}`]),
+);
+const NODE_BUILTIN_IMPORTS = builtinModules.map((name) => ({
+  name,
+  message: "Inward layers must not import Node.js modules.",
+}));
+const ATLAS_PLUGIN = {
+  rules: {
+    "inward-dynamic-imports": {
+      meta: {
+        type: "problem",
+        schema: [],
+        messages: {
+          invalid: "Dynamic import bypasses the Atlas inward dependency boundary.",
+        },
+      },
+      create(context) {
+        return {
+          ImportExpression(node) {
+            const filename = context.filename;
+            const source =
+              node.source.type === "Literal" && typeof node.source.value === "string"
+                ? node.source.value
+                : null;
+            const sourcePath = relative(
+              import.meta.dirname,
+              resolve(dirname(filename), source ?? ""),
+            );
+            const currentLayer = LAYERS.findIndex((layer) =>
+              relative(import.meta.dirname, filename).startsWith(`src/${layer}/`),
+            );
+            const targetLayer = LAYERS.findIndex((layer) =>
+              sourcePath.startsWith(`src/${layer}/`),
+            );
+            if (
+              source === null ||
+              (currentLayer >= 0 &&
+                currentLayer <= LAYERS.indexOf("operations") &&
+                NODE_BUILTIN_NAMES.has(source)) ||
+              (currentLayer >= 0 && targetLayer >= 0 && targetLayer > currentLayer)
+            ) {
+              context.report({ node, messageId: "invalid" });
+            }
+          },
+        };
+      },
+    },
+  },
+};
 
 export default tseslint.config(
   {
@@ -10,6 +74,7 @@ export default tseslint.config(
   ...tseslint.configs.strictTypeChecked,
   {
     files: ["**/*.ts"],
+    plugins: { atlas: ATLAS_PLUGIN },
     languageOptions: {
       globals: globals.node,
       parserOptions: {
@@ -23,6 +88,7 @@ export default tseslint.config(
       "@typescript-eslint/no-unnecessary-condition": "error",
       "@typescript-eslint/prefer-readonly": "error",
       "@typescript-eslint/switch-exhaustiveness-check": "error",
+      "atlas/inward-dynamic-imports": "error",
     },
   },
   {
@@ -31,6 +97,7 @@ export default tseslint.config(
       "no-restricted-imports": [
         "error",
         {
+          paths: NODE_BUILTIN_IMPORTS,
           patterns: [
             {
               group: [
@@ -57,6 +124,7 @@ export default tseslint.config(
       "no-restricted-imports": [
         "error",
         {
+          paths: NODE_BUILTIN_IMPORTS,
           patterns: [
             {
               group: [
@@ -89,6 +157,7 @@ export default tseslint.config(
       "no-restricted-imports": [
         "error",
         {
+          paths: NODE_BUILTIN_IMPORTS,
           patterns: [
             {
               group: [
@@ -117,6 +186,7 @@ export default tseslint.config(
       "no-restricted-imports": [
         "error",
         {
+          paths: NODE_BUILTIN_IMPORTS,
           patterns: [
             {
               group: [
@@ -147,6 +217,7 @@ export default tseslint.config(
       "no-restricted-imports": [
         "error",
         {
+          paths: NODE_BUILTIN_IMPORTS,
           patterns: [
             {
               group: [

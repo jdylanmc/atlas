@@ -24,6 +24,9 @@ export interface SourceLocation {
   readonly path: string;
   readonly line: number;
   readonly column: number;
+  readonly lineBase: 1;
+  readonly columnBase: 1;
+  readonly columnEncoding: "unicode-code-point";
 }
 
 export interface Finding {
@@ -205,11 +208,29 @@ const FINDING_JSON_SCHEMA = Object.freeze({
     location: Object.freeze({
       type: "object",
       additionalProperties: false,
-      required: Object.freeze(["path", "line", "column"]),
+      required: Object.freeze([
+        "path",
+        "line",
+        "column",
+        "lineBase",
+        "columnBase",
+        "columnEncoding",
+      ]),
       properties: Object.freeze({
         path: NONEMPTY_STRING_SCHEMA,
-        line: Object.freeze({ type: "integer", minimum: 1 }),
-        column: Object.freeze({ type: "integer", minimum: 1 }),
+        line: Object.freeze({
+          type: "integer",
+          minimum: 1,
+          description: "One-based source line.",
+        }),
+        column: Object.freeze({
+          type: "integer",
+          minimum: 1,
+          description: "One-based Unicode code-point column.",
+        }),
+        lineBase: Object.freeze({ const: 1 }),
+        columnBase: Object.freeze({ const: 1 }),
+        columnEncoding: Object.freeze({ const: "unicode-code-point" }),
       }),
     }),
     remediation: NONEMPTY_STRING_SCHEMA,
@@ -652,6 +673,14 @@ export function compareFindings(left: Finding, right: Finding): number {
     left.location.line - right.location.line ||
     left.location.column - right.location.column ||
     compareText(left.code, right.code) ||
-    compareText(left.check.id, right.check.id)
+    compareText(left.check.id, right.check.id) ||
+    compareText(left.severity, right.severity) ||
+    compareText(left.message, right.message) ||
+    compareText(left.remediation, right.remediation) ||
+    compareText(left.schema, right.schema) ||
+    compareText(left.check.origin, right.check.origin) ||
+    left.location.lineBase - right.location.lineBase ||
+    left.location.columnBase - right.location.columnBase ||
+    compareText(left.location.columnEncoding, right.location.columnEncoding)
   );
 }
