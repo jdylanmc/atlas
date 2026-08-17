@@ -147,7 +147,7 @@ A non-persistent disagreement surfaced while an agent traverses knowledge from m
 A warning that two cited Insight claims within one Realm conflict without contradicting a Pillar. The Weave workflow surfaces the evidence and Source Authority, then works with a human to reconcile or scope the claims.
 
 **Realm Law**:
-A human-approved, versioned invariant or policy that governs how agents maintain a Realm. Agents may propose Laws and amendments but cannot establish them autonomously. Violating a Realm Law makes the resulting Realm invalid. Because a Law is evaluated by a model, both its failures and its passes must survive a Challenge. Explore may read a relevant Law to interpret an accepted exception, but Laws do not govern ordinary read-only traversal.
+A human-approved, versioned invariant or policy that governs how Gather and Weave maintain a Realm. A Law may govern resulting Realm state or observable maintenance procedure, and any exception must be explicit, enforceable doctrine within the Law itself. A Law retains its stable identity while its governing intention remains the same and retires rather than disappears. Agents may propose Laws and amendments but cannot establish them autonomously. Violating an active Realm Law makes the resulting Realm invalid. Because a Law is evaluated by a model, both its failures and its passes must survive a Challenge. Explore is never governed by Laws, though it may optionally read them as descriptive Realm context.
 _Avoid_: Realm Rule
 
 **Gather**:
