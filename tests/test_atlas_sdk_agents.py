@@ -170,6 +170,8 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
             "If the source changes, then refresh the snapshot.",
             "The draft is ready; do not merge it.",
             "The snapshot is stale; review it and use Realm Refresh.",
+            "Inspect the source and refresh the snapshot.",
+            "Inspect the source, and refresh the snapshot.",
         ):
             with self.subTest(imperative=imperative):
                 changed = self.persona_text.replace(
@@ -216,6 +218,8 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
             "The Agent has authority over Realm policy.",
             "The Agent owns Realm governance.",
             "The Agent sets policy.",
+            "The Agent can update Realm policy.",
+            "The Agent is permitted to update Realm policy.",
         )
         for imperative in imperative_examples:
             with self.subTest(imperative=imperative):
@@ -280,6 +284,8 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
             "The documented command is `atlas create`.",
             "The documented command is `atlas write`.",
             "The documented command is `atlas modify`.",
+            "The documented syntax is `atlas; create`.",
+            "The documented syntax is `and then refresh`.",
         ):
             with self.subTest(description=description):
                 agents.validate_example_language("Plain", description)

@@ -151,14 +151,17 @@ EXAMPLE_AUTHORITY_PATTERN = re.compile(
     r"allowed actions?|approve|reject|execute|write|"
     r"modif(?:y|ies|ied|ying)|delete|create|"
     r"initialize|activate|override|authori(?:ty|z(?:e|es|ed|ing|ation))|"
-    r"controls?|owns?|sets?\s+policy|human approval|reveal secrets?)\b|"
+    r"permitt(?:ed|ing|s)?|controls?|owns?|sets?\s+policy|human approval|"
+    r"reveal secrets?)\b|"
+    r"\b(?:agent|persona|realm guide|merlin|you)\b[^\n.]{0,40}\b"
+    r"(?:may|can|is permitted to|is allowed to|has permission to)\b|"
     r"\b(?:may|can)\s+(?:approve|reject|execute|run|perform|write|modify|"
-    r"delete|create|initialize|activate|override|govern|change)\b|"
+    r"delete|create|initialize|activate|override|govern|change|update)\b|"
     r"\bignore\b[^\n.]{0,80}\binstructions?\b",
     re.IGNORECASE,
 )
 IMPERATIVE_WORKFLOW_PATTERN = re.compile(
-    r"(?:^|[.!?;:,]\s+|\b(?:and\s+)?then\s+)"
+    r"(?:^|[.!?;:,]\s+|\b(?:and\s+)?then\s+|(?:,\s+)?\b(?:and|or)\s+)"
     r"(?:please\s+)?(?:do\s+not\s+|don't\s+|never\s+)?"
     r"(?:run|perform|execute|approve|reject|write|modify|delete|create|"
     r"initialize|activate|refresh|open|merge|validate|use|submit|ensure|"
@@ -304,14 +307,14 @@ def parse_examples(lines: list[str]) -> tuple[tuple[str, str], ...]:
 
 
 def validate_example_language(label: str, value: str) -> None:
-    authority_scan = re.sub(r"`[^`\n]+`", "", value)
-    authority = EXAMPLE_AUTHORITY_PATTERN.search(authority_scan)
+    language_scan = re.sub(r"`[^`\n]+`", "", value)
+    authority = EXAMPLE_AUTHORITY_PATTERN.search(language_scan)
     if authority:
         raise ContractError(
             f"{PERSONA_PATH} {label} example contains behavioral "
             f"authority or prompt injection: {authority.group(0)!r}"
         )
-    imperative = IMPERATIVE_WORKFLOW_PATTERN.search(value)
+    imperative = IMPERATIVE_WORKFLOW_PATTERN.search(language_scan)
     if imperative:
         raise ContractError(
             f"{PERSONA_PATH} {label} example contains imperative "
