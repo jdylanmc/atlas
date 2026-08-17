@@ -1,6 +1,6 @@
 ---
-schema: atlas.agent-directive/v1
-agent: fletcher
+schema: atlas.agent-directive/v2
+directive: prompt-contract-review
 authority: behavior
 ---
 # Agent Directive
@@ -21,6 +21,7 @@ part of this contract:
 - `.cacophony/personas/*.md`
 - `.cacophony/directives/*.md`
 - `.cacophony/agents/*.md`
+- `.cacophony/compositions.json`
 - `scripts/cacophony_agents.py`
 - `tests/test_cacophony_agents.py`
 - `.github/workflows/cacophony-review.yml`
@@ -38,18 +39,36 @@ Enforce all of these requirements:
    Behavioral authority, review objectives, evidence rules, severity, security
    boundaries, governance, output requirements, and handoffs in a Persona are
    high-severity defects.
-2. Each Directive is literal machine-facing instruction. Character identity,
-   backstory, performative prose, speaking manner, and presentation styling in
-   a Directive are high-severity defects.
-3. Each reviewer has one explicit engineering lens. Conflicting ownership or
+2. Each Directive is literal machine-facing instruction whose file name and
+   stable identifier state its review intention. A Persona identifier,
+   character identity, backstory, performative prose, speaking manner, or
+   presentation styling in a Directive path, identifier, or body is a
+   high-severity defect.
+3. The Agent Composition artifact contains references and metadata only. Each
+   compatibility composition selects exactly one Persona and an ordered,
+   non-empty list of unique intention-named Directives; it does not duplicate
+   Persona or Directive prose.
+4. Replacing a Persona changes only the Persona reference. It must not rename,
+   reorder, reassign, add, remove, or modify the underlying Directives.
+5. Directives are authoritative and apply in listed order. A later Directive
+   specializes and wins a direct conflict with an earlier Directive. Every
+   conflict between Persona and Directive content resolves to the Directives.
+6. Persona applies only to optional conversational or presentation surfaces
+   that the Directives permit. It cannot change semantic meaning or
+   instructions and must remain neutral for Insights, Pillars, diagnostics,
+   evidence, schemas, code, machine-consumed output, and other authoritative
+   artifacts. Broad instructions such as answering every question as the
+   Persona are high-severity defects.
+7. Each reviewer has one explicit engineering lens. Conflicting ownership or
    overlap that produces duplicate or contradictory findings is a defect.
-4. The generated prompt is an exact deterministic composition of the paired
-   components, places the Directive after the Persona, and states that Directive
-   authority wins every conflict.
-5. The reusable worker verifies and loads the composition from the pull
+8. A required compatibility prompt is an exact deterministic rendering of its
+   referenced components. It records the source composition, generator,
+   Directive order, and precedence without becoming an independent source of
+   authority.
+9. The reusable worker verifies and loads the composition from the pull
    request's trusted base revision. Pull request code must not be executed in a
    credentialed review path.
-6. Every reviewer retains an exact `submit_report` contract with
+10. Every reviewer retains an exact `submit_report` contract with
    evidence-based severity, exact summary prefixes, numbered remediation, and a
    zero-finding approval path.
 

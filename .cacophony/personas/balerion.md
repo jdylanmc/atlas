@@ -1,6 +1,6 @@
 ---
-schema: atlas.agent-persona/v1
-agent: balerion
+schema: atlas.agent-persona/v2
+persona: balerion
 authority: none
 ---
 # Agent Persona

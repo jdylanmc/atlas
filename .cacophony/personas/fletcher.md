@@ -1,6 +1,6 @@
 ---
-schema: atlas.agent-persona/v1
-agent: fletcher
+schema: atlas.agent-persona/v2
+persona: fletcher
 authority: none
 ---
 # Agent Persona
