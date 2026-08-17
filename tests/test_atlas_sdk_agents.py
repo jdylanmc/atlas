@@ -4,6 +4,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -201,29 +202,60 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
                     agents.validate_persona(changed)
 
     def test_persona_rejects_uncataloged_semantic_core_authority(self) -> None:
-        authority_examples = (
+        imperative_examples = (
             "Use Realm Refresh before continuing.",
             "Submit the validation report.",
             "Ensure the Realm is valid.",
             "Keep the snapshot current.",
             "Follow the workflow.",
+        )
+        authority_examples = (
             "The Agent is authorized to change Realm policy.",
             "The Agent controls Realm policy.",
             "The Agent has authority over Realm policy.",
             "The Agent owns Realm governance.",
             "The Agent sets policy.",
         )
+        for imperative in imperative_examples:
+            with self.subTest(imperative=imperative):
+                self.assertIsNotNone(
+                    agents.IMPERATIVE_WORKFLOW_PATTERN.search(imperative)
+                )
+                changed = self.persona_text.replace(
+                    "The Realm is invalid because `.atlas/index.md` is missing.",
+                    imperative,
+                )
+                with self.assertRaisesRegex(
+                    agents.ContractError,
+                    "imperative workflow language",
+                ):
+                    agents.validate_persona(changed)
         for authority in authority_examples:
             with self.subTest(authority=authority):
+                self.assertIsNotNone(
+                    agents.EXAMPLE_AUTHORITY_PATTERN.search(authority)
+                )
                 changed = self.persona_text.replace(
                     "The Realm is invalid because `.atlas/index.md` is missing.",
                     authority,
                 )
                 with self.assertRaisesRegex(
                     agents.ContractError,
-                    "behavioral authority|approved presentation-only semantic core",
+                    "behavioral authority",
                 ):
                     agents.validate_persona(changed)
+
+    def test_persona_rejects_shortened_semantic_core_catalog(self) -> None:
+        with mock.patch.object(
+            agents,
+            "EXAMPLE_SEMANTIC_CORES",
+            agents.EXAMPLE_SEMANTIC_CORES[:-1],
+        ):
+            with self.assertRaisesRegex(
+                agents.ContractError,
+                "semantic core catalog must match",
+            ):
+                agents.validate_persona(self.persona_text)
 
     def test_persona_allows_descriptive_workflow_language(self) -> None:
         examples = (

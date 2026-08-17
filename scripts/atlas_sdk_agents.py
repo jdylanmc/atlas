@@ -150,7 +150,8 @@ EXAMPLE_AUTHORITY_PATTERN = re.compile(
     r"govern(?:s|ed|ing)?|realm laws?|evidence rules?|severity|handoffs?|"
     r"allowed actions?|approve|reject|execute|write|"
     r"modif(?:y|ies|ied|ying)|delete|create|"
-    r"initialize|activate|override|human approval|reveal secrets?)\b|"
+    r"initialize|activate|override|authori(?:ty|z(?:e|es|ed|ing|ation))|"
+    r"controls?|owns?|sets?\s+policy|human approval|reveal secrets?)\b|"
     r"\b(?:may|can)\s+(?:approve|reject|execute|run|perform|write|modify|"
     r"delete|create|initialize|activate|override|govern|change)\b|"
     r"\bignore\b[^\n.]{0,80}\binstructions?\b",
@@ -160,7 +161,8 @@ IMPERATIVE_WORKFLOW_PATTERN = re.compile(
     r"(?:^|[.!?;:,]\s+|\b(?:and\s+)?then\s+)"
     r"(?:please\s+)?(?:do\s+not\s+|don't\s+|never\s+)?"
     r"(?:run|perform|execute|approve|reject|write|modify|delete|create|"
-    r"initialize|activate|refresh|open|merge|validate)\b",
+    r"initialize|activate|refresh|open|merge|validate|use|submit|ensure|"
+    r"keep|follow)\b",
     re.IGNORECASE,
 )
 MODERN_ADAPTATION_TERMS = (
@@ -342,6 +344,11 @@ def validate_persona(text: str) -> tuple[tuple[str, str], ...]:
             )
 
     examples = parse_examples(sections["Examples"])
+    if len(EXAMPLE_SEMANTIC_CORES) != len(EXAMPLE_FRAMINGS):
+        raise ContractError(
+            f"{PERSONA_PATH} reviewed semantic core catalog must match "
+            "the approved framing catalog"
+        )
     if len(examples) != len(EXAMPLE_FRAMINGS):
         raise ContractError(
             f"{PERSONA_PATH} Examples must contain exactly "
