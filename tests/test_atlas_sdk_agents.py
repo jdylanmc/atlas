@@ -180,17 +180,41 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
                 ):
                     agents.validate_persona(changed)
 
+    def test_persona_rejects_authority_across_example_fields(self) -> None:
+        authority_examples = (
+            "The Agent has permission to update the Realm.",
+            "The Agent governs Realm policy.",
+            "The Agent modifies Realm content.",
+            "The Agent may modify Realm Laws without human approval.",
+            "Changes proceed without human approval.",
+        )
+        for authority in authority_examples:
+            with self.subTest(authority=authority):
+                changed = self.persona_text.replace(
+                    "The Realm is invalid because `.atlas/index.md` is missing.",
+                    authority,
+                )
+                with self.assertRaisesRegex(
+                    agents.ContractError,
+                    "behavioral authority",
+                ):
+                    agents.validate_persona(changed)
+
     def test_persona_allows_descriptive_workflow_language(self) -> None:
         examples = (
             "The latest validation run reported no Findings.",
             "Realm Refresh completes before stale information becomes reliable.",
             "Opening the pull request starts review.",
             "The Realm performs validation automatically.",
+            "The validation command may fail when the source is invalid.",
         )
         for description in examples:
             with self.subTest(description=description):
                 self.assertIsNone(
                     agents.IMPERATIVE_WORKFLOW_PATTERN.search(description)
+                )
+                self.assertIsNone(
+                    agents.EXAMPLE_AUTHORITY_PATTERN.search(description)
                 )
 
     def test_persona_rejects_modern_adaptation_references(self) -> None:

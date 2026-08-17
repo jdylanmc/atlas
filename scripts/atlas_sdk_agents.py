@@ -134,8 +134,14 @@ AUTHORITY_PATTERN = re.compile(
     re.IGNORECASE,
 )
 EXAMPLE_AUTHORITY_PATTERN = re.compile(
-    r"\b(must|shall|should|required|requires?|approve|reject|execute|delete|"
-    r"create|initialize|activate|override|reveal secrets?)\b|"
+    r"\b(must|shall|should|required|requires?|prohibit(?:s|ed)?|"
+    r"objectives?|responsibilities|permissions?|governance|"
+    r"govern(?:s|ed|ing)?|realm laws?|evidence rules?|severity|handoffs?|"
+    r"allowed actions?|approve|reject|execute|write|"
+    r"modif(?:y|ies|ied|ying)|delete|create|"
+    r"initialize|activate|override|human approval|reveal secrets?)\b|"
+    r"\b(?:may|can)\s+(?:approve|reject|execute|run|perform|write|modify|"
+    r"delete|create|initialize|activate|override|govern|change)\b|"
     r"\bignore\b[^\n.]{0,80}\binstructions?\b",
     re.IGNORECASE,
 )
