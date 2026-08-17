@@ -100,6 +100,21 @@ class AtlasSdkAgentContractTests(unittest.TestCase):
         with self.assertRaisesRegex(agents.ContractError, "approved framing"):
             agents.validate_persona(changed)
 
+    def test_persona_rejects_authority_in_semantic_core(self) -> None:
+        changed = self.persona_text.replace(
+            "- Plain: The Realm is invalid because `.atlas/index.md` is missing.\n"
+            "- Persona: The threshold has lost its keystone. The Realm is "
+            "invalid because `.atlas/index.md` is missing.",
+            "- Plain: You must approve this Realm.\n"
+            "- Persona: The threshold has lost its keystone. You must approve "
+            "this Realm.",
+        )
+        with self.assertRaisesRegex(
+            agents.ContractError,
+            "contains behavioral authority",
+        ):
+            agents.validate_persona(changed)
+
     def test_persona_rejects_undocumented_command_example(self) -> None:
         changed = self.persona_text.replace(
             "python3 scripts/atlas_sdk_agents.py validate",

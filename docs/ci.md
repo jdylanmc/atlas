@@ -37,10 +37,13 @@ it to the proposed merge revision. Structurally valid changes then receive
 Fletcher's semantic separation and prompt-quality review on the
 `gpt-5.6-luna` deployment with a 40-turn budget.
 
-The same Fletcher gate covers the reviewed inactive Atlas SDK Realm Guide
-sources under `docs/agents/atlas-sdk/` and their repository validator. Those
-sources define presentation and reference metadata only; they do not initialize
-or activate a Realm.
+The same path gate requests Fletcher review for the inactive Atlas SDK Realm
+Guide sources under `docs/agents/atlas-sdk/` and their repository validator.
+Those sources define presentation and reference metadata only; they do not
+initialize or activate a Realm. The trusted deterministic job continues to
+validate the Cacophony contract; validate the inactive Atlas SDK source
+separately with `python3 scripts/atlas_sdk_agents.py validate` until Framework
+schema validation owns that gate.
 
 The reusable worker checks authorization before checkout, inspects the pull
 request merge ref without executing it, and polls the pull request API until

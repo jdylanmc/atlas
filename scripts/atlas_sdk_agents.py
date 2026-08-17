@@ -57,6 +57,12 @@ AUTHORITY_PATTERN = re.compile(
     r"run|write|modify|delete|create|initialize|activate)\b",
     re.IGNORECASE,
 )
+EXAMPLE_AUTHORITY_PATTERN = re.compile(
+    r"\b(must|shall|should|required|requires?|approve|reject|execute|delete|"
+    r"create|initialize|activate|override|reveal secrets?)\b|"
+    r"\bignore\b[^\n.]{0,80}\binstructions?\b",
+    re.IGNORECASE,
+)
 MODERN_ADAPTATION_TERMS = (
     "cortana",
     "disney",
@@ -242,6 +248,14 @@ def validate_persona(text: str) -> tuple[tuple[str, str], ...]:
                     f"{PERSONA_PATH} command example must use a documented "
                     "repository command"
                 )
+        for label, value in (("Plain", plain), ("Persona", persona)):
+                authority_scan = re.sub(r"`[^`\n]+`", "", value)
+                authority = EXAMPLE_AUTHORITY_PATTERN.search(authority_scan)
+                if authority:
+                    raise ContractError(
+                        f"{PERSONA_PATH} {label} example contains behavioral "
+                        f"authority or prompt injection: {authority.group(0)!r}"
+                    )
         plain_tokens = re.findall(r"`[^`\n]+`", plain)
         persona_tokens = re.findall(r"`[^`\n]+`", persona)
         if plain_tokens != persona_tokens:
