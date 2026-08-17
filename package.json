@@ -9,13 +9,14 @@
   },
   "packageManager": "npm@11.6.2",
   "scripts": {
+    "atlas-sdk:validate": "node scripts/atlas_sdk_agents.ts validate",
     "cacophony:sync": "node scripts/cacophony_agents.ts sync",
     "cacophony:validate": "node scripts/cacophony_agents.ts validate",
-    "ci": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run cacophony:validate && npm run workflow:lint",
+    "ci": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage && npm run atlas-sdk:validate && npm run cacophony:validate && npm run workflow:lint",
     "format": "prettier --write scripts tests .github/workflows docs/ci.md .cacophony/README.md package.json package-lock.json tsconfig.json eslint.config.js prettier.config.js",
     "format:check": "prettier --check scripts tests .github/workflows docs/ci.md .cacophony/README.md package.json package-lock.json tsconfig.json eslint.config.js prettier.config.js",
     "lint": "eslint scripts tests",
-    "test": "c8 --check-coverage --lines 80 --functions 95 --branches 65 --statements 80 node --test tests/*.test.ts",
+    "test:coverage": "c8 --check-coverage --lines 80 --functions 95 --branches 65 --statements 80 node --test tests/*.test.ts",
     "test:unit": "node --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "workflow:lint": "node scripts/run_actionlint.ts"

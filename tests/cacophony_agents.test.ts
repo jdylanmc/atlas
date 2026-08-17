@@ -47,7 +47,7 @@ const EXPECTED_DIRECTIVE_SETS = {
 const EXPECTED_PROMPT_HASHES = {
   balerion: "6b69f3c6af654e0bbccf55d212ebc19c57d0c5f069e017d0f7c5eb649dcf1724",
   bolas: "32f9f2cb778e83361ad462a6308504fc2395272eb48ccc755f0cefc8b95a90ce",
-  fletcher: "790a44175915d5b8c69a4c4bc6de86ac44c6ae122263e4b5a08a0974b94537da",
+  fletcher: "2d2acf7c98228f8287b04f80a5ce43824a72d0bbc73256d453c64a158539721e",
   smaug: "34863bc7736edcf5abc943ea38f88d29db447b5753478d2a4b56d17ba8be6f2a",
 } as const;
 
@@ -603,6 +603,9 @@ test("Fletcher and council validate the merge contract", () => {
 
 test("static analysis executes workflow lint from the trusted base", () => {
   const workflow = readWorkflow(".github/workflows/dragon-council.yml");
+  const packageContract = JSON.parse(
+    readFileSync(join(ROOT, "package.json"), "utf8"),
+  ) as { scripts?: Record<string, unknown> };
   assert.match(
     workflow,
     /git show "\$BASE_SHA:scripts\/run_actionlint.ts" > "\$runner"/,
@@ -612,6 +615,10 @@ test("static analysis executes workflow lint from the trusted base", () => {
   assert.doesNotMatch(workflow, /node scripts\/run_actionlint.ts/);
   assert.match(workflow, /cp -R \/source\/\. \/workspace\//);
   assert.doesNotMatch(workflow, /cp -a \/source\/\. \/workspace\//);
+  assert.match(workflow, /\.scripts\.ci\?/);
+  assert.equal(typeof packageContract.scripts?.["ci"], "string");
+  assert.equal(typeof packageContract.scripts?.["test:coverage"], "string");
+  assert.equal(packageContract.scripts?.["test"], undefined);
 });
 
 test("deterministic gate uses direct current job outputs", () => {

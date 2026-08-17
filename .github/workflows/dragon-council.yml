@@ -265,7 +265,7 @@ jobs:
           ref: ${{ needs.authorize.outputs.merge_sha }}
           persist-credentials: false
 
-      - name: Inspect package test contract
+      - name: Inspect package CI contract
         id: manifest
         continue-on-error: true
         shell: bash
@@ -276,7 +276,7 @@ jobs:
           fi
           jq -e . package.json > /dev/null
           jq -r '
-            if (.scripts.test? | type == "string" and length > 0)
+            if (.scripts.ci? | type == "string" and length > 0)
             then "tests=true"
             else "tests=false"
             end

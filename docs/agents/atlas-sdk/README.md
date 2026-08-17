@@ -31,5 +31,5 @@ publication-rights metadata are present.
 Validate the inactive source contract with:
 
 ```sh
-python3 scripts/atlas_sdk_agents.py validate
+node scripts/atlas_sdk_agents.ts validate
 ```
