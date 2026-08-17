@@ -610,6 +610,8 @@ test("static analysis executes workflow lint from the trusted base", () => {
   assert.match(workflow, /ATLAS_REPOSITORY_ROOT="\$GITHUB_WORKSPACE"/);
   assert.match(workflow, /ATLAS_TOOL_CACHE="\$RUNNER_TEMP\/atlas-tools"/);
   assert.doesNotMatch(workflow, /node scripts\/run_actionlint.ts/);
+  assert.match(workflow, /cp -R \/source\/\. \/workspace\//);
+  assert.doesNotMatch(workflow, /cp -a \/source\/\. \/workspace\//);
 });
 
 test("deterministic gate uses direct current job outputs", () => {

@@ -301,7 +301,7 @@ jobs:
             --volume "$GITHUB_WORKSPACE:/source:ro" \
             --workdir /workspace \
             node:24.13.0-bookworm-slim@sha256:4660b1ca8b28d6d1906fd644abe34b2ed81d15434d26d845ef0aced307cf4b6f \
-            sh -euc 'cp -a /source/. /workspace/ && npm ci --ignore-scripts && npm run ci'
+            sh -euc 'cp -R /source/. /workspace/ && npm ci --ignore-scripts && npm run ci'
 
       - name: Normalize unit-test result
         id: result
