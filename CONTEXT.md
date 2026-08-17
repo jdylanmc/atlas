@@ -129,13 +129,13 @@ Derived knowledge supported by Lore whose Realm-defined refresh date has elapsed
 A first-class Markdown relationship used to traverse Insights, Pillars, Bonfires, and Realm-defined extensions of those archetypes. Zero or one Thread exists per unordered in-Realm page pair. It has a stable identity, canonical direction, one or more typed semantics, explanatory context, and Citations supporting the asserted relationship. A cross-Realm Thread instead connects a Bonfire to a tracked Realm identified by its Realm Slug. Threads do not connect to Lore.
 
 **Pillar**:
-A human-governed, Realm-local concept page containing individually identified active universal truths. A Pillar has a stable identity, explains the concept it represents, and keeps a Keep a Changelog-style amendment history. Agents may help modify a Pillar only under explicit human direction and approval.
+A human-governed, Realm-local concept page containing individually identified active universal truths. A Pillar has a stable identity, explains the concept it represents, and keeps a Keep a Changelog-style amendment history. Deleting a Pillar invalidates all of its active truths and requires its dependent knowledge relationships and governance markers to be reconciled. Agents may help create, modify, or delete a Pillar only under explicit human direction and approval.
 
 **Creator**:
 Any human acting through the Realm Host Directory's Git governance to direct or approve changes to Pillars or Realm Laws. Creator is a contextual authority role, not a permanently named owner.
 
 **Pillar Amendment**:
-A numbered, dated entry appended to a Pillar's amendment history. It records added, changed, or invalidated truths together with the directing or approving human, rationale, and change reference.
+A numbered, dated entry appended to a Pillar's amendment history. It records added, changed, or invalidated truths together with the directing or approving human, rationale, and change reference. Meaning-preserving clarification retains a truth's stable identity; semantic replacement invalidates the old truth and adds a linked successor with a new identity.
 
 **Heresy**:
 A Realm-local claim that contradicts an active Pillar truth or violates a Realm Law. Accepted Heresy is marked on its citation and on the containing Insight so agents can preserve it without mistaking it for ordinary knowledge.
