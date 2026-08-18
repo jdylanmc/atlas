@@ -45,8 +45,7 @@ const coreTypeNames: ReadonlySet<string> = new Set(Object.values(corePathTypes))
 
 const lorePrefix = ".atlas/lore/";
 
-const citationLabelBlank = /[\t ]/u;
-const citationLabelBreak = /[\n\r]/u;
+const citationLabelBreak = /[\t\n\r ]/u;
 const citationLabelEscapable: ReadonlySet<string> = new Set(["[", "\\", "]"]);
 const citationLabelLimit = 999;
 
@@ -337,18 +336,16 @@ function advanceCursor(source: string, cursor: SourceCursor, count: number): voi
 }
 
 /**
- * Mirrors the parser's bracketed label grammar at one source offset: `[^`, then
- * at most 999 label characters carrying no line ending and no unescaped `[`,
- * then `]`, with at least one non-blank label character. A space keeps a marker
- * from becoming a footnote reference but not from being a visible marker, so
- * the parser resolves a space-carrying marker into a link reference when it is
- * defined and leaves it wholly literal when it is not.
+ * Mirrors the parser's footnote call label grammar at one source offset: `[^`,
+ * then at most 999 label characters carrying no line ending, space, tab, or
+ * unescaped bracket, then `]`. Shapes the parser could never resolve to a
+ * Citation reference are not markers and are never reported: a label carrying
+ * whitespace is ordinary bracketed Markdown, never a footnote Citation.
  */
 function citationMarkerLabel(source: string, from: number): string | undefined {
   if (source[from] !== "[" || source[from + 1] !== "^") return undefined;
   const start = from + 2;
   let index = start;
-  let labelled = false;
   while (index - start <= citationLabelLimit) {
     const character = source[index];
     if (
@@ -359,9 +356,8 @@ function citationMarkerLabel(source: string, from: number): string | undefined {
       return undefined;
     }
     if (character === "]") {
-      return labelled ? source.slice(start, index) : undefined;
+      return index === start ? undefined : source.slice(start, index);
     }
-    if (!citationLabelBlank.test(character)) labelled = true;
     const escapes =
       character === "\\" && citationLabelEscapable.has(source[index + 1] as string);
     index += escapes ? 2 : 1;
