@@ -38,9 +38,13 @@ export class RealmPageSerializeError extends Error {
 
 // Canonical frontmatter emission is pinned so that identical values always produce
 // identical bytes: the parser's tag set (so timestamp-shaped strings stay quoted),
-// YAML 1.2 core resolution, no anchors or aliases, no directives, no block scalars
-// or trailing-whitespace-sensitive forms, no line wrapping, and no emitter-side
-// reordering. Collections are block style; only empty ones use the inline form.
+// YAML 1.2 core resolution, no anchors or aliases, no directives, no line wrapping,
+// and no emitter-side reordering. Every non-plain scalar is a single-line JSON style
+// double-quoted string (`blockQuote: false` with `doubleQuotedAsJSON: true`), so no
+// value is folded across lines or emitted in a form whose meaning depends on trailing
+// whitespace. Explicit mapping keys stay available, so keys longer than the simple
+// key limit serialize instead of throwing. Collections are block style; only empty
+// ones use the inline form.
 const canonicalYamlOptions: CreateNodeOptions &
   DocumentOptions &
   ParseOptions &
@@ -50,47 +54,59 @@ const canonicalYamlOptions: CreateNodeOptions &
   blockQuote: false,
   customTags: ["binary", "set", "timestamp"],
   directives: false,
-  doubleQuotedAsJSON: false,
+  doubleQuotedAsJSON: true,
   falseStr: "false",
   indent: 2,
   indentSeq: true,
   lineWidth: 0,
   nullStr: "null",
   schema: "core",
-  simpleKeys: true,
   singleQuote: false,
   sortMapEntries: false,
   trueStr: "true",
   version: "1.2",
 };
 
-// Envelope pre-validation guarantees every frontmatter value is JSON compatible, so
-// canonicalization only has to order keys. Own symbol keys survive that contract -
-// JSON compatibility checks and schema validation never see them - and the emitter
-// would drop them silently, so any object or array carrying one is rejected before
-// bytes exist. That is the one serializer-specific rejection.
-function canonicalizeValue(value: unknown, path: string): unknown {
+// Own symbol keys survive the envelope contract - JSON compatibility checks and
+// schema validation never see them - and the emitter would drop them silently, so
+// the page root and every object or array descendant is scanned before any bytes
+// exist. That is the one serializer-specific rejection.
+function assertRepresentable(value: unknown, path: string): void {
   if (value === null || typeof value !== "object") {
-    return value;
+    return;
   }
   if (Object.getOwnPropertySymbols(value).length > 0) {
     throw new RealmPageSerializeError("UNREPRESENTABLE_VALUE", path);
   }
+  const entries = Array.isArray(value)
+    ? (value as readonly unknown[])
+    : Object.values(value as Readonly<Record<string, unknown>>);
+  for (const entry of entries) {
+    assertRepresentable(entry, path);
+  }
+}
+
+// Envelope pre-validation and the representability scan guarantee every frontmatter
+// value is JSON compatible, so canonicalization only has to order keys.
+function canonicalizeValue(value: unknown): unknown {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
   if (Array.isArray(value)) {
-    return (value as readonly unknown[]).map((entry) => canonicalizeValue(entry, path));
+    return (value as readonly unknown[]).map((entry) => canonicalizeValue(entry));
   }
   // A Map keeps every own key literal: assigning onto a fresh object would let an
   // own `__proto__` key mutate the result's prototype instead of becoming an entry.
   const record = value as Readonly<Record<string, unknown>>;
   const canonical = new Map<string, unknown>();
   for (const key of Object.keys(record).toSorted(compareCodePoints)) {
-    canonical.set(key, canonicalizeValue(record[key], path));
+    canonical.set(key, canonicalizeValue(record[key]));
   }
   return canonical;
 }
 
-function serializePage(page: RealmPageEnvelope, path: string): string {
-  const frontmatter = canonicalizeValue({ atlas: page.atlas, realm: page.realm }, path);
+function serializePage(page: RealmPageEnvelope): string {
+  const frontmatter = canonicalizeValue({ atlas: page.atlas, realm: page.realm });
   return `---\n${stringify(frontmatter, canonicalYamlOptions)}---\n${page.body}`;
 }
 
@@ -101,8 +117,9 @@ export function serializeRealmPages(
     compareCodePoints(left.source.path, right.source.path),
   );
 
-  // Every page is checked against the parser's envelope contract before any bytes are
-  // produced, so a page the parser would reject can never be half emitted.
+  // Every page is checked against the parser's envelope contract, and scanned for
+  // values the emitter would drop, before any bytes are produced, so a page the
+  // parser would reject can never be half emitted.
   let previousPath: string | undefined;
   for (const parsed of ordered) {
     const path = parsed.source.path;
@@ -112,12 +129,13 @@ export function serializeRealmPages(
     if (!checkRealmPageEnvelope(parsed.page)) {
       throw new RealmPageSerializeError("INVALID_PAGE_ENVELOPE", path);
     }
+    assertRepresentable(parsed.page, path);
     previousPath = path;
   }
 
   const files = ordered.map((parsed) =>
     Object.freeze({
-      content: serializePage(parsed.page, parsed.source.path),
+      content: serializePage(parsed.page),
       path: parsed.source.path,
     }),
   );

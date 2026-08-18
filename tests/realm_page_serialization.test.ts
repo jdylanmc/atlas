@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
 import type { RealmTextFile } from "../src/realm/load_realm_text.ts";
+import { checkRealmPageEnvelope } from "../src/domain/realm_page.ts";
 import {
   parseRealmPages,
   RealmPageParseError,
@@ -66,6 +67,7 @@ function fabricatedPage(
   path: string,
   realm: unknown,
   atlasOverrides: Readonly<Record<string, unknown>> = {},
+  decorateEnvelope: (envelope: object) => void = () => undefined,
 ): ParsedRealmPage {
   const page = {
     page: {
@@ -91,6 +93,7 @@ function fabricatedPage(
       path,
     },
   };
+  decorateEnvelope(page.page);
   deepFreeze(page);
   return page as unknown as ParsedRealmPage;
 }
@@ -593,6 +596,28 @@ test("rejects frontmatter values canonical YAML cannot represent", () => {
   }
 });
 
+test("rejects an own symbol key on the page envelope root", () => {
+  const rooted = fabricatedPage(
+    ".atlas/insights/bad.md",
+    { kept: "yes" },
+    {},
+    (envelope) => {
+      Object.defineProperty(envelope, Symbol.for("hidden"), {
+        enumerable: true,
+        value: "dropped",
+      });
+    },
+  );
+
+  // The envelope contract cannot see the symbol, so only the serializer can refuse it.
+  assert.equal(checkRealmPageEnvelope(rooted.page), true);
+
+  const error = serializeError(rooted);
+  assert.equal(error.code, "UNREPRESENTABLE_VALUE");
+  assert.equal(error.path, ".atlas/insights/bad.md");
+  assert.equal(error.message, "Realm page frontmatter holds an unrepresentable value.");
+});
+
 test("emits nothing when one page holds an unrepresentable value", () => {
   const hidden = Symbol.for("hidden");
   const dropped = (): unknown => ({
@@ -652,6 +677,66 @@ test("serializes ordinary arrays that carry no own symbol keys", () => {
       "",
     ].join("\n"),
   );
+});
+
+test("serializes mapping keys longer than the YAML simple key limit", () => {
+  const longKey = "k".repeat(1100);
+  const realm = { [longKey]: "direct", nested: { [longKey]: ["one", "two"] } };
+  const path = ".atlas/insights/long-keys.md";
+
+  const [file] = serializeRealmPages([fabricatedPage(path, realm)]);
+  assert.ok(file);
+  assert.equal(file.content.includes(`  ? ${longKey}\n  : direct\n`), true);
+  assert.equal(
+    file.content.includes(`    ? ${longKey}\n    : - one\n      - two\n`),
+    true,
+  );
+
+  const [reparsed] = parseRealmPages([text(path, file.content)]);
+  assert.ok(reparsed);
+  assert.deepEqual(reparsed.page.realm, realm);
+  const [again] = serializeRealmPages([reparsed]);
+  assert.ok(again);
+  assert.equal(again.content, file.content);
+});
+
+test("emits fold prone multiline strings as single line scalars", () => {
+  const head = "x".repeat(30);
+  const tail = "y".repeat(30);
+  const note = `${head}\n \n${tail}`;
+  const path = ".atlas/insights/multiline.md";
+  const source = pageSource("insight:multiline", {
+    realm: [
+      `  note: "${head}\\n \\n${tail}"`,
+      "  nested:",
+      `    - "${head}\\n \\n${tail}"`,
+    ],
+  });
+
+  const [parsed] = parseRealmPages([text(path, source)]);
+  assert.ok(parsed);
+  assert.deepEqual(parsed.page.realm, { nested: [note], note });
+
+  const [file] = serializeRealmPages([parsed]);
+  assert.ok(file);
+  assert.equal(
+    file.content.slice(file.content.indexOf("realm:")),
+    [
+      "realm:",
+      `  nested:`,
+      `    - "${head}\\n \\n${tail}"`,
+      `  note: "${head}\\n \\n${tail}"`,
+      "---",
+      "",
+    ].join("\n"),
+  );
+
+  const [roundTripped] = parseRealmPages([text(path, file.content)]);
+  assert.ok(roundTripped);
+  assert.deepEqual(roundTripped.page.realm, { nested: [note], note });
+  const [again] = serializeRealmPages([roundTripped]);
+  assert.ok(again);
+  assert.equal(again.content, file.content);
 });
 
 test("preserves inputs and returns deeply frozen text files", () => {
