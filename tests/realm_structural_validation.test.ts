@@ -427,11 +427,199 @@ test("handles high-cardinality valid Citation references deterministically", () 
   assert.deepEqual(validateRealmStructure(files), first);
 });
 
-test("validates only parser-recognized Citation references", () => {
+test("reports a visible literal Citation marker the parser left unresolved", () => {
+  const findings = validateRealmStructure(
+    citing("# Page\n\nClaim.[^absent] and `[^absent]`.\n"),
+  );
   assert.deepEqual(
-    validateRealmStructure(citing("# Page\n\nClaim.[^absent] and `[^absent]`.\n")),
+    findings.map(({ code, location, message, path }) => ({
+      code,
+      location,
+      message,
+      path,
+    })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: { end: { column: 16, line: 17 }, start: { column: 7, line: 17 } },
+        message:
+          "Citation marker must resolve to a Citation definition in the same page.",
+        path: ".atlas/insights/cited.md",
+      },
+    ],
+  );
+  const [first] = findings;
+  assert.ok(first);
+  assert.deepEqual(first.attribution, {
+    checkId: "atlas-core.structural-validation",
+    kind: "atlas-core",
+    trusted: true,
+  });
+  assert.equal(Object.isFrozen(first.location), true);
+});
+
+test("does not double-report Citations the parser resolved to a reference", () => {
+  assert.deepEqual(
+    validateRealmStructure(
+      citing("# Page\n\nClaim.[^a] again.[^a]\n\n[^a]: [[.atlas/lore/source]]\n"),
+    ),
     [],
   );
+  assert.deepEqual(
+    validateRealmStructure(
+      citing("# Page\n\nClaim.[^a]\n\n[^a]: [[.atlas/lore/absent]]\n"),
+    ).map(({ code }) => code),
+    ["ATLAS_CITATION_TARGET_MISSING"],
+  );
+});
+
+test("resolves literal Citation markers through canonical parser identity", () => {
+  assert.deepEqual(
+    validateRealmStructure(
+      citing("# Page\n\nClaim.[^SS] and [^ß]\n\n[^ß]: [[.atlas/lore/source]]\n"),
+    ),
+    [],
+  );
+});
+
+test("reports an unresolved Citation marker in Citation definition prose", () => {
+  assert.deepEqual(
+    validateRealmStructure(
+      citing("# Page\n\nClaim.[^b]\n\n[^b]: [[.atlas/lore/source]] see [^a]\n"),
+    ).map(({ code, location, path }) => ({ code, location, path })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: { end: { column: 38, line: 19 }, start: { column: 34, line: 19 } },
+        path: ".atlas/insights/cited.md",
+      },
+    ],
+  );
+});
+
+test("validates a resolved Citation call in Citation definition prose once", () => {
+  assert.deepEqual(
+    validateRealmStructure(
+      citing(
+        "# Page\n\nClaim.[^b]\n\n[^b]: [[.atlas/lore/source]] see [^a]\n\n[^a]: [[.atlas/lore/source]]\n",
+      ),
+    ),
+    [],
+  );
+  assert.deepEqual(
+    validateRealmStructure(
+      citing(
+        "# Page\n\nClaim.[^b]\n\n[^b]: [[.atlas/lore/source]] see [^a]\n\n[^a]: [[.atlas/lore/absent]]\n",
+      ),
+    ).map(({ code, location, path }) => ({ code, location, path })),
+    [
+      {
+        code: "ATLAS_CITATION_TARGET_MISSING",
+        location: { end: { column: 29, line: 21 }, start: { column: 7, line: 21 } },
+        path: ".atlas/insights/cited.md",
+      },
+    ],
+  );
+});
+
+test("reports an unresolved Citation marker beside whitespace-shaped Markdown", () => {
+  assert.deepEqual(
+    validateRealmStructure(citing("# Page\n\nClaim.[^note] end.\n")).map(
+      ({ code, location, path }) => ({ code, location, path }),
+    ),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: { end: { column: 14, line: 17 }, start: { column: 7, line: 17 } },
+        path: ".atlas/insights/cited.md",
+      },
+    ],
+  );
+  /* A label carrying whitespace can never be a footnote Citation, so `[^a b]`
+     with a Markdown definition is an ordinary link reference and definition
+     outside the footnote-only Citation contract of this check. */
+  assert.deepEqual(
+    validateRealmStructure(
+      citing("# Page\n\nClaim.[^a b] end.\n\n[^a b]: https://example.test\n"),
+    ),
+    [],
+  );
+});
+
+for (const [context, body] of [
+  ["inline code", "Claim `[^a]` done."],
+  ["a fenced code block", "```text\n[^a]\n```"],
+  ["a link destination", "[external](https://example.test/[^a])"],
+  ["an image destination", "![image](https://example.test/[^a])"],
+  ["an autolink", "<https://example.test/[^a]>"],
+  ["raw HTML", '<span data-source="[^a]">external</span>'],
+  ["a Markdown definition", "[label]: https://example.test/[^a]"],
+] as const) {
+  test(`does not report a literal Citation marker in ${context}`, () => {
+    assert.deepEqual(validateRealmStructure(citing(`# Page\n\n${body}\n`)), []);
+  });
+}
+
+for (const [shape, marker, width] of [
+  ["an empty label", "[^]", 0],
+  ["a space in the label", "[^a b]", 0],
+  ["a nested bracket", "[^a[b]", 0],
+  ["an unterminated label", "[^absent", 0],
+  [`a 1000 character label`, `[^${"a".repeat(1000)}]`, 0],
+  [`a 999 character label`, `[^${"a".repeat(999)}]`, 1002],
+  ["an escaped marker", "\\[^a]", 0],
+  ["an escaped closing bracket", "[^a\\]b]", 7],
+  ["an escape of an unescapable character", "[^a\\!b]", 7],
+] as const) {
+  test(`treats ${shape} exactly as the parser does`, () => {
+    const findings = validateRealmStructure(citing(`# Page\n\nClaim.${marker} end.\n`));
+    assert.deepEqual(
+      findings.map(({ code, location }) => ({ code, location })),
+      width === 0
+        ? []
+        : [
+            {
+              code: "ATLAS_CITATION_DEFINITION_MISSING",
+              location: {
+                end: { column: 7 + width, line: 17 },
+                start: { column: 7, line: 17 },
+              },
+            },
+          ],
+      marker,
+    );
+  });
+}
+
+test("locates literal Citation markers exactly across one text node", () => {
+  const findings = validateRealmStructure(
+    citing("# Page\n\nfirst [^one]\nsecond [^two] tail\n"),
+  );
+  assert.deepEqual(
+    findings.map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: { end: { column: 13, line: 17 }, start: { column: 7, line: 17 } },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: { end: { column: 14, line: 18 }, start: { column: 8, line: 18 } },
+      },
+    ],
+  );
+});
+
+test("reports high-cardinality literal Citation markers deterministically", () => {
+  const files = citing(`# Page\n\n${"x[^a]".repeat(20_000)}\n`);
+  const first = validateRealmStructure(files);
+  assert.equal(first.length, 20_000);
+  assert.deepEqual(first.at(-1)?.location, {
+    end: { column: 100_001, line: 17 },
+    start: { column: 99_997, line: 17 },
+  });
+  assert.deepEqual(validateRealmStructure(files), first);
+  assert.deepEqual(validateRealmStructure(files.toReversed()), first);
 });
 
 test("reports duplicate Citation definitions at each definition", () => {
