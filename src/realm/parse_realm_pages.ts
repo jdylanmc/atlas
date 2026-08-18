@@ -3,6 +3,7 @@ import {
   checkRealmPageEnvelope,
   type RealmPageEnvelope,
 } from "../domain/realm_page.ts";
+import { compareCodePoints } from "./compare_code_points.ts";
 import type { RealmTextFile } from "./load_realm_text.ts";
 
 const pageDirectories = new Set(["bonfires", "insights", "lore", "pillars", "threads"]);
@@ -46,19 +47,6 @@ export class RealmPageParseError extends Error {
     this.path = path;
     this.sourceLine = sourceLine;
   }
-}
-
-function compareCodePoints(left: string, right: string): number {
-  const leftPoints = Array.from(left, (point) => point.codePointAt(0) as number);
-  const rightPoints = Array.from(right, (point) => point.codePointAt(0) as number);
-  const length = Math.min(leftPoints.length, rightPoints.length);
-  for (let index = 0; index < length; index += 1) {
-    const difference = (leftPoints[index] as number) - (rightPoints[index] as number);
-    if (difference !== 0) {
-      return difference;
-    }
-  }
-  return leftPoints.length - rightPoints.length;
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -126,6 +114,37 @@ export function classifyRealmTextPath(path: string): RealmTextClassification {
   return match !== null && pageDirectories.has(match[1] as string) ? "page" : "opaque";
 }
 
+// Only the document start or a position immediately after an actual LF begins a
+// line, so separators that JavaScript regular expressions treat as line starts
+// (U+2028 and U+2029, which YAML emits literally inside scalars) can never be
+// mistaken for the closing frontmatter delimiter.
+function findClosingDelimiter(
+  content: string,
+  from: number,
+): { readonly index: number; readonly length: number } | undefined {
+  let index = from;
+  while (index < content.length) {
+    if (content.startsWith("---", index)) {
+      const rest = index + 3;
+      if (rest === content.length) {
+        return { index, length: 3 };
+      }
+      if (content.startsWith("\r\n", rest)) {
+        return { index, length: 5 };
+      }
+      if (content[rest] === "\n") {
+        return { index, length: 4 };
+      }
+    }
+    const newline = content.indexOf("\n", index);
+    if (newline === -1) {
+      return undefined;
+    }
+    index = newline + 1;
+  }
+  return undefined;
+}
+
 function parsePage(file: RealmTextFile): ParsedRealmPage {
   const openingLength = file.content.startsWith("---\r\n")
     ? 5
@@ -136,16 +155,14 @@ function parsePage(file: RealmTextFile): ParsedRealmPage {
     throw new RealmPageParseError("MISSING_FRONTMATTER", file.path, 1);
   }
 
-  const closing = /^---(?:\r?\n|$)/gmu;
-  closing.lastIndex = openingLength;
-  const match = closing.exec(file.content);
-  if (match === null) {
+  const closing = findClosingDelimiter(file.content, openingLength);
+  if (closing === undefined) {
     throw new RealmPageParseError("MALFORMED_FRONTMATTER", file.path, 1);
   }
 
-  const closingLine = lineAt(file.content, match.index);
-  const frontmatterText = file.content.slice(openingLength, match.index);
-  const body = file.content.slice(match.index + match[0].length);
+  const closingLine = lineAt(file.content, closing.index);
+  const frontmatterText = file.content.slice(openingLength, closing.index);
+  const body = file.content.slice(closing.index + closing.length);
   const document = parseDocument(frontmatterText, {
     customTags: ["binary", "set", "timestamp"],
     strict: true,
