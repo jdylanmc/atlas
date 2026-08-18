@@ -1210,6 +1210,152 @@ test("bridges contiguous link labels but never hidden destinations", () => {
   );
 });
 
+test("keeps hidden raw HTML syntax out of rendered marker boundaries", () => {
+  const body = [
+    "# Page",
+    "",
+    'Claim [^foo<span data-x="[">bar</span>] tail.',
+    "",
+    'Tail <span data-y="]">Claim [^outside] tail.',
+    "",
+    "Claim <!-- x -->[^defined] tail.",
+    "",
+    "Claim [^unclosed<!-- ] -->",
+    "",
+    "[^defined]: [[.atlas/lore/parser-source]]",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      validFiles[4] as RealmTextFile,
+      page(".atlas/insights/page.md", body),
+    ]).map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
+        location: {
+          end: { column: 40, line: 17 },
+          start: { column: 7, line: 17 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 39, line: 19 },
+          start: { column: 29, line: 19 },
+        },
+      },
+    ],
+  );
+});
+
+test("bridges hidden destination newlines but not rendered line breaks", () => {
+  const body = [
+    "# Page",
+    "",
+    "Claim [^op[en](https://example.test/",
+    ' "title")id] tail.',
+    "",
+    "Claim [^br",
+    "oken] tail.",
+    "",
+    'Claim [^cl[os](https://example.test/ "t")ed] tail.',
+    "",
+    "[^closed]: [[.atlas/lore/parser-source]]",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      validFiles[4] as RealmTextFile,
+      page(".atlas/insights/page.md", body),
+    ]).map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 13, line: 18 },
+          start: { column: 7, line: 17 },
+        },
+      },
+    ],
+  );
+});
+
+test("shares one Citation identity across character-reference labels", () => {
+  const resolved = [
+    "# Page",
+    "",
+    "Claim [*^caf&#233;*] and [*^&AElig;*] and [^caf&#233;] tail.",
+    "",
+    "[^caf&#233;]: [[.atlas/lore/parser-source]]",
+    "[^&AElig;]: [[.atlas/lore/parser-source]]",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      validFiles[4] as RealmTextFile,
+      page(".atlas/insights/resolved.md", resolved),
+    ]),
+    [],
+  );
+
+  const distinct = [
+    "# Page",
+    "",
+    "Claim [*^cafe*] tail.",
+    "",
+    "[^caf&#233;]: [[.atlas/lore/parser-source]]",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      validFiles[4] as RealmTextFile,
+      page(".atlas/insights/distinct.md", distinct),
+    ]).map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: {
+          end: { column: 16, line: 17 },
+          start: { column: 7, line: 17 },
+        },
+      },
+    ],
+  );
+
+  const collided = [
+    "# Page",
+    "",
+    "Claim [*^caf&#233;*] tail.",
+    "",
+    "[^caf&#233;]: [[.atlas/lore/parser-source]]",
+    "[^café]: [[.atlas/lore/parser-source]]",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      validFiles[4] as RealmTextFile,
+      page(".atlas/insights/collided.md", collided),
+    ]).map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_DUPLICATE",
+        location: {
+          end: { column: 44, line: 19 },
+          start: { column: 1, line: 19 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_DUPLICATE",
+        location: {
+          end: { column: 39, line: 20 },
+          start: { column: 1, line: 20 },
+        },
+      },
+    ],
+  );
+});
+
 test("supports extensible attribution with severity as the only state", () => {
   const base = {
     code: "REALM_CHECK_EXAMPLE",

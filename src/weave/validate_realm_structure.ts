@@ -49,7 +49,6 @@ type MarkdownNode = {
   readonly alt?: string;
   readonly children?: readonly MarkdownNode[];
   readonly depth?: number;
-  readonly identifier?: string;
   readonly label?: string;
   readonly position?: MarkdownPosition;
   readonly target?: string;
@@ -167,8 +166,6 @@ function finding(
     severity: "error",
   });
 }
-
-const lineEndings = /\r\n|[\n\r]/u;
 
 function sourcePositionIndex(content: string): SourcePositionIndex {
   const lineEnds: number[] = [];
@@ -519,11 +516,11 @@ type CitationMarker = {
 };
 
 type MarkerCell = {
+  readonly afterHtml: boolean;
   readonly character: string;
   readonly end: number;
   readonly escapable: boolean;
   readonly escaped: boolean;
-  readonly html: boolean;
   readonly start: number;
 };
 
@@ -697,12 +694,13 @@ function appendCells(
   body: string,
   range: SourceRange,
   escapable: boolean,
-  html: boolean,
   allowMissingNumericSemicolon: boolean,
+  afterHtml: boolean,
 ): void {
   const source = body.slice(range.start, range.end);
   let backslashes = 0;
   let index = 0;
+  let leading = afterHtml;
   while (index < source.length) {
     const reference =
       source[index] === "&"
@@ -711,13 +709,14 @@ function appendCells(
     if (reference !== undefined) {
       for (const character of Array.from(reference.character)) {
         cells.push({
+          afterHtml: leading,
           character,
           end: range.start + reference.end,
           escapable,
           escaped: false,
-          html,
           start: range.start + index,
         });
+        leading = false;
       }
       backslashes = 0;
       index = reference.end;
@@ -727,13 +726,14 @@ function appendCells(
     const end = index + (point > 0xffff ? 2 : 1);
     const character = source.slice(index, end);
     cells.push({
+      afterHtml: leading,
       character,
       end: range.start + end,
       escapable,
       escaped: backslashes % 2 === 1,
-      html,
       start: range.start + index,
     });
+    leading = false;
     backslashes = character === "\\" ? backslashes + 1 : 0;
     index = end;
   }
@@ -745,22 +745,25 @@ function rendersAs(cell: MarkerCell, character: string): boolean {
 
 /**
  * Canonical GFM footnote identity: micromark's identifier normalization plus
- * the footnote lowercase fold `mdast-util-gfm-footnote` applies, so a streamed
- * rendered marker keys exactly like a parsed node's `identifier`.
+ * the footnote lowercase fold `mdast-util-gfm-footnote` applies. Parsed nodes
+ * enter this one key space through their rendered `label`, which the parser
+ * already decoded, so a streamed rendered marker keys exactly like the label a
+ * reader sees regardless of the character references its source used.
  */
 function canonicalCitationIdentifier(label: string): string {
   return normalizeIdentifier(label).toLowerCase();
 }
 
 /**
- * Scans one rendered-visible run for Citation markers. Nearest following close,
- * nearest following boundary, and raw-HTML counts are precomputed once, so
- * repeated candidates stay linear and accepted markers never overlap.
+ * Scans one cell run for Citation markers. Nearest following close, nearest
+ * following boundary, and raw-HTML crossings are precomputed once, so repeated
+ * candidates stay linear and accepted markers never overlap. A marker is unsafe
+ * when the run is raw-HTML source or when raw HTML sits inside the marker.
  */
 function collectMarkers(
-  body: string,
   positions: SourcePositionIndex,
   cells: readonly MarkerCell[],
+  rawHtmlSource: boolean,
   found: VisibleMarkers,
 ): void {
   const nextClose = new Int32Array(cells.length);
@@ -777,7 +780,7 @@ function collectMarkers(
   }
   for (let index = 0; index < cells.length; index += 1) {
     htmlBefore[index + 1] =
-      (htmlBefore[index] as number) + ((cells[index] as MarkerCell).html ? 1 : 0);
+      (htmlBefore[index] as number) + ((cells[index] as MarkerCell).afterHtml ? 1 : 0);
   }
   for (let index = 0; index + 3 < cells.length; index += 1) {
     const open = cells[index] as MarkerCell;
@@ -795,7 +798,10 @@ function collectMarkers(
       identifier.push(cell.character);
     }
     const position = rangeAt(positions, open.start, (cells[close] as MarkerCell).end);
-    if ((htmlBefore[close + 1] as number) > (htmlBefore[index] as number)) {
+    if (
+      rawHtmlSource ||
+      (htmlBefore[close + 1] as number) > (htmlBefore[index + 1] as number)
+    ) {
       found.rawHtml.push(position);
     } else {
       found.references.push({
@@ -810,8 +816,15 @@ function collectMarkers(
 /**
  * Streams the rendered-visible text of adjacent inline nodes into one cell run,
  * so a marker split across formatting or a wiki-link alias cannot bypass
- * detection. Hidden content, link destinations, autolinks, block boundaries,
- * and gaps holding a line ending flush the run instead of bridging it.
+ * detection. Hidden content, link destinations, autolinks, and block boundaries
+ * flush the run, while hidden syntax between rendered cells bridges it: source
+ * line endings inside a link destination or title are never rendered, so they
+ * cannot separate text a reader sees as contiguous.
+ *
+ * Raw HTML is tag, comment, and declaration syntax that renders no visible
+ * cells, so it neither contributes marker boundary characters nor breaks a run.
+ * Its source is scanned separately, and any rendered marker containing raw HTML
+ * is rejected as unsafe rather than trusted.
  */
 function visibleCitationMarkers(
   tree: MarkdownNode,
@@ -821,38 +834,40 @@ function visibleCitationMarkers(
   const found: VisibleMarkers = { rawHtml: [], references: [] };
   const pending: PendingEntry[] = [tree];
   let cells: MarkerCell[] = [];
-  let previousEnd = -1;
+  let afterHtml = false;
   function flush(): void {
     if (cells.length > 0) {
-      collectMarkers(body, positions, cells, found);
+      collectMarkers(positions, cells, false, found);
       cells = [];
     }
-    previousEnd = -1;
+    afterHtml = false;
   }
   function emit(
     range: SourceRange,
     escapable: boolean,
-    html: boolean,
     allowMissingNumericSemicolon: boolean,
   ): void {
-    if (previousEnd >= 0 && lineEndings.test(body.slice(previousEnd, range.start))) {
-      flush();
-    }
-    appendCells(cells, body, range, escapable, html, allowMissingNumericSemicolon);
-    previousEnd = range.end;
+    appendCells(cells, body, range, escapable, allowMissingNumericSemicolon, afterHtml);
+    afterHtml = false;
+  }
+  function scanRawHtml(range: SourceRange): void {
+    const htmlCells: MarkerCell[] = [];
+    appendCells(htmlCells, body, range, false, true, false);
+    collectMarkers(positions, htmlCells, true, found);
+    afterHtml = true;
   }
   while (pending.length > 0) {
     const entry = pending.pop() as PendingEntry;
     if (entry.type === "text") {
-      emit(nodeRange(entry), true, false, false);
+      emit(nodeRange(entry), true, false);
       continue;
     }
     if (entry.type === "html") {
-      emit(nodeRange(entry), false, true, true);
+      scanRawHtml(nodeRange(entry));
       continue;
     }
     if (entry.type === "wikiLink") {
-      emit(entry.visible as SourceRange, false, false, true);
+      emit(entry.visible as SourceRange, false, true);
       continue;
     }
     if (transparentNodeTypes.has(entry.type)) {
@@ -928,11 +943,11 @@ function validateCitations(
     );
     const definitions = new Map<string, MarkdownNode[]>();
     visitMarkdown(tree, (node) => {
-      if (node.type === "footnoteReference" && node.identifier !== undefined) {
-        references.push(node.identifier);
+      if (node.type === "footnoteReference" && node.label !== undefined) {
+        references.push(canonicalCitationIdentifier(node.label));
       }
-      if (node.type === "footnoteDefinition" && node.identifier !== undefined) {
-        const identifier = node.identifier;
+      if (node.type === "footnoteDefinition" && node.label !== undefined) {
+        const identifier = canonicalCitationIdentifier(node.label);
         const existing = definitions.get(identifier);
         if (existing === undefined) definitions.set(identifier, [node]);
         else existing.push(node);
