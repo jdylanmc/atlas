@@ -569,20 +569,15 @@ test("emits nothing when any page in the batch is invalid", () => {
 
 test("rejects frontmatter values canonical YAML cannot represent", () => {
   const hidden = Symbol.for("hidden");
+  const withHiddenKey = <Value extends object>(value: Value): Value =>
+    Object.defineProperty(value, hidden, { enumerable: true, value: "dropped" });
   const unsupported: readonly (readonly [string, unknown])[] = [
-    [
-      "symbol key",
-      Object.defineProperty({}, hidden, { enumerable: true, value: "dropped" }),
-    ],
-    [
-      "nested symbol key",
-      {
-        nested: Object.defineProperty({ kept: "yes" }, hidden, {
-          enumerable: true,
-          value: "dropped",
-        }),
-      },
-    ],
+    ["symbol key", withHiddenKey({})],
+    ["nested symbol key", { nested: withHiddenKey({ kept: "yes" }) }],
+    ["symbol keyed array", { list: withHiddenKey([1, 2]) }],
+    ["symbol keyed array in object", { nested: { list: withHiddenKey(["a"]) } }],
+    ["symbol keyed array in array", { list: [withHiddenKey([1])] }],
+    ["symbol keyed object in array", { list: [withHiddenKey({ kept: "yes" })] }],
   ];
 
   for (const [label, realm] of unsupported) {
@@ -596,6 +591,67 @@ test("rejects frontmatter values canonical YAML cannot represent", () => {
       label,
     );
   }
+});
+
+test("emits nothing when one page holds an unrepresentable value", () => {
+  const hidden = Symbol.for("hidden");
+  const dropped = (): unknown => ({
+    list: Object.defineProperty([1, 2], hidden, { enumerable: true, value: "dropped" }),
+  });
+  const batches: readonly (readonly [string, readonly ParsedRealmPage[]])[] = [
+    [
+      "unrepresentable sorts first",
+      [
+        fabricatedPage(".atlas/insights/zulu.md", { kept: "yes" }),
+        fabricatedPage(".atlas/insights/alpha.md", dropped()),
+      ],
+    ],
+    [
+      "unrepresentable sorts last",
+      [
+        fabricatedPage(".atlas/insights/zulu.md", dropped()),
+        fabricatedPage(".atlas/insights/alpha.md", { kept: "yes" }),
+      ],
+    ],
+  ];
+
+  for (const [label, pages] of batches) {
+    assert.throws(
+      () => serializeRealmPages(pages),
+      (error: unknown) => {
+        assert.ok(error instanceof RealmPageSerializeError);
+        assert.equal(error.code, "UNREPRESENTABLE_VALUE", label);
+        return true;
+      },
+      label,
+    );
+  }
+});
+
+test("serializes ordinary arrays that carry no own symbol keys", () => {
+  const content = serializeOne(
+    ".atlas/insights/arrays.md",
+    pageSource("insight:arrays", {
+      realm: ["  list: [3, 1, 2]", "  nested:", "    - [b, a]", "    - {}"],
+    }),
+  );
+
+  assert.equal(
+    content.slice(content.indexOf("realm:")),
+    [
+      "realm:",
+      "  list:",
+      "    - 3",
+      "    - 1",
+      "    - 2",
+      "  nested:",
+      "    - - b",
+      "      - a",
+      "    - {}",
+      "---",
+      "",
+    ].join("\n"),
+  );
 });
 
 test("preserves inputs and returns deeply frozen text files", () => {

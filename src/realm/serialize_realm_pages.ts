@@ -65,18 +65,19 @@ const canonicalYamlOptions: CreateNodeOptions &
 };
 
 // Envelope pre-validation guarantees every frontmatter value is JSON compatible, so
-// canonicalization only has to order keys. Symbol keys survive that contract - JSON
-// compatibility checks and schema validation never see them - and the emitter would
-// drop them silently, so they are the one serializer-specific rejection.
+// canonicalization only has to order keys. Own symbol keys survive that contract -
+// JSON compatibility checks and schema validation never see them - and the emitter
+// would drop them silently, so any object or array carrying one is rejected before
+// bytes exist. That is the one serializer-specific rejection.
 function canonicalizeValue(value: unknown, path: string): unknown {
-  if (Array.isArray(value)) {
-    return (value as readonly unknown[]).map((entry) => canonicalizeValue(entry, path));
-  }
   if (value === null || typeof value !== "object") {
     return value;
   }
   if (Object.getOwnPropertySymbols(value).length > 0) {
     throw new RealmPageSerializeError("UNREPRESENTABLE_VALUE", path);
+  }
+  if (Array.isArray(value)) {
+    return (value as readonly unknown[]).map((entry) => canonicalizeValue(entry, path));
   }
   // A Map keeps every own key literal: assigning onto a fresh object would let an
   // own `__proto__` key mutate the result's prototype instead of becoming an entry.
