@@ -1031,10 +1031,51 @@ test("rejects excessive inline delimiter nesting before Markdown parsing", () =>
         },
         code: "ATLAS_PAGE_MARKDOWN_COMPLEXITY_EXCEEDED",
         location: {
-          end: { column: 7438, line: 15 },
-          start: { column: 7437, line: 15 },
+          end: { column: 196, line: 15 },
+          start: { column: 195, line: 15 },
         },
         path: ".atlas/insights/deep-heading.md",
+      },
+    ],
+  );
+});
+
+test("rejects excessive balanced emphasis runs before Markdown parsing", () => {
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      page(".atlas/insights/many-emphasis-runs.md", `# Page\n\n${"*a".repeat(16_385)}`),
+    ]).map(({ code, location, path }) => ({ code, location, path })),
+    [
+      {
+        code: "ATLAS_PAGE_MARKDOWN_COMPLEXITY_EXCEEDED",
+        location: {
+          end: { column: 32_770, line: 17 },
+          start: { column: 32_769, line: 17 },
+        },
+        path: ".atlas/insights/many-emphasis-runs.md",
+      },
+    ],
+  );
+});
+
+test("does not let inline-code brackets discharge link-label candidates", () => {
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      page(
+        ".atlas/insights/code-protected-brackets.md",
+        `# Page\n\n${"[a`]`".repeat(65)}`,
+      ),
+    ]).map(({ code, location, path }) => ({ code, location, path })),
+    [
+      {
+        code: "ATLAS_PAGE_MARKDOWN_COMPLEXITY_EXCEEDED",
+        location: {
+          end: { column: 319, line: 17 },
+          start: { column: 318, line: 17 },
+        },
+        path: ".atlas/insights/code-protected-brackets.md",
       },
     ],
   );
@@ -1066,13 +1107,70 @@ test("rejects repeated unterminated wiki-link candidates before Markdown parsing
       {
         code: "ATLAS_PAGE_MARKDOWN_COMPLEXITY_EXCEEDED",
         location: {
-          end: { column: 579, line: 17 },
-          start: { column: 577, line: 17 },
+          end: { column: 290, line: 17 },
+          start: { column: 289, line: 17 },
         },
         path: ".atlas/insights/unterminated-wikilinks.md",
       },
     ],
   );
+});
+
+test("charges repeated malformed empty wiki-link forms to the parser budget", () => {
+  for (const [path, source, startColumn] of [
+    [".atlas/insights/empty-wikilinks.md", "[[]]".repeat(5000), 16_385],
+    [".atlas/insights/empty-wiki-images.md", "![[]]".repeat(5000), 20_482],
+  ] as const) {
+    assert.deepEqual(
+      validateRealmStructure([
+        validFiles[2] as RealmTextFile,
+        page(path, `# Page\n\n${source}`),
+      ]).map(({ code, location, path: findingPath }) => ({
+        code,
+        location,
+        path: findingPath,
+      })),
+      [
+        {
+          code: "ATLAS_PAGE_MARKDOWN_COMPLEXITY_EXCEEDED",
+          location: {
+            end: { column: startColumn + 1, line: 17 },
+            start: { column: startColumn, line: 17 },
+          },
+          path,
+        },
+      ],
+    );
+  }
+});
+
+test("charges closing code and label tokens to the parser budget", () => {
+  for (const [path, source, startColumn] of [
+    [".atlas/insights/code-open-budget.md", `${"*a".repeat(16_384)}\``, 32_769],
+    [".atlas/insights/code-close-budget.md", `${"*a".repeat(16_383)}\`x\``, 32_769],
+    [".atlas/insights/label-close-budget.md", `${"[a]".repeat(8191)}*a[x]`, 24_578],
+  ] as const) {
+    assert.deepEqual(
+      validateRealmStructure([
+        validFiles[2] as RealmTextFile,
+        page(path, `# Page\n\n${source}`),
+      ]).map(({ code, location, path: findingPath }) => ({
+        code,
+        location,
+        path: findingPath,
+      })),
+      [
+        {
+          code: "ATLAS_PAGE_MARKDOWN_COMPLEXITY_EXCEEDED",
+          location: {
+            end: { column: startColumn + 1, line: 17 },
+            start: { column: startColumn, line: 17 },
+          },
+          path,
+        },
+      ],
+    );
+  }
 });
 
 test("rejects deeply matched nested wiki-link candidates before Markdown parsing", () => {
@@ -1088,7 +1186,7 @@ test("rejects deeply matched nested wiki-link candidates before Markdown parsing
       {
         code: "ATLAS_PAGE_MARKDOWN_COMPLEXITY_EXCEEDED",
         location: {
-          end: { column: 67, line: 17 },
+          end: { column: 66, line: 17 },
           start: { column: 65, line: 17 },
         },
         path: ".atlas/insights/nested-wikilinks.md",
@@ -1148,6 +1246,56 @@ test("accepts normal links and images with bracket-heavy prose and code", () => 
       ),
     ]),
     [],
+  );
+});
+
+test("accepts realistic emphasis-heavy content and protected code literals", () => {
+  const emphasis = "*ordinary emphasis* ".repeat(3000);
+  const protectedCode = `\`${"[[]] *literal* ".repeat(3000)}\``;
+  const unmatchedCode = "Escaped \\" + "`tick and unmatched `";
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      page(
+        ".atlas/insights/emphasis-and-code.md",
+        `# Page\n\n${emphasis}\n\n${protectedCode}\n\n${unmatchedCode}`,
+      ),
+    ]),
+    [],
+  );
+});
+
+test("scans thousands of valid wiki links before rejecting a final raw HTML alias", () => {
+  const wikiLinks = Array.from(
+    { length: 4000 },
+    (_, index) => `[[target-${String(index)}|alias-${String(index)}]]`,
+  ).join(" ");
+  const wikiLine = `${wikiLinks} [[target|bad < alias]]`;
+  const rawColumn = wikiLine.indexOf("<") + 1;
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      page(".atlas/insights/many-wikilinks.md", `# Page\n\n${wikiLine}`),
+    ]),
+    [
+      {
+        attribution: {
+          checkId: "atlas-core.structural-validation",
+          kind: "atlas-core",
+          trusted: true,
+        },
+        code: "ATLAS_PAGE_RAW_HTML_UNSUPPORTED",
+        "finding-schema": "1.0.0",
+        location: {
+          end: { column: rawColumn + 1, line: 17 },
+          start: { column: rawColumn, line: 17 },
+        },
+        message:
+          "Realm page Markdown must not contain raw HTML; write the content as Markdown.",
+        path: ".atlas/insights/many-wikilinks.md",
+        severity: "error",
+      },
+    ],
   );
 });
 

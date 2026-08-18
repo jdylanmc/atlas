@@ -94,7 +94,8 @@ const corePathTypes = Object.freeze({
 } as const);
 const coreTypeNames: ReadonlySet<string> = new Set(Object.values(corePathTypes));
 
-export const MARKDOWN_PARSE_WORK_PER_CODE_UNIT = 64;
+export const MARKDOWN_PARSE_DEPTH_LIMIT = 64;
+export const MARKDOWN_PARSE_TOKEN_LIMIT = 16 * 1024;
 
 function wikiLinkFromMarkdown(): MdastExtension {
   let current: MutableWikiLinkNode | undefined;
@@ -315,32 +316,77 @@ function isBlankMarkdownLine(body: string, start: number, end: number): boolean 
   return true;
 }
 
+type BacktickRun = SourceRange & {
+  readonly length: number;
+};
+
+function backtickCodeClosers(body: string): ReadonlyMap<number, BacktickRun> {
+  const runs: BacktickRun[] = [];
+  let backslashes = 0;
+  let index = 0;
+  while (index < body.length) {
+    const character = body[index] as string;
+    if (character === "\\") {
+      backslashes += 1;
+      index += 1;
+      continue;
+    }
+    const escaped = backslashes % 2 === 1;
+    backslashes = 0;
+    if (character !== "`") {
+      index += 1;
+      continue;
+    }
+    let runEnd = index + 1;
+    while (runEnd < body.length && body[runEnd] === "`") runEnd += 1;
+    const activeStart = index + (escaped ? 1 : 0);
+    if (activeStart < runEnd) {
+      runs.push({
+        end: runEnd,
+        length: runEnd - activeStart,
+        start: activeStart,
+      });
+    }
+    index = runEnd;
+  }
+
+  const closers = new Map<number, BacktickRun>();
+  const nextByLength = new Map<number, BacktickRun>();
+  for (let runIndex = runs.length - 1; runIndex >= 0; runIndex -= 1) {
+    const run = runs[runIndex] as BacktickRun;
+    const next = nextByLength.get(run.length);
+    if (next !== undefined) closers.set(run.start, next);
+    nextByLength.set(run.length, run);
+  }
+  return closers;
+}
+
 /**
- * Realm byte budgets already bound linear parsing work, and a decoded body's
- * UTF-16 code-unit length cannot exceed its validated UTF-8 byte length. This
- * preflight limits parser-sensitive structure to a fixed amplification of those
- * accepted bytes: unresolved emphasis delimiters are charged by active depth,
- * and ambiguous wiki-link and link-label candidate nesting is bounded until
- * closes consume it.
+ * Realm byte budgets bound linear text work. Before invoking the Markdown
+ * parser, this pass additionally caps parser-sensitive runs and active
+ * candidates at fixed limits independent of page length. It intentionally does
+ * not emulate CommonMark: brackets, emphasis runs, and backtick runs are
+ * charged conservatively, while definitely paired backticks protect literal
+ * inline-code and fenced-code contents.
  */
 function markdownComplexityRange(
   body: string,
   positions: SourcePositionIndex,
 ): SourceRange | undefined {
-  const delimiterWorkLimit = body.length * MARKDOWN_PARSE_WORK_PER_CODE_UNIT;
+  const codeClosers = backtickCodeClosers(body);
   let delimiterDepth = 0;
-  let delimiterWork = 0;
+  let parserTokens = 0;
   let starOpeners = 0;
   let underscoreOpeners = 0;
   let labelCandidateDepth = 0;
   const labelCandidates: boolean[] = [];
+  let protectedUntil = 0;
 
   for (let line = 0; line < positions.lineStarts.length; line += 1) {
     const lineStart = positions.lineStarts[line] as number;
     const lineEnd = positions.lineEnds[line] as number;
     let backslashes = 0;
-    let wikiCandidateDepth = 0;
-    let index = lineStart;
+    let index = Math.min(Math.max(lineStart, protectedUntil), lineEnd);
     while (index < lineEnd) {
       const character = body[index] as string;
       if (character === "\\") {
@@ -351,31 +397,55 @@ function markdownComplexityRange(
       const escaped = backslashes % 2 === 1;
       backslashes = 0;
 
-      if (!escaped && body[index + 1] === character) {
-        if (character === "[") {
-          wikiCandidateDepth += 1;
-          if (wikiCandidateDepth > MARKDOWN_PARSE_WORK_PER_CODE_UNIT) {
-            return { end: index + 2, start: index };
+      if (character === "`") {
+        let runEnd = index + 1;
+        while (runEnd < body.length && body[runEnd] === "`") runEnd += 1;
+        const activeStart = index + (escaped ? 1 : 0);
+        if (activeStart < runEnd) {
+          parserTokens += 1;
+          if (parserTokens > MARKDOWN_PARSE_TOKEN_LIMIT) {
+            return { end: activeStart + 1, start: activeStart };
           }
-        } else if (character === "]") {
-          wikiCandidateDepth = Math.max(0, wikiCandidateDepth - 1);
+          const close = codeClosers.get(activeStart);
+          if (close !== undefined) {
+            if (delimiterDepth + labelCandidateDepth + 1 > MARKDOWN_PARSE_DEPTH_LIMIT) {
+              return { end: activeStart + 1, start: activeStart };
+            }
+            parserTokens += 1;
+            if (parserTokens > MARKDOWN_PARSE_TOKEN_LIMIT) {
+              return { end: close.start + 1, start: close.start };
+            }
+            protectedUntil = close.end;
+            index = Math.min(protectedUntil, lineEnd);
+            continue;
+          }
         }
+        index = Math.min(runEnd, lineEnd);
+        continue;
       }
 
       if (!escaped && character === "[") {
-        const candidate =
-          body[index + 1] !== "^" &&
-          (body[index - 1] === "!" ||
-            (body[index - 1] !== "[" && body[index + 1] !== "["));
+        const candidate = body[index + 1] !== "^";
         labelCandidates.push(candidate);
         if (candidate) {
+          parserTokens += 1;
+          if (parserTokens > MARKDOWN_PARSE_TOKEN_LIMIT) {
+            return { end: index + 1, start: index };
+          }
           labelCandidateDepth += 1;
-          if (labelCandidateDepth > MARKDOWN_PARSE_WORK_PER_CODE_UNIT) {
+          if (delimiterDepth + labelCandidateDepth > MARKDOWN_PARSE_DEPTH_LIMIT) {
             return { end: index + 1, start: index };
           }
         }
-      } else if (!escaped && character === "]" && labelCandidates.pop()) {
-        labelCandidateDepth -= 1;
+      } else if (!escaped && character === "]") {
+        const candidate = labelCandidates.pop();
+        if (candidate) {
+          parserTokens += 1;
+          if (parserTokens > MARKDOWN_PARSE_TOKEN_LIMIT) {
+            return { end: index + 1, start: index };
+          }
+          labelCandidateDepth -= 1;
+        }
       }
 
       if (character !== "*" && character !== "_") {
@@ -392,12 +462,11 @@ function markdownComplexityRange(
           runEnd === lineEnd ? undefined : body[runEnd],
         );
         if (canClose || canOpen) {
+          parserTokens += 1;
+          if (parserTokens > MARKDOWN_PARSE_TOKEN_LIMIT) {
+            return { end: activeStart + 1, start: activeStart };
+          }
           for (let unit = activeStart; unit < runEnd; unit += 1) {
-            const unitWork = delimiterDepth + 1;
-            if (unitWork > delimiterWorkLimit - delimiterWork) {
-              return { end: unit + 1, start: unit };
-            }
-            delimiterWork += unitWork;
             const matchingOpeners = character === "*" ? starOpeners : underscoreOpeners;
             if (canClose && matchingOpeners > 0) {
               delimiterDepth -= 1;
@@ -405,6 +474,9 @@ function markdownComplexityRange(
               else underscoreOpeners -= 1;
             } else if (canOpen) {
               delimiterDepth += 1;
+              if (delimiterDepth + labelCandidateDepth > MARKDOWN_PARSE_DEPTH_LIMIT) {
+                return { end: unit + 1, start: unit };
+              }
               if (character === "*") starOpeners += 1;
               else underscoreOpeners += 1;
             }
@@ -703,6 +775,11 @@ function nodeRange(node: MarkdownNode): SourceRange {
  */
 function rawHtmlRanges(tree: MarkdownNode, body: string): readonly SourceRange[] {
   const ranges: SourceRange[] = [];
+  const lessThanOffsets: number[] = [];
+  for (let index = 0; index < body.length; index += 1) {
+    if (body[index] === "<") lessThanOffsets.push(index);
+  }
+  let lessThanIndex = 0;
   visitMarkdown(tree, (node) => {
     if (node.type === "html") {
       ranges.push(nodeRange(node));
@@ -710,8 +787,14 @@ function rawHtmlRanges(tree: MarkdownNode, body: string): readonly SourceRange[]
     }
     if (node.type !== "wikiLink") return;
     const range = nodeRange(node);
-    const index = body.indexOf("<", range.start);
-    if (index >= 0 && index < range.end) {
+    while (
+      lessThanIndex < lessThanOffsets.length &&
+      (lessThanOffsets[lessThanIndex] as number) < range.start
+    ) {
+      lessThanIndex += 1;
+    }
+    const index = lessThanOffsets[lessThanIndex];
+    if (index !== undefined && index < range.end) {
       ranges.push({ end: index + 1, start: index });
     }
   });
