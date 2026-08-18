@@ -531,6 +531,89 @@ test("reports multiple and nested formatting-split Citations exactly", () => {
   );
 });
 
+test("keeps visible formatting before an excluded link in normal prose", () => {
+  assert.deepEqual(
+    validateRealmStructure(
+      citing("# Page\n\n**Claim [^a*b*c] then [link](https://example.test)**\n"),
+    ).map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: { end: { column: 17, line: 17 }, start: { column: 9, line: 17 } },
+      },
+    ],
+  );
+});
+
+test("keeps visible formatting before an excluded link in definition prose", () => {
+  assert.deepEqual(
+    validateRealmStructure(
+      citing(
+        "# Page\n\nClaim.[^outer]\n\n[^outer]: [[.atlas/lore/source]] *Claim [^a**b**c] then [link](https://example.test)*\n",
+      ),
+    ).map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: { end: { column: 51, line: 19 }, start: { column: 41, line: 19 } },
+      },
+    ],
+  );
+});
+
+test("keeps visible formatting after an excluded link reference", () => {
+  assert.deepEqual(
+    validateRealmStructure(
+      citing(
+        "# Page\n\n*[link][label] then [^a**b**c] claim*\n\n[label]: https://example.test\n",
+      ),
+    ).map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: { end: { column: 31, line: 17 }, start: { column: 21, line: 17 } },
+      },
+    ],
+  );
+});
+
+test("validates parser-resolved Citations in partitioned formatting once", () => {
+  assert.deepEqual(
+    validateRealmStructure(
+      citing(
+        "# Page\n\n**Claim [^a*b*c] then [link](https://example.test)**\n\n[^a*b*c]: [[.atlas/lore/source]]\n",
+      ),
+    ),
+    [],
+  );
+  assert.deepEqual(
+    validateRealmStructure(
+      citing(
+        "# Page\n\n**Claim [^a*b*c] then [link](https://example.test)**\n\n[^a*b*c]: [[not-canonical]]\n",
+      ),
+    ).map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_TARGET_INVALID",
+        location: { end: { column: 28, line: 19 }, start: { column: 11, line: 19 } },
+      },
+    ],
+  );
+  assert.deepEqual(
+    validateRealmStructure(
+      citing(
+        "# Page\n\nClaim.[^outer]\n\n[^outer]: [[.atlas/lore/source]] *Claim [^a**b**c] then [link](https://example.test)*\n\n[^a**b**c]: [[not-canonical]]\n",
+      ),
+    ).map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_TARGET_INVALID",
+        location: { end: { column: 30, line: 21 }, start: { column: 13, line: 21 } },
+      },
+    ],
+  );
+});
+
 test("reports formatting-split Citations inside isolated link labels", () => {
   assert.deepEqual(
     validateRealmStructure(

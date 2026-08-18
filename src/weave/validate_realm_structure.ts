@@ -431,22 +431,32 @@ function citationMarkers(
   return markers;
 }
 
-function citationVisiblePart(node: PhrasingContent): CitationVisiblePart | undefined {
+/**
+ * Keeps visible source around excluded descendants as separate ordered parts.
+ * Formatting delimiters remain in those exact source slices, while each
+ * excluded node becomes a boundary that the caller cannot bridge.
+ */
+function citationVisibleParts(
+  node: PhrasingContent,
+): readonly (CitationVisiblePart | undefined)[] {
   const position = node.position as MarkdownPosition;
   if (node.type === "text") {
-    return {
-      end: position.end,
-      start: position.start,
-      textRanges: [
-        {
-          end: position.end.offset as number,
-          start: position.start.offset as number,
-        },
-      ],
-    };
+    return [
+      {
+        end: position.end,
+        start: position.start,
+        textRanges: [
+          {
+            end: position.end.offset as number,
+            start: position.start.offset as number,
+          },
+        ],
+      },
+    ];
   }
-  if (!isCitationFormatting(node)) return undefined;
+  if (!isCitationFormatting(node)) return [undefined];
 
+  const excluded: MarkdownPosition[] = [];
   const textRanges: CitationSourceRange[] = [];
   const pending: PhrasingContent[] = [node];
   while (pending.length > 0) {
@@ -459,12 +469,42 @@ function citationVisiblePart(node: PhrasingContent): CitationVisiblePart | undef
       });
       continue;
     }
-    if (!isCitationFormatting(current)) return undefined;
-    for (let index = current.children.length - 1; index >= 0; index -= 1) {
-      pending.push(current.children[index] as PhrasingContent);
+    if (isCitationFormatting(current)) {
+      for (let index = current.children.length - 1; index >= 0; index -= 1) {
+        pending.push(current.children[index] as PhrasingContent);
+      }
+    } else {
+      excluded.push(current.position as MarkdownPosition);
     }
   }
-  return { end: position.end, start: position.start, textRanges };
+  if (excluded.length === 0) {
+    return [{ end: position.end, start: position.start, textRanges }];
+  }
+
+  const parts: (CitationVisiblePart | undefined)[] = [];
+  let start = position.start;
+  let textIndex = 0;
+  for (const boundary of excluded) {
+    const segmentTextRanges: CitationSourceRange[] = [];
+    while (
+      textIndex < textRanges.length &&
+      (textRanges[textIndex] as CitationSourceRange).start <
+        (boundary.start.offset as number)
+    ) {
+      segmentTextRanges.push(textRanges[textIndex] as CitationSourceRange);
+      textIndex += 1;
+    }
+    parts.push({ end: boundary.start, start, textRanges: segmentTextRanges });
+    parts.push(undefined);
+    start = boundary.end;
+  }
+  const segmentTextRanges: CitationSourceRange[] = [];
+  while (textIndex < textRanges.length) {
+    segmentTextRanges.push(textRanges[textIndex] as CitationSourceRange);
+    textIndex += 1;
+  }
+  parts.push({ end: position.end, start, textRanges: segmentTextRanges });
+  return parts;
 }
 
 function citationVisibleRuns(
@@ -476,18 +516,19 @@ function citationVisibleRuns(
   let textRanges: CitationSourceRange[] = [];
 
   for (const child of container.children) {
-    const part = citationVisiblePart(child);
-    if (part === undefined) {
-      if (start !== undefined)
-        runs.push({ end: end as MarkdownPosition["end"], start, textRanges });
-      end = undefined;
-      start = undefined;
-      textRanges = [];
-      continue;
+    for (const part of citationVisibleParts(child)) {
+      if (part === undefined) {
+        if (start !== undefined)
+          runs.push({ end: end as MarkdownPosition["end"], start, textRanges });
+        end = undefined;
+        start = undefined;
+        textRanges = [];
+        continue;
+      }
+      start ??= part.start;
+      end = part.end;
+      for (const range of part.textRanges) textRanges.push(range);
     }
-    start ??= part.start;
-    end = part.end;
-    for (const range of part.textRanges) textRanges.push(range);
   }
   if (start !== undefined)
     runs.push({ end: end as MarkdownPosition["end"], start, textRanges });
