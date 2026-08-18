@@ -200,6 +200,10 @@ test("rejects missing, malformed, and invalid frontmatter", () => {
     parseError(text(".atlas/index.md", "---\natlas:\n  schema: 1\n")).code,
     "MALFORMED_FRONTMATTER",
   );
+  assert.equal(
+    parseError(text(".atlas/index.md", "---\natlas:\n  schema: 1")).code,
+    "MALFORMED_FRONTMATTER",
+  );
   for (const frontmatter of ["[]", "atlas: []\nrealm: {}", "atlas: null\nrealm: {}"]) {
     assert.equal(
       parseError(text(".atlas/index.md", `---\n${frontmatter}\n---\n`)).code,
@@ -279,6 +283,25 @@ test("preserves body bytes and stable source lines", () => {
     frontmatter: { endLine: 13, startLine: 2 },
     path: ".atlas/index.md",
   });
+});
+
+test("only an LF starts a closing delimiter line", () => {
+  for (const separator of ["\u2028", "\u2029"]) {
+    const frontmatter = validPage("insight:separators").replace(
+      "realm: {}",
+      `realm:\n  note: "a${separator}---${separator}b"\n  zebra: last`,
+    );
+    const [parsed] = parseRealmPages([
+      text(".atlas/insights/separators.md", `${frontmatter}\nbody\n`),
+    ]);
+
+    assert.ok(parsed);
+    assert.deepEqual(parsed.page.realm, {
+      note: `a${separator}---${separator}b`,
+      zebra: "last",
+    });
+    assert.equal(parsed.page.body, "body\n");
+  }
 });
 
 test("reversed record input produces identical ordered pages and errors", () => {

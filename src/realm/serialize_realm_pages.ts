@@ -67,18 +67,35 @@ const canonicalYamlOptions: CreateNodeOptions &
   version: "1.2",
 };
 
-// Own symbol keys survive the envelope contract - JSON compatibility checks and
-// schema validation never see them - and the emitter would drop them silently, so
-// the page root and every object or array descendant is scanned before any bytes
-// exist. That is the one serializer-specific rejection.
+// Canonical serialization reaches mapping entries through `Object.keys` and array
+// entries through their indices, so own properties outside that reach - symbols,
+// non-enumerable mapping keys, and named properties hung off an array - would be
+// dropped silently. The envelope contract cannot see any of them, so the page root
+// and every object or array descendant is scanned before any bytes exist. That is
+// the one serializer-specific rejection.
+// An own key of an array is always below its length, so only the shape of the key
+// itself distinguishes an index from a named property the emitter would drop.
+function isArrayIndexKey(key: string): boolean {
+  const index = Number(key);
+  return Number.isInteger(index) && index >= 0 && String(index) === key;
+}
+
 function assertRepresentable(value: unknown, path: string): void {
   if (value === null || typeof value !== "object") {
     return;
   }
-  if (Object.getOwnPropertySymbols(value).length > 0) {
-    throw new RealmPageSerializeError("UNREPRESENTABLE_VALUE", path);
+  const isArray = Array.isArray(value);
+  for (const key of Reflect.ownKeys(value)) {
+    const kept =
+      typeof key === "string" &&
+      (isArray
+        ? key === "length" || isArrayIndexKey(key)
+        : Object.prototype.propertyIsEnumerable.call(value, key));
+    if (!kept) {
+      throw new RealmPageSerializeError("UNREPRESENTABLE_VALUE", path);
+    }
   }
-  const entries = Array.isArray(value)
+  const entries = isArray
     ? (value as readonly unknown[])
     : Object.values(value as Readonly<Record<string, unknown>>);
   for (const entry of entries) {

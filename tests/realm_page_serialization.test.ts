@@ -574,6 +574,12 @@ test("rejects frontmatter values canonical YAML cannot represent", () => {
   const hidden = Symbol.for("hidden");
   const withHiddenKey = <Value extends object>(value: Value): Value =>
     Object.defineProperty(value, hidden, { enumerable: true, value: "dropped" });
+  const withHiddenValue = <Value extends object>(value: Value): Value =>
+    Object.defineProperty(value, "ghost", { enumerable: false, value: "dropped" });
+  const withNamedEntry = <Value extends unknown[]>(value: Value): Value =>
+    Object.defineProperty(value, "note", { enumerable: true, value: "dropped" });
+  const withArrayKey = <Value extends unknown[]>(value: Value, key: string): Value =>
+    Object.defineProperty(value, key, { enumerable: true, value: "dropped" });
   const unsupported: readonly (readonly [string, unknown])[] = [
     ["symbol key", withHiddenKey({})],
     ["nested symbol key", { nested: withHiddenKey({ kept: "yes" }) }],
@@ -581,6 +587,15 @@ test("rejects frontmatter values canonical YAML cannot represent", () => {
     ["symbol keyed array in object", { nested: { list: withHiddenKey(["a"]) } }],
     ["symbol keyed array in array", { list: [withHiddenKey([1])] }],
     ["symbol keyed object in array", { list: [withHiddenKey({ kept: "yes" })] }],
+    ["non enumerable key", withHiddenValue({ kept: "yes" })],
+    ["nested non enumerable key", { nested: withHiddenValue({ kept: "yes" }) }],
+    ["non enumerable key in array", { list: [withHiddenValue({ kept: "yes" })] }],
+    ["named array property", { list: withNamedEntry([1, 2]) }],
+    ["nested named array property", { nested: { list: withNamedEntry(["a"]) } }],
+    ["named array property in array", { list: [withNamedEntry([1])] }],
+    ["fractional array key", { list: withArrayKey([1, 2], "1.5") }],
+    ["negative array key", { list: withArrayKey([1, 2], "-1") }],
+    ["padded array key", { list: withArrayKey([1, 2], "01") }],
   ];
 
   for (const [label, realm] of unsupported) {
@@ -596,60 +611,105 @@ test("rejects frontmatter values canonical YAML cannot represent", () => {
   }
 });
 
-test("rejects an own symbol key on the page envelope root", () => {
-  const rooted = fabricatedPage(
-    ".atlas/insights/bad.md",
-    { kept: "yes" },
-    {},
-    (envelope) => {
-      Object.defineProperty(envelope, Symbol.for("hidden"), {
-        enumerable: true,
-        value: "dropped",
-      });
-    },
-  );
-
-  // The envelope contract cannot see the symbol, so only the serializer can refuse it.
-  assert.equal(checkRealmPageEnvelope(rooted.page), true);
-
-  const error = serializeError(rooted);
-  assert.equal(error.code, "UNREPRESENTABLE_VALUE");
-  assert.equal(error.path, ".atlas/insights/bad.md");
-  assert.equal(error.message, "Realm page frontmatter holds an unrepresentable value.");
-});
-
-test("emits nothing when one page holds an unrepresentable value", () => {
-  const hidden = Symbol.for("hidden");
-  const dropped = (): unknown => ({
-    list: Object.defineProperty([1, 2], hidden, { enumerable: true, value: "dropped" }),
-  });
-  const batches: readonly (readonly [string, readonly ParsedRealmPage[]])[] = [
+test("rejects own properties canonical serialization would omit at the page root", () => {
+  const rootCases: readonly (readonly [string, (envelope: object) => void])[] = [
     [
-      "unrepresentable sorts first",
-      [
-        fabricatedPage(".atlas/insights/zulu.md", { kept: "yes" }),
-        fabricatedPage(".atlas/insights/alpha.md", dropped()),
-      ],
+      "symbol key",
+      (envelope) => {
+        Object.defineProperty(envelope, Symbol.for("hidden"), {
+          enumerable: true,
+          value: "dropped",
+        });
+      },
     ],
     [
-      "unrepresentable sorts last",
-      [
-        fabricatedPage(".atlas/insights/zulu.md", dropped()),
-        fabricatedPage(".atlas/insights/alpha.md", { kept: "yes" }),
-      ],
+      "non enumerable key",
+      (envelope) => {
+        Object.defineProperty(envelope, "ghost", {
+          enumerable: false,
+          value: "dropped",
+        });
+      },
     ],
   ];
 
-  for (const [label, pages] of batches) {
-    assert.throws(
-      () => serializeRealmPages(pages),
-      (error: unknown) => {
-        assert.ok(error instanceof RealmPageSerializeError);
-        assert.equal(error.code, "UNREPRESENTABLE_VALUE", label);
-        return true;
-      },
+  for (const [label, decorate] of rootCases) {
+    const rooted = fabricatedPage(
+      ".atlas/insights/bad.md",
+      { kept: "yes" },
+      {},
+      decorate,
+    );
+
+    // The envelope contract cannot see either property, so only the serializer refuses.
+    assert.equal(checkRealmPageEnvelope(rooted.page), true, label);
+
+    const error = serializeError(rooted);
+    assert.equal(error.code, "UNREPRESENTABLE_VALUE", label);
+    assert.equal(error.path, ".atlas/insights/bad.md", label);
+    assert.equal(
+      error.message,
+      "Realm page frontmatter holds an unrepresentable value.",
       label,
     );
+  }
+});
+
+test("emits nothing when one page holds an unrepresentable value", () => {
+  const losses: readonly (readonly [string, () => unknown])[] = [
+    [
+      "symbol keyed array",
+      () => ({
+        list: Object.defineProperty([1, 2], Symbol.for("hidden"), {
+          enumerable: true,
+          value: "dropped",
+        }),
+      }),
+    ],
+    [
+      "non enumerable key",
+      () => Object.defineProperty({ kept: "yes" }, "ghost", { value: "dropped" }),
+    ],
+    [
+      "named array property",
+      () => ({
+        list: Object.defineProperty([1, 2], "note", {
+          enumerable: true,
+          value: "dropped",
+        }),
+      }),
+    ],
+  ];
+
+  for (const [label, dropped] of losses) {
+    const batches: readonly (readonly [string, readonly ParsedRealmPage[]])[] = [
+      [
+        "sorts first",
+        [
+          fabricatedPage(".atlas/insights/zulu.md", { kept: "yes" }),
+          fabricatedPage(".atlas/insights/alpha.md", dropped()),
+        ],
+      ],
+      [
+        "sorts last",
+        [
+          fabricatedPage(".atlas/insights/zulu.md", dropped()),
+          fabricatedPage(".atlas/insights/alpha.md", { kept: "yes" }),
+        ],
+      ],
+    ];
+
+    for (const [position, pages] of batches) {
+      assert.throws(
+        () => serializeRealmPages(pages),
+        (error: unknown) => {
+          assert.ok(error instanceof RealmPageSerializeError);
+          assert.equal(error.code, "UNREPRESENTABLE_VALUE", `${label} ${position}`);
+          return true;
+        },
+        `${label} ${position}`,
+      );
+    }
   }
 });
 
@@ -737,6 +797,30 @@ test("emits fold prone multiline strings as single line scalars", () => {
   const [again] = serializeRealmPages([roundTripped]);
   assert.ok(again);
   assert.equal(again.content, file.content);
+});
+
+test("round trips line and paragraph separators inside values and keys", () => {
+  for (const separator of ["\u2028", "\u2029"]) {
+    const longKey = `${"k".repeat(1100)}${separator}---`;
+    const realm = {
+      [longKey]: `a${separator}---${separator}b`,
+      note: `a${separator}---${separator}b`,
+      zebra: "last",
+    };
+    const path = ".atlas/insights/separators.md";
+
+    const [file] = serializeRealmPages([fabricatedPage(path, realm)]);
+    assert.ok(file);
+
+    const [reparsed] = parseRealmPages([text(path, file.content)]);
+    assert.ok(reparsed);
+    assert.deepEqual(reparsed.page.realm, realm);
+    assert.equal(reparsed.page.body, "");
+
+    const [again] = serializeRealmPages([reparsed]);
+    assert.ok(again);
+    assert.equal(again.content, file.content);
+  }
 });
 
 test("preserves inputs and returns deeply frozen text files", () => {
