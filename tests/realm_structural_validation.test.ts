@@ -801,6 +801,56 @@ test("rejects repeated unterminated wiki-link candidates before Markdown parsing
   );
 });
 
+test("rejects deeply matched nested wiki-link candidates before Markdown parsing", () => {
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      page(
+        ".atlas/insights/nested-wikilinks.md",
+        `# Page\n\n${"[".repeat(12_000)}x${"]".repeat(12_000)}`,
+      ),
+    ]).map(({ code, location, path }) => ({ code, location, path })),
+    [
+      {
+        code: "ATLAS_PAGE_MARKDOWN_COMPLEXITY_EXCEEDED",
+        location: {
+          end: { column: 67, line: 17 },
+          start: { column: 65, line: 17 },
+        },
+        path: ".atlas/insights/nested-wikilinks.md",
+      },
+    ],
+  );
+});
+
+test("accepts normal wiki links and bracket-heavy non-wiki prose and code", () => {
+  const bracketHeavyText = "[plain] ".repeat(2000);
+  const normalWikiLinks = Array.from(
+    { length: 256 },
+    (_, index) => `[[target-${String(index)}|alias-${String(index)}]]`,
+  ).join(" ");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      page(
+        ".atlas/insights/brackets.md",
+        [
+          "# Page",
+          "",
+          `[[target]] ${normalWikiLinks}`,
+          "",
+          bracketHeavyText,
+          "",
+          "```text",
+          bracketHeavyText,
+          "```",
+        ].join("\n"),
+      ),
+    ]),
+    [],
+  );
+});
+
 test("locates thousands of visible split Citation markers deterministically", () => {
   const markerCount = 3000;
   const markers = Array.from(

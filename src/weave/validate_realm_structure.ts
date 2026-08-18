@@ -320,7 +320,7 @@ function isBlankMarkdownLine(body: string, start: number, end: number): boolean 
  * UTF-16 code-unit length cannot exceed its validated UTF-8 byte length. This
  * preflight limits parser-sensitive structure to a fixed amplification of those
  * accepted bytes: unresolved emphasis delimiters are charged by active depth,
- * and unterminated wiki-link candidates by their remaining line scan.
+ * and ambiguous wiki-link candidate nesting is bounded until closes consume it.
  */
 function markdownComplexityRange(
   body: string,
@@ -335,17 +335,8 @@ function markdownComplexityRange(
   for (let line = 0; line < positions.lineStarts.length; line += 1) {
     const lineStart = positions.lineStarts[line] as number;
     const lineEnd = positions.lineEnds[line] as number;
-    let lastWikiClose = -1;
-    for (let index = lineEnd - 2; index >= lineStart; index -= 1) {
-      if (body[index] === "]" && body[index + 1] === "]") {
-        lastWikiClose = index;
-        break;
-      }
-    }
-
-    const wikiWorkLimit = (lineEnd - lineStart) * MARKDOWN_PARSE_WORK_PER_CODE_UNIT;
     let backslashes = 0;
-    let wikiWork = 0;
+    let wikiCandidateDepth = 0;
     let index = lineStart;
     while (index < lineEnd) {
       const character = body[index] as string;
@@ -357,17 +348,15 @@ function markdownComplexityRange(
       const escaped = backslashes % 2 === 1;
       backslashes = 0;
 
-      if (
-        !escaped &&
-        character === "[" &&
-        body[index + 1] === "[" &&
-        lastWikiClose < index + 2
-      ) {
-        const candidateWork = lineEnd - index;
-        if (candidateWork > wikiWorkLimit - wikiWork) {
-          return { end: index + 2, start: index };
+      if (!escaped && body[index + 1] === character) {
+        if (character === "[") {
+          wikiCandidateDepth += 1;
+          if (wikiCandidateDepth > MARKDOWN_PARSE_WORK_PER_CODE_UNIT) {
+            return { end: index + 2, start: index };
+          }
+        } else if (character === "]") {
+          wikiCandidateDepth = Math.max(0, wikiCandidateDepth - 1);
         }
-        wikiWork += candidateWork;
       }
 
       if (character !== "*" && character !== "_") {
