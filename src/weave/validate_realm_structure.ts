@@ -10,7 +10,7 @@ import type { Token } from "micromark-util-types";
 import { gfmFootnote } from "micromark-extension-gfm-footnote";
 import { normalizeIdentifier } from "micromark-util-normalize-identifier";
 import { syntax as wikiLinkSyntax } from "micromark-extension-wiki-link";
-import { isScalar, parseDocument, type Node, type Pair, type YAMLMap } from "yaml";
+import { isScalar, type Node, type Pair, type YAMLMap } from "yaml";
 import type { Finding } from "../domain/finding.ts";
 import type { RealmTextFile } from "../realm/load_realm_text.ts";
 import {
@@ -19,7 +19,10 @@ import {
 } from "../realm/realm_path.ts";
 import {
   parseRealmPages,
+  parseRealmFrontmatter,
+  realmFrontmatterBounds,
   RealmPageParseError,
+  type RealmFrontmatterBounds,
   type ParsedRealmPage,
 } from "../realm/parse_realm_pages.ts";
 
@@ -248,19 +251,15 @@ function atlasKeyLocation(
   positions: SourcePositionIndex,
   key: "created-at" | "id" | "type" | "updated-at",
 ): FindingLocation {
-  const openingLength = content.indexOf("\n") + 1;
-  const closing = /^---(?:\r?\n|$)/gmu;
-  closing.lastIndex = openingLength;
-  const match = closing.exec(content) as RegExpExecArray;
+  const bounds = realmFrontmatterBounds(content) as RealmFrontmatterBounds;
 
-  const document = parseDocument(content.slice(openingLength, match.index), {
-    strict: true,
-    uniqueKeys: true,
-  });
+  const document = parseRealmFrontmatter(
+    content.slice(bounds.openingEnd, bounds.closingStart),
+  );
   const atlas = pairFor(document.contents, "atlas");
   const target = pairFor(atlas.value, key);
   const range = target.key.range as [number, number, number];
-  return rangeAt(positions, openingLength + range[0], openingLength + range[1]);
+  return rangeAt(positions, bounds.openingEnd + range[0], bounds.openingEnd + range[1]);
 }
 
 function expectedType(path: string): string | undefined {

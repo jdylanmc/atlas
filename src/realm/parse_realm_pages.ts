@@ -23,6 +23,12 @@ export interface ParsedRealmPage {
   readonly source: RealmPageSource;
 }
 
+export interface RealmFrontmatterBounds {
+  readonly closingEnd: number;
+  readonly closingStart: number;
+  readonly openingEnd: number;
+}
+
 export type RealmPageParseErrorCode =
   "INVALID_PAGE_ENVELOPE" | "MALFORMED_FRONTMATTER" | "MISSING_FRONTMATTER";
 
@@ -122,31 +128,110 @@ function bodyEndLine(body: string, startLine: number): number {
   return startLine + lineEndCount(body) - (/[\n\r]$/u.test(body) ? 1 : 0);
 }
 
-function parsePage(file: RealmTextFile): ParsedRealmPage {
-  const openingLength = file.content.startsWith("---\r\n")
-    ? 5
-    : file.content.startsWith("---\n")
-      ? 4
-      : 0;
-  if (openingLength === 0) {
-    throw new RealmPageParseError("MISSING_FRONTMATTER", file.path, 1);
+function lineEndingLengthAt(content: string, offset: number): number {
+  if (content[offset] === "\r") {
+    return content[offset + 1] === "\n" ? 2 : 1;
   }
+  return content[offset] === "\n" ? 1 : 0;
+}
 
-  const closing = /^---(?:\r?\n|$)/gmu;
-  closing.lastIndex = openingLength;
-  const match = closing.exec(file.content);
-  if (match === null) {
-    throw new RealmPageParseError("MALFORMED_FRONTMATTER", file.path, 1);
+function frontmatterOpeningEnd(content: string): number | undefined {
+  if (!content.startsWith("---")) {
+    return undefined;
   }
+  const lineEndingLength = lineEndingLengthAt(content, 3);
+  return lineEndingLength === 0 ? undefined : 3 + lineEndingLength;
+}
 
-  const closingLine = lineAt(file.content, match.index);
-  const frontmatterText = file.content.slice(openingLength, match.index);
-  const body = file.content.slice(match.index + match[0].length);
-  const document = parseDocument(frontmatterText, {
+function frontmatterDelimiterEnd(
+  content: string,
+  lineStart: number,
+): number | undefined {
+  if (!content.startsWith("---", lineStart)) {
+    return undefined;
+  }
+  const lineEndingLength = lineEndingLengthAt(content, lineStart + 3);
+  if (lineEndingLength !== 0) {
+    return lineStart + 3 + lineEndingLength;
+  }
+  return lineStart + 3 === content.length ? lineStart + 3 : undefined;
+}
+
+function nextLineStart(content: string, lineStart: number): number | undefined {
+  let lineEnd = lineStart;
+  while (
+    lineEnd < content.length &&
+    content[lineEnd] !== "\n" &&
+    content[lineEnd] !== "\r"
+  ) {
+    lineEnd += 1;
+  }
+  return lineEnd === content.length
+    ? undefined
+    : lineEnd + lineEndingLengthAt(content, lineEnd);
+}
+
+function parseFrontmatterDocument(content: string) {
+  return parseDocument(content, {
     customTags: ["binary", "set", "timestamp"],
     strict: true,
     uniqueKeys: true,
   });
+}
+
+export function parseRealmFrontmatter(content: string) {
+  const document = parseFrontmatterDocument(content);
+  return (document.errors.length > 0 || document.warnings.length > 0) &&
+    /\r(?!\n)/u.test(content)
+    ? parseFrontmatterDocument(content.replace(/\r(?!\n)/gu, "\n"))
+    : document;
+}
+
+function frontmatterBounds(
+  content: string,
+  openingEnd: number,
+): RealmFrontmatterBounds | undefined {
+  let lineStart = openingEnd;
+  for (;;) {
+    const closingEnd = frontmatterDelimiterEnd(content, lineStart);
+    if (closingEnd !== undefined) {
+      return Object.freeze({
+        closingEnd,
+        closingStart: lineStart,
+        openingEnd,
+      });
+    }
+    const followingLineStart = nextLineStart(content, lineStart);
+    if (followingLineStart === undefined) {
+      return undefined;
+    }
+    lineStart = followingLineStart;
+  }
+}
+
+export function realmFrontmatterBounds(
+  content: string,
+): RealmFrontmatterBounds | undefined {
+  const openingEnd = frontmatterOpeningEnd(content);
+  return openingEnd === undefined ? undefined : frontmatterBounds(content, openingEnd);
+}
+
+function parsePage(file: RealmTextFile): ParsedRealmPage {
+  const bounds = realmFrontmatterBounds(file.content);
+  if (bounds === undefined) {
+    throw new RealmPageParseError(
+      frontmatterOpeningEnd(file.content) === undefined
+        ? "MISSING_FRONTMATTER"
+        : "MALFORMED_FRONTMATTER",
+      file.path,
+      1,
+    );
+  }
+
+  const closingLine = lineAt(file.content, bounds.closingStart);
+  const frontmatterText = file.content.slice(bounds.openingEnd, bounds.closingStart);
+  const body = file.content.slice(bounds.closingEnd);
+  const document = parseRealmFrontmatter(frontmatterText);
   if (document.errors.length > 0 || document.warnings.length > 0) {
     throw new RealmPageParseError("MALFORMED_FRONTMATTER", file.path, 2);
   }

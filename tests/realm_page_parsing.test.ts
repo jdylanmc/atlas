@@ -183,12 +183,17 @@ test("rejects missing, malformed, and invalid frontmatter", () => {
     { code: missing.code, line: missing.sourceLine, path: missing.path },
     { code: "MISSING_FRONTMATTER", line: 1, path: ".atlas/index.md" },
   );
+  assert.equal(parseError(text(".atlas/index.md", "---")).code, "MISSING_FRONTMATTER");
 
   const malformed = parseError(
     text(".atlas/index.md", "---\natlas:\n  schema: [broken\n---\nbody\n"),
   );
   assert.equal(malformed.code, "MALFORMED_FRONTMATTER");
   assert.equal(malformed.sourceLine, 2);
+  assert.equal(
+    parseError(text(".atlas/index.md", "---\n---not-a-delimiter")).code,
+    "MALFORMED_FRONTMATTER",
+  );
 
   const invalid = parseError(
     text(".atlas/index.md", validPage("root").replace("  type: custom", "  type: ' '")),
@@ -276,6 +281,19 @@ test("preserves body bytes and stable source lines", () => {
   assert.equal(parsed.page.body, "first\r\nsecond\r\n");
   assert.deepEqual(parsed.source, {
     body: { endLine: 16, startLine: 15 },
+    frontmatter: { endLine: 13, startLine: 2 },
+    path: ".atlas/index.md",
+  });
+});
+
+test("parses complete CR-only pages and preserves source lines", () => {
+  const content = `${validPage("root")}\n# Page\n\nClaim.\n`.replaceAll("\n", "\r");
+  const [parsed] = parseRealmPages([text(".atlas/index.md", content)]);
+
+  assert.ok(parsed);
+  assert.equal(parsed.page.body, "# Page\r\rClaim.\r");
+  assert.deepEqual(parsed.source, {
+    body: { endLine: 17, startLine: 15 },
     frontmatter: { endLine: 13, startLine: 2 },
     path: ".atlas/index.md",
   });

@@ -651,6 +651,79 @@ test("locates Citations across CR, LF, and CRLF line endings", () => {
   );
 });
 
+test("accepts complete CR-only fixtures and mixed frontmatter delimiters", () => {
+  const crOnlyRealm = validFiles.map(({ content, path }) =>
+    Object.freeze({ content: content.replaceAll("\n", "\r"), path }),
+  );
+  assert.deepEqual(validateRealmStructure(crOnlyRealm), []);
+
+  const metadata = page(".atlas/insights/cr-only.md", "# Page", {
+    type: "lore",
+  });
+  const metadataFindings = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    {
+      content: metadata.content
+        .replace(
+          '  updated-at: "2026-08-17T00:00:00Z"',
+          '  updated-at: "2026-08-16T00:00:00Z"',
+        )
+        .replaceAll("\n", "\r"),
+      path: metadata.path,
+    },
+  ]);
+  assert.deepEqual(
+    metadataFindings.map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_PAGE_TYPE_PATH_MISMATCH",
+        location: {
+          end: { column: 7, line: 6 },
+          start: { column: 3, line: 6 },
+        },
+      },
+      {
+        code: "ATLAS_PAGE_UPDATED_BEFORE_CREATED",
+        location: {
+          end: { column: 13, line: 9 },
+          start: { column: 3, line: 9 },
+        },
+      },
+    ],
+  );
+
+  const source = page(".atlas/insights/mixed.md", "# Page\n\nClaim.[^missing]");
+  const closing = source.content.indexOf("\n---\n");
+  for (const [opening, frontmatter, closingLine, body] of [
+    ["\r", "\n", "\r\n", "\r"],
+    ["\n", "\r\n", "\r", "\n"],
+    ["\r\n", "\r", "\n", "\r\n"],
+  ] as const) {
+    const mixed = {
+      content: `${source.content.slice(0, 3)}${opening}${source.content
+        .slice(4, closing)
+        .replaceAll("\n", frontmatter)}${closingLine}---${body}${source.content
+        .slice(closing + 5)
+        .replaceAll("\n", body)}`,
+      path: source.path,
+    };
+    assert.deepEqual(
+      validateRealmStructure([validFiles[2] as RealmTextFile, mixed]).map(
+        ({ code, location }) => ({ code, location }),
+      ),
+      [
+        {
+          code: "ATLAS_CITATION_DEFINITION_MISSING",
+          location: {
+            end: { column: 17, line: 17 },
+            start: { column: 7, line: 17 },
+          },
+        },
+      ],
+    );
+  }
+});
+
 test("validates Citation markers in link labels and fails closed on raw HTML", () => {
   const body = [
     "# Page",
