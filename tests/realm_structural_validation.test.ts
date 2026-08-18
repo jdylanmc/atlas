@@ -482,6 +482,46 @@ test("resolves literal Citation markers through canonical parser identity", () =
   );
 });
 
+test("reports an unresolved Citation marker in Citation definition prose", () => {
+  assert.deepEqual(
+    validateRealmStructure(
+      citing("# Page\n\nClaim.[^b]\n\n[^b]: [[.atlas/lore/source]] see [^a]\n"),
+    ).map(({ code, location, path }) => ({ code, location, path })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: { end: { column: 38, line: 19 }, start: { column: 34, line: 19 } },
+        path: ".atlas/insights/cited.md",
+      },
+    ],
+  );
+});
+
+test("validates a resolved Citation call in Citation definition prose once", () => {
+  assert.deepEqual(
+    validateRealmStructure(
+      citing(
+        "# Page\n\nClaim.[^b]\n\n[^b]: [[.atlas/lore/source]] see [^a]\n\n[^a]: [[.atlas/lore/source]]\n",
+      ),
+    ),
+    [],
+  );
+  assert.deepEqual(
+    validateRealmStructure(
+      citing(
+        "# Page\n\nClaim.[^b]\n\n[^b]: [[.atlas/lore/source]] see [^a]\n\n[^a]: [[.atlas/lore/absent]]\n",
+      ),
+    ).map(({ code, location, path }) => ({ code, location, path })),
+    [
+      {
+        code: "ATLAS_CITATION_TARGET_MISSING",
+        location: { end: { column: 29, line: 21 }, start: { column: 7, line: 21 } },
+        path: ".atlas/insights/cited.md",
+      },
+    ],
+  );
+});
+
 test("reports an unresolved Citation marker beside whitespace-shaped Markdown", () => {
   assert.deepEqual(
     validateRealmStructure(citing("# Page\n\nClaim.[^note] end.\n")).map(
@@ -514,7 +554,6 @@ for (const [context, body] of [
   ["an autolink", "<https://example.test/[^a]>"],
   ["raw HTML", '<span data-source="[^a]">external</span>'],
   ["a Markdown definition", "[label]: https://example.test/[^a]"],
-  ["a Citation definition body", "Claim.[^b]\n\n[^b]: [[.atlas/lore/source]] see [^a]"],
 ] as const) {
   test(`does not report a literal Citation marker in ${context}`, () => {
     assert.deepEqual(validateRealmStructure(citing(`# Page\n\n${body}\n`)), []);

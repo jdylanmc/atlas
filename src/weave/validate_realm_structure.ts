@@ -405,26 +405,21 @@ function collectCitationNodes(
   const definitions = new Map<string, FootnoteDefinition[]>();
   const references: FootnoteReference[] = [];
   const texts: Text[] = [];
-  const pending: { readonly node: Nodes; readonly visible: boolean }[] = [
-    { node: tree, visible: true },
-  ];
+  const pending: Nodes[] = [tree];
   while (pending.length > 0) {
-    const { node, visible } = pending.pop() as {
-      readonly node: Nodes;
-      readonly visible: boolean;
-    };
+    const node = pending.pop() as Nodes;
     if (node.type === "footnoteReference") references.push(node);
     if (node.type === "footnoteDefinition") {
       const matches = definitions.get(node.identifier);
       if (matches === undefined) definitions.set(node.identifier, [node]);
       else matches.push(node);
     }
-    if (node.type === "text" && visible) texts.push(node);
+    /* Definition labels are owned by the definition node, never by its text
+       children, so definition prose is scanned without its `[^label]:` source. */
+    if (node.type === "text") texts.push(node);
+    if (isAutolink(node, body)) continue;
     if ("children" in node) {
-      const childVisible =
-        visible && node.type !== "footnoteDefinition" && !isAutolink(node, body);
-      for (const child of node.children)
-        pending.push({ node: child, visible: childVisible });
+      for (const child of node.children) pending.push(child);
     }
   }
   return { definitions, references, texts };
