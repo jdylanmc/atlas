@@ -596,6 +596,16 @@ test("rejects frontmatter values canonical YAML cannot represent", () => {
     ["fractional array key", { list: withArrayKey([1, 2], "1.5") }],
     ["negative array key", { list: withArrayKey([1, 2], "-1") }],
     ["padded array key", { list: withArrayKey([1, 2], "01") }],
+    ["array key at the index bound", { list: withArrayKey([1, 2], "4294967295") }],
+    ["array key past the index bound", { list: withArrayKey([1, 2], "4294967296") }],
+    [
+      "maximum safe integer array key",
+      { list: withArrayKey([1, 2], "9007199254740991") },
+    ],
+    [
+      "nested array key past the index bound",
+      { nested: { list: withArrayKey(["a"], "4294967295") } },
+    ],
   ];
 
   for (const [label, realm] of unsupported) {
@@ -679,6 +689,15 @@ test("emits nothing when one page holds an unrepresentable value", () => {
         }),
       }),
     ],
+    [
+      "array key past the index bound",
+      () => ({
+        list: Object.defineProperty([1, 2], "4294967295", {
+          enumerable: true,
+          value: "dropped",
+        }),
+      }),
+    ],
   ];
 
   for (const [label, dropped] of losses) {
@@ -737,6 +756,44 @@ test("serializes ordinary arrays that carry no own symbol keys", () => {
       "",
     ].join("\n"),
   );
+});
+
+test("keeps owned array indices and refuses keys past the index bound", () => {
+  const path = ".atlas/insights/indices.md";
+
+  // An index equal to the previous length is a real entry: it extends the array and
+  // canonicalization visits it.
+  const extended: unknown[] = Object.defineProperty([1, 2], "2", {
+    enumerable: true,
+    value: "kept",
+  });
+  assert.equal(extended.length, 3);
+
+  // Large canonical indices stay entries as well.
+  const dense = Array.from({ length: 1001 }, (_entry, index) => index);
+  assert.equal(Object.hasOwn(dense, "1000"), true);
+
+  const [file] = serializeRealmPages([fabricatedPage(path, { dense, list: extended })]);
+  assert.ok(file);
+  const [reparsed] = parseRealmPages([text(path, file.content)]);
+  assert.ok(reparsed);
+  assert.deepEqual(reparsed.page.realm, { dense, list: [1, 2, "kept"] });
+
+  // A key at or above 2 ** 32 - 1 is a named property instead: the length is
+  // untouched and array canonicalization drops it. The bound can only be pinned from
+  // this side, because an array that really owns index 2 ** 32 - 2 has length
+  // 2 ** 32 - 1 and is necessarily sparse, which the envelope contract only settles
+  // after walking every index.
+  const named: unknown[] = Object.defineProperty([1, 2], "4294967295", {
+    enumerable: true,
+    value: "dropped",
+  });
+  assert.equal(named.length, 2);
+
+  const error = serializeError(fabricatedPage(path, { list: named }));
+  assert.equal(error.code, "UNREPRESENTABLE_VALUE");
+  assert.equal(error.path, path);
+  assert.equal(error.message, "Realm page frontmatter holds an unrepresentable value.");
 });
 
 test("serializes mapping keys longer than the YAML simple key limit", () => {

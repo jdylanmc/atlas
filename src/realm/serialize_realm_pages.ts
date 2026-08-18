@@ -73,11 +73,20 @@ const canonicalYamlOptions: CreateNodeOptions &
 // dropped silently. The envelope contract cannot see any of them, so the page root
 // and every object or array descendant is scanned before any bytes exist. That is
 // the one serializer-specific rejection.
-// An own key of an array is always below its length, so only the shape of the key
-// itself distinguishes an index from a named property the emitter would drop.
+// Only ECMAScript array indices - 0 through 2^32 - 2 - participate in an array's
+// length and are visited when its entries are canonicalized. Any other own key,
+// including a canonical numeric string at or above that bound, is a named property
+// the emitter would drop.
+const maximumArrayIndex = 2 ** 32 - 2;
+
 function isArrayIndexKey(key: string): boolean {
   const index = Number(key);
-  return Number.isInteger(index) && index >= 0 && String(index) === key;
+  return (
+    Number.isInteger(index) &&
+    index >= 0 &&
+    index <= maximumArrayIndex &&
+    String(index) === key
+  );
 }
 
 function assertRepresentable(value: unknown, path: string): void {
