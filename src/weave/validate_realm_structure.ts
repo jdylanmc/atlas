@@ -1,4 +1,12 @@
-import type { FootnoteDefinition, FootnoteReference, Nodes, Text } from "mdast";
+import type {
+  FootnoteDefinition,
+  FootnoteReference,
+  Heading,
+  Nodes,
+  Paragraph,
+  PhrasingContent,
+  Text,
+} from "mdast";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { gfmFootnoteFromMarkdown } from "mdast-util-gfm-footnote";
 import { toString } from "mdast-util-to-string";
@@ -313,11 +321,36 @@ interface SourceCursor {
   line: number;
 }
 
+interface CitationVisiblePart {
+  readonly end: MarkdownPosition["end"];
+  readonly start: MarkdownPosition["start"];
+  readonly textRanges: readonly CitationSourceRange[];
+}
+
+type CitationVisibleRun = CitationVisiblePart;
+
+type CitationProse = Heading | Paragraph;
+
+const citationFormattingTypes: ReadonlySet<PhrasingContent["type"]> = new Set([
+  "delete",
+  "emphasis",
+  "strong",
+]);
+
 function isAutolink(node: Nodes, body: string): boolean {
   return (
     node.type === "link" &&
     body[(node.position as MarkdownPosition).start.offset as number] === "<"
   );
+}
+
+function isCitationFormatting(
+  node: PhrasingContent,
+): node is Extract<
+  PhrasingContent,
+  { readonly type: "delete" | "emphasis" | "strong" }
+> {
+  return citationFormattingTypes.has(node.type);
 }
 
 /**
@@ -366,14 +399,14 @@ function citationMarkerLabel(source: string, from: number): string | undefined {
 }
 
 /**
- * Scans one visible text node's exact source for literal Citation markers the
- * parser left as ordinary text. The parser resolves every marker it can match
- * to a definition, so a marker still visible here has no Citation definition.
- * Each accepted marker advances the scan past itself, keeping one text node
- * linear and bounded.
+ * Scans one exact visible source range for literal Citation markers the parser
+ * left unresolved. Each accepted marker advances the scan past itself, keeping
+ * the range linear and bounded.
  */
-function citationMarkers(node: Text, body: string): readonly MarkdownPosition[] {
-  const position = node.position as MarkdownPosition;
+function citationMarkers(
+  position: MarkdownPosition,
+  body: string,
+): readonly MarkdownPosition[] {
   const source = body.slice(position.start.offset, position.end.offset);
   const markers: MarkdownPosition[] = [];
   const cursor: SourceCursor = {
@@ -387,11 +420,127 @@ function citationMarkers(node: Text, body: string): readonly MarkdownPosition[] 
       advanceCursor(source, cursor, source[cursor.index] === "\\" ? 2 : 1);
       continue;
     }
-    const start = { column: cursor.column, line: cursor.line };
+    const start = {
+      column: cursor.column,
+      line: cursor.line,
+      offset: (position.start.offset as number) + cursor.index,
+    };
     advanceCursor(source, cursor, label.length + 3);
-    markers.push({ end: { column: cursor.column, line: cursor.line }, start });
+    markers.push({
+      end: {
+        column: cursor.column,
+        line: cursor.line,
+        offset: (position.start.offset as number) + cursor.index,
+      },
+      start,
+    });
   }
   return markers;
+}
+
+function citationVisiblePart(node: PhrasingContent): CitationVisiblePart | undefined {
+  const position = node.position as MarkdownPosition;
+  if (node.type === "text") {
+    return {
+      end: position.end,
+      start: position.start,
+      textRanges: [
+        {
+          end: position.end.offset as number,
+          start: position.start.offset as number,
+        },
+      ],
+    };
+  }
+  if (!isCitationFormatting(node)) return undefined;
+
+  const textRanges: CitationSourceRange[] = [];
+  const pending: PhrasingContent[] = [node];
+  while (pending.length > 0) {
+    const current = pending.pop() as PhrasingContent;
+    if (current.type === "text") {
+      const currentPosition = current.position as MarkdownPosition;
+      textRanges.push({
+        end: currentPosition.end.offset as number,
+        start: currentPosition.start.offset as number,
+      });
+      continue;
+    }
+    if (!isCitationFormatting(current)) return undefined;
+    for (let index = current.children.length - 1; index >= 0; index -= 1) {
+      pending.push(current.children[index] as PhrasingContent);
+    }
+  }
+  return { end: position.end, start: position.start, textRanges };
+}
+
+function citationVisibleRuns(container: CitationProse): readonly CitationVisibleRun[] {
+  const runs: CitationVisibleRun[] = [];
+  let end: MarkdownPosition["end"] | undefined;
+  let start: MarkdownPosition["start"] | undefined;
+  let textRanges: CitationSourceRange[] = [];
+
+  for (const child of container.children) {
+    const part = citationVisiblePart(child);
+    if (part === undefined) {
+      if (start !== undefined)
+        runs.push({ end: end as MarkdownPosition["end"], start, textRanges });
+      end = undefined;
+      start = undefined;
+      textRanges = [];
+      continue;
+    }
+    /* c8 ignore start -- maintained parser siblings are source-contiguous;
+       this guard fails closed if a future parser violates that contract. */
+    if (
+      start !== undefined &&
+      (end as MarkdownPosition["end"]).offset !== part.start.offset
+    ) {
+      runs.push({ end: end as MarkdownPosition["end"], start, textRanges });
+      start = undefined;
+      textRanges = [];
+    }
+    /* c8 ignore stop */
+    start ??= part.start;
+    end = part.end;
+    for (const range of part.textRanges) textRanges.push(range);
+  }
+  if (start !== undefined)
+    runs.push({ end: end as MarkdownPosition["end"], start, textRanges });
+  return runs;
+}
+
+function formattingSplitCitationMarkers(
+  container: CitationProse,
+  body: string,
+): readonly MarkdownPosition[] {
+  const split: MarkdownPosition[] = [];
+  for (const run of citationVisibleRuns(container)) {
+    const markers = citationMarkers({ end: run.end, start: run.start }, body);
+    let textIndex = 0;
+    for (const marker of markers) {
+      const markerStart = marker.start.offset as number;
+      const markerEnd = marker.end.offset as number;
+      while (
+        textIndex < run.textRanges.length &&
+        (run.textRanges[textIndex] as CitationSourceRange).end <= markerStart
+      ) {
+        textIndex += 1;
+      }
+      let covered = markerStart;
+      let rangeIndex = textIndex;
+      while (
+        rangeIndex < run.textRanges.length &&
+        (run.textRanges[rangeIndex] as CitationSourceRange).start <= covered &&
+        covered < markerEnd
+      ) {
+        covered = (run.textRanges[rangeIndex] as CitationSourceRange).end;
+        rangeIndex += 1;
+      }
+      if (covered < markerEnd) split.push(marker);
+    }
+  }
+  return split;
 }
 
 function collectCitationNodes(
@@ -399,10 +548,12 @@ function collectCitationNodes(
   body: string,
 ): {
   readonly definitions: ReadonlyMap<string, readonly FootnoteDefinition[]>;
+  readonly prose: readonly CitationProse[];
   readonly references: readonly FootnoteReference[];
   readonly texts: readonly Text[];
 } {
   const definitions = new Map<string, FootnoteDefinition[]>();
+  const prose: CitationProse[] = [];
   const references: FootnoteReference[] = [];
   const texts: Text[] = [];
   const pending: Nodes[] = [tree];
@@ -417,12 +568,13 @@ function collectCitationNodes(
     /* Definition labels are owned by the definition node, never by its text
        children, so definition prose is scanned without its `[^label]:` source. */
     if (node.type === "text") texts.push(node);
+    if (node.type === "heading" || node.type === "paragraph") prose.push(node);
     if (isAutolink(node, body)) continue;
     if ("children" in node) {
       for (const child of node.children) pending.push(child);
     }
   }
-  return { definitions, references, texts };
+  return { definitions, prose, references, texts };
 }
 
 function citationSourceRanges(
@@ -471,7 +623,7 @@ function validateCitations(
   pagePaths: ReadonlySet<string>,
   findings: Finding[],
 ): void {
-  const { definitions, references, texts } = collectCitationNodes(
+  const { definitions, prose, references, texts } = collectCitationNodes(
     tree,
     parsed.page.body,
   );
@@ -524,7 +676,22 @@ function validateCitations(
   }
 
   for (const node of texts) {
-    for (const marker of citationMarkers(node, parsed.page.body)) {
+    for (const marker of citationMarkers(
+      node.position as MarkdownPosition,
+      parsed.page.body,
+    )) {
+      findings.push(
+        finding(
+          "ATLAS_CITATION_DEFINITION_MISSING",
+          "Citation marker must resolve to a Citation definition in the same page.",
+          file.path,
+          markdownLocation(parsed, marker),
+        ),
+      );
+    }
+  }
+  for (const container of prose) {
+    for (const marker of formattingSplitCitationMarkers(container, parsed.page.body)) {
       findings.push(
         finding(
           "ATLAS_CITATION_DEFINITION_MISSING",
