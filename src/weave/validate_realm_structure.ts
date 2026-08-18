@@ -516,7 +516,22 @@ type MarkerCell = {
 
 type VisibleMarkers = {
   readonly rawHtml: MarkdownPosition[];
+  readonly rawHtmlContext: MarkdownPosition[];
   readonly references: CitationMarker[];
+};
+type RawHtmlSyntax = {
+  readonly end: number;
+  readonly kind: "close" | "open" | "other";
+  readonly name?: string;
+  readonly selfClosing?: boolean;
+  readonly start: number;
+};
+type RawHtmlElementContext = {
+  readonly contextRanges: readonly SourceRange[];
+  readonly syntaxRanges: readonly SourceRange[];
+};
+type RangeCursor = {
+  index: number;
 };
 
 const hiddenNodeTypes: ReadonlySet<string> = new Set([
@@ -679,6 +694,221 @@ function nodeRange(node: MarkdownNode): SourceRange {
   };
 }
 
+function isAsciiLetter(character: string | undefined): boolean {
+  /* c8 ignore next -- scanner callers use in-range source offsets. */
+  if (character === undefined) return false;
+  const code = character.charCodeAt(0);
+  return (code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a);
+}
+
+function rawHtmlSyntaxEnd(
+  source: string,
+  start: number,
+  limit: number,
+  terminator: string,
+): number {
+  const contentStart = start + 2;
+  const close = source.indexOf(terminator, contentStart);
+  /* c8 ignore next 2 -- an unterminated alias construct consumes its selected range. */
+  if (close < 0 || close + terminator.length > limit) return limit;
+  return close + terminator.length;
+}
+
+function rawHtmlSyntaxAt(
+  source: string,
+  start: number,
+  limit: number,
+): RawHtmlSyntax | undefined {
+  if (source.startsWith("<!-->", start)) {
+    return { end: Math.min(limit, start + 5), kind: "other", start };
+  }
+  if (source.startsWith("<!--->", start)) {
+    return { end: Math.min(limit, start + 6), kind: "other", start };
+  }
+  if (source.startsWith("<!--", start)) {
+    return { end: rawHtmlSyntaxEnd(source, start, limit, "-->"), kind: "other", start };
+  }
+  const declaration = source[start + 1];
+  if (declaration === "!" || declaration === "?") {
+    const terminator = source.startsWith("<![CDATA[", start)
+      ? "]]>"
+      : declaration === "?"
+        ? "?>"
+        : ">";
+    return {
+      end: rawHtmlSyntaxEnd(source, start, limit, terminator),
+      kind: "other",
+      start,
+    };
+  }
+
+  let index = start + 1;
+  const closing = source[index] === "/";
+  if (closing) index += 1;
+  /* c8 ignore next -- raw tags have a CommonMark-valid ASCII tag name. */
+  if (!isAsciiLetter(source[index])) return undefined;
+  const nameStart = index;
+  index += 1;
+  while (isAsciiAlphaNumeric(source.charCodeAt(index)) || source[index] === "-") {
+    index += 1;
+  }
+  const name = source.slice(nameStart, index).toLowerCase();
+  const contentStart = index;
+  let quote: '"' | "'" | undefined;
+  while (index < limit) {
+    const character = source[index] as string;
+    if (quote !== undefined) {
+      if (character === quote) quote = undefined;
+      index += 1;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      index += 1;
+      continue;
+    }
+    /* c8 ignore next -- malformed nested starts are not raw HTML syntax. */
+    if (character === "<") return undefined;
+    if (character === ">") {
+      return {
+        end: index + 1,
+        kind: closing ? "close" : "open",
+        name,
+        selfClosing: !closing && /\/\s*$/u.test(source.slice(contentStart, index)),
+        start,
+      };
+    }
+    index += 1;
+  }
+  /* c8 ignore next -- unterminated quoted tags are not raw HTML syntax. */
+  return quote === undefined ? undefined : { end: limit, kind: "other", start };
+}
+
+const voidHtmlElementNames: ReadonlySet<string> = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+]);
+
+function mergeSourceRanges(ranges: readonly SourceRange[]): readonly SourceRange[] {
+  const merged: SourceRange[] = [];
+  for (const range of ranges) {
+    if (range.end <= range.start) continue;
+    const previous = merged.at(-1);
+    if (previous === undefined || previous.end < range.start) {
+      merged.push({ ...range });
+      continue;
+    }
+    if (range.end > previous.end) {
+      merged[merged.length - 1] = { end: range.end, start: previous.start };
+    }
+  }
+  return merged;
+}
+
+/**
+ * HTML and CSS visibility are deliberately not rendered here. Any non-void
+ * raw HTML element enclosing a Citation is unsafe; mismatched closes leave
+ * the element open so malformed nesting also fails closed.
+ */
+function rawHtmlElementContext(
+  tree: MarkdownNode,
+  body: string,
+): RawHtmlElementContext {
+  const candidates: SourceRange[] = [];
+  visitMarkdown(tree, (node) => {
+    if (node.type === "html") {
+      const range = nodeRange(node);
+      candidates.push(range);
+    } else if (node.type === "wikiLink" && node.visible !== undefined) {
+      candidates.push(node.visible);
+    }
+  });
+
+  let previousStart = -1;
+  for (const range of candidates) {
+    /* c8 ignore next 8 -- mdast child traversal is source ordered; this only
+       guards future parser drift by rejecting ambiguity rather than trusting it. */
+    if (range.start < previousStart) {
+      return {
+        contextRanges: [{ end: body.length, start: 0 }],
+        syntaxRanges: [],
+      };
+    }
+    previousStart = range.start;
+  }
+
+  const ranges = mergeSourceRanges(candidates);
+  const syntaxRanges: SourceRange[] = [];
+  const contexts: { end: number; start: number }[] = [];
+  const openElements: {
+    readonly context: { end: number; start: number };
+    readonly name: string;
+  }[] = [];
+  for (const range of ranges) {
+    let index = range.start;
+    while (index < range.end) {
+      if (body[index] !== "<") {
+        index += 1;
+        continue;
+      }
+      const syntax = rawHtmlSyntaxAt(body, index, range.end);
+      /* c8 ignore next 5 -- html nodes are parser-validated syntax; malformed
+         wiki-link alias text remains visible and cannot create an element context. */
+      if (syntax === undefined) {
+        index += 1;
+        continue;
+      }
+      syntaxRanges.push({ end: syntax.end, start: syntax.start });
+      index = syntax.end;
+      if (syntax.kind === "other") continue;
+      if (syntax.kind === "open") {
+        if (syntax.selfClosing || voidHtmlElementNames.has(syntax.name as string))
+          continue;
+        const context = { end: body.length, start: syntax.end };
+        contexts.push(context);
+        openElements.push({ context, name: syntax.name as string });
+        continue;
+      }
+      const open = openElements.at(-1);
+      if (open !== undefined && open.name === syntax.name) {
+        open.context.end = syntax.start;
+        openElements.pop();
+      }
+    }
+  }
+  return {
+    contextRanges: mergeSourceRanges(contexts),
+    syntaxRanges,
+  };
+}
+
+function rangeIntersects(
+  ranges: readonly SourceRange[],
+  cursor: RangeCursor,
+  range: SourceRange,
+): boolean {
+  while (
+    cursor.index < ranges.length &&
+    (ranges[cursor.index] as SourceRange).end <= range.start
+  ) {
+    cursor.index += 1;
+  }
+  const candidate = ranges[cursor.index];
+  return candidate !== undefined && candidate.start < range.end;
+}
+
 function appendCells(
   cells: MarkerCell[],
   body: string,
@@ -686,12 +916,30 @@ function appendCells(
   escapable: boolean,
   allowMissingNumericSemicolon: boolean,
   afterHtml: boolean,
+  syntaxRanges: readonly SourceRange[] = [],
+  syntaxCursor?: RangeCursor,
 ): void {
   const source = body.slice(range.start, range.end);
   let backslashes = 0;
   let index = 0;
   let leading = afterHtml;
+  let syntaxIndex = syntaxCursor?.index ?? syntaxRanges.length;
+  while (
+    syntaxIndex < syntaxRanges.length &&
+    (syntaxRanges[syntaxIndex] as SourceRange).end <= range.start
+  ) {
+    syntaxIndex += 1;
+  }
   while (index < source.length) {
+    const syntax = syntaxRanges[syntaxIndex];
+    const offset = range.start + index;
+    if (syntax !== undefined && syntax.start <= offset && offset < syntax.end) {
+      index = Math.min(source.length, syntax.end - range.start);
+      leading = true;
+      backslashes = 0;
+      syntaxIndex += 1;
+      continue;
+    }
     const reference =
       source[index] === "&"
         ? decodedCharacterReference(source, index, allowMissingNumericSemicolon)
@@ -727,6 +975,7 @@ function appendCells(
     backslashes = character === "\\" ? backslashes + 1 : 0;
     index = end;
   }
+  if (syntaxCursor !== undefined) syntaxCursor.index = syntaxIndex;
 }
 
 function rendersAs(cell: MarkerCell, character: string): boolean {
@@ -755,6 +1004,8 @@ function collectMarkers(
   positions: SourcePositionIndex,
   cells: readonly MarkerCell[],
   rawHtmlSource: boolean,
+  contextRanges: readonly SourceRange[],
+  contextCursor: RangeCursor,
   found: VisibleMarkers,
 ): void {
   const nextClose = new Int32Array(cells.length);
@@ -794,6 +1045,13 @@ function collectMarkers(
       (htmlBefore[close + 1] as number) > (htmlBefore[index + 1] as number)
     ) {
       found.rawHtml.push(position);
+    } else if (
+      rangeIntersects(contextRanges, contextCursor, {
+        end: (cells[close] as MarkerCell).end,
+        start: open.start,
+      })
+    ) {
+      found.rawHtmlContext.push(position);
     } else {
       found.references.push({
         identifier: canonicalCitationIdentifier(identifier.join("")),
@@ -821,14 +1079,24 @@ function visibleCitationMarkers(
   tree: MarkdownNode,
   body: string,
   positions: SourcePositionIndex,
+  rawHtmlContext: RawHtmlElementContext,
 ): VisibleMarkers {
-  const found: VisibleMarkers = { rawHtml: [], references: [] };
+  const found: VisibleMarkers = { rawHtml: [], rawHtmlContext: [], references: [] };
   const pending: PendingEntry[] = [tree];
+  const contextCursor: RangeCursor = { index: 0 };
+  const syntaxCursor: RangeCursor = { index: 0 };
   let cells: MarkerCell[] = [];
   let afterHtml = false;
   function flush(): void {
     if (cells.length > 0) {
-      collectMarkers(positions, cells, false, found);
+      collectMarkers(
+        positions,
+        cells,
+        false,
+        rawHtmlContext.contextRanges,
+        contextCursor,
+        found,
+      );
       cells = [];
     }
     afterHtml = false;
@@ -838,13 +1106,22 @@ function visibleCitationMarkers(
     escapable: boolean,
     allowMissingNumericSemicolon: boolean,
   ): void {
-    appendCells(cells, body, range, escapable, allowMissingNumericSemicolon, afterHtml);
+    appendCells(
+      cells,
+      body,
+      range,
+      escapable,
+      allowMissingNumericSemicolon,
+      afterHtml,
+      rawHtmlContext.syntaxRanges,
+      syntaxCursor,
+    );
     afterHtml = false;
   }
   function scanRawHtml(range: SourceRange): void {
     const htmlCells: MarkerCell[] = [];
     appendCells(htmlCells, body, range, false, true, false);
-    collectMarkers(positions, htmlCells, true, found);
+    collectMarkers(positions, htmlCells, true, [], { index: 0 }, found);
     afterHtml = true;
   }
   while (pending.length > 0) {
@@ -927,15 +1204,22 @@ function validateCitations(
 ): void {
   for (const { bodyPositions, file, page, tree } of parsedPages) {
     const references: MarkdownNode[] = [];
-    const { rawHtml, references: unresolved } = visibleCitationMarkers(
-      tree,
-      page.page.body,
-      bodyPositions,
-    );
+    const elementContext = rawHtmlElementContext(tree, page.page.body);
+    const {
+      rawHtml,
+      rawHtmlContext: contextual,
+      references: unresolved,
+    } = visibleCitationMarkers(tree, page.page.body, bodyPositions, elementContext);
     const definitions = new Map<string, MarkdownNode[]>();
     const renderedDefinitions = new Map<string, Set<string>>();
+    const contextCursor: RangeCursor = { index: 0 };
     visitMarkdown(tree, (node) => {
       if (node.type === "footnoteReference" && node.identifier !== undefined) {
+        const range = nodeRange(node);
+        if (rangeIntersects(elementContext.contextRanges, contextCursor, range)) {
+          contextual.push(node.position as MarkdownPosition);
+          return;
+        }
         references.push(node);
       }
       if (node.type === "footnoteDefinition" && node.identifier !== undefined) {
@@ -956,6 +1240,16 @@ function validateCitations(
         finding(
           "ATLAS_CITATION_MARKER_IN_RAW_HTML",
           "Citation markers must not appear in raw HTML.",
+          file.path,
+          markdownLocation(page, position),
+        ),
+      );
+    }
+    for (const position of contextual) {
+      findings.push(
+        finding(
+          "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
+          "Citation markers must not depend on raw HTML element context.",
           file.path,
           markdownLocation(page, position),
         ),

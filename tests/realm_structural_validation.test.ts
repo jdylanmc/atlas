@@ -1289,13 +1289,150 @@ test("keeps hidden raw HTML syntax out of rendered marker boundaries", () => {
         },
       },
       {
-        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
         location: {
           end: { column: 39, line: 19 },
           start: { column: 29, line: 19 },
         },
       },
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
+        location: {
+          end: { column: 27, line: 21 },
+          start: { column: 17, line: 21 },
+        },
+      },
     ],
+  );
+});
+
+test("fails closed for Citation markers in raw HTML element contexts", () => {
+  const body = [
+    "# Page",
+    "",
+    "<span hidden>Hidden.[^hidden]</span>",
+    "",
+    "<template>Template.[^template]</template>",
+    "",
+    '<span style="display: none">Styled.[^styled]</span>',
+    "",
+    "<span><em>Nested.[^nested]</span>",
+    "",
+    "<span>Unbalanced.[^unbalanced]",
+    "",
+    "<span>Claim [^[[.atlas/lore/parser-source|alias-context]]] tail.</span>",
+    "",
+    "[^hidden]: [[.atlas/lore/parser-source]]",
+    "[^template]: [[.atlas/lore/parser-source]]",
+    "[^styled]: [[.atlas/lore/parser-source]]",
+    "[^nested]: [[.atlas/lore/parser-source]]",
+    "[^unbalanced]: [[.atlas/lore/parser-source]]",
+    "[^alias-context]: [[.atlas/lore/parser-source]]",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      validFiles[4] as RealmTextFile,
+      page(".atlas/insights/raw-html-context.md", body),
+    ]).map(({ code, location, path }) => ({ code, location, path })),
+    [
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
+        location: {
+          end: { column: 30, line: 17 },
+          start: { column: 21, line: 17 },
+        },
+        path: ".atlas/insights/raw-html-context.md",
+      },
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
+        location: {
+          end: { column: 31, line: 19 },
+          start: { column: 20, line: 19 },
+        },
+        path: ".atlas/insights/raw-html-context.md",
+      },
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
+        location: {
+          end: { column: 45, line: 21 },
+          start: { column: 36, line: 21 },
+        },
+        path: ".atlas/insights/raw-html-context.md",
+      },
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
+        location: {
+          end: { column: 27, line: 23 },
+          start: { column: 18, line: 23 },
+        },
+        path: ".atlas/insights/raw-html-context.md",
+      },
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
+        location: {
+          end: { column: 31, line: 25 },
+          start: { column: 18, line: 25 },
+        },
+        path: ".atlas/insights/raw-html-context.md",
+      },
+      {
+        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
+        location: {
+          end: { column: 59, line: 27 },
+          start: { column: 13, line: 27 },
+        },
+        path: ".atlas/insights/raw-html-context.md",
+      },
+    ],
+  );
+});
+
+test("keeps raw HTML adjacent to Citations out of element context", () => {
+  const body = [
+    "# Page",
+    "",
+    "<span hidden></span>Claim.[^after]",
+    "",
+    "Claim.[^before]<template></template>",
+    "",
+    "Claim [[.atlas/lore/parser-source|<span hidden>alias</span>]] [^alias-adjacent]",
+    "",
+    "Claim <!-- x -->[^comment-adjacent]",
+    "",
+    "[^after]: [[.atlas/lore/parser-source]]",
+    "[^before]: [[.atlas/lore/parser-source]]",
+    "[^alias-adjacent]: [[.atlas/lore/parser-source]]",
+    "[^comment-adjacent]: [[.atlas/lore/parser-source]]",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      validFiles[4] as RealmTextFile,
+      page(".atlas/insights/raw-html-adjacent.md", body),
+    ]),
+    [],
+  );
+});
+
+test("keeps raw HTML non-element syntax out of Citation identity", () => {
+  const body = [
+    "# Page",
+    "",
+    "<!-->",
+    "<!--->",
+    "<!-- ordinary comment -->",
+    "<![CDATA[ordinary text]]>",
+    "<?ordinary?>",
+    "<!DOCTYPE ordinary>",
+    "<br>",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      page(".atlas/insights/raw-html-syntax.md", body),
+    ]),
+    [],
   );
 });
 
