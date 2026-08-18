@@ -2,6 +2,8 @@ import type {
   FootnoteDefinition,
   FootnoteReference,
   Heading,
+  Link,
+  LinkReference,
   Nodes,
   Paragraph,
   PhrasingContent,
@@ -329,13 +331,7 @@ interface CitationVisiblePart {
 
 type CitationVisibleRun = CitationVisiblePart;
 
-type CitationProse = Heading | Paragraph;
-
-const citationFormattingTypes: ReadonlySet<PhrasingContent["type"]> = new Set([
-  "delete",
-  "emphasis",
-  "strong",
-]);
+type CitationVisibleContainer = Heading | Link | LinkReference | Paragraph;
 
 function isAutolink(node: Nodes, body: string): boolean {
   return (
@@ -346,11 +342,8 @@ function isAutolink(node: Nodes, body: string): boolean {
 
 function isCitationFormatting(
   node: PhrasingContent,
-): node is Extract<
-  PhrasingContent,
-  { readonly type: "delete" | "emphasis" | "strong" }
-> {
-  return citationFormattingTypes.has(node.type);
+): node is Extract<PhrasingContent, { readonly type: "emphasis" | "strong" }> {
+  return node.type === "emphasis" || node.type === "strong";
 }
 
 /**
@@ -474,7 +467,9 @@ function citationVisiblePart(node: PhrasingContent): CitationVisiblePart | undef
   return { end: position.end, start: position.start, textRanges };
 }
 
-function citationVisibleRuns(container: CitationProse): readonly CitationVisibleRun[] {
+function citationVisibleRuns(
+  container: CitationVisibleContainer,
+): readonly CitationVisibleRun[] {
   const runs: CitationVisibleRun[] = [];
   let end: MarkdownPosition["end"] | undefined;
   let start: MarkdownPosition["start"] | undefined;
@@ -490,17 +485,6 @@ function citationVisibleRuns(container: CitationProse): readonly CitationVisible
       textRanges = [];
       continue;
     }
-    /* c8 ignore start -- maintained parser siblings are source-contiguous;
-       this guard fails closed if a future parser violates that contract. */
-    if (
-      start !== undefined &&
-      (end as MarkdownPosition["end"]).offset !== part.start.offset
-    ) {
-      runs.push({ end: end as MarkdownPosition["end"], start, textRanges });
-      start = undefined;
-      textRanges = [];
-    }
-    /* c8 ignore stop */
     start ??= part.start;
     end = part.end;
     for (const range of part.textRanges) textRanges.push(range);
@@ -511,7 +495,7 @@ function citationVisibleRuns(container: CitationProse): readonly CitationVisible
 }
 
 function formattingSplitCitationMarkers(
-  container: CitationProse,
+  container: CitationVisibleContainer,
   body: string,
 ): readonly MarkdownPosition[] {
   const split: MarkdownPosition[] = [];
@@ -547,13 +531,13 @@ function collectCitationNodes(
   tree: Nodes,
   body: string,
 ): {
+  readonly containers: readonly CitationVisibleContainer[];
   readonly definitions: ReadonlyMap<string, readonly FootnoteDefinition[]>;
-  readonly prose: readonly CitationProse[];
   readonly references: readonly FootnoteReference[];
   readonly texts: readonly Text[];
 } {
+  const containers: CitationVisibleContainer[] = [];
   const definitions = new Map<string, FootnoteDefinition[]>();
-  const prose: CitationProse[] = [];
   const references: FootnoteReference[] = [];
   const texts: Text[] = [];
   const pending: Nodes[] = [tree];
@@ -568,13 +552,14 @@ function collectCitationNodes(
     /* Definition labels are owned by the definition node, never by its text
        children, so definition prose is scanned without its `[^label]:` source. */
     if (node.type === "text") texts.push(node);
-    if (node.type === "heading" || node.type === "paragraph") prose.push(node);
+    if (node.type === "heading" || node.type === "paragraph") containers.push(node);
     if (isAutolink(node, body)) continue;
+    if (node.type === "link" || node.type === "linkReference") containers.push(node);
     if ("children" in node) {
       for (const child of node.children) pending.push(child);
     }
   }
-  return { definitions, prose, references, texts };
+  return { containers, definitions, references, texts };
 }
 
 function citationSourceRanges(
@@ -623,7 +608,7 @@ function validateCitations(
   pagePaths: ReadonlySet<string>,
   findings: Finding[],
 ): void {
-  const { definitions, prose, references, texts } = collectCitationNodes(
+  const { containers, definitions, references, texts } = collectCitationNodes(
     tree,
     parsed.page.body,
   );
@@ -690,7 +675,7 @@ function validateCitations(
       );
     }
   }
-  for (const container of prose) {
+  for (const container of containers) {
     for (const marker of formattingSplitCitationMarkers(container, parsed.page.body)) {
       findings.push(
         finding(

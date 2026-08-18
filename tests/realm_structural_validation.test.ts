@@ -461,7 +461,6 @@ test("reports a visible literal Citation marker the parser left unresolved", () 
 for (const [formatting, marker] of [
   ["emphasis", "[^a*b*c]"],
   ["strong", "[^a**b**c]"],
-  ["strikethrough syntax", "[^a~~b~~c]"],
 ] as const) {
   test(`reports an exact missing Citation split by ${formatting}`, () => {
     assert.deepEqual(
@@ -501,7 +500,7 @@ test("lets the parser resolve formatting-split Citations and validates targets o
   assert.deepEqual(
     validateRealmStructure(
       citing(
-        "# Page\n\nOne [^a*b*c], two [^d**e**f], three [^g~~h~~i].\n\n[^a*b*c]: [[.atlas/lore/source]]\n[^d**e**f]: [[.atlas/lore/source]]\n[^g~~h~~i]: [[.atlas/lore/source]]\n",
+        "# Page\n\nOne [^a*b*c], two [^d**e**f], three [^g***h***i].\n\n[^a*b*c]: [[.atlas/lore/source]]\n[^d**e**f]: [[.atlas/lore/source]]\n[^g***h***i]: [[.atlas/lore/source]]\n",
       ),
     ),
     [],
@@ -532,13 +531,69 @@ test("reports multiple and nested formatting-split Citations exactly", () => {
   );
 });
 
-test("does not bridge formatting-split Citations across excluded inline nodes", () => {
+test("reports formatting-split Citations inside isolated link labels", () => {
+  assert.deepEqual(
+    validateRealmStructure(
+      citing(
+        "# Page\n\nClaim [pre [^a*b*c] post](https://example.test) and [pre [^d**e**f] post][label].\n\n[label]: https://example.test\n",
+      ),
+    ).map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: { end: { column: 20, line: 17 }, start: { column: 12, line: 17 } },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: { end: { column: 68, line: 17 }, start: { column: 58, line: 17 } },
+      },
+    ],
+  );
+});
+
+test("reports formatting-split link-label Citations in definition prose", () => {
+  assert.deepEqual(
+    validateRealmStructure(
+      citing(
+        "# Page\n\nClaim.[^outer]\n\n[^outer]: [[.atlas/lore/source]] [pre [^a*b*c] post](https://example.test) and [pre [^d**e**f] post][label]\n\n[label]: https://example.test\n",
+      ),
+    ).map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: { end: { column: 47, line: 19 }, start: { column: 39, line: 19 } },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: { end: { column: 95, line: 19 }, start: { column: 85, line: 19 } },
+      },
+    ],
+  );
+});
+
+test("validates defined link-label Citations once through parser identity", () => {
+  assert.deepEqual(
+    validateRealmStructure(
+      citing(
+        "# Page\n\n[see [^a*b*c]](https://example.test) and [read [^d**e**f]][label].\n\n[label]: https://example.test\n\n[^a*b*c]: [[.atlas/lore/source]]\n[^d**e**f]: [[not-canonical]]\n",
+      ),
+    ).map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_TARGET_INVALID",
+        location: { end: { column: 30, line: 22 }, start: { column: 13, line: 22 } },
+      },
+    ],
+  );
+});
+
+test("does not bridge formatting-split Citations across excluded nodes or gaps", () => {
   for (const source of [
     "[^a`b`c]",
     "[^a<em>b</em>c]",
     "[^a<https://example.test>c]",
     "[^a*b`c`d*e]",
-    "[pre [^a*b*c] post](https://example.test)",
+    "[^a*\n\t*b*c]",
   ]) {
     assert.deepEqual(
       validateRealmStructure(citing(`# Page\n\n${source}\n`)),
