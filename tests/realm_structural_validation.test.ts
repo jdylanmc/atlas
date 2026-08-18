@@ -1006,6 +1006,72 @@ test("resolves split Citation markers to existing definitions", () => {
   );
 });
 
+test("keys Citations by canonical footnote identity across Unicode folds", () => {
+  const folded = [
+    "# Page",
+    "",
+    "Claims.[^ss][^fi][^σ]",
+    "",
+    "[^ẞ]: [[../.atlas/lore/parser-source]]",
+    "[^ﬁ]: prose only",
+    "[^σ]: [[.atlas/lore/parser-source]]",
+    "[^ς]: [[.atlas/lore/parser-source]]",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      validFiles[4] as RealmTextFile,
+      page(".atlas/insights/folded.md", folded),
+    ]).map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_TARGET_INVALID",
+        location: {
+          end: { column: 39, line: 19 },
+          start: { column: 7, line: 19 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_MALFORMED",
+        location: {
+          end: { column: 17, line: 20 },
+          start: { column: 1, line: 20 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_DUPLICATE",
+        location: {
+          end: { column: 36, line: 21 },
+          start: { column: 1, line: 21 },
+        },
+      },
+      {
+        code: "ATLAS_CITATION_DEFINITION_DUPLICATE",
+        location: {
+          end: { column: 36, line: 22 },
+          start: { column: 1, line: 22 },
+        },
+      },
+    ],
+  );
+
+  const split = [
+    "# Page",
+    "",
+    "Claim.[*^ẞ*]",
+    "",
+    "[^ss]: [[.atlas/lore/parser-source]]",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      validFiles[4] as RealmTextFile,
+      page(".atlas/insights/split.md", split),
+    ]),
+    [],
+  );
+});
+
 test("keeps hidden, destination, and block content out of rendered runs", () => {
   const body = [
     "# Page",

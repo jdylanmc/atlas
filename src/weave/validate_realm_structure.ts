@@ -8,6 +8,7 @@ import { decodeNamedCharacterReference } from "decode-named-character-reference"
 import { gfmFootnoteFromMarkdown } from "mdast-util-gfm-footnote";
 import type { Token } from "micromark-util-types";
 import { gfmFootnote } from "micromark-extension-gfm-footnote";
+import { normalizeIdentifier } from "micromark-util-normalize-identifier";
 import { syntax as wikiLinkSyntax } from "micromark-extension-wiki-link";
 import { isScalar, parseDocument, type Node, type Pair, type YAMLMap } from "yaml";
 import type { Finding } from "../domain/finding.ts";
@@ -547,8 +548,13 @@ function rendersAs(cell: MarkerCell, character: string): boolean {
   return cell.character === character;
 }
 
-function normalizedCitationIdentifier(identifier: string): string {
-  return identifier.trim().replace(/\s+/gu, " ").toLowerCase();
+/**
+ * Canonical GFM footnote identity: micromark's identifier normalization plus
+ * the footnote lowercase fold `mdast-util-gfm-footnote` applies, so a streamed
+ * rendered marker keys exactly like a parsed node's `identifier`.
+ */
+function canonicalCitationIdentifier(label: string): string {
+  return normalizeIdentifier(label).toLowerCase();
 }
 
 /**
@@ -597,7 +603,7 @@ function collectMarkers(
       found.rawHtml.push(position);
     } else {
       found.references.push({
-        identifier: normalizedCitationIdentifier(identifier.join("")),
+        identifier: canonicalCitationIdentifier(identifier.join("")),
         position,
       });
     }
@@ -701,10 +707,6 @@ function definitionWikilinks(definition: MarkdownNode): readonly MarkdownNode[] 
   return targets;
 }
 
-function citationNodeIdentifier(node: MarkdownNode): string {
-  return normalizedCitationIdentifier(node.label as string);
-}
-
 function validateCitations(
   parsedPages: readonly {
     readonly file: RealmTextFile;
@@ -723,10 +725,10 @@ function validateCitations(
     const definitions = new Map<string, MarkdownNode[]>();
     visitMarkdown(tree, (node) => {
       if (node.type === "footnoteReference" && node.identifier !== undefined) {
-        references.push(citationNodeIdentifier(node));
+        references.push(node.identifier);
       }
       if (node.type === "footnoteDefinition" && node.identifier !== undefined) {
-        const identifier = citationNodeIdentifier(node);
+        const identifier = node.identifier;
         const existing = definitions.get(identifier);
         if (existing === undefined) definitions.set(identifier, [node]);
         else existing.push(node);

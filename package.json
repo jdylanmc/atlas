@@ -42,6 +42,7 @@
     "mdast-util-to-string": "4.0.0",
     "micromark-extension-gfm-footnote": "2.1.0",
     "micromark-extension-wiki-link": "0.0.4",
+    "micromark-util-normalize-identifier": "2.0.1",
     "yaml": "2.9.0"
   }
 }
