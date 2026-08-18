@@ -482,6 +482,40 @@ test("resolves literal Citation markers through canonical parser identity", () =
   );
 });
 
+test("reports an unresolved Citation marker carrying label whitespace", () => {
+  assert.deepEqual(
+    validateRealmStructure(citing("# Page\n\nClaim.[^missing label] end.\n")).map(
+      ({ code, location, path }) => ({ code, location, path }),
+    ),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MISSING",
+        location: { end: { column: 23, line: 17 }, start: { column: 7, line: 17 } },
+        path: ".atlas/insights/cited.md",
+      },
+    ],
+  );
+});
+
+test("leaves a defined whitespace Citation marker to the parser", () => {
+  assert.deepEqual(
+    validateRealmStructure(
+      citing(
+        "# Page\n\nClaim.[^Parser  Source]\n\n[^parser source]: [[.atlas/lore/source]]\n",
+      ),
+    ),
+    [],
+  );
+  assert.deepEqual(
+    validateRealmStructure(
+      citing(
+        "# Page\n\nClaim.[^missing label][ref] end.\n\n[ref]: https://example.test\n",
+      ),
+    ),
+    [],
+  );
+});
+
 for (const [context, body] of [
   ["inline code", "Claim `[^a]` done."],
   ["a fenced code block", "```text\n[^a]\n```"],
@@ -499,10 +533,12 @@ for (const [context, body] of [
 
 for (const [shape, marker, width] of [
   ["an empty label", "[^]", 0],
-  ["a space in the label", "[^a b]", 0],
+  ["a blank label", "[^ ]", 0],
+  ["a line ending in the label", "[^one\ntwo]", 0],
   ["a nested bracket", "[^a[b]", 0],
   ["an unterminated label", "[^absent", 0],
   [`a 1000 character label`, `[^${"a".repeat(1000)}]`, 0],
+  ["a space in the label", "[^a b]", 6],
   [`a 999 character label`, `[^${"a".repeat(999)}]`, 1002],
   ["an escaped marker", "\\[^a]", 0],
   ["an escaped closing bracket", "[^a\\]b]", 7],
