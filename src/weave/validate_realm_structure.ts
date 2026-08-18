@@ -206,16 +206,17 @@ type CitationTargetResolution =
  * Collects the direct `[[target]]` markers written in one footnote definition's
  * own source. Each scan step advances past the marker it accepted, so the whole
  * definition is examined in linear bounded time without a global wiki-link
- * parser extension.
+ * parser extension. Malformed marker boundaries fail the scan closed.
  */
-function citationTargets(source: string): readonly CitationTarget[] {
+function citationTargets(source: string): readonly CitationTarget[] | undefined {
   const targets: CitationTarget[] = [];
   let index = 0;
   for (;;) {
     const open = source.indexOf("[[", index);
     if (open === -1) return targets;
     const close = source.indexOf("]]", open + 2);
-    if (close === -1) return targets;
+    const nestedOpen = source.indexOf("[[", open + 2);
+    if (close === -1 || (nestedOpen !== -1 && nestedOpen < close)) return undefined;
     targets.push({ end: close + 2, start: open, text: source.slice(open + 2, close) });
     index = close + 2;
   }
@@ -299,9 +300,24 @@ function collectCitationNodes(tree: Nodes): {
       if (matches === undefined) definitions.set(node.identifier, [node]);
       else matches.push(node);
     }
-    if ("children" in node) pending.push(...node.children);
+    if ("children" in node) {
+      for (const child of node.children) pending.push(child);
+    }
   }
   return { definitions, references };
+}
+
+function hasNestedDefinition(definition: FootnoteDefinition): boolean {
+  const pending: Nodes[] = [];
+  for (const child of definition.children) pending.push(child);
+  while (pending.length > 0) {
+    const node = pending.pop() as Nodes;
+    if (node.type === "definition" || node.type === "footnoteDefinition") return true;
+    if ("children" in node) {
+      for (const child of node.children) pending.push(child);
+    }
+  }
+  return false;
 }
 
 /**
@@ -338,8 +354,10 @@ function validateCitations(
     const definition = matches[0] as FootnoteDefinition;
     const position = definition.position as MarkdownPosition;
     const source = parsed.page.body.slice(position.start.offset, position.end.offset);
-    const targets = citationTargets(source);
-    if (targets.length !== 1) {
+    const targets = hasNestedDefinition(definition)
+      ? undefined
+      : citationTargets(source);
+    if (targets === undefined || targets.length !== 1) {
       findings.push(
         finding(
           "ATLAS_CITATION_DEFINITION_MALFORMED",

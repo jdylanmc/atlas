@@ -419,6 +419,14 @@ test("resolves Citations through canonical parser footnote identity", () => {
   );
 });
 
+test("handles high-cardinality valid Citation references deterministically", () => {
+  const body = `# Page\n\n${"x[^a]".repeat(70_000)}\n\n[^a]: [[.atlas/lore/source]]\n`;
+  const files = citing(body);
+  const first = validateRealmStructure(files);
+  assert.deepEqual(first, []);
+  assert.deepEqual(validateRealmStructure(files), first);
+});
+
 test("validates only parser-recognized Citation references", () => {
   assert.deepEqual(
     validateRealmStructure(citing("# Page\n\nClaim.[^absent] and `[^absent]`.\n")),
@@ -470,6 +478,56 @@ test("requires exactly one direct Lore target in a Citation definition", () => {
       definition,
     );
     assert.deepEqual(findings[0]?.location?.start, { column: 1, line: 19 });
+  }
+});
+
+test("does not accept Citation targets owned by nested definitions", () => {
+  for (const [definition, endColumn] of [
+    ["[^outer]:\n    [^inner]: [[.atlas/lore/source]]", 37],
+    ["[^outer]:\n    [inner]: [[.atlas/lore/source]]", 36],
+  ] as const) {
+    const findings = validateRealmStructure(
+      citing(`# Page\n\nClaim.[^outer]\n\n${definition}\n`),
+    );
+    assert.deepEqual(
+      findings.map(({ code, location, path }) => ({ code, location, path })),
+      [
+        {
+          code: "ATLAS_CITATION_DEFINITION_MALFORMED",
+          location: {
+            end: { column: endColumn, line: 20 },
+            start: { column: 1, line: 19 },
+          },
+          path: ".atlas/insights/cited.md",
+        },
+      ],
+      definition,
+    );
+  }
+});
+
+test("rejects malformed or unterminated wiki markers in Citation definitions", () => {
+  for (const definition of [
+    "[^a]: [[.atlas/lore/source]] [[unterminated",
+    "[^a]: [[unterminated [[.atlas/lore/source]]",
+  ]) {
+    const findings = validateRealmStructure(
+      citing(`# Page\n\nClaim.[^a]\n\n${definition}\n`),
+    );
+    assert.deepEqual(
+      findings.map(({ code, location, path }) => ({ code, location, path })),
+      [
+        {
+          code: "ATLAS_CITATION_DEFINITION_MALFORMED",
+          location: {
+            end: { column: 44, line: 19 },
+            start: { column: 1, line: 19 },
+          },
+          path: ".atlas/insights/cited.md",
+        },
+      ],
+      definition,
+    );
   }
 });
 
