@@ -196,6 +196,11 @@ interface CitationTarget {
   readonly text: string;
 }
 
+interface CitationSourceRange {
+  readonly end: number;
+  readonly start: number;
+}
+
 type CitationTargetResolution =
   | { readonly kind: "invalid" }
   | { readonly kind: "missing" }
@@ -203,23 +208,36 @@ type CitationTargetResolution =
   | { readonly kind: "valid" };
 
 /**
- * Collects the direct `[[target]]` markers written in one footnote definition's
- * own source. Each scan step advances past the marker it accepted, so the whole
- * definition is examined in linear bounded time without a global wiki-link
+ * Collects `[[target]]` markers only from parser-visible source ranges owned by
+ * one footnote definition. Each scan step advances past the marker it accepted,
+ * so the ranges are examined in linear bounded time without a global wiki-link
  * parser extension. Malformed marker boundaries fail the scan closed.
  */
-function citationTargets(source: string): readonly CitationTarget[] | undefined {
+function citationTargets(
+  source: string,
+  ranges: readonly CitationSourceRange[],
+): readonly CitationTarget[] | undefined {
   const targets: CitationTarget[] = [];
-  let index = 0;
-  for (;;) {
-    const open = source.indexOf("[[", index);
-    if (open === -1) return targets;
-    const close = source.indexOf("]]", open + 2);
-    const nestedOpen = source.indexOf("[[", open + 2);
-    if (close === -1 || (nestedOpen !== -1 && nestedOpen < close)) return undefined;
-    targets.push({ end: close + 2, start: open, text: source.slice(open + 2, close) });
-    index = close + 2;
+  for (const range of ranges) {
+    const visible = source.slice(range.start, range.end);
+    let index = 0;
+    for (;;) {
+      const open = visible.indexOf("[[", index);
+      if (open === -1) break;
+      const close = visible.indexOf("]]", open + 2);
+      const nestedOpen = visible.indexOf("[[", open + 2);
+      if (close === -1 || (nestedOpen !== -1 && nestedOpen < close)) {
+        return undefined;
+      }
+      targets.push({
+        end: range.start + close + 2,
+        start: range.start + open,
+        text: visible.slice(open + 2, close),
+      });
+      index = close + 2;
+    }
   }
+  return targets;
 }
 
 /**
@@ -307,17 +325,41 @@ function collectCitationNodes(tree: Nodes): {
   return { definitions, references };
 }
 
-function hasNestedDefinition(definition: FootnoteDefinition): boolean {
+function citationSourceRanges(
+  definition: FootnoteDefinition,
+  body: string,
+): readonly CitationSourceRange[] | undefined {
+  const origin = (definition.position as MarkdownPosition).start.offset as number;
+  const ranges: CitationSourceRange[] = [];
   const pending: Nodes[] = [];
-  for (const child of definition.children) pending.push(child);
+  for (let index = definition.children.length - 1; index >= 0; index -= 1) {
+    pending.push(definition.children[index] as Nodes);
+  }
   while (pending.length > 0) {
     const node = pending.pop() as Nodes;
-    if (node.type === "definition" || node.type === "footnoteDefinition") return true;
+    if (node.type === "definition" || node.type === "footnoteDefinition")
+      return undefined;
+    if (node.type === "text") {
+      const position = node.position as MarkdownPosition;
+      ranges.push({
+        end: (position.end.offset as number) - origin,
+        start: (position.start.offset as number) - origin,
+      });
+      continue;
+    }
+    if (
+      node.type === "link" &&
+      body[(node.position as MarkdownPosition).start.offset as number] === "<"
+    ) {
+      continue;
+    }
     if ("children" in node) {
-      for (const child of node.children) pending.push(child);
+      for (let index = node.children.length - 1; index >= 0; index -= 1) {
+        pending.push(node.children[index] as Nodes);
+      }
     }
   }
-  return false;
+  return ranges;
 }
 
 /**
@@ -354,9 +396,8 @@ function validateCitations(
     const definition = matches[0] as FootnoteDefinition;
     const position = definition.position as MarkdownPosition;
     const source = parsed.page.body.slice(position.start.offset, position.end.offset);
-    const targets = hasNestedDefinition(definition)
-      ? undefined
-      : citationTargets(source);
+    const ranges = citationSourceRanges(definition, parsed.page.body);
+    const targets = ranges === undefined ? undefined : citationTargets(source, ranges);
     if (targets === undefined || targets.length !== 1) {
       findings.push(
         finding(

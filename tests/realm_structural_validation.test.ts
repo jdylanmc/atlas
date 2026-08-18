@@ -506,6 +506,47 @@ test("does not accept Citation targets owned by nested definitions", () => {
   }
 });
 
+for (const [context, definition] of [
+  [
+    "an external link destination",
+    "[^a]: [external](https://example.test/[[.atlas/lore/source]])",
+  ],
+  ["inline code", "[^a]: `[[.atlas/lore/source]]`"],
+  ["a fenced code block", "[^a]:\n    ```text\n    [[.atlas/lore/source]]\n    ```"],
+  [
+    "an image destination",
+    "[^a]: ![image](https://example.test/[[.atlas/lore/source]])",
+  ],
+  ["an autolink", "[^a]: <https://example.test/[[.atlas/lore/source]]>"],
+  ["raw HTML", '[^a]: <span data-source="[[.atlas/lore/source]]">external</span>'],
+] as const) {
+  test(`does not accept a Citation target from ${context}`, () => {
+    const findings = validateRealmStructure(
+      citing(`# Page\n\nClaim.[^a]\n\n${definition}\n`),
+    );
+    assert.deepEqual(
+      findings.map(({ code, path }) => ({ code, path })),
+      [
+        {
+          code: "ATLAS_CITATION_DEFINITION_MALFORMED",
+          path: ".atlas/insights/cited.md",
+        },
+      ],
+    );
+  });
+}
+
+test("accepts a direct visible Citation target in ordinary definition prose", () => {
+  assert.deepEqual(
+    validateRealmStructure(
+      citing(
+        "# Page\n\nClaim.[^a]\n\n[^a]: Evidence [[.atlas/lore/source]] [external](https://example.test/[[.atlas/lore/source]]) and `[[.atlas/lore/source]]`.\n",
+      ),
+    ),
+    [],
+  );
+});
+
 test("rejects malformed or unterminated wiki markers in Citation definitions", () => {
   for (const definition of [
     "[^a]: [[.atlas/lore/source]] [[unterminated",
