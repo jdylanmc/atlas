@@ -1,4 +1,4 @@
-import type { FootnoteDefinition, FootnoteReference, Nodes } from "mdast";
+import type { FootnoteDefinition, FootnoteReference, Nodes, Text } from "mdast";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { gfmFootnoteFromMarkdown } from "mdast-util-gfm-footnote";
 import { toString } from "mdast-util-to-string";
@@ -44,6 +44,10 @@ const corePathTypes = Object.freeze({
 const coreTypeNames: ReadonlySet<string> = new Set(Object.values(corePathTypes));
 
 const lorePrefix = ".atlas/lore/";
+
+const citationLabelBreak = /[\t\n\r ]/u;
+const citationLabelEscapable: ReadonlySet<string> = new Set(["[", "\\", "]"]);
+const citationLabelLimit = 999;
 
 const markdownOptions = Object.freeze({
   extensions: [gfmFootnote()],
@@ -303,26 +307,126 @@ function offsetLocation(
   });
 }
 
-function collectCitationNodes(tree: Nodes): {
+interface SourceCursor {
+  column: number;
+  index: number;
+  line: number;
+}
+
+function isAutolink(node: Nodes, body: string): boolean {
+  return (
+    node.type === "link" &&
+    body[(node.position as MarkdownPosition).start.offset as number] === "<"
+  );
+}
+
+/**
+ * Advances one cursor across exactly `count` source characters while keeping
+ * its line and column exact, counting `\n` as the only line ending like the
+ * other Markdown offset locations in this check.
+ */
+function advanceCursor(source: string, cursor: SourceCursor, count: number): void {
+  for (let step = 0; step < count; step += 1) {
+    if (source[cursor.index] === "\n") {
+      cursor.column = 1;
+      cursor.line += 1;
+    } else cursor.column += 1;
+    cursor.index += 1;
+  }
+}
+
+/**
+ * Mirrors the parser's footnote call label grammar at one source offset: `[^`,
+ * then at most 999 label characters carrying no line ending, space, tab, or
+ * unescaped bracket, then `]`. Shapes the parser could never resolve to a
+ * Citation reference are not markers and are never reported.
+ */
+function citationMarkerLabel(source: string, from: number): string | undefined {
+  if (source[from] !== "[" || source[from + 1] !== "^") return undefined;
+  const start = from + 2;
+  let index = start;
+  while (index - start <= citationLabelLimit) {
+    const character = source[index];
+    if (
+      character === undefined ||
+      character === "[" ||
+      citationLabelBreak.test(character)
+    ) {
+      return undefined;
+    }
+    if (character === "]") {
+      return index === start ? undefined : source.slice(start, index);
+    }
+    const escapes =
+      character === "\\" && citationLabelEscapable.has(source[index + 1] as string);
+    index += escapes ? 2 : 1;
+  }
+  return undefined;
+}
+
+/**
+ * Scans one visible text node's exact source for literal Citation markers the
+ * parser left as ordinary text. The parser resolves every marker it can match
+ * to a definition, so a marker still visible here has no Citation definition.
+ * Each accepted marker advances the scan past itself, keeping one text node
+ * linear and bounded.
+ */
+function citationMarkers(node: Text, body: string): readonly MarkdownPosition[] {
+  const position = node.position as MarkdownPosition;
+  const source = body.slice(position.start.offset, position.end.offset);
+  const markers: MarkdownPosition[] = [];
+  const cursor: SourceCursor = {
+    column: position.start.column,
+    index: 0,
+    line: position.start.line,
+  };
+  while (cursor.index < source.length) {
+    const label = citationMarkerLabel(source, cursor.index);
+    if (label === undefined) {
+      advanceCursor(source, cursor, source[cursor.index] === "\\" ? 2 : 1);
+      continue;
+    }
+    const start = { column: cursor.column, line: cursor.line };
+    advanceCursor(source, cursor, label.length + 3);
+    markers.push({ end: { column: cursor.column, line: cursor.line }, start });
+  }
+  return markers;
+}
+
+function collectCitationNodes(
+  tree: Nodes,
+  body: string,
+): {
   readonly definitions: ReadonlyMap<string, readonly FootnoteDefinition[]>;
   readonly references: readonly FootnoteReference[];
+  readonly texts: readonly Text[];
 } {
   const definitions = new Map<string, FootnoteDefinition[]>();
   const references: FootnoteReference[] = [];
-  const pending: Nodes[] = [tree];
+  const texts: Text[] = [];
+  const pending: { readonly node: Nodes; readonly visible: boolean }[] = [
+    { node: tree, visible: true },
+  ];
   while (pending.length > 0) {
-    const node = pending.pop() as Nodes;
+    const { node, visible } = pending.pop() as {
+      readonly node: Nodes;
+      readonly visible: boolean;
+    };
     if (node.type === "footnoteReference") references.push(node);
     if (node.type === "footnoteDefinition") {
       const matches = definitions.get(node.identifier);
       if (matches === undefined) definitions.set(node.identifier, [node]);
       else matches.push(node);
     }
+    if (node.type === "text" && visible) texts.push(node);
     if ("children" in node) {
-      for (const child of node.children) pending.push(child);
+      const childVisible =
+        visible && node.type !== "footnoteDefinition" && !isAutolink(node, body);
+      for (const child of node.children)
+        pending.push({ node: child, visible: childVisible });
     }
   }
-  return { definitions, references };
+  return { definitions, references, texts };
 }
 
 function citationSourceRanges(
@@ -347,10 +451,7 @@ function citationSourceRanges(
       });
       continue;
     }
-    if (
-      node.type === "link" &&
-      body[(node.position as MarkdownPosition).start.offset as number] === "<"
-    ) {
+    if (isAutolink(node, body)) {
       continue;
     }
     if ("children" in node) {
@@ -374,7 +475,10 @@ function validateCitations(
   pagePaths: ReadonlySet<string>,
   findings: Finding[],
 ): void {
-  const { definitions, references } = collectCitationNodes(tree);
+  const { definitions, references, texts } = collectCitationNodes(
+    tree,
+    parsed.page.body,
+  );
   const referenced = new Set(references.map((reference) => reference.identifier));
   for (const identifier of [...referenced].sort(compareCodePoints)) {
     /* A parsed reference exists only where the parser matched a definition. */
@@ -421,6 +525,19 @@ function validateCitations(
         offsetLocation(parsed, position, target),
       ),
     );
+  }
+
+  for (const node of texts) {
+    for (const marker of citationMarkers(node, parsed.page.body)) {
+      findings.push(
+        finding(
+          "ATLAS_CITATION_DEFINITION_MISSING",
+          "Citation marker must resolve to a Citation definition in the same page.",
+          file.path,
+          markdownLocation(parsed, marker),
+        ),
+      );
+    }
   }
 }
 
