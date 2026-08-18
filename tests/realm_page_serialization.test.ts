@@ -5,6 +5,7 @@ import test from "node:test";
 import type { RealmTextFile } from "../src/realm/load_realm_text.ts";
 import {
   parseRealmPages,
+  RealmPageParseError,
   type ParsedRealmPage,
 } from "../src/realm/parse_realm_pages.ts";
 import {
@@ -61,7 +62,11 @@ function deepFreeze(value: unknown): void {
   }
 }
 
-function fabricatedPage(path: string, realm: unknown): ParsedRealmPage {
+function fabricatedPage(
+  path: string,
+  realm: unknown,
+  atlasOverrides: Readonly<Record<string, unknown>> = {},
+): ParsedRealmPage {
   const page = {
     page: {
       atlas: {
@@ -75,6 +80,7 @@ function fabricatedPage(path: string, realm: unknown): ParsedRealmPage {
         type: "custom",
         "updated-at": "2026-08-17T00:00:00Z",
         "updated-by": { kind: "human", name: "Test Reviewer" },
+        ...atlasOverrides,
       },
       body: "",
       realm,
@@ -479,8 +485,8 @@ test("sorts before detecting non-adjacent duplicate canonical paths", () => {
   );
 });
 
-test("rejects frontmatter values canonical YAML cannot represent", () => {
-  const unsupported: readonly (readonly [string, unknown])[] = [
+test("rejects pages the parser's envelope contract would reject", () => {
+  const invalid: readonly (readonly [string, unknown])[] = [
     ["undefined", { value: undefined }],
     ["not a number", { value: Number.NaN }],
     ["infinity", { value: Number.POSITIVE_INFINITY }],
@@ -490,9 +496,92 @@ test("rejects frontmatter values canonical YAML cannot represent", () => {
     ["symbol in array", { value: [Symbol.iterator] }],
     ["null prototype", { value: Object.create(null) as Record<string, unknown> }],
     ["nested big integer", { nested: [{ deep: 9n }] }],
+  ];
+
+  for (const [label, realm] of invalid) {
+    const error = serializeError(fabricatedPage(".atlas/insights/bad.md", realm));
+    assert.equal(error.code, "INVALID_PAGE_ENVELOPE", label);
+    assert.equal(error.path, ".atlas/insights/bad.md", label);
+    assert.equal(error.name, "RealmPageSerializeError", label);
+    assert.equal(
+      error.message,
+      "Realm page does not satisfy the page envelope.",
+      label,
+    );
+  }
+});
+
+test("rejects a shape compatible page holding an invalid metadata date", () => {
+  const error = serializeError(
+    fabricatedPage(".atlas/insights/bad.md", {}, { "created-at": "not-a-date" }),
+  );
+
+  assert.equal(error.code, "INVALID_PAGE_ENVELOPE");
+  assert.equal(error.message, "Realm page does not satisfy the page envelope.");
+
+  // The same metadata written as Markdown never survives parsing, so serializing it
+  // would have produced bytes the parser rejects.
+  const source = pageSource("insight:bad").replace(
+    '"2026-08-17T00:00:00Z"',
+    '"not-a-date"',
+  );
+  assert.throws(
+    () => parseRealmPages([text(".atlas/insights/bad.md", source)]),
+    (parseError: unknown) => {
+      assert.ok(parseError instanceof RealmPageParseError);
+      assert.equal(parseError.code, "INVALID_PAGE_ENVELOPE");
+      return true;
+    },
+  );
+});
+
+test("emits nothing when any page in the batch is invalid", () => {
+  const badDate = { "created-at": "not-a-date" };
+  const batches: readonly (readonly [string, readonly ParsedRealmPage[]])[] = [
+    [
+      "invalid sorts first",
+      [
+        fabricatedPage(".atlas/insights/zulu.md", {}),
+        fabricatedPage(".atlas/insights/alpha.md", {}, badDate),
+      ],
+    ],
+    [
+      "invalid sorts last",
+      [
+        fabricatedPage(".atlas/insights/zulu.md", {}, badDate),
+        fabricatedPage(".atlas/insights/alpha.md", {}),
+      ],
+    ],
+  ];
+
+  for (const [label, pages] of batches) {
+    assert.throws(
+      () => serializeRealmPages(pages),
+      (error: unknown) => {
+        assert.ok(error instanceof RealmPageSerializeError);
+        assert.equal(error.code, "INVALID_PAGE_ENVELOPE", label);
+        return true;
+      },
+      label,
+    );
+  }
+});
+
+test("rejects frontmatter values canonical YAML cannot represent", () => {
+  const hidden = Symbol.for("hidden");
+  const unsupported: readonly (readonly [string, unknown])[] = [
     [
       "symbol key",
-      Object.defineProperty({}, Symbol.for("hidden"), { enumerable: true, value: 1 }),
+      Object.defineProperty({}, hidden, { enumerable: true, value: "dropped" }),
+    ],
+    [
+      "nested symbol key",
+      {
+        nested: Object.defineProperty({ kept: "yes" }, hidden, {
+          enumerable: true,
+          value: "dropped",
+        }),
+      },
     ],
   ];
 
@@ -500,6 +589,7 @@ test("rejects frontmatter values canonical YAML cannot represent", () => {
     const error = serializeError(fabricatedPage(".atlas/insights/bad.md", realm));
     assert.equal(error.code, "UNREPRESENTABLE_VALUE", label);
     assert.equal(error.path, ".atlas/insights/bad.md", label);
+    assert.equal(error.name, "RealmPageSerializeError", label);
     assert.equal(
       error.message,
       "Realm page frontmatter holds an unrepresentable value.",

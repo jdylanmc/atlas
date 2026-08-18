@@ -6,17 +6,21 @@ import {
   type SchemaOptions,
   type ToStringOptions,
 } from "yaml";
-import type { RealmPageEnvelope } from "../domain/realm_page.ts";
+import {
+  checkRealmPageEnvelope,
+  type RealmPageEnvelope,
+} from "../domain/realm_page.ts";
 import { compareCodePoints } from "./compare_code_points.ts";
 import type { RealmTextFile } from "./load_realm_text.ts";
 import type { ParsedRealmPage } from "./parse_realm_pages.ts";
 
 export type RealmPageSerializeErrorCode =
-  "DUPLICATE_PAGE_PATH" | "UNREPRESENTABLE_VALUE";
+  "DUPLICATE_PAGE_PATH" | "INVALID_PAGE_ENVELOPE" | "UNREPRESENTABLE_VALUE";
 
 const errorMessages: Readonly<Record<RealmPageSerializeErrorCode, string>> =
   Object.freeze({
     DUPLICATE_PAGE_PATH: "Realm pages share one canonical path.",
+    INVALID_PAGE_ENVELOPE: "Realm page does not satisfy the page envelope.",
     UNREPRESENTABLE_VALUE: "Realm page frontmatter holds an unrepresentable value.",
   });
 
@@ -60,24 +64,18 @@ const canonicalYamlOptions: CreateNodeOptions &
   version: "1.2",
 };
 
+// Envelope pre-validation guarantees every frontmatter value is JSON compatible, so
+// canonicalization only has to order keys. Symbol keys survive that contract - JSON
+// compatibility checks and schema validation never see them - and the emitter would
+// drop them silently, so they are the one serializer-specific rejection.
 function canonicalizeValue(value: unknown, path: string): unknown {
-  if (value === null || typeof value === "boolean" || typeof value === "string") {
-    return value;
-  }
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) {
-      throw new RealmPageSerializeError("UNREPRESENTABLE_VALUE", path);
-    }
-    return value;
-  }
   if (Array.isArray(value)) {
     return (value as readonly unknown[]).map((entry) => canonicalizeValue(entry, path));
   }
-  if (
-    typeof value !== "object" ||
-    Object.getPrototypeOf(value) !== Object.prototype ||
-    Object.getOwnPropertySymbols(value).length > 0
-  ) {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  if (Object.getOwnPropertySymbols(value).length > 0) {
     throw new RealmPageSerializeError("UNREPRESENTABLE_VALUE", path);
   }
   // A Map keeps every own key literal: assigning onto a fresh object would let an
@@ -102,15 +100,25 @@ export function serializeRealmPages(
     compareCodePoints(left.source.path, right.source.path),
   );
 
+  // Every page is checked against the parser's envelope contract before any bytes are
+  // produced, so a page the parser would reject can never be half emitted.
   let previousPath: string | undefined;
-  const files: RealmTextFile[] = [];
   for (const parsed of ordered) {
     const path = parsed.source.path;
     if (path === previousPath) {
       throw new RealmPageSerializeError("DUPLICATE_PAGE_PATH", path);
     }
+    if (!checkRealmPageEnvelope(parsed.page)) {
+      throw new RealmPageSerializeError("INVALID_PAGE_ENVELOPE", path);
+    }
     previousPath = path;
-    files.push(Object.freeze({ content: serializePage(parsed.page, path), path }));
   }
+
+  const files = ordered.map((parsed) =>
+    Object.freeze({
+      content: serializePage(parsed.page, parsed.source.path),
+      path: parsed.source.path,
+    }),
+  );
   return Object.freeze(files);
 }
