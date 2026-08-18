@@ -1389,20 +1389,100 @@ test("shares one Citation identity across character-reference labels", () => {
     ]).map(({ code, location }) => ({ code, location })),
     [
       {
-        code: "ATLAS_CITATION_DEFINITION_DUPLICATE",
+        code: "ATLAS_CITATION_LABEL_AMBIGUOUS",
         location: {
-          end: { column: 44, line: 19 },
-          start: { column: 1, line: 19 },
-        },
-      },
-      {
-        code: "ATLAS_CITATION_DEFINITION_DUPLICATE",
-        location: {
-          end: { column: 39, line: 20 },
-          start: { column: 1, line: 20 },
+          end: { column: 21, line: 17 },
+          start: { column: 7, line: 17 },
         },
       },
     ],
+  );
+});
+
+test("resolves parsed Citations by parser identity, not rendered label", () => {
+  const distinguished = [
+    "# Page",
+    "",
+    "Claim [^&Colon;] tail.",
+    "",
+    "[^&colon;]: prose only",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      validFiles[4] as RealmTextFile,
+      page(".atlas/insights/distinguished.md", distinguished),
+    ]).map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_DEFINITION_MALFORMED",
+        location: {
+          end: { column: 23, line: 19 },
+          start: { column: 1, line: 19 },
+        },
+      },
+    ],
+  );
+
+  const ambiguous = [
+    "# Page",
+    "",
+    "Claim [^café] tail.",
+    "",
+    "[^café]: [[.atlas/lore/parser-source]]",
+    "[^caf&#233;]: [[.atlas/lore/parser-source]]",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      validFiles[4] as RealmTextFile,
+      page(".atlas/insights/ambiguous.md", ambiguous),
+    ]).map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_CITATION_LABEL_AMBIGUOUS",
+        location: {
+          end: { column: 14, line: 17 },
+          start: { column: 7, line: 17 },
+        },
+      },
+    ],
+  );
+});
+
+test("maps split rendered Citation markers onto one parser identity", () => {
+  const folds = [
+    "# Page",
+    "",
+    "Claim [*^&#7838;*] and [*^ﬁ*] and [*^ς*] tail.",
+    "",
+    "[^ss]: [[.atlas/lore/parser-source]]",
+    "[^fi]: [[.atlas/lore/parser-source]]",
+    "[^σ]: [[.atlas/lore/parser-source]]",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      validFiles[4] as RealmTextFile,
+      page(".atlas/insights/folds.md", folds),
+    ]),
+    [],
+  );
+
+  const single = [
+    "# Page",
+    "",
+    "Claim [*^café*] tail.",
+    "",
+    "[^caf&#233;]: [[.atlas/lore/parser-source]]",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      validFiles[4] as RealmTextFile,
+      page(".atlas/insights/single.md", single),
+    ]),
+    [],
   );
 });
 

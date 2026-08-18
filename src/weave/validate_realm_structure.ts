@@ -49,6 +49,7 @@ type MarkdownNode = {
   readonly alt?: string;
   readonly children?: readonly MarkdownNode[];
   readonly depth?: number;
+  readonly identifier?: string;
   readonly label?: string;
   readonly position?: MarkdownPosition;
   readonly target?: string;
@@ -733,11 +734,12 @@ function rendersAs(cell: MarkerCell, character: string): boolean {
 }
 
 /**
- * Canonical GFM footnote identity: micromark's identifier normalization plus
- * the footnote lowercase fold `mdast-util-gfm-footnote` applies. Parsed nodes
- * enter this one key space through their rendered `label`, which the parser
- * already decoded, so a streamed rendered marker keys exactly like the label a
- * reader sees regardless of the character references its source used.
+ * Folds one rendered Citation label with the same algorithm GFM footnote
+ * identity uses: micromark's identifier normalization plus the lowercase fold
+ * `mdast-util-gfm-footnote` applies. GFM derives identity from raw source, so
+ * this fold keys what a reader sees, not the parser's identity; parsed nodes
+ * keep the parser's own `identifier` and reach this key space only through
+ * their decoded `label`.
  */
 function canonicalCitationIdentifier(label: string): string {
   return normalizeIdentifier(label).toLowerCase();
@@ -924,22 +926,28 @@ function validateCitations(
   findings: Finding[],
 ): void {
   for (const { bodyPositions, file, page, tree } of parsedPages) {
-    const references: string[] = [];
+    const references: MarkdownNode[] = [];
     const { rawHtml, references: unresolved } = visibleCitationMarkers(
       tree,
       page.page.body,
       bodyPositions,
     );
     const definitions = new Map<string, MarkdownNode[]>();
+    const renderedDefinitions = new Map<string, Set<string>>();
     visitMarkdown(tree, (node) => {
-      if (node.type === "footnoteReference" && node.label !== undefined) {
-        references.push(canonicalCitationIdentifier(node.label));
+      if (node.type === "footnoteReference" && node.identifier !== undefined) {
+        references.push(node);
       }
-      if (node.type === "footnoteDefinition" && node.label !== undefined) {
-        const identifier = canonicalCitationIdentifier(node.label);
+      if (node.type === "footnoteDefinition" && node.identifier !== undefined) {
+        const identifier = node.identifier;
         const existing = definitions.get(identifier);
         if (existing === undefined) definitions.set(identifier, [node]);
         else existing.push(node);
+        const rendered = canonicalCitationIdentifier(node.label as string);
+        const identities = renderedDefinitions.get(rendered);
+        if (identities === undefined) {
+          renderedDefinitions.set(rendered, new Set([identifier]));
+        } else identities.add(identifier);
       }
     });
 
@@ -954,24 +962,56 @@ function validateCitations(
       );
     }
 
-    for (const reference of unresolved) {
-      if ((definitions.get(reference.identifier) ?? []).length > 0) continue;
-      findings.push(
-        finding(
-          "ATLAS_CITATION_DEFINITION_MISSING",
-          "Citation reference must have a matching footnote definition.",
-          file.path,
-          markdownLocation(page, reference.position),
-        ),
+    const referenced = new Set<string>();
+    for (const reference of references) {
+      const identities = renderedDefinitions.get(
+        canonicalCitationIdentifier(reference.label as string),
       );
+      if (identities !== undefined && identities.size > 1) {
+        findings.push(
+          finding(
+            "ATLAS_CITATION_LABEL_AMBIGUOUS",
+            "Citation label must render to exactly one footnote identity.",
+            file.path,
+            markdownLocation(page, reference.position as MarkdownPosition),
+          ),
+        );
+        continue;
+      }
+      referenced.add(reference.identifier as string);
     }
 
-    const referenced = new Set(references);
-    for (const { identifier } of unresolved) {
-      referenced.add(identifier);
+    for (const reference of unresolved) {
+      const identities = renderedDefinitions.get(reference.identifier);
+      if (identities === undefined) {
+        findings.push(
+          finding(
+            "ATLAS_CITATION_DEFINITION_MISSING",
+            "Citation reference must have a matching footnote definition.",
+            file.path,
+            markdownLocation(page, reference.position),
+          ),
+        );
+        continue;
+      }
+      if (identities.size > 1) {
+        findings.push(
+          finding(
+            "ATLAS_CITATION_LABEL_AMBIGUOUS",
+            "Citation label must render to exactly one footnote identity.",
+            file.path,
+            markdownLocation(page, reference.position),
+          ),
+        );
+        continue;
+      }
+      for (const identifier of identities) referenced.add(identifier);
     }
+
+    /* Every referenced identity came from a parsed reference, whose definition
+       the parser guarantees, or from a definition's own rendered label. */
     for (const identifier of referenced) {
-      const matches = definitions.get(identifier) ?? [];
+      const matches = definitions.get(identifier) as MarkdownNode[];
       if (matches.length > 1) {
         for (const definition of matches) {
           findings.push(
@@ -985,8 +1025,7 @@ function validateCitations(
         }
         continue;
       }
-      const definition = matches[0];
-      if (definition === undefined) continue;
+      const definition = matches[0] as MarkdownNode;
       const targets = definitionWikilinks(definition);
       if (targets.length !== 1) {
         findings.push(
