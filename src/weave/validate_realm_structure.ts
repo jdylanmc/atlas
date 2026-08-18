@@ -321,7 +321,8 @@ function isBlankMarkdownLine(body: string, start: number, end: number): boolean 
  * UTF-16 code-unit length cannot exceed its validated UTF-8 byte length. This
  * preflight limits parser-sensitive structure to a fixed amplification of those
  * accepted bytes: unresolved emphasis delimiters are charged by active depth,
- * and ambiguous wiki-link candidate nesting is bounded until closes consume it.
+ * and ambiguous wiki-link and link-label candidate nesting is bounded until
+ * closes consume it.
  */
 function markdownComplexityRange(
   body: string,
@@ -332,6 +333,8 @@ function markdownComplexityRange(
   let delimiterWork = 0;
   let starOpeners = 0;
   let underscoreOpeners = 0;
+  let labelCandidateDepth = 0;
+  const labelCandidates: boolean[] = [];
 
   for (let line = 0; line < positions.lineStarts.length; line += 1) {
     const lineStart = positions.lineStarts[line] as number;
@@ -358,6 +361,22 @@ function markdownComplexityRange(
         } else if (character === "]") {
           wikiCandidateDepth = Math.max(0, wikiCandidateDepth - 1);
         }
+      }
+
+      if (!escaped && character === "[") {
+        const candidate =
+          body[index + 1] !== "^" &&
+          (body[index - 1] === "!" ||
+            (body[index - 1] !== "[" && body[index + 1] !== "["));
+        labelCandidates.push(candidate);
+        if (candidate) {
+          labelCandidateDepth += 1;
+          if (labelCandidateDepth > MARKDOWN_PARSE_WORK_PER_CODE_UNIT) {
+            return { end: index + 1, start: index };
+          }
+        }
+      } else if (!escaped && character === "]" && labelCandidates.pop()) {
+        labelCandidateDepth -= 1;
       }
 
       if (character !== "*" && character !== "_") {
@@ -400,6 +419,8 @@ function markdownComplexityRange(
       delimiterDepth = 0;
       starOpeners = 0;
       underscoreOpeners = 0;
+      labelCandidateDepth = 0;
+      labelCandidates.length = 0;
     }
   }
   return undefined;

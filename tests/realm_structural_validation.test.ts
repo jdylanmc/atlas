@@ -823,8 +823,32 @@ test("rejects deeply matched nested wiki-link candidates before Markdown parsing
   );
 });
 
-test("accepts normal wiki links and bracket-heavy non-wiki prose and code", () => {
+test("rejects excessive nested image labels before Markdown parsing", () => {
+  const depth = 2000;
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      page(
+        ".atlas/insights/nested-images.md",
+        `# ${"![".repeat(depth)}Page${"](image.png)".repeat(depth)}`,
+      ),
+    ]).map(({ code, location, path }) => ({ code, location, path })),
+    [
+      {
+        code: "ATLAS_PAGE_MARKDOWN_COMPLEXITY_EXCEEDED",
+        location: {
+          end: { column: 133, line: 15 },
+          start: { column: 132, line: 15 },
+        },
+        path: ".atlas/insights/nested-images.md",
+      },
+    ],
+  );
+});
+
+test("accepts normal links and images with bracket-heavy prose and code", () => {
   const bracketHeavyText = "[plain] ".repeat(2000);
+  const nestedImage = `${"![".repeat(16)}nested${"](image.png)".repeat(16)}`;
   const normalWikiLinks = Array.from(
     { length: 256 },
     (_, index) => `[[target-${String(index)}|alias-${String(index)}]]`,
@@ -838,6 +862,8 @@ test("accepts normal wiki links and bracket-heavy non-wiki prose and code", () =
           "# Page",
           "",
           `[[target]] ${normalWikiLinks}`,
+          "",
+          `![ordinary](image.png) [${nestedImage}](https://example.test)`,
           "",
           bracketHeavyText,
           "",
