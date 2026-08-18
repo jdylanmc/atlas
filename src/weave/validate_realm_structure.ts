@@ -1,5 +1,8 @@
+import type { FootnoteDefinition, FootnoteReference, Nodes } from "mdast";
 import { fromMarkdown } from "mdast-util-from-markdown";
+import { gfmFootnoteFromMarkdown } from "mdast-util-gfm-footnote";
 import { toString } from "mdast-util-to-string";
+import { gfmFootnote } from "micromark-extension-gfm-footnote";
 import { isScalar, parseDocument, type Node, type Pair, type YAMLMap } from "yaml";
 import type { Finding } from "../domain/finding.ts";
 import type { RealmTextFile } from "../realm/load_realm_text.ts";
@@ -11,6 +14,7 @@ import {
 } from "../realm/parse_realm_pages.ts";
 
 type FindingLocation = NonNullable<Finding["location"]>;
+type MarkdownPosition = NonNullable<Nodes["position"]>;
 
 const attribution = Object.freeze({
   checkId: "atlas-core.structural-validation",
@@ -38,6 +42,13 @@ const corePathTypes = Object.freeze({
   threads: "thread",
 } as const);
 const coreTypeNames: ReadonlySet<string> = new Set(Object.values(corePathTypes));
+
+const lorePrefix = ".atlas/lore/";
+
+const markdownOptions = Object.freeze({
+  extensions: [gfmFootnote()],
+  mdastExtensions: [gfmFootnoteFromMarkdown()],
+});
 
 function compareCodePoints(left: string, right: string): number {
   const leftPoints = Array.from(left, (point) => point.codePointAt(0) as number);
@@ -135,27 +146,34 @@ function customTypeName(path: string): string | undefined {
   return /^\.atlas\/types\/([^/]+)\/.+\.md$/u.exec(path)?.[1];
 }
 
+function markdownLocation(
+  parsed: ParsedRealmPage,
+  position: MarkdownPosition,
+): FindingLocation {
+  return {
+    end: {
+      column: position.end.column,
+      line: parsed.source.body.startLine + position.end.line - 1,
+    },
+    start: {
+      column: position.start.column,
+      line: parsed.source.body.startLine + position.start.line - 1,
+    },
+  };
+}
+
 function markdownHeadingFinding(
   parsed: ParsedRealmPage,
   content: string,
+  tree: Nodes,
 ): Finding | undefined {
-  const tree = fromMarkdown(parsed.page.body);
-  const first = tree.children[0];
+  const first = (tree as { readonly children: readonly Nodes[] }).children[0];
   if (first?.type !== "heading" || first.depth !== 1) {
     const position = first?.position;
     const location =
       position === undefined
         ? lineLocation(content, parsed.source.body.startLine)
-        : {
-            end: {
-              column: position.end.column,
-              line: parsed.source.body.startLine + position.end.line - 1,
-            },
-            start: {
-              column: position.start.column,
-              line: parsed.source.body.startLine + position.start.line - 1,
-            },
-          };
+        : markdownLocation(parsed, position);
     return finding(
       "ATLAS_PAGE_TITLE_H1_REQUIRED",
       "The first substantive Markdown block must be an H1 matching the Atlas title.",
@@ -164,27 +182,252 @@ function markdownHeadingFinding(
     );
   }
   if (toString(first) === parsed.page.atlas.title) return undefined;
-  const position = first.position as NonNullable<typeof first.position>;
   return finding(
     "ATLAS_PAGE_TITLE_H1_MISMATCH",
     "The first Markdown H1 must exactly match the Atlas title.",
     parsed.source.path,
-    {
-      end: {
-        column: position.end.column,
-        line: parsed.source.body.startLine + position.end.line - 1,
-      },
-      start: {
-        column: position.start.column,
-        line: parsed.source.body.startLine + position.start.line - 1,
-      },
-    },
+    markdownLocation(parsed, first.position as MarkdownPosition),
   );
+}
+
+interface CitationTarget {
+  readonly end: number;
+  readonly start: number;
+  readonly text: string;
+}
+
+interface CitationSourceRange {
+  readonly end: number;
+  readonly start: number;
+}
+
+type CitationTargetResolution =
+  | { readonly kind: "invalid" }
+  | { readonly kind: "missing" }
+  | { readonly kind: "not-lore" }
+  | { readonly kind: "valid" };
+
+/**
+ * Collects `[[target]]` markers only from parser-visible source ranges owned by
+ * one footnote definition. Each scan step advances past the marker it accepted,
+ * so the ranges are examined in linear bounded time without a global wiki-link
+ * parser extension. Malformed marker boundaries fail the scan closed.
+ */
+function citationTargets(
+  source: string,
+  ranges: readonly CitationSourceRange[],
+): readonly CitationTarget[] | undefined {
+  const targets: CitationTarget[] = [];
+  for (const range of ranges) {
+    const visible = source.slice(range.start, range.end);
+    let index = 0;
+    for (;;) {
+      const open = visible.indexOf("[[", index);
+      if (open === -1) break;
+      const close = visible.indexOf("]]", open + 2);
+      const nestedOpen = visible.indexOf("[[", open + 2);
+      if (close === -1 || (nestedOpen !== -1 && nestedOpen < close)) {
+        return undefined;
+      }
+      targets.push({
+        end: range.start + close + 2,
+        start: range.start + open,
+        text: visible.slice(open + 2, close),
+      });
+      index = close + 2;
+    }
+  }
+  return targets;
+}
+
+/**
+ * Normalizes one Citation target to its canonical Realm-relative Lore page path.
+ * Fragments, aliases, extensions, traversal, and non-canonical segments are
+ * rejected outright rather than repaired.
+ */
+function citationTargetPath(text: string): string | undefined {
+  if (/[\s\p{Cc}#|\\]/u.test(text)) return undefined;
+  const segments = text.split("/");
+  if (segments.length < 2) return undefined;
+  if (segments[0] !== ".atlas") return undefined;
+  if (segments.some((segment) => segment === "" || segment === "." || segment === ".."))
+    return undefined;
+  if ((segments.at(-1) as string).includes(".")) return undefined;
+  return `${text}.md`;
+}
+
+function resolveCitationTarget(
+  text: string,
+  pagePaths: ReadonlySet<string>,
+): CitationTargetResolution {
+  const path = citationTargetPath(text);
+  if (path === undefined) return { kind: "invalid" };
+  if (!path.startsWith(lorePrefix)) return { kind: "not-lore" };
+  if (!pagePaths.has(path)) return { kind: "missing" };
+  return { kind: "valid" };
+}
+
+const targetCodes = Object.freeze({
+  invalid: "ATLAS_CITATION_TARGET_INVALID",
+  missing: "ATLAS_CITATION_TARGET_MISSING",
+  "not-lore": "ATLAS_CITATION_TARGET_NOT_LORE",
+});
+
+const targetMessages = Object.freeze({
+  invalid:
+    "Citation target must be a canonical Realm-relative path without fragment, alias, extension, or traversal.",
+  missing: "Citation target must resolve to an existing local Lore page.",
+  "not-lore": "Citation target must address a Realm Lore page.",
+});
+
+function offsetLocation(
+  parsed: ParsedRealmPage,
+  origin: MarkdownPosition,
+  target: CitationTarget,
+): FindingLocation {
+  const body = parsed.page.body;
+  const from = origin.start.offset as number;
+  let line = origin.start.line;
+  let column = origin.start.column;
+  let start: FindingLocation["start"] | undefined;
+  for (let index = from; index < from + target.end; index += 1) {
+    if (index === from + target.start) start = { column, line };
+    if (body[index] === "\n") {
+      line += 1;
+      column = 1;
+    } else column += 1;
+  }
+  return markdownLocation(parsed, {
+    end: { column, line },
+    start: start as FindingLocation["start"],
+  });
+}
+
+function collectCitationNodes(tree: Nodes): {
+  readonly definitions: ReadonlyMap<string, readonly FootnoteDefinition[]>;
+  readonly references: readonly FootnoteReference[];
+} {
+  const definitions = new Map<string, FootnoteDefinition[]>();
+  const references: FootnoteReference[] = [];
+  const pending: Nodes[] = [tree];
+  while (pending.length > 0) {
+    const node = pending.pop() as Nodes;
+    if (node.type === "footnoteReference") references.push(node);
+    if (node.type === "footnoteDefinition") {
+      const matches = definitions.get(node.identifier);
+      if (matches === undefined) definitions.set(node.identifier, [node]);
+      else matches.push(node);
+    }
+    if ("children" in node) {
+      for (const child of node.children) pending.push(child);
+    }
+  }
+  return { definitions, references };
+}
+
+function citationSourceRanges(
+  definition: FootnoteDefinition,
+  body: string,
+): readonly CitationSourceRange[] | undefined {
+  const origin = (definition.position as MarkdownPosition).start.offset as number;
+  const ranges: CitationSourceRange[] = [];
+  const pending: Nodes[] = [];
+  for (let index = definition.children.length - 1; index >= 0; index -= 1) {
+    pending.push(definition.children[index] as Nodes);
+  }
+  while (pending.length > 0) {
+    const node = pending.pop() as Nodes;
+    if (node.type === "definition" || node.type === "footnoteDefinition")
+      return undefined;
+    if (node.type === "text") {
+      const position = node.position as MarkdownPosition;
+      ranges.push({
+        end: (position.end.offset as number) - origin,
+        start: (position.start.offset as number) - origin,
+      });
+      continue;
+    }
+    if (
+      node.type === "link" &&
+      body[(node.position as MarkdownPosition).start.offset as number] === "<"
+    ) {
+      continue;
+    }
+    if ("children" in node) {
+      for (let index = node.children.length - 1; index >= 0; index -= 1) {
+        pending.push(node.children[index] as Nodes);
+      }
+    }
+  }
+  return ranges;
+}
+
+/**
+ * Validates every parser-recognized Citation reference against the definition
+ * carrying its Lore target. Reference and definition identity is the parser's
+ * canonical footnote identifier; source labels and positions stay separate.
+ */
+function validateCitations(
+  file: RealmTextFile,
+  parsed: ParsedRealmPage,
+  tree: Nodes,
+  pagePaths: ReadonlySet<string>,
+  findings: Finding[],
+): void {
+  const { definitions, references } = collectCitationNodes(tree);
+  const referenced = new Set(references.map((reference) => reference.identifier));
+  for (const identifier of [...referenced].sort(compareCodePoints)) {
+    /* A parsed reference exists only where the parser matched a definition. */
+    const matches = definitions.get(identifier) as readonly FootnoteDefinition[];
+    if (matches.length > 1) {
+      for (const definition of matches) {
+        findings.push(
+          finding(
+            "ATLAS_CITATION_DEFINITION_DUPLICATE",
+            "Citation reference must resolve to exactly one footnote definition.",
+            file.path,
+            markdownLocation(parsed, definition.position as MarkdownPosition),
+          ),
+        );
+      }
+      continue;
+    }
+
+    const definition = matches[0] as FootnoteDefinition;
+    const position = definition.position as MarkdownPosition;
+    const source = parsed.page.body.slice(position.start.offset, position.end.offset);
+    const ranges = citationSourceRanges(definition, parsed.page.body);
+    const targets = ranges === undefined ? undefined : citationTargets(source, ranges);
+    if (targets === undefined || targets.length !== 1) {
+      findings.push(
+        finding(
+          "ATLAS_CITATION_DEFINITION_MALFORMED",
+          "Citation definition must contain exactly one Realm-local Lore target.",
+          file.path,
+          markdownLocation(parsed, position),
+        ),
+      );
+      continue;
+    }
+
+    const target = targets[0] as CitationTarget;
+    const resolution = resolveCitationTarget(target.text, pagePaths);
+    if (resolution.kind === "valid") continue;
+    findings.push(
+      finding(
+        targetCodes[resolution.kind],
+        targetMessages[resolution.kind],
+        file.path,
+        offsetLocation(parsed, position, target),
+      ),
+    );
+  }
 }
 
 function validatePage(
   file: RealmTextFile,
   parsed: ParsedRealmPage,
+  tree: Nodes,
   findings: Finding[],
 ): void {
   const expected = expectedType(file.path);
@@ -221,7 +464,7 @@ function validatePage(
     );
   }
 
-  const heading = markdownHeadingFinding(parsed, file.content);
+  const heading = markdownHeadingFinding(parsed, file.content, tree);
   if (heading !== undefined) findings.push(heading);
 
   if (
@@ -306,13 +549,16 @@ export function validateRealmStructure(
   }
   pageRecords.sort((left, right) => compareCodePoints(left.path, right.path));
 
+  const pagePaths: ReadonlySet<string> = new Set(pageRecords.map((file) => file.path));
   const parsed: { readonly file: RealmTextFile; readonly page: ParsedRealmPage }[] = [];
   for (const file of pageRecords) {
     const result = parseOne(file);
     if ("code" in result) findings.push(result);
     else {
+      const tree = fromMarkdown(result.page.body, markdownOptions);
       parsed.push({ file, page: result });
-      validatePage(file, result, findings);
+      validatePage(file, result, tree, findings);
+      validateCitations(file, result, tree, pagePaths, findings);
     }
   }
 

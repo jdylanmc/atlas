@@ -15,3 +15,7 @@ realm:
 ---
 
 # Parsing
+
+Atlas parses each page body once with maintained GFM footnote support.[^parser]
+
+[^parser]: [[.atlas/lore/parser-source]] Maintained parser documentation.
