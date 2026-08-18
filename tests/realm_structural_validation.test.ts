@@ -367,10 +367,10 @@ test("validates visible Citation markers and ignores non-visible syntax", () => 
         },
       },
       {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
+        code: "ATLAS_PAGE_RAW_HTML_UNSUPPORTED",
         location: {
-          end: { column: 22, line: 32 },
-          start: { column: 12, line: 32 },
+          end: { column: 26, line: 32 },
+          start: { column: 1, line: 32 },
         },
       },
     ],
@@ -651,7 +651,7 @@ test("locates Citations across CR, LF, and CRLF line endings", () => {
   );
 });
 
-test("validates Citation markers in link labels and rejects raw HTML markers", () => {
+test("validates Citation markers in link labels and fails closed on raw HTML", () => {
   const body = [
     "# Page",
     "",
@@ -691,20 +691,221 @@ test("validates Citation markers in link labels and rejects raw HTML markers", (
         },
       },
       {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
+        code: "ATLAS_PAGE_RAW_HTML_UNSUPPORTED",
         location: {
-          end: { column: 27, line: 26 },
-          start: { column: 14, line: 26 },
+          end: { column: 7, line: 27 },
+          start: { column: 1, line: 25 },
         },
       },
       {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
+        code: "ATLAS_PAGE_RAW_HTML_UNSUPPORTED",
         location: {
-          end: { column: 38, line: 29 },
-          start: { column: 21, line: 29 },
+          end: { column: 40, line: 29 },
+          start: { column: 8, line: 29 },
+        },
+      },
+      {
+        code: "ATLAS_PAGE_RAW_HTML_UNSUPPORTED",
+        location: {
+          end: { column: 51, line: 29 },
+          start: { column: 44, line: 29 },
         },
       },
     ],
+  );
+});
+
+test("fails closed on raw HTML anywhere in a page body", () => {
+  const body = [
+    "# Page",
+    "",
+    "<span hidden>Hidden.[^hidden]</span>",
+    "",
+    "<span hidden/>Void-shaped.[^void-shaped]",
+    "",
+    "<template>Template.[^template]</template>",
+    "",
+    "<template/>Void-shaped template.[^void-template]",
+    "",
+    '<span style="display: none">Styled.[^styled]</span>',
+    "",
+    "<style>span { display: none }</style>",
+    "",
+    "<span><em>Nested.[^nested]</span>",
+    "",
+    "<span>Unbalanced.[^unbalanced]",
+    "",
+    "Claim [[.atlas/lore/parser-source|<span hidden>alias</span>]] [^alias-adjacent]",
+    "",
+    "Claim <!-->[^malformed-comment] tail.",
+    "",
+    "Claim <!--->[^malformed-comment-dash] tail.",
+    "",
+    "Claim <!DOCTYPE html>[^declaration] tail.",
+    "",
+    "Claim <![CDATA[text]]>[^cdata] tail.",
+    "",
+    "Claim <?instruction?>[^instruction] tail.",
+    "",
+    "Claim <br>[^void] tail.",
+    "",
+    "[^hidden]: [[.atlas/lore/parser-source]]",
+    "[^void-shaped]: [[.atlas/lore/parser-source]]",
+    "[^template]: [[.atlas/lore/parser-source]]",
+    "[^void-template]: [[.atlas/lore/parser-source]]",
+    "[^styled]: [[.atlas/lore/parser-source]]",
+    "[^nested]: [[.atlas/lore/parser-source]]",
+    "[^unbalanced]: [[.atlas/lore/parser-source]]",
+    "[^alias-adjacent]: [[.atlas/lore/parser-source]]",
+    "[^malformed-comment]: [[.atlas/lore/parser-source]]",
+    "[^malformed-comment-dash]: [[.atlas/lore/parser-source]]",
+    "[^declaration]: [[.atlas/lore/parser-source]]",
+    "[^cdata]: [[.atlas/lore/parser-source]]",
+    "[^instruction]: [[.atlas/lore/parser-source]]",
+    "[^void]: <span hidden>[[.atlas/lore/parser-source]]</span>",
+  ].join("\n");
+  const findings = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    validFiles[4] as RealmTextFile,
+    page(".atlas/insights/raw-html.md", body),
+  ]);
+  assert.deepEqual(
+    [
+      ...new Set(
+        findings.map(({ code, message, path }) => `${code} ${message} ${path}`),
+      ),
+    ],
+    [
+      [
+        "ATLAS_PAGE_RAW_HTML_UNSUPPORTED",
+        "Realm page Markdown must not contain raw HTML; write the content as Markdown.",
+        ".atlas/insights/raw-html.md",
+      ].join(" "),
+    ],
+  );
+  assert.deepEqual(
+    findings.map(({ location }) => location),
+    [
+      {
+        end: { column: 14, line: 17 },
+        start: { column: 1, line: 17 },
+      },
+      {
+        end: { column: 37, line: 17 },
+        start: { column: 30, line: 17 },
+      },
+      {
+        end: { column: 15, line: 19 },
+        start: { column: 1, line: 19 },
+      },
+      {
+        end: { column: 11, line: 21 },
+        start: { column: 1, line: 21 },
+      },
+      {
+        end: { column: 42, line: 21 },
+        start: { column: 31, line: 21 },
+      },
+      {
+        end: { column: 12, line: 23 },
+        start: { column: 1, line: 23 },
+      },
+      {
+        end: { column: 29, line: 25 },
+        start: { column: 1, line: 25 },
+      },
+      {
+        end: { column: 52, line: 25 },
+        start: { column: 45, line: 25 },
+      },
+      {
+        end: { column: 38, line: 27 },
+        start: { column: 1, line: 27 },
+      },
+      {
+        end: { column: 7, line: 29 },
+        start: { column: 1, line: 29 },
+      },
+      {
+        end: { column: 11, line: 29 },
+        start: { column: 7, line: 29 },
+      },
+      {
+        end: { column: 34, line: 29 },
+        start: { column: 27, line: 29 },
+      },
+      {
+        end: { column: 7, line: 31 },
+        start: { column: 1, line: 31 },
+      },
+      {
+        end: { column: 36, line: 33 },
+        start: { column: 35, line: 33 },
+      },
+      {
+        end: { column: 12, line: 35 },
+        start: { column: 7, line: 35 },
+      },
+      {
+        end: { column: 13, line: 37 },
+        start: { column: 7, line: 37 },
+      },
+      {
+        end: { column: 22, line: 39 },
+        start: { column: 7, line: 39 },
+      },
+      {
+        end: { column: 23, line: 41 },
+        start: { column: 7, line: 41 },
+      },
+      {
+        end: { column: 22, line: 43 },
+        start: { column: 7, line: 43 },
+      },
+      {
+        end: { column: 11, line: 45 },
+        start: { column: 7, line: 45 },
+      },
+      {
+        end: { column: 23, line: 60 },
+        start: { column: 10, line: 60 },
+      },
+      {
+        end: { column: 59, line: 60 },
+        start: { column: 52, line: 60 },
+      },
+    ],
+  );
+});
+
+test("keeps literals, autolinks, and escapes outside the raw-HTML boundary", () => {
+  const body = [
+    "# Page",
+    "",
+    "Literal `<span hidden>` and `<!-- comment -->` render as code.",
+    "",
+    "```html",
+    "<div>Hidden claim.[^fenced]</div>",
+    "```",
+    "",
+    "Claim [[.atlas/lore/parser-source|&lt;span hidden&gt; alias]] [^escaped-alias]",
+    "",
+    "Claim [[.atlas/lore/parser-source|plain alias]] [^plain-alias]",
+    "",
+    "Ordinary prose keeps a < b and 3 < 4 as text.",
+    "",
+    "<https://example.test/autolink>",
+    "",
+    "[^escaped-alias]: [[.atlas/lore/parser-source]]",
+    "[^plain-alias]: [[.atlas/lore/parser-source]]",
+  ].join("\n");
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      validFiles[4] as RealmTextFile,
+      page(".atlas/insights/raw-html-controls.md", body),
+    ]),
+    [],
   );
 });
 
@@ -918,79 +1119,6 @@ test("locates thousands of visible split Citation markers deterministically", ()
   );
 });
 
-test("decodes padded and semicolonless numeric Citation markers in raw HTML", () => {
-  const body = [
-    "# Page",
-    "",
-    "<div>&#000000091;^decimal-padded]</div>",
-    "",
-    "<div>&#91^decimal-unterminated]</div>",
-    "",
-    "<div>&#x0000005B;^hex-padded]</div>",
-    "",
-    "<div>&#x5b^hex-unterminated]</div>",
-    "",
-    "<div>Tom &amp; Jerry &  Co.</div>",
-    "",
-    "<div>Trailing [^open</div>",
-    "",
-    'Inline <span title="\\[^escaped-html]">text</span>.',
-    "",
-    "<!-- \\[^comment] -->",
-  ].join("\n");
-  const findings = validateRealmStructure([
-    validFiles[2] as RealmTextFile,
-    page(".atlas/insights/page.md", body),
-  ]);
-  assert.deepEqual(
-    findings.map(({ code, location }) => ({ code, location })),
-    [
-      {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
-        location: {
-          end: { column: 34, line: 17 },
-          start: { column: 6, line: 17 },
-        },
-      },
-      {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
-        location: {
-          end: { column: 32, line: 19 },
-          start: { column: 6, line: 19 },
-        },
-      },
-      {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
-        location: {
-          end: { column: 30, line: 21 },
-          start: { column: 6, line: 21 },
-        },
-      },
-      {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
-        location: {
-          end: { column: 29, line: 23 },
-          start: { column: 6, line: 23 },
-        },
-      },
-      {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
-        location: {
-          end: { column: 37, line: 29 },
-          start: { column: 22, line: 29 },
-        },
-      },
-      {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
-        location: {
-          end: { column: 17, line: 31 },
-          start: { column: 7, line: 31 },
-        },
-      },
-    ],
-  );
-});
-
 test("validates rendered wiki-link alias text for titles and Citations", () => {
   const spoofed = validateRealmStructure([
     validFiles[2] as RealmTextFile,
@@ -1143,10 +1271,17 @@ test("detects Citation markers split across rendered visible nodes", () => {
         },
       },
       {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
+        code: "ATLAS_PAGE_RAW_HTML_UNSUPPORTED",
         location: {
-          end: { column: 34, line: 23 },
-          start: { column: 8, line: 23 },
+          end: { column: 16, line: 23 },
+          start: { column: 10, line: 23 },
+        },
+      },
+      {
+        code: "ATLAS_PAGE_RAW_HTML_UNSUPPORTED",
+        location: {
+          end: { column: 33, line: 23 },
+          start: { column: 26, line: 23 },
         },
       },
     ],
@@ -1248,9 +1383,9 @@ test("keeps hidden, destination, and block content out of rendered runs", () => 
     "",
     "Claim [^open [link](https://example.test/a]b) tail",
     "",
-    "<div>Trailing [^open</div>",
+    "Trailing [^open",
     "",
-    "<div>closes]</div>",
+    "closes] tail.",
   ].join("\n");
   assert.deepEqual(
     validateRealmStructure([
@@ -1283,182 +1418,6 @@ test("bridges contiguous link labels but never hidden destinations", () => {
         },
       },
     ],
-  );
-});
-
-test("keeps hidden raw HTML syntax out of rendered marker boundaries", () => {
-  const body = [
-    "# Page",
-    "",
-    'Claim [^foo<span data-x="[">bar</span>] tail.',
-    "",
-    'Tail <span data-y="]">Claim [^outside] tail.',
-    "",
-    "Claim <!-- x -->[^defined] tail.",
-    "",
-    "Claim [^unclosed<!-- ] -->",
-    "",
-    "[^defined]: [[.atlas/lore/parser-source]]",
-  ].join("\n");
-  assert.deepEqual(
-    validateRealmStructure([
-      validFiles[2] as RealmTextFile,
-      validFiles[4] as RealmTextFile,
-      page(".atlas/insights/page.md", body),
-    ]).map(({ code, location }) => ({ code, location })),
-    [
-      {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML",
-        location: {
-          end: { column: 40, line: 17 },
-          start: { column: 7, line: 17 },
-        },
-      },
-      {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
-        location: {
-          end: { column: 39, line: 19 },
-          start: { column: 29, line: 19 },
-        },
-      },
-      {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
-        location: {
-          end: { column: 27, line: 21 },
-          start: { column: 17, line: 21 },
-        },
-      },
-    ],
-  );
-});
-
-test("fails closed for Citation markers in raw HTML element contexts", () => {
-  const body = [
-    "# Page",
-    "",
-    "<span hidden>Hidden.[^hidden]</span>",
-    "",
-    "<template>Template.[^template]</template>",
-    "",
-    '<span style="display: none">Styled.[^styled]</span>',
-    "",
-    "<span><em>Nested.[^nested]</span>",
-    "",
-    "<span>Unbalanced.[^unbalanced]",
-    "",
-    "<span>Claim [^[[.atlas/lore/parser-source|alias-context]]] tail.</span>",
-    "",
-    "[^hidden]: [[.atlas/lore/parser-source]]",
-    "[^template]: [[.atlas/lore/parser-source]]",
-    "[^styled]: [[.atlas/lore/parser-source]]",
-    "[^nested]: [[.atlas/lore/parser-source]]",
-    "[^unbalanced]: [[.atlas/lore/parser-source]]",
-    "[^alias-context]: [[.atlas/lore/parser-source]]",
-  ].join("\n");
-  assert.deepEqual(
-    validateRealmStructure([
-      validFiles[2] as RealmTextFile,
-      validFiles[4] as RealmTextFile,
-      page(".atlas/insights/raw-html-context.md", body),
-    ]).map(({ code, location, path }) => ({ code, location, path })),
-    [
-      {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
-        location: {
-          end: { column: 30, line: 17 },
-          start: { column: 21, line: 17 },
-        },
-        path: ".atlas/insights/raw-html-context.md",
-      },
-      {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
-        location: {
-          end: { column: 31, line: 19 },
-          start: { column: 20, line: 19 },
-        },
-        path: ".atlas/insights/raw-html-context.md",
-      },
-      {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
-        location: {
-          end: { column: 45, line: 21 },
-          start: { column: 36, line: 21 },
-        },
-        path: ".atlas/insights/raw-html-context.md",
-      },
-      {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
-        location: {
-          end: { column: 27, line: 23 },
-          start: { column: 18, line: 23 },
-        },
-        path: ".atlas/insights/raw-html-context.md",
-      },
-      {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
-        location: {
-          end: { column: 31, line: 25 },
-          start: { column: 18, line: 25 },
-        },
-        path: ".atlas/insights/raw-html-context.md",
-      },
-      {
-        code: "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
-        location: {
-          end: { column: 59, line: 27 },
-          start: { column: 13, line: 27 },
-        },
-        path: ".atlas/insights/raw-html-context.md",
-      },
-    ],
-  );
-});
-
-test("keeps raw HTML adjacent to Citations out of element context", () => {
-  const body = [
-    "# Page",
-    "",
-    "<span hidden></span>Claim.[^after]",
-    "",
-    "Claim.[^before]<template></template>",
-    "",
-    "Claim [[.atlas/lore/parser-source|<span hidden>alias</span>]] [^alias-adjacent]",
-    "",
-    "Claim <!-- x -->[^comment-adjacent]",
-    "",
-    "[^after]: [[.atlas/lore/parser-source]]",
-    "[^before]: [[.atlas/lore/parser-source]]",
-    "[^alias-adjacent]: [[.atlas/lore/parser-source]]",
-    "[^comment-adjacent]: [[.atlas/lore/parser-source]]",
-  ].join("\n");
-  assert.deepEqual(
-    validateRealmStructure([
-      validFiles[2] as RealmTextFile,
-      validFiles[4] as RealmTextFile,
-      page(".atlas/insights/raw-html-adjacent.md", body),
-    ]),
-    [],
-  );
-});
-
-test("keeps raw HTML non-element syntax out of Citation identity", () => {
-  const body = [
-    "# Page",
-    "",
-    "<!-->",
-    "<!--->",
-    "<!-- ordinary comment -->",
-    "<![CDATA[ordinary text]]>",
-    "<?ordinary?>",
-    "<!DOCTYPE ordinary>",
-    "<br>",
-  ].join("\n");
-  assert.deepEqual(
-    validateRealmStructure([
-      validFiles[2] as RealmTextFile,
-      page(".atlas/insights/raw-html-syntax.md", body),
-    ]),
-    [],
   );
 });
 

@@ -527,7 +527,6 @@ type CitationMarker = {
 };
 
 type MarkerCell = {
-  readonly afterHtml: boolean;
   readonly character: string;
   readonly end: number;
   readonly escapable: boolean;
@@ -535,30 +534,11 @@ type MarkerCell = {
   readonly start: number;
 };
 
-type VisibleMarkers = {
-  readonly rawHtml: MarkdownPosition[];
-  readonly rawHtmlContext: MarkdownPosition[];
-  readonly references: CitationMarker[];
-};
-type RawHtmlSyntax = {
-  readonly end: number;
-  readonly kind: "close" | "open" | "other";
-  readonly name?: string;
-  readonly selfClosing?: boolean;
-  readonly start: number;
-};
-type RawHtmlElementContext = {
-  readonly contextRanges: readonly SourceRange[];
-  readonly syntaxRanges: readonly SourceRange[];
-};
-type RangeCursor = {
-  index: number;
-};
-
 const hiddenNodeTypes: ReadonlySet<string> = new Set([
   "code",
   "definition",
   "footnoteDefinition",
+  "html",
   "image",
   "inlineCode",
 ]);
@@ -715,219 +695,28 @@ function nodeRange(node: MarkdownNode): SourceRange {
   };
 }
 
-function isAsciiLetter(character: string | undefined): boolean {
-  /* c8 ignore next -- scanner callers use in-range source offsets. */
-  if (character === undefined) return false;
-  const code = character.charCodeAt(0);
-  return (code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a);
-}
-
-function rawHtmlSyntaxEnd(
-  source: string,
-  start: number,
-  limit: number,
-  terminator: string,
-): number {
-  const contentStart = start + 2;
-  const close = source.indexOf(terminator, contentStart);
-  /* c8 ignore next 2 -- an unterminated alias construct consumes its selected range. */
-  if (close < 0 || close + terminator.length > limit) return limit;
-  return close + terminator.length;
-}
-
-function rawHtmlSyntaxAt(
-  source: string,
-  start: number,
-  limit: number,
-): RawHtmlSyntax | undefined {
-  if (source.startsWith("<!-->", start)) {
-    return { end: Math.min(limit, start + 5), kind: "other", start };
-  }
-  if (source.startsWith("<!--->", start)) {
-    return { end: Math.min(limit, start + 6), kind: "other", start };
-  }
-  if (source.startsWith("<!--", start)) {
-    return { end: rawHtmlSyntaxEnd(source, start, limit, "-->"), kind: "other", start };
-  }
-  const declaration = source[start + 1];
-  if (declaration === "!" || declaration === "?") {
-    const terminator = source.startsWith("<![CDATA[", start)
-      ? "]]>"
-      : declaration === "?"
-        ? "?>"
-        : ">";
-    return {
-      end: rawHtmlSyntaxEnd(source, start, limit, terminator),
-      kind: "other",
-      start,
-    };
-  }
-
-  let index = start + 1;
-  const closing = source[index] === "/";
-  if (closing) index += 1;
-  /* c8 ignore next -- raw tags have a CommonMark-valid ASCII tag name. */
-  if (!isAsciiLetter(source[index])) return undefined;
-  const nameStart = index;
-  index += 1;
-  while (isAsciiAlphaNumeric(source.charCodeAt(index)) || source[index] === "-") {
-    index += 1;
-  }
-  const name = source.slice(nameStart, index).toLowerCase();
-  const contentStart = index;
-  let quote: '"' | "'" | undefined;
-  while (index < limit) {
-    const character = source[index] as string;
-    if (quote !== undefined) {
-      if (character === quote) quote = undefined;
-      index += 1;
-      continue;
-    }
-    if (character === '"' || character === "'") {
-      quote = character;
-      index += 1;
-      continue;
-    }
-    /* c8 ignore next -- malformed nested starts are not raw HTML syntax. */
-    if (character === "<") return undefined;
-    if (character === ">") {
-      return {
-        end: index + 1,
-        kind: closing ? "close" : "open",
-        name,
-        selfClosing: !closing && /\/\s*$/u.test(source.slice(contentStart, index)),
-        start,
-      };
-    }
-    index += 1;
-  }
-  /* c8 ignore next -- unterminated quoted tags are not raw HTML syntax. */
-  return quote === undefined ? undefined : { end: limit, kind: "other", start };
-}
-
-const voidHtmlElementNames: ReadonlySet<string> = new Set([
-  "area",
-  "base",
-  "br",
-  "col",
-  "embed",
-  "hr",
-  "img",
-  "input",
-  "link",
-  "meta",
-  "param",
-  "source",
-  "track",
-  "wbr",
-]);
-
-function mergeSourceRanges(ranges: readonly SourceRange[]): readonly SourceRange[] {
-  const merged: SourceRange[] = [];
-  for (const range of ranges) {
-    if (range.end <= range.start) continue;
-    const previous = merged.at(-1);
-    if (previous === undefined || previous.end < range.start) {
-      merged.push({ ...range });
-      continue;
-    }
-    if (range.end > previous.end) {
-      merged[merged.length - 1] = { end: range.end, start: previous.start };
-    }
-  }
-  return merged;
-}
-
 /**
- * HTML and CSS visibility are deliberately not rendered here. Any non-void
- * raw HTML element enclosing a Citation is unsafe; mismatched closes leave
- * the element open so malformed nesting also fails closed.
+ * A Realm knowledge page body may not contain raw HTML at all. Approximating
+ * HTML5 parsing, CSS visibility, template inertness, and rendered order is not
+ * safely possible here, so every parser-recognized raw HTML construct, and any
+ * `<` inside wiki-link syntax the Markdown parser never inspects, fails closed
+ * at its own source range instead.
  */
-function rawHtmlElementContext(
-  tree: MarkdownNode,
-  body: string,
-): RawHtmlElementContext {
-  const candidates: SourceRange[] = [];
+function rawHtmlRanges(tree: MarkdownNode, body: string): readonly SourceRange[] {
+  const ranges: SourceRange[] = [];
   visitMarkdown(tree, (node) => {
     if (node.type === "html") {
-      const range = nodeRange(node);
-      candidates.push(range);
-    } else if (node.type === "wikiLink" && node.visible !== undefined) {
-      candidates.push(node.visible);
+      ranges.push(nodeRange(node));
+      return;
+    }
+    if (node.type !== "wikiLink") return;
+    const range = nodeRange(node);
+    const index = body.indexOf("<", range.start);
+    if (index >= 0 && index < range.end) {
+      ranges.push({ end: index + 1, start: index });
     }
   });
-
-  let previousStart = -1;
-  for (const range of candidates) {
-    /* c8 ignore next 8 -- mdast child traversal is source ordered; this only
-       guards future parser drift by rejecting ambiguity rather than trusting it. */
-    if (range.start < previousStart) {
-      return {
-        contextRanges: [{ end: body.length, start: 0 }],
-        syntaxRanges: [],
-      };
-    }
-    previousStart = range.start;
-  }
-
-  const ranges = mergeSourceRanges(candidates);
-  const syntaxRanges: SourceRange[] = [];
-  const contexts: { end: number; start: number }[] = [];
-  const openElements: {
-    readonly context: { end: number; start: number };
-    readonly name: string;
-  }[] = [];
-  for (const range of ranges) {
-    let index = range.start;
-    while (index < range.end) {
-      if (body[index] !== "<") {
-        index += 1;
-        continue;
-      }
-      const syntax = rawHtmlSyntaxAt(body, index, range.end);
-      /* c8 ignore next 5 -- html nodes are parser-validated syntax; malformed
-         wiki-link alias text remains visible and cannot create an element context. */
-      if (syntax === undefined) {
-        index += 1;
-        continue;
-      }
-      syntaxRanges.push({ end: syntax.end, start: syntax.start });
-      index = syntax.end;
-      if (syntax.kind === "other") continue;
-      if (syntax.kind === "open") {
-        if (syntax.selfClosing || voidHtmlElementNames.has(syntax.name as string))
-          continue;
-        const context = { end: body.length, start: syntax.end };
-        contexts.push(context);
-        openElements.push({ context, name: syntax.name as string });
-        continue;
-      }
-      const open = openElements.at(-1);
-      if (open !== undefined && open.name === syntax.name) {
-        open.context.end = syntax.start;
-        openElements.pop();
-      }
-    }
-  }
-  return {
-    contextRanges: mergeSourceRanges(contexts),
-    syntaxRanges,
-  };
-}
-
-function rangeIntersects(
-  ranges: readonly SourceRange[],
-  cursor: RangeCursor,
-  range: SourceRange,
-): boolean {
-  while (
-    cursor.index < ranges.length &&
-    (ranges[cursor.index] as SourceRange).end <= range.start
-  ) {
-    cursor.index += 1;
-  }
-  const candidate = ranges[cursor.index];
-  return candidate !== undefined && candidate.start < range.end;
+  return ranges;
 }
 
 function appendCells(
@@ -936,31 +725,11 @@ function appendCells(
   range: SourceRange,
   escapable: boolean,
   allowMissingNumericSemicolon: boolean,
-  afterHtml: boolean,
-  syntaxRanges: readonly SourceRange[] = [],
-  syntaxCursor?: RangeCursor,
 ): void {
   const source = body.slice(range.start, range.end);
   let backslashes = 0;
   let index = 0;
-  let leading = afterHtml;
-  let syntaxIndex = syntaxCursor?.index ?? syntaxRanges.length;
-  while (
-    syntaxIndex < syntaxRanges.length &&
-    (syntaxRanges[syntaxIndex] as SourceRange).end <= range.start
-  ) {
-    syntaxIndex += 1;
-  }
   while (index < source.length) {
-    const syntax = syntaxRanges[syntaxIndex];
-    const offset = range.start + index;
-    if (syntax !== undefined && syntax.start <= offset && offset < syntax.end) {
-      index = Math.min(source.length, syntax.end - range.start);
-      leading = true;
-      backslashes = 0;
-      syntaxIndex += 1;
-      continue;
-    }
     const reference =
       source[index] === "&"
         ? decodedCharacterReference(source, index, allowMissingNumericSemicolon)
@@ -968,14 +737,12 @@ function appendCells(
     if (reference !== undefined) {
       for (const character of Array.from(reference.character)) {
         cells.push({
-          afterHtml: leading,
           character,
           end: range.start + reference.end,
           escapable,
           escaped: false,
           start: range.start + index,
         });
-        leading = false;
       }
       backslashes = 0;
       index = reference.end;
@@ -985,18 +752,15 @@ function appendCells(
     const end = index + (point > 0xffff ? 2 : 1);
     const character = source.slice(index, end);
     cells.push({
-      afterHtml: leading,
       character,
       end: range.start + end,
       escapable,
       escaped: backslashes % 2 === 1,
       start: range.start + index,
     });
-    leading = false;
     backslashes = character === "\\" ? backslashes + 1 : 0;
     index = end;
   }
-  if (syntaxCursor !== undefined) syntaxCursor.index = syntaxIndex;
 }
 
 function rendersAs(cell: MarkerCell, character: string): boolean {
@@ -1016,22 +780,17 @@ function canonicalCitationIdentifier(label: string): string {
 }
 
 /**
- * Scans one cell run for Citation markers. Nearest following close, nearest
- * following boundary, and raw-HTML crossings are precomputed once, so repeated
- * candidates stay linear and accepted markers never overlap. A marker is unsafe
- * when the run is raw-HTML source or when raw HTML sits inside the marker.
+ * Scans one cell run for Citation markers. Nearest following close and nearest
+ * following boundary are precomputed once, so repeated candidates stay linear
+ * and accepted markers never overlap.
  */
 function collectMarkers(
   positions: SourcePositionIndex,
   cells: readonly MarkerCell[],
-  rawHtmlSource: boolean,
-  contextRanges: readonly SourceRange[],
-  contextCursor: RangeCursor,
-  found: VisibleMarkers,
+  markers: CitationMarker[],
 ): void {
   const nextClose = new Int32Array(cells.length);
   const nextBoundary = new Int32Array(cells.length);
-  const htmlBefore = new Int32Array(cells.length + 1);
   let nearestClose = -1;
   let nearestBoundary = -1;
   for (let index = cells.length - 1; index >= 0; index -= 1) {
@@ -1040,10 +799,6 @@ function collectMarkers(
     if (markerBoundary.test(cell.character)) nearestBoundary = index;
     nextClose[index] = nearestClose;
     nextBoundary[index] = nearestBoundary;
-  }
-  for (let index = 0; index < cells.length; index += 1) {
-    htmlBefore[index + 1] =
-      (htmlBefore[index] as number) + ((cells[index] as MarkerCell).afterHtml ? 1 : 0);
   }
   for (let index = 0; index + 3 < cells.length; index += 1) {
     const open = cells[index] as MarkerCell;
@@ -1060,25 +815,10 @@ function collectMarkers(
       const cell = cells[cursor] as MarkerCell;
       identifier.push(cell.character);
     }
-    const position = rangeAt(positions, open.start, (cells[close] as MarkerCell).end);
-    if (
-      rawHtmlSource ||
-      (htmlBefore[close + 1] as number) > (htmlBefore[index + 1] as number)
-    ) {
-      found.rawHtml.push(position);
-    } else if (
-      rangeIntersects(contextRanges, contextCursor, {
-        end: (cells[close] as MarkerCell).end,
-        start: open.start,
-      })
-    ) {
-      found.rawHtmlContext.push(position);
-    } else {
-      found.references.push({
-        identifier: canonicalCitationIdentifier(identifier.join("")),
-        position,
-      });
-    }
+    markers.push({
+      identifier: canonicalCitationIdentifier(identifier.join("")),
+      position: rangeAt(positions, open.start, (cells[close] as MarkerCell).end),
+    });
     index = close;
   }
 }
@@ -1086,73 +826,39 @@ function collectMarkers(
 /**
  * Streams the rendered-visible text of adjacent inline nodes into one cell run,
  * so a marker split across formatting or a wiki-link alias cannot bypass
- * detection. Hidden content, link destinations, autolinks, and block boundaries
- * flush the run, while hidden syntax between rendered cells bridges it: source
- * line endings inside a link destination or title are never rendered, so they
- * cannot separate text a reader sees as contiguous.
+ * detection. Hidden content, raw HTML, link destinations, autolinks, and block
+ * boundaries flush the run, while hidden syntax between rendered cells bridges
+ * it: source line endings inside a link destination or title are never
+ * rendered, so they cannot separate text a reader sees as contiguous.
  *
- * Raw HTML is tag, comment, and declaration syntax that renders no visible
- * cells, so it neither contributes marker boundary characters nor breaks a run.
- * Its source is scanned separately, and any rendered marker containing raw HTML
- * is rejected as unsafe rather than trusted.
+ * Raw HTML is rejected for the whole page, so a run never has to model what an
+ * HTML renderer would show, hide, or reorder.
  */
 function visibleCitationMarkers(
   tree: MarkdownNode,
   body: string,
   positions: SourcePositionIndex,
-  rawHtmlContext: RawHtmlElementContext,
-): VisibleMarkers {
-  const found: VisibleMarkers = { rawHtml: [], rawHtmlContext: [], references: [] };
+): readonly CitationMarker[] {
+  const markers: CitationMarker[] = [];
   const pending: PendingEntry[] = [tree];
-  const contextCursor: RangeCursor = { index: 0 };
-  const syntaxCursor: RangeCursor = { index: 0 };
   let cells: MarkerCell[] = [];
-  let afterHtml = false;
   function flush(): void {
     if (cells.length > 0) {
-      collectMarkers(
-        positions,
-        cells,
-        false,
-        rawHtmlContext.contextRanges,
-        contextCursor,
-        found,
-      );
+      collectMarkers(positions, cells, markers);
       cells = [];
     }
-    afterHtml = false;
   }
   function emit(
     range: SourceRange,
     escapable: boolean,
     allowMissingNumericSemicolon: boolean,
   ): void {
-    appendCells(
-      cells,
-      body,
-      range,
-      escapable,
-      allowMissingNumericSemicolon,
-      afterHtml,
-      rawHtmlContext.syntaxRanges,
-      syntaxCursor,
-    );
-    afterHtml = false;
-  }
-  function scanRawHtml(range: SourceRange): void {
-    const htmlCells: MarkerCell[] = [];
-    appendCells(htmlCells, body, range, false, true, false);
-    collectMarkers(positions, htmlCells, true, [], { index: 0 }, found);
-    afterHtml = true;
+    appendCells(cells, body, range, escapable, allowMissingNumericSemicolon);
   }
   while (pending.length > 0) {
     const entry = pending.pop() as PendingEntry;
     if (entry.type === "text") {
       emit(nodeRange(entry), true, false);
-      continue;
-    }
-    if (entry.type === "html") {
-      scanRawHtml(nodeRange(entry));
       continue;
     }
     if (entry.type === "wikiLink") {
@@ -1173,7 +879,7 @@ function visibleCitationMarkers(
     pushChildren(pending, entry);
   }
   flush();
-  return found;
+  return markers;
 }
 
 function citationTargetPath(target: string):
@@ -1225,22 +931,11 @@ function validateCitations(
 ): void {
   for (const { bodyPositions, file, page, tree } of parsedPages) {
     const references: MarkdownNode[] = [];
-    const elementContext = rawHtmlElementContext(tree, page.page.body);
-    const {
-      rawHtml,
-      rawHtmlContext: contextual,
-      references: unresolved,
-    } = visibleCitationMarkers(tree, page.page.body, bodyPositions, elementContext);
+    const unresolved = visibleCitationMarkers(tree, page.page.body, bodyPositions);
     const definitions = new Map<string, MarkdownNode[]>();
     const renderedDefinitions = new Map<string, Set<string>>();
-    const contextCursor: RangeCursor = { index: 0 };
     visitMarkdown(tree, (node) => {
       if (node.type === "footnoteReference" && node.identifier !== undefined) {
-        const range = nodeRange(node);
-        if (rangeIntersects(elementContext.contextRanges, contextCursor, range)) {
-          contextual.push(node.position as MarkdownPosition);
-          return;
-        }
         references.push(node);
       }
       if (node.type === "footnoteDefinition" && node.identifier !== undefined) {
@@ -1255,27 +950,6 @@ function validateCitations(
         } else identities.add(identifier);
       }
     });
-
-    for (const position of rawHtml) {
-      findings.push(
-        finding(
-          "ATLAS_CITATION_MARKER_IN_RAW_HTML",
-          "Citation markers must not appear in raw HTML.",
-          file.path,
-          markdownLocation(page, position),
-        ),
-      );
-    }
-    for (const position of contextual) {
-      findings.push(
-        finding(
-          "ATLAS_CITATION_MARKER_IN_RAW_HTML_CONTEXT",
-          "Citation markers must not depend on raw HTML element context.",
-          file.path,
-          markdownLocation(page, position),
-        ),
-      );
-    }
 
     const referenced = new Set<string>();
     for (const reference of references) {
@@ -1561,6 +1235,16 @@ export function validateRealmStructure(
       }
       const heading = markdownHeadingFinding(result, contentPositions, tree);
       if (heading !== undefined) findings.push(heading);
+      for (const range of rawHtmlRanges(tree, result.page.body)) {
+        findings.push(
+          finding(
+            "ATLAS_PAGE_RAW_HTML_UNSUPPORTED",
+            "Realm page Markdown must not contain raw HTML; write the content as Markdown.",
+            file.path,
+            markdownLocation(result, rangeAt(bodyPositions, range.start, range.end)),
+          ),
+        );
+      }
       markdownPages.push({ bodyPositions, file, page: result, tree });
     }
   }
