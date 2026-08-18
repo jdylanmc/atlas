@@ -1,3 +1,5 @@
+import { compareCodePoints } from "./compare_code_points.ts";
+
 export interface CapturedRealmFile {
   readonly bytes: Uint8Array;
   readonly path: string;
@@ -40,19 +42,6 @@ export class RealmLoadError extends Error {
     this.name = "RealmLoadError";
     this.code = code;
   }
-}
-
-function compareCodePoints(left: string, right: string): number {
-  const leftPoints = Array.from(left, (point) => point.codePointAt(0) as number);
-  const rightPoints = Array.from(right, (point) => point.codePointAt(0) as number);
-  const length = Math.min(leftPoints.length, rightPoints.length);
-  for (let index = 0; index < length; index += 1) {
-    const difference = (leftPoints[index] as number) - (rightPoints[index] as number);
-    if (difference !== 0) {
-      return difference;
-    }
-  }
-  return leftPoints.length - rightPoints.length;
 }
 
 function normalizePath(path: string): string {

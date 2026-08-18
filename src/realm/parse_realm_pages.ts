@@ -3,6 +3,7 @@ import {
   checkRealmPageEnvelope,
   type RealmPageEnvelope,
 } from "../domain/realm_page.ts";
+import { compareCodePoints } from "./compare_code_points.ts";
 import type { RealmTextFile } from "./load_realm_text.ts";
 
 const pageDirectories = new Set(["bonfires", "insights", "lore", "pillars", "threads"]);
@@ -46,19 +47,6 @@ export class RealmPageParseError extends Error {
     this.path = path;
     this.sourceLine = sourceLine;
   }
-}
-
-function compareCodePoints(left: string, right: string): number {
-  const leftPoints = Array.from(left, (point) => point.codePointAt(0) as number);
-  const rightPoints = Array.from(right, (point) => point.codePointAt(0) as number);
-  const length = Math.min(leftPoints.length, rightPoints.length);
-  for (let index = 0; index < length; index += 1) {
-    const difference = (leftPoints[index] as number) - (rightPoints[index] as number);
-    if (difference !== 0) {
-      return difference;
-    }
-  }
-  return leftPoints.length - rightPoints.length;
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

@@ -7,6 +7,7 @@ import {
   type ToStringOptions,
 } from "yaml";
 import type { RealmPageEnvelope } from "../domain/realm_page.ts";
+import { compareCodePoints } from "./compare_code_points.ts";
 import type { RealmTextFile } from "./load_realm_text.ts";
 import type { ParsedRealmPage } from "./parse_realm_pages.ts";
 
@@ -59,25 +60,12 @@ const canonicalYamlOptions: CreateNodeOptions &
   version: "1.2",
 };
 
-function compareCodePoints(left: string, right: string): number {
-  const leftPoints = Array.from(left, (point) => point.codePointAt(0) as number);
-  const rightPoints = Array.from(right, (point) => point.codePointAt(0) as number);
-  const length = Math.min(leftPoints.length, rightPoints.length);
-  for (let index = 0; index < length; index += 1) {
-    const difference = (leftPoints[index] as number) - (rightPoints[index] as number);
-    if (difference !== 0) {
-      return difference;
-    }
-  }
-  return leftPoints.length - rightPoints.length;
-}
-
 function canonicalizeValue(value: unknown, path: string): unknown {
   if (value === null || typeof value === "boolean" || typeof value === "string") {
     return value;
   }
   if (typeof value === "number") {
-    if (!Number.isFinite(value) || Object.is(value, -0)) {
+    if (!Number.isFinite(value)) {
       throw new RealmPageSerializeError("UNREPRESENTABLE_VALUE", path);
     }
     return value;
@@ -92,10 +80,12 @@ function canonicalizeValue(value: unknown, path: string): unknown {
   ) {
     throw new RealmPageSerializeError("UNREPRESENTABLE_VALUE", path);
   }
+  // A Map keeps every own key literal: assigning onto a fresh object would let an
+  // own `__proto__` key mutate the result's prototype instead of becoming an entry.
   const record = value as Readonly<Record<string, unknown>>;
-  const canonical: Record<string, unknown> = {};
+  const canonical = new Map<string, unknown>();
   for (const key of Object.keys(record).toSorted(compareCodePoints)) {
-    canonical[key] = canonicalizeValue(record[key], path);
+    canonical.set(key, canonicalizeValue(record[key], path));
   }
   return canonical;
 }

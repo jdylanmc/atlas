@@ -51,8 +51,18 @@ function serializeOne(path: string, source: string): string {
   return file.content;
 }
 
+function deepFreeze(value: unknown): void {
+  if (typeof value !== "object" || value === null) {
+    return;
+  }
+  Object.freeze(value);
+  for (const entry of Object.values(value)) {
+    deepFreeze(entry);
+  }
+}
+
 function fabricatedPage(path: string, realm: unknown): ParsedRealmPage {
-  return {
+  const page = {
     page: {
       atlas: {
         "atlas-schema": "1",
@@ -74,7 +84,9 @@ function fabricatedPage(path: string, realm: unknown): ParsedRealmPage {
       frontmatter: { endLine: 13, startLine: 2 },
       path,
     },
-  } as unknown as ParsedRealmPage;
+  };
+  deepFreeze(page);
+  return page as unknown as ParsedRealmPage;
 }
 
 function serializeError(page: ParsedRealmPage): RealmPageSerializeError {
@@ -320,17 +332,102 @@ test("quotes ambiguous scalars and preserves Unicode and array order", () => {
   assert.deepEqual(reparsed.page, original.page);
 });
 
-test("orders pages by code point rather than UTF-16 code unit", () => {
-  const files = serializeRealmPages(
-    parseRealmPages([
-      text(".atlas/insights/\u{10000}.md", pageSource("insight:astral")),
-      text(".atlas/insights/\uff00.md", pageSource("insight:halfwidth")),
-    ]),
+test("keeps own __proto__ entries, siblings, and numeric keys literal", () => {
+  const source = pageSource("insight:proto", {
+    body: "Body\n",
+    realm: [
+      "  __proto__: [1, 2]",
+      "  alpha: first",
+      "  nested:",
+      '    "10": ten',
+      '    "2": two',
+      "    __proto__: { alpha: 3 }",
+      "    alpha: nested-first",
+    ],
+  });
+  const content = serializeOne(".atlas/insights/proto.md", source);
+
+  assert.equal(
+    content.slice(content.indexOf("realm:")),
+    [
+      "realm:",
+      "  __proto__:",
+      "    - 1",
+      "    - 2",
+      "  alpha: first",
+      "  nested:",
+      '    "10": ten',
+      '    "2": two',
+      "    __proto__:",
+      "      alpha: 3",
+      "    alpha: nested-first",
+      "---",
+      "Body",
+      "",
+    ].join("\n"),
   );
+
+  const [reparsed] = parseRealmPages([text(".atlas/insights/proto.md", content)]);
+  const [original] = parseRealmPages([text(".atlas/insights/proto.md", source)]);
+  assert.ok(reparsed);
+  assert.ok(original);
+  assert.deepEqual(reparsed.page, original.page);
+
+  const realm = reparsed.page.realm as unknown as Readonly<Record<string, unknown>>;
+  assert.equal(Object.getPrototypeOf(realm), Object.prototype);
+  assert.deepEqual(Object.keys(realm), ["__proto__", "alpha", "nested"]);
+  assert.deepEqual(Object.getOwnPropertyDescriptor(realm, "__proto__")?.value, [1, 2]);
+
+  const nested = realm["nested"] as Readonly<Record<string, unknown>>;
+  assert.equal(Object.getPrototypeOf(nested), Object.prototype);
+  assert.deepEqual(Object.keys(nested).toSorted(), ["10", "2", "__proto__", "alpha"]);
+  assert.equal(nested["alpha"], "nested-first");
+  assert.deepEqual(Object.getOwnPropertyDescriptor(nested, "__proto__")?.value, {
+    alpha: 3,
+  });
+
+  // Runtime objects list integer-like keys first, so canonical order must come from
+  // the serializer rather than from the parsed object's own key order.
+  assert.deepEqual(serializeRealmPages([reparsed]).at(0)?.content, content);
+});
+
+test("emits and reparses negative zero exactly", () => {
+  const content = serializeOne(
+    ".atlas/insights/zero.md",
+    pageSource("insight:zero", {
+      body: "Body\n",
+      realm: ["  negative: -0.0", "  positive: 0"],
+    }),
+  );
+
+  assert.equal(
+    content.slice(content.indexOf("realm:")),
+    ["realm:", "  negative: -0", "  positive: 0", "---", "Body", ""].join("\n"),
+  );
+
+  const [reparsed] = parseRealmPages([text(".atlas/insights/zero.md", content)]);
+  assert.ok(reparsed);
+  const realm = reparsed.page.realm as unknown as Readonly<Record<string, unknown>>;
+  assert.equal(Object.is(realm["negative"], -0), true);
+  assert.equal(Object.is(realm["positive"], 0), true);
+});
+
+test("sorts fabricated page inputs by code point rather than UTF-16 code unit", () => {
+  const files = serializeRealmPages([
+    fabricatedPage(".atlas/insights/\u{10000}.md", {}),
+    fabricatedPage(".atlas/insights/zulu.md", {}),
+    fabricatedPage(".atlas/insights/\uff00.md", {}),
+    fabricatedPage(".atlas/insights/alpha.md", {}),
+  ]);
 
   assert.deepEqual(
     files.map((file) => file.path),
-    [".atlas/insights/\uff00.md", ".atlas/insights/\u{10000}.md"],
+    [
+      ".atlas/insights/alpha.md",
+      ".atlas/insights/zulu.md",
+      ".atlas/insights/\uff00.md",
+      ".atlas/insights/\u{10000}.md",
+    ],
   );
 });
 
@@ -362,18 +459,19 @@ test("emits an empty body and preserves body bytes verbatim", () => {
   assert.equal(verbatim.slice(verbatim.indexOf("---\n", 4) + 4), "one \r\ntwo\t\n\n");
 });
 
-test("rejects Realm pages that share one canonical path", () => {
-  const [parsed] = parseRealmPages([
-    text(".atlas/insights/same.md", pageSource("insight:one")),
-  ]);
-  assert.ok(parsed);
+test("sorts before detecting non-adjacent duplicate canonical paths", () => {
+  const duplicated = [
+    fabricatedPage(".atlas/insights/alpha.md", {}),
+    fabricatedPage(".atlas/insights/zulu.md", {}),
+    fabricatedPage(".atlas/insights/alpha.md", {}),
+  ];
 
   assert.throws(
-    () => serializeRealmPages([parsed, parsed]),
+    () => serializeRealmPages(duplicated),
     (error: unknown) => {
       assert.ok(error instanceof RealmPageSerializeError);
       assert.equal(error.code, "DUPLICATE_PAGE_PATH");
-      assert.equal(error.path, ".atlas/insights/same.md");
+      assert.equal(error.path, ".atlas/insights/alpha.md");
       assert.equal(error.name, "RealmPageSerializeError");
       assert.equal(error.message, "Realm pages share one canonical path.");
       return true;
@@ -386,7 +484,6 @@ test("rejects frontmatter values canonical YAML cannot represent", () => {
     ["undefined", { value: undefined }],
     ["not a number", { value: Number.NaN }],
     ["infinity", { value: Number.POSITIVE_INFINITY }],
-    ["negative zero", { value: -0 }],
     ["date", { value: new Date(0) }],
     ["map", { value: new Map() }],
     ["function", { value: () => "value" }],
