@@ -40,9 +40,15 @@ type SourceRange = {
   readonly end: number;
   readonly start: number;
 };
+type SourcePositionIndex = {
+  readonly content: string;
+  readonly lineEnds: readonly number[];
+  readonly lineStarts: readonly number[];
+};
 type MarkdownNode = {
   readonly alt?: string;
   readonly children?: readonly MarkdownNode[];
+  readonly depth?: number;
   readonly identifier?: string;
   readonly label?: string;
   readonly position?: MarkdownPosition;
@@ -84,6 +90,8 @@ const corePathTypes = Object.freeze({
   threads: "thread",
 } as const);
 const coreTypeNames: ReadonlySet<string> = new Set(Object.values(corePathTypes));
+
+export const MARKDOWN_PARSE_WORK_PER_CODE_UNIT = 64;
 
 function wikiLinkFromMarkdown(): MdastExtension {
   let current: MutableWikiLinkNode | undefined;
@@ -162,25 +170,71 @@ function finding(
 
 const lineEndings = /\r\n|[\n\r]/u;
 
-function positionAt(content: string, offset: number): FindingLocation["start"] {
-  const before = content.slice(0, offset);
-  const lines = before.split(lineEndings);
+function sourcePositionIndex(content: string): SourcePositionIndex {
+  const lineEnds: number[] = [];
+  const lineStarts = [0];
+  for (let index = 0; index < content.length; index += 1) {
+    const character = content[index];
+    if (character !== "\n" && character !== "\r") continue;
+    lineEnds.push(index);
+    if (character === "\r" && content[index + 1] === "\n") index += 1;
+    lineStarts.push(index + 1);
+  }
+  lineEnds.push(content.length);
+  return { content, lineEnds, lineStarts };
+}
+
+function lineIndexAt(index: SourcePositionIndex, offset: number): number {
+  let low = 0;
+  let high = index.lineStarts.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if ((index.lineStarts[middle] as number) <= offset) low = middle + 1;
+    else high = middle;
+  }
+  return low - 1;
+}
+
+function positionAt(
+  index: SourcePositionIndex,
+  offset: number,
+): FindingLocation["start"] {
+  /* c8 ignore start -- source ranges never stop inside a CRLF pair */
+  if (
+    offset > 0 &&
+    index.content[offset] === "\n" &&
+    index.content[offset - 1] === "\r"
+  ) {
+    return {
+      column: 1,
+      line: lineIndexAt(index, offset + 1) + 1,
+    };
+  }
+  /* c8 ignore stop */
+  const lineIndex = lineIndexAt(index, offset);
   return {
-    column: (lines.at(-1) as string).length + 1,
-    line: lines.length,
+    column: offset - (index.lineStarts[lineIndex] as number) + 1,
+    line: lineIndex + 1,
   };
 }
 
-function rangeAt(content: string, start: number, end: number): FindingLocation {
-  return { end: positionAt(content, end), start: positionAt(content, start) };
+function rangeAt(
+  index: SourcePositionIndex,
+  start: number,
+  end: number,
+): FindingLocation {
+  return { end: positionAt(index, end), start: positionAt(index, start) };
 }
 
-function lineLocation(content: string, line: number): FindingLocation | undefined {
-  const lines = content.split(lineEndings);
-  const text = lines[line - 1];
-  if (text === undefined) return undefined;
+function lineLocation(
+  index: SourcePositionIndex,
+  line: number,
+): FindingLocation | undefined {
+  const start = index.lineStarts[line - 1];
+  const end = index.lineEnds[line - 1];
+  if (start === undefined || end === undefined) return undefined;
   return {
-    end: { column: text.length + 1, line },
+    end: { column: end - start + 1, line },
     start: { column: 1, line },
   };
 }
@@ -193,6 +247,7 @@ function pairFor(map: unknown, key: string): Pair<Node, Node> {
 
 function atlasKeyLocation(
   content: string,
+  positions: SourcePositionIndex,
   key: "created-at" | "id" | "type" | "updated-at",
 ): FindingLocation {
   const openingLength = content.indexOf("\n") + 1;
@@ -207,7 +262,7 @@ function atlasKeyLocation(
   const atlas = pairFor(document.contents, "atlas");
   const target = pairFor(atlas.value, key);
   const range = target.key.range as [number, number, number];
-  return rangeAt(content, openingLength + range[0], openingLength + range[1]);
+  return rangeAt(positions, openingLength + range[0], openingLength + range[1]);
 }
 
 function expectedType(path: string): string | undefined {
@@ -221,6 +276,146 @@ function expectedType(path: string): string | undefined {
 
 function customTypeName(path: string): string | undefined {
   return /^\.atlas\/types\/([^/]+)\/.+\.md$/u.exec(path)?.[1];
+}
+
+const markdownPunctuationOrSymbol = /[\p{P}\p{S}]/u;
+const markdownWhitespace = /\s/u;
+
+function isMarkdownWhitespace(character: string | undefined): boolean {
+  return character === undefined || markdownWhitespace.test(character);
+}
+
+function isMarkdownPunctuationOrSymbol(character: string | undefined): boolean {
+  return character !== undefined && markdownPunctuationOrSymbol.test(character);
+}
+
+function delimiterCapabilities(
+  marker: "*" | "_",
+  before: string | undefined,
+  after: string | undefined,
+): { readonly canClose: boolean; readonly canOpen: boolean } {
+  const beforeWhitespace = isMarkdownWhitespace(before);
+  const afterWhitespace = isMarkdownWhitespace(after);
+  const beforePunctuation = isMarkdownPunctuationOrSymbol(before);
+  const afterPunctuation = isMarkdownPunctuationOrSymbol(after);
+  const leftFlanking =
+    !afterWhitespace && (!afterPunctuation || beforeWhitespace || beforePunctuation);
+  const rightFlanking =
+    !beforeWhitespace && (!beforePunctuation || afterWhitespace || afterPunctuation);
+  if (marker === "*") {
+    return { canClose: rightFlanking, canOpen: leftFlanking };
+  }
+  return {
+    canClose: rightFlanking && (!leftFlanking || afterPunctuation),
+    canOpen: leftFlanking && (!rightFlanking || beforePunctuation),
+  };
+}
+
+function isBlankMarkdownLine(body: string, start: number, end: number): boolean {
+  for (let index = start; index < end; index += 1) {
+    if (body[index] !== " " && body[index] !== "\t") return false;
+  }
+  return true;
+}
+
+/**
+ * Realm byte budgets already bound linear parsing work, and a decoded body's
+ * UTF-16 code-unit length cannot exceed its validated UTF-8 byte length. This
+ * preflight limits parser-sensitive structure to a fixed amplification of those
+ * accepted bytes: unresolved emphasis delimiters are charged by active depth,
+ * and unterminated wiki-link candidates by their remaining line scan.
+ */
+function markdownComplexityRange(
+  body: string,
+  positions: SourcePositionIndex,
+): SourceRange | undefined {
+  const delimiterWorkLimit = body.length * MARKDOWN_PARSE_WORK_PER_CODE_UNIT;
+  let delimiterDepth = 0;
+  let delimiterWork = 0;
+  let starOpeners = 0;
+  let underscoreOpeners = 0;
+
+  for (let line = 0; line < positions.lineStarts.length; line += 1) {
+    const lineStart = positions.lineStarts[line] as number;
+    const lineEnd = positions.lineEnds[line] as number;
+    let lastWikiClose = -1;
+    for (let index = lineEnd - 2; index >= lineStart; index -= 1) {
+      if (body[index] === "]" && body[index + 1] === "]") {
+        lastWikiClose = index;
+        break;
+      }
+    }
+
+    const wikiWorkLimit = (lineEnd - lineStart) * MARKDOWN_PARSE_WORK_PER_CODE_UNIT;
+    let backslashes = 0;
+    let wikiWork = 0;
+    let index = lineStart;
+    while (index < lineEnd) {
+      const character = body[index] as string;
+      if (character === "\\") {
+        backslashes += 1;
+        index += 1;
+        continue;
+      }
+      const escaped = backslashes % 2 === 1;
+      backslashes = 0;
+
+      if (
+        !escaped &&
+        character === "[" &&
+        body[index + 1] === "[" &&
+        lastWikiClose < index + 2
+      ) {
+        const candidateWork = lineEnd - index;
+        if (candidateWork > wikiWorkLimit - wikiWork) {
+          return { end: index + 2, start: index };
+        }
+        wikiWork += candidateWork;
+      }
+
+      if (character !== "*" && character !== "_") {
+        index += 1;
+        continue;
+      }
+      let runEnd = index + 1;
+      while (runEnd < lineEnd && body[runEnd] === character) runEnd += 1;
+      const activeStart = index + (escaped ? 1 : 0);
+      if (activeStart < runEnd) {
+        const { canClose, canOpen } = delimiterCapabilities(
+          character,
+          index === lineStart ? undefined : body[index - 1],
+          runEnd === lineEnd ? undefined : body[runEnd],
+        );
+        if (canClose || canOpen) {
+          for (let unit = activeStart; unit < runEnd; unit += 1) {
+            const unitWork = delimiterDepth + 1;
+            if (unitWork > delimiterWorkLimit - delimiterWork) {
+              return { end: unit + 1, start: unit };
+            }
+            delimiterWork += unitWork;
+            const matchingOpeners = character === "*" ? starOpeners : underscoreOpeners;
+            if (canClose && matchingOpeners > 0) {
+              delimiterDepth -= 1;
+              if (character === "*") starOpeners -= 1;
+              else underscoreOpeners -= 1;
+            } else if (canOpen) {
+              delimiterDepth += 1;
+              if (character === "*") starOpeners += 1;
+              else underscoreOpeners += 1;
+            }
+          }
+        }
+      }
+      index = runEnd;
+    }
+
+    if (isBlankMarkdownLine(body, lineStart, lineEnd)) {
+      delimiterDepth = 0;
+      starOpeners = 0;
+      underscoreOpeners = 0;
+    }
+  }
+  return undefined;
 }
 
 function visibleHeadingText(heading: MarkdownNode): string {
@@ -243,15 +438,15 @@ function visibleHeadingText(heading: MarkdownNode): string {
 
 function markdownHeadingFinding(
   parsed: ParsedRealmPage,
-  content: string,
+  contentPositions: SourcePositionIndex,
+  tree: MarkdownNode,
 ): Finding | undefined {
-  const tree = fromMarkdown(parsed.page.body, markdownOptions);
-  const first = tree.children[0];
+  const first = tree.children?.[0];
   if (first?.type !== "heading" || first.depth !== 1) {
     const position = first?.position;
     const location =
       position === undefined
-        ? lineLocation(content, parsed.source.body.startLine)
+        ? lineLocation(contentPositions, parsed.source.body.startLine)
         : {
             end: {
               column: position.end.column,
@@ -269,7 +464,7 @@ function markdownHeadingFinding(
       location,
     );
   }
-  if (visibleHeadingText(first as MarkdownNode) === parsed.page.atlas.title) {
+  if (visibleHeadingText(first) === parsed.page.atlas.title) {
     return undefined;
   }
   const position = first.position as NonNullable<typeof first.position>;
@@ -564,6 +759,7 @@ function canonicalCitationIdentifier(label: string): string {
  */
 function collectMarkers(
   body: string,
+  positions: SourcePositionIndex,
   cells: readonly MarkerCell[],
   found: VisibleMarkers,
 ): void {
@@ -598,7 +794,7 @@ function collectMarkers(
       const cell = cells[cursor] as MarkerCell;
       identifier.push(cell.character);
     }
-    const position = rangeAt(body, open.start, (cells[close] as MarkerCell).end);
+    const position = rangeAt(positions, open.start, (cells[close] as MarkerCell).end);
     if ((htmlBefore[close + 1] as number) > (htmlBefore[index] as number)) {
       found.rawHtml.push(position);
     } else {
@@ -617,14 +813,18 @@ function collectMarkers(
  * detection. Hidden content, link destinations, autolinks, block boundaries,
  * and gaps holding a line ending flush the run instead of bridging it.
  */
-function visibleCitationMarkers(tree: MarkdownNode, body: string): VisibleMarkers {
+function visibleCitationMarkers(
+  tree: MarkdownNode,
+  body: string,
+  positions: SourcePositionIndex,
+): VisibleMarkers {
   const found: VisibleMarkers = { rawHtml: [], references: [] };
   const pending: PendingEntry[] = [tree];
   let cells: MarkerCell[] = [];
   let previousEnd = -1;
   function flush(): void {
     if (cells.length > 0) {
-      collectMarkers(body, cells, found);
+      collectMarkers(body, positions, cells, found);
       cells = [];
     }
     previousEnd = -1;
@@ -707,20 +907,24 @@ function definitionWikilinks(definition: MarkdownNode): readonly MarkdownNode[] 
   return targets;
 }
 
+type MarkdownPage = {
+  readonly bodyPositions: SourcePositionIndex;
+  readonly file: RealmTextFile;
+  readonly page: ParsedRealmPage;
+  readonly tree: MarkdownNode;
+};
+
 function validateCitations(
-  parsedPages: readonly {
-    readonly file: RealmTextFile;
-    readonly page: ParsedRealmPage;
-  }[],
+  parsedPages: readonly MarkdownPage[],
   pagePaths: ReadonlySet<string>,
   findings: Finding[],
 ): void {
-  for (const { file, page } of parsedPages) {
-    const tree = fromMarkdown(page.page.body, markdownOptions) as MarkdownNode;
+  for (const { bodyPositions, file, page, tree } of parsedPages) {
     const references: string[] = [];
     const { rawHtml, references: unresolved } = visibleCitationMarkers(
       tree,
       page.page.body,
+      bodyPositions,
     );
     const definitions = new Map<string, MarkdownNode[]>();
     visitMarkdown(tree, (node) => {
@@ -827,9 +1031,10 @@ function validateCitations(
   }
 }
 
-function validatePage(
+function validatePageMetadata(
   file: RealmTextFile,
   parsed: ParsedRealmPage,
+  positions: SourcePositionIndex,
   findings: Finding[],
 ): void {
   const expected = expectedType(file.path);
@@ -839,7 +1044,7 @@ function validatePage(
         "ATLAS_PAGE_TYPE_PATH_MISMATCH",
         "Realm page type does not match its registered path.",
         file.path,
-        atlasKeyLocation(file.content, "type"),
+        atlasKeyLocation(file.content, positions, "type"),
       ),
     );
   }
@@ -861,13 +1066,10 @@ function validatePage(
         "ATLAS_ROOT_BONFIRE_ID_INVALID",
         "The Root Bonfire must use the stable ID bonfire:root.",
         file.path,
-        atlasKeyLocation(file.content, "id"),
+        atlasKeyLocation(file.content, positions, "id"),
       ),
     );
   }
-
-  const heading = markdownHeadingFinding(parsed, file.content);
-  if (heading !== undefined) findings.push(heading);
 
   if (
     Date.parse(parsed.page.atlas["created-at"]) >
@@ -878,13 +1080,16 @@ function validatePage(
         "ATLAS_PAGE_UPDATED_BEFORE_CREATED",
         "Realm page updated-at must not precede created-at.",
         file.path,
-        atlasKeyLocation(file.content, "updated-at"),
+        atlasKeyLocation(file.content, positions, "updated-at"),
       ),
     );
   }
 }
 
-function parseOne(file: RealmTextFile): ParsedRealmPage | Finding {
+function parseOne(
+  file: RealmTextFile,
+  positions: SourcePositionIndex,
+): ParsedRealmPage | Finding {
   try {
     const [parsed] = parseRealmPages([file]);
     return parsed as ParsedRealmPage;
@@ -894,7 +1099,7 @@ function parseOne(file: RealmTextFile): ParsedRealmPage | Finding {
         parseCodes[error.code],
         parseMessages[error.code],
         file.path,
-        lineLocation(file.content, error.sourceLine),
+        lineLocation(positions, error.sourceLine),
       );
     }
     /* c8 ignore next 6 -- parser internals may fail without exposing details */
@@ -951,13 +1156,54 @@ export function validateRealmStructure(
   }
   pageRecords.sort((left, right) => compareCodePoints(left.path, right.path));
 
-  const parsed: { readonly file: RealmTextFile; readonly page: ParsedRealmPage }[] = [];
+  const parsed: {
+    readonly contentPositions: SourcePositionIndex;
+    readonly file: RealmTextFile;
+    readonly page: ParsedRealmPage;
+  }[] = [];
+  const markdownPages: MarkdownPage[] = [];
   for (const file of pageRecords) {
-    const result = parseOne(file);
+    const contentPositions = sourcePositionIndex(file.content);
+    const result = parseOne(file, contentPositions);
     if ("code" in result) findings.push(result);
     else {
-      parsed.push({ file, page: result });
-      validatePage(file, result, findings);
+      parsed.push({ contentPositions, file, page: result });
+      validatePageMetadata(file, result, contentPositions, findings);
+
+      const bodyPositions = sourcePositionIndex(result.page.body);
+      const complexity = markdownComplexityRange(result.page.body, bodyPositions);
+      if (complexity !== undefined) {
+        findings.push(
+          finding(
+            "ATLAS_PAGE_MARKDOWN_COMPLEXITY_EXCEEDED",
+            "Realm page Markdown exceeds deterministic parsing complexity limits.",
+            file.path,
+            markdownLocation(
+              result,
+              rangeAt(bodyPositions, complexity.start, complexity.end),
+            ),
+          ),
+        );
+        continue;
+      }
+
+      let tree: MarkdownNode;
+      /* c8 ignore next 12 -- parser internals may fail without exposing details */
+      try {
+        tree = fromMarkdown(result.page.body, markdownOptions) as MarkdownNode;
+      } catch {
+        findings.push(
+          finding(
+            "ATLAS_PAGE_MARKDOWN_PARSE_FAILED",
+            "Realm page Markdown could not be parsed.",
+            file.path,
+          ),
+        );
+        continue;
+      }
+      const heading = markdownHeadingFinding(result, contentPositions, tree);
+      if (heading !== undefined) findings.push(heading);
+      markdownPages.push({ bodyPositions, file, page: result, tree });
     }
   }
 
@@ -979,19 +1225,23 @@ export function validateRealmStructure(
   }
   for (const entries of ids.values()) {
     if (entries.length < 2) continue;
-    for (const { file } of entries) {
+    for (const { contentPositions, file } of entries) {
       findings.push(
         finding(
           "ATLAS_PAGE_ID_DUPLICATE",
           "Realm page stable ID must be unique within the Realm.",
           file.path,
-          atlasKeyLocation(file.content, "id"),
+          atlasKeyLocation(file.content, contentPositions, "id"),
         ),
       );
     }
   }
 
-  validateCitations(parsed, new Set(pageRecords.map(({ path }) => path)), findings);
+  validateCitations(
+    markdownPages,
+    new Set(pageRecords.map(({ path }) => path)),
+    findings,
+  );
 
   return Object.freeze(findings.toSorted(compareFindings));
 }

@@ -169,13 +169,21 @@ test("requires the first CommonMark block to be the matching H1", () => {
       body,
     );
   }
-  assert.deepEqual(
-    validateRealmStructure([
-      validFiles[2] as RealmTextFile,
-      page(".atlas/insights/page.md", "# **Pa**ge"),
-    ]),
-    [],
-  );
+  for (const [body, title] of [
+    ["# **Pa**ge", "Page"],
+    ["# _Page_", "Page"],
+    ["# \\*Page\\*", '"*Page*"'],
+    ["# ![Page](image.png)", "Page"],
+    ["# Page\n\n*text* a_b (_)", "Page"],
+  ] as const) {
+    assert.deepEqual(
+      validateRealmStructure([
+        validFiles[2] as RealmTextFile,
+        page(".atlas/insights/page.md", body, { title }),
+      ]),
+      [],
+    );
+  }
 });
 
 test("reports an empty body at EOF without fabricating a location", () => {
@@ -726,7 +734,7 @@ test("validates deeply nested CommonMark without exhausting the stack", () => {
   );
 });
 
-test("validates deeply nested inline H1 formatting without exhausting the stack", () => {
+test("rejects excessive inline delimiter nesting before Markdown parsing", () => {
   const depth = 8000;
   const title = `${"a ".repeat(depth)}Page${" a".repeat(depth)}`;
   const body = `# ${"*a ".repeat(depth)}![Page](image.png)${" a*".repeat(depth)}`;
@@ -734,8 +742,27 @@ test("validates deeply nested inline H1 formatting without exhausting the stack"
     validateRealmStructure([
       validFiles[2] as RealmTextFile,
       page(".atlas/insights/deep-heading.md", body, { title }),
-    ]),
-    [],
+    ]).map(({ attribution, code, location, path }) => ({
+      attribution,
+      code,
+      location,
+      path,
+    })),
+    [
+      {
+        attribution: {
+          checkId: "atlas-core.structural-validation",
+          kind: "atlas-core",
+          trusted: true,
+        },
+        code: "ATLAS_PAGE_MARKDOWN_COMPLEXITY_EXCEEDED",
+        location: {
+          end: { column: 7438, line: 15 },
+          start: { column: 7437, line: 15 },
+        },
+        path: ".atlas/insights/deep-heading.md",
+      },
+    ],
   );
 });
 
@@ -749,6 +776,69 @@ test("handles repeated unterminated Citation prefixes deterministically", () => 
       ),
     ]),
     [],
+  );
+});
+
+test("rejects repeated unterminated wiki-link candidates before Markdown parsing", () => {
+  assert.deepEqual(
+    validateRealmStructure([
+      validFiles[2] as RealmTextFile,
+      page(
+        ".atlas/insights/unterminated-wikilinks.md",
+        `# Page\n\n${"[[target|".repeat(4000)}`,
+      ),
+    ]).map(({ code, location, path }) => ({ code, location, path })),
+    [
+      {
+        code: "ATLAS_PAGE_MARKDOWN_COMPLEXITY_EXCEEDED",
+        location: {
+          end: { column: 579, line: 17 },
+          start: { column: 577, line: 17 },
+        },
+        path: ".atlas/insights/unterminated-wikilinks.md",
+      },
+    ],
+  );
+});
+
+test("locates thousands of visible split Citation markers deterministically", () => {
+  const markerCount = 3000;
+  const markers = Array.from(
+    { length: markerCount },
+    (_, index) => `[*^marker-${String(index)}*]`,
+  ).join(" ");
+  const findings = validateRealmStructure([
+    validFiles[2] as RealmTextFile,
+    page(".atlas/insights/many-markers.md", `# Page\n\n${markers}`),
+  ]);
+  assert.equal(findings.length, markerCount);
+  const first = findings[0];
+  const last = findings.at(-1);
+  assert.ok(first);
+  assert.ok(last);
+  assert.deepEqual(
+    { code: first.code, location: first.location, path: first.path },
+    {
+      code: "ATLAS_CITATION_DEFINITION_MISSING",
+      location: {
+        end: { column: 14, line: 17 },
+        start: { column: 1, line: 17 },
+      },
+      path: ".atlas/insights/many-markers.md",
+    },
+  );
+  const lastMarker = `[*^marker-${String(markerCount - 1)}*]`;
+  const lastStart = markers.lastIndexOf(lastMarker) + 1;
+  assert.deepEqual(
+    { code: last.code, location: last.location, path: last.path },
+    {
+      code: "ATLAS_CITATION_DEFINITION_MISSING",
+      location: {
+        end: { column: lastStart + lastMarker.length, line: 17 },
+        start: { column: lastStart, line: 17 },
+      },
+      path: ".atlas/insights/many-markers.md",
+    },
   );
 });
 
