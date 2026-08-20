@@ -8,10 +8,12 @@ import {
   AtlasPageEnvelopeSchema,
 } from "../src/domain/atlas_page.ts";
 import {
+  atlasFrontmatterSpan,
   classifyAtlasTextPath,
   parseAtlasPages,
   AtlasPageParseError,
 } from "../src/atlas/parse_atlas_pages.ts";
+import { rethrowProcessLimit } from "../src/atlas/process_limit.ts";
 import type { AtlasTextFile } from "../src/atlas/load_atlas_text.ts";
 
 const fixtureRoot = resolve(import.meta.dirname, "fixtures", "atlas-pages");
@@ -204,6 +206,12 @@ test("rejects missing, malformed, and invalid frontmatter", () => {
     parseError(text(".atlas/index.md", "---\nsdk:\n  schema: 1")).code,
     "MALFORMED_FRONTMATTER",
   );
+  for (const frontmatter of ["stamp: 2001-12-14", "stamps: [2001-12-14]"]) {
+    assert.equal(
+      parseError(text(".atlas/index.md", `---\n${frontmatter}\n---\n`)).code,
+      "MALFORMED_FRONTMATTER",
+    );
+  }
   for (const frontmatter of ["[]", "sdk: []\natlas: {}", "sdk: null\natlas: {}"]) {
     assert.equal(
       parseError(text(".atlas/index.md", `---\n${frontmatter}\n---\n`)).code,
@@ -446,4 +454,33 @@ test("accepts an empty body after an end-of-file delimiter", () => {
   assert.ok(parsed);
   assert.equal(parsed.page.body, "");
   assert.deepEqual(parsed.source.body, { endLine: 15, startLine: 15 });
+});
+
+test("a failure of the running process is never answered for as a page failure", () => {
+  const limit = new RangeError("Maximum call stack size exceeded");
+  assert.throws(() => {
+    rethrowProcessLimit(limit);
+  }, limit);
+  assert.equal(rethrowProcessLimit(new TypeError("captured bytes")), undefined);
+});
+
+test("reports the same frontmatter span the parse read", () => {
+  const page = `${validPage("concept:a")}\n# Page\n`;
+  const span = atlasFrontmatterSpan(page);
+
+  assert.ok(span);
+  assert.equal(page.slice(0, span.start), "---\n");
+  assert.equal(page.slice(span.end, span.end + 4), "---\n");
+  // The parse counts the same lines, so the span ends where its frontmatter did.
+  const [parsed] = parseAtlasPages([text(".atlas/concepts/a.md", page)]);
+  assert.ok(parsed);
+  assert.equal(
+    page.slice(0, span.end).split("\n").length - 1,
+    parsed.source.frontmatter.endLine,
+  );
+
+  // A lone carriage return starts a line for a regular expression under the
+  // multiline flag, and neither reader begins a delimiter line there.
+  assert.equal(atlasFrontmatterSpan("---\nsdk: 1\r---\r\n"), undefined);
+  assert.equal(atlasFrontmatterSpan("no frontmatter\n"), undefined);
 });

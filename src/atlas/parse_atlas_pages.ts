@@ -1,4 +1,4 @@
-import { parseDocument } from "yaml";
+import { parseDocument, visit } from "yaml";
 import {
   checkAtlasPageEnvelope,
   type AtlasPageEnvelope,
@@ -14,6 +14,11 @@ export interface SourceLines {
   readonly startLine: number;
 }
 
+export interface AtlasFrontmatterSpan {
+  readonly end: number;
+  readonly start: number;
+}
+
 export interface AtlasPageSource {
   readonly body: SourceLines;
   readonly frontmatter: SourceLines;
@@ -26,9 +31,15 @@ export interface ParsedAtlasPage {
 }
 
 export type AtlasPageParseErrorCode =
-  "INVALID_PAGE_ENVELOPE" | "MALFORMED_FRONTMATTER" | "MISSING_FRONTMATTER";
+  | "FRONTMATTER_TOO_DEEP"
+  | "FRONTMATTER_TOO_LARGE"
+  | "INVALID_PAGE_ENVELOPE"
+  | "MALFORMED_FRONTMATTER"
+  | "MISSING_FRONTMATTER";
 
 const errorMessages: Readonly<Record<AtlasPageParseErrorCode, string>> = Object.freeze({
+  FRONTMATTER_TOO_DEEP: "Atlas page frontmatter nests deeper than Atlas SDK reads.",
+  FRONTMATTER_TOO_LARGE: "Atlas page frontmatter is larger than Atlas SDK reads.",
   INVALID_PAGE_ENVELOPE: "Atlas page frontmatter does not satisfy the page envelope.",
   MALFORMED_FRONTMATTER: "Atlas page frontmatter is malformed.",
   MISSING_FRONTMATTER: "Atlas page frontmatter is missing.",
@@ -48,9 +59,74 @@ export class AtlasPageParseError extends Error {
   }
 }
 
+// Nesting deep enough to exhaust the JavaScript stack is a property of the
+// running process rather than of the input: the same bytes could parse on one
+// call and exhaust the stack on the next, so the same Atlas would answer
+// differently across runs. A declared bound answers the same way every time, so
+// nesting is measured from the frontmatter text before any parser recurses over
+// it. Every block level costs at least one column of indentation and every flow
+// level one bracket, so this scan can only overstate the nesting it measures,
+// and a page it refuses is refused on every run.
+export const maxFrontmatterDepth = 64;
+
+// The scan starts a line at every break any reader may honor - a line feed, a
+// carriage return, or both - which is at least every line the YAML reader
+// begins, so the indentation it measures can only overstate the nesting.
+const yamlLineBreak = /\r\n|[\n\r]/u;
+
+// Reading YAML costs more than the characters it holds, because every mapping
+// key is checked against the keys beside it, so the frontmatter Atlas SDK reads
+// is declared as well. Frontmatter carries what a page is, not what it says, so
+// a page needing more than this is saying it in the wrong place.
+export const maxFrontmatterCharacters = 32 * 1024;
+
+function openingLengthOf(content: string): number {
+  return content.startsWith("---\r\n") ? 5 : content.startsWith("---\n") ? 4 : 0;
+}
+
+/**
+ * Answers where the frontmatter of a captured Atlas page begins and ends, so a
+ * later stage locating a value inside it reads the page the same way the parse
+ * did instead of describing the delimiter a second time. "reports the same
+ * frontmatter span the parse read" pins the two against each other.
+ */
+export function atlasFrontmatterSpan(
+  content: string,
+): AtlasFrontmatterSpan | undefined {
+  const start = openingLengthOf(content);
+  if (start === 0) return undefined;
+  const closing = findClosingDelimiter(content, start);
+  if (closing === undefined) return undefined;
+  return Object.freeze({ end: closing.index, start });
+}
+
+function frontmatterDepthBound(frontmatter: string): number {
+  let bound = 0;
+  let flowDepth = 0;
+  for (const line of frontmatter.split(yamlLineBreak)) {
+    let indent = 0;
+    while (line[indent] === " ") indent += 1;
+    bound = Math.max(bound, indent + flowDepth + 1);
+    for (const character of line.slice(indent)) {
+      if (character === "[" || character === "{") {
+        flowDepth += 1;
+        bound = Math.max(bound, indent + flowDepth + 1);
+      } else if (character === "]" || character === "}") {
+        flowDepth = Math.max(0, flowDepth - 1);
+      }
+    }
+  }
+  return bound;
+}
+
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+// A value YAML can hold but JSON cannot is answered rather than raised, so
+// reading a page does not depend on catching an exception. "rejects non-JSON
+// and unresolved YAML tags" pins the answer.
+const notJson = Symbol("not-json");
 
 function cloneAndFreezeJson(value: unknown): unknown {
   if (
@@ -62,26 +138,25 @@ function cloneAndFreezeJson(value: unknown): unknown {
     return value;
   }
   if (Array.isArray(value)) {
-    return Object.freeze(value.map(cloneAndFreezeJson));
+    const items: unknown[] = [];
+    for (const entry of value) {
+      const cloned = cloneAndFreezeJson(entry);
+      if (cloned === notJson) return notJson;
+      items.push(cloned);
+    }
+    return Object.freeze(items);
   }
   if (value instanceof Map) {
     const entries: [string, unknown][] = [];
     for (const [key, entry] of value) {
-      if (typeof key !== "string") {
-        throw new TypeError("Frontmatter mapping keys must be strings.");
-      }
-      entries.push([key, cloneAndFreezeJson(entry)]);
+      if (typeof key !== "string") return notJson;
+      const cloned = cloneAndFreezeJson(entry);
+      if (cloned === notJson) return notJson;
+      entries.push([key, cloned]);
     }
     return Object.freeze(Object.fromEntries(entries));
   }
-  if (isRecord(value) && Object.getPrototypeOf(value) === Object.prototype) {
-    return Object.freeze(
-      Object.fromEntries(
-        Object.entries(value).map(([key, entry]) => [key, cloneAndFreezeJson(entry)]),
-      ),
-    );
-  }
-  throw new TypeError("Frontmatter contains a non-JSON value.");
+  return notJson;
 }
 
 function lineAt(content: string, offset: number): number {
@@ -116,9 +191,10 @@ export function classifyAtlasTextPath(path: string): AtlasTextClassification {
 }
 
 // Only the document start or a position immediately after an actual LF begins a
-// line, so separators that JavaScript regular expressions treat as line starts
-// (U+2028 and U+2029, which YAML emits literally inside scalars) can never be
-// mistaken for the closing frontmatter delimiter.
+// line, so separators JavaScript regular expressions treat as line starts - a
+// lone carriage return under the multiline flag, and U+2028 and U+2029, which
+// YAML emits literally inside scalars - are not read as the closing frontmatter
+// delimiter. "only an LF starts a closing delimiter line" pins this.
 function findClosingDelimiter(
   content: string,
   from: number,
@@ -146,46 +222,70 @@ function findClosingDelimiter(
   return undefined;
 }
 
-function parsePage(file: AtlasTextFile): ParsedAtlasPage {
-  const openingLength = file.content.startsWith("---\r\n")
-    ? 5
-    : file.content.startsWith("---\n")
-      ? 4
-      : 0;
+/**
+ * Reads one captured Atlas page, answering with the parse failure rather than
+ * raising it, so a caller does not have to tell a failure of the page from a
+ * failure of the process running the read. "a failure of the running process is
+ * never answered for as a page failure" pins the difference.
+ */
+export function parseAtlasPage(
+  file: AtlasTextFile,
+): ParsedAtlasPage | AtlasPageParseError {
+  const openingLength = openingLengthOf(file.content);
   if (openingLength === 0) {
-    throw new AtlasPageParseError("MISSING_FRONTMATTER", file.path, 1);
+    return new AtlasPageParseError("MISSING_FRONTMATTER", file.path, 1);
   }
 
   const closing = findClosingDelimiter(file.content, openingLength);
   if (closing === undefined) {
-    throw new AtlasPageParseError("MALFORMED_FRONTMATTER", file.path, 1);
+    return new AtlasPageParseError("MALFORMED_FRONTMATTER", file.path, 1);
   }
 
   const closingLine = lineAt(file.content, closing.index);
   const frontmatterText = file.content.slice(openingLength, closing.index);
   const body = file.content.slice(closing.index + closing.length);
+  if (frontmatterText.length > maxFrontmatterCharacters) {
+    return new AtlasPageParseError("FRONTMATTER_TOO_LARGE", file.path, 2);
+  }
+  if (frontmatterDepthBound(frontmatterText) > maxFrontmatterDepth) {
+    return new AtlasPageParseError("FRONTMATTER_TOO_DEEP", file.path, 2);
+  }
   const document = parseDocument(frontmatterText, {
     customTags: ["binary", "set", "timestamp"],
     strict: true,
     uniqueKeys: true,
   });
   if (document.errors.length > 0 || document.warnings.length > 0) {
-    throw new AtlasPageParseError("MALFORMED_FRONTMATTER", file.path, 2);
+    return new AtlasPageParseError("MALFORMED_FRONTMATTER", file.path, 2);
   }
 
-  let frontmatter: unknown;
-  try {
-    frontmatter = cloneAndFreezeJson(
-      document.toJS({ mapAsMap: true, maxAliasCount: 0 }),
-    );
-  } catch {
-    throw new AtlasPageParseError("MALFORMED_FRONTMATTER", file.path, 2);
+  // An alias makes one frontmatter value stand for another, so the text no
+  // longer shows what the page holds. Refusing it from the parsed shape keeps
+  // the answer a property of the page rather than of an expansion budget.
+  let aliases = 0;
+  visit(document, {
+    Alias: () => {
+      aliases += 1;
+      return visit.BREAK;
+    },
+  });
+  if (aliases > 0) {
+    return new AtlasPageParseError("MALFORMED_FRONTMATTER", file.path, 2);
+  }
+
+  const frontmatter = cloneAndFreezeJson(
+    document.toJS({ mapAsMap: true, maxAliasCount: 0 }),
+  );
+  if (frontmatter === notJson) {
+    return new AtlasPageParseError("MALFORMED_FRONTMATTER", file.path, 2);
   }
   const page = isRecord(frontmatter) ? { ...frontmatter, body } : undefined;
   if (page === undefined || !checkAtlasPageEnvelope(page)) {
-    throw new AtlasPageParseError("INVALID_PAGE_ENVELOPE", file.path, 2);
+    return new AtlasPageParseError("INVALID_PAGE_ENVELOPE", file.path, 2);
   }
-  const frozenPage = cloneAndFreezeJson(page) as AtlasPageEnvelope;
+  // Every frontmatter value is already a frozen clone and the body is a string,
+  // so pinning the envelope itself leaves the whole page immutable.
+  const frozenPage = Object.freeze(page) as AtlasPageEnvelope;
 
   const bodyStartLine = closingLine + 1;
   return Object.freeze({
@@ -210,5 +310,11 @@ export function parseAtlasPages(
   const pageFiles = files
     .filter((file) => classifyAtlasTextPath(file.path) === "page")
     .toSorted((left, right) => compareCodePoints(left.path, right.path));
-  return Object.freeze(pageFiles.map(parsePage));
+  return Object.freeze(
+    pageFiles.map((file) => {
+      const parsed = parseAtlasPage(file);
+      if (parsed instanceof AtlasPageParseError) throw parsed;
+      return parsed;
+    }),
+  );
 }

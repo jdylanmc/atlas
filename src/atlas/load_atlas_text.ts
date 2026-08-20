@@ -1,4 +1,5 @@
 import { compareCodePoints } from "./compare_code_points.ts";
+import { rethrowProcessLimit } from "./process_limit.ts";
 
 export interface CapturedAtlasFile {
   readonly bytes: Uint8Array;
@@ -44,8 +45,29 @@ export class AtlasLoadError extends Error {
   }
 }
 
+// A path travels into every Finding a check raises about its file, and a
+// Finding exists so untrusted content is safe to read. Control characters and
+// the bidirectional overrides rewrite what a terminal or log shows without
+// changing the text a reader compares it against, so a path carrying them is
+// refused rather than sanitized.
+const unsafePathCharacters = new Set<string>();
+for (const [first, last] of [
+  [0, 0x1f],
+  [0x7f, 0x9f],
+  [0x202a, 0x202e],
+  [0x2066, 0x2069],
+] as const) {
+  for (let code = first; code <= last; code += 1) {
+    unsafePathCharacters.add(String.fromCodePoint(code));
+  }
+}
+
+function hasUnsafePathCharacter(path: string): boolean {
+  return Array.from(path).some((character) => unsafePathCharacters.has(character));
+}
+
 function normalizePath(path: string): string {
-  if (path.startsWith("/") || path.includes("\\") || path.includes("\0")) {
+  if (path.startsWith("/") || path.includes("\\") || hasUnsafePathCharacter(path)) {
     throw new AtlasLoadError("INVALID_PATH");
   }
   const segments = path.split("/");
@@ -87,7 +109,8 @@ function hasSharedBackingBuffer(bytes: Uint8Array): boolean {
   try {
     Reflect.apply(sharedArrayBufferByteLengthGetter, buffer, []);
     return true;
-  } catch {
+  } catch (error: unknown) {
+    rethrowProcessLimit(error);
     return false;
   }
 }
@@ -129,7 +152,8 @@ export function loadAtlasText(
     let content: string;
     try {
       content = decoder.decode(file.bytes);
-    } catch {
+    } catch (error: unknown) {
+      rethrowProcessLimit(error);
       throw new AtlasLoadError("INVALID_UTF8");
     }
     files.push(Object.freeze({ content, path: file.path }));

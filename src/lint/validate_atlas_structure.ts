@@ -23,12 +23,15 @@ import {
 import type { Finding, FindingLocation } from "../domain/finding.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import type { AtlasTextFile } from "../atlas/load_atlas_text.ts";
+import { rethrowProcessLimit } from "../atlas/process_limit.ts";
 import { positionIndex } from "./source_position.ts";
 import { sdkFindings } from "./sdk_finding.ts";
 import {
+  atlasFrontmatterSpan,
   classifyAtlasTextPath,
-  parseAtlasPages,
+  parseAtlasPage,
   AtlasPageParseError,
+  type AtlasFrontmatterSpan,
   type ParsedAtlasPage,
 } from "../atlas/parse_atlas_pages.ts";
 
@@ -37,12 +40,16 @@ type MarkdownPosition = NonNullable<Nodes["position"]>;
 const finding = sdkFindings("sdk-core.structural-validation");
 
 const parseCodes = Object.freeze({
+  FRONTMATTER_TOO_DEEP: "ATLAS_PAGE_FRONTMATTER_TOO_DEEP",
+  FRONTMATTER_TOO_LARGE: "ATLAS_PAGE_FRONTMATTER_TOO_LARGE",
   INVALID_PAGE_ENVELOPE: "ATLAS_PAGE_INVALID_ENVELOPE",
   MALFORMED_FRONTMATTER: "ATLAS_PAGE_MALFORMED_FRONTMATTER",
   MISSING_FRONTMATTER: "ATLAS_PAGE_MISSING_FRONTMATTER",
 });
 
 const parseMessages = Object.freeze({
+  FRONTMATTER_TOO_DEEP: "Atlas page frontmatter nests deeper than Atlas SDK reads.",
+  FRONTMATTER_TOO_LARGE: "Atlas page frontmatter is larger than Atlas SDK reads.",
   INVALID_PAGE_ENVELOPE: "Atlas page frontmatter does not satisfy the page envelope.",
   MALFORMED_FRONTMATTER: "Atlas page frontmatter is malformed.",
   MISSING_FRONTMATTER: "Atlas page frontmatter is missing.",
@@ -81,22 +88,19 @@ function sdkKeyLocation(
   content: string,
   key: "created-at" | "id" | "type" | "updated-at",
 ): FindingLocation {
-  const openingLength = content.indexOf("\n") + 1;
-  const closing = /^---(?:\r?\n|$)/gmu;
-  closing.lastIndex = openingLength;
-  const match = closing.exec(content) as RegExpExecArray;
+  // Only a page the parse already read reaches here, so the span is answered.
+  // Asking the parse where its frontmatter was keeps one rule for the closing
+  // delimiter instead of a second description that can disagree with it.
+  const span = atlasFrontmatterSpan(content) as AtlasFrontmatterSpan;
 
-  const document = parseDocument(content.slice(openingLength, match.index), {
+  const document = parseDocument(content.slice(span.start, span.end), {
     strict: true,
     uniqueKeys: true,
   });
   const sdk = pairFor(document.contents, "sdk");
   const target = pairFor(sdk.value, key);
   const range = target.key.range as [number, number, number];
-  return positionIndex(content).rangeAt(
-    openingLength + range[0],
-    openingLength + range[1],
-  );
+  return positionIndex(content).rangeAt(span.start + range[0], span.start + range[1]);
 }
 
 function expectedType(path: string): string | undefined {
@@ -741,25 +745,95 @@ function validatePage(
 }
 
 function parseOne(file: AtlasTextFile): ParsedAtlasPage | Finding {
-  try {
-    const [parsed] = parseAtlasPages([file]);
-    return parsed as ParsedAtlasPage;
-  } catch (error: unknown) {
-    if (error instanceof AtlasPageParseError) {
-      return finding(
-        parseCodes[error.code],
-        parseMessages[error.code],
-        file.path,
-        lineLocation(file.content, error.sourceLine),
-      );
+  const parsed = parseAtlasPage(file);
+  if (!(parsed instanceof AtlasPageParseError)) return parsed;
+  return finding(
+    parseCodes[parsed.code],
+    parseMessages[parsed.code],
+    file.path,
+    lineLocation(file.content, parsed.sourceLine),
+  );
+}
+
+// Reading Markdown costs more than the bytes it holds. Nesting multiplies the
+// work each block costs, and blocks and emphasis marks each cost more the more
+// of them a body carries, so how deeply and how much markup Atlas SDK reads are
+// both declared, and both are measured from the text before any reader runs
+// over it. Every nested block costs at least one quote marker, one list marker,
+// or two columns of indentation, and every nested inline span costs one
+// bracket, so the scan can only overstate the nesting it measures. Every line
+// is one more place a block can begin, and reading each costs more the more
+// lines stand beside it, so how many lines a body holds is declared too. Prose
+// costs only what its bytes cost, so a page of it is read whole.
+// Markdown begins a line after a line feed, a carriage return, or both, so the
+// scan reads the same lines the reader will.
+const markdownLineBreak = /\r\n|[\n\r]/u;
+const maxBodyNestingDepth = 64;
+const maxBodyMarkupMarks = 8192;
+const maxBodyLines = 16 * 1024;
+
+const listMarkerAt = /(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)/uy;
+const markupMarks: ReadonlySet<string> = new Set([
+  "*",
+  "_",
+  "~",
+  "`",
+  "[",
+  "]",
+  "&",
+  "<",
+  ">",
+]);
+
+interface BodyMarkdownBound {
+  readonly lines: number;
+  readonly marks: number;
+  readonly nesting: number;
+}
+
+function bodyMarkdownBound(body: string): BodyMarkdownBound {
+  let lines = 0;
+  let marks = 0;
+  let nesting = 0;
+  for (const line of body.split(markdownLineBreak)) {
+    lines += 1;
+    let blocks = 1;
+    let columns = 0;
+    let index = 0;
+    for (; index < line.length;) {
+      const character = line[index];
+      if (character === " " || character === "\t") {
+        columns += 1;
+        index += 1;
+        continue;
+      }
+      if (character === ">") {
+        blocks += 1;
+        index += 1;
+        continue;
+      }
+      listMarkerAt.lastIndex = index;
+      const marker = listMarkerAt.exec(line);
+      if (marker === null) break;
+      blocks += 2;
+      index += marker[0].length;
     }
-    /* c8 ignore next 6 -- parser internals may fail without exposing details */
-    return finding(
-      "ATLAS_PAGE_PARSE_FAILED",
-      "Atlas page could not be parsed.",
-      file.path,
-    );
+    blocks += Math.floor(columns / 2);
+    nesting = Math.max(nesting, blocks);
+    marks += blocks - 1;
+
+    let spans = 0;
+    for (const character of line.slice(index)) {
+      if (markupMarks.has(character)) marks += 1;
+      if (character === "[") {
+        spans += 1;
+        nesting = Math.max(nesting, blocks + spans);
+      } else if (character === "]") {
+        spans = Math.max(0, spans - 1);
+      }
+    }
   }
+  return { lines, marks, nesting };
 }
 
 function compareFindings(left: Finding, right: Finding): number {
@@ -784,7 +858,8 @@ function capturePageRecord(input: AtlasTextFile): AtlasTextFile | Finding | unde
     const content = (input as { readonly content?: unknown }).content;
     if (typeof content !== "string") throw new TypeError();
     return Object.freeze({ content, path });
-  } catch {
+  } catch (error: unknown) {
+    rethrowProcessLimit(error);
     return finding("ATLAS_PAGE_PARSE_FAILED", "Atlas page could not be parsed.", path);
   }
 }
@@ -813,6 +888,39 @@ export function validateAtlasStructure(
     const result = parseOne(file);
     if ("code" in result) findings.push(result);
     else {
+      // A body carrying more Markdown than Atlas SDK reads is reported from the
+      // scan of its text rather than read.
+      const bound = bodyMarkdownBound(result.page.body);
+      if (bound.nesting > maxBodyNestingDepth) {
+        findings.push(
+          finding(
+            "ATLAS_PAGE_BODY_TOO_DEEP",
+            "Atlas page body nests deeper than Atlas SDK reads.",
+            file.path,
+          ),
+        );
+        continue;
+      }
+      if (bound.marks > maxBodyMarkupMarks) {
+        findings.push(
+          finding(
+            "ATLAS_PAGE_BODY_TOO_MARKED",
+            "Atlas page body carries more Markdown markup than Atlas SDK reads.",
+            file.path,
+          ),
+        );
+        continue;
+      }
+      if (bound.lines > maxBodyLines) {
+        findings.push(
+          finding(
+            "ATLAS_PAGE_BODY_TOO_LONG",
+            "Atlas page body holds more lines than Atlas SDK reads.",
+            file.path,
+          ),
+        );
+        continue;
+      }
       const tree = fromMarkdown(result.page.body, markdownOptions);
       parsed.push({ file, page: result });
       validatePage(file, result, tree, findings);

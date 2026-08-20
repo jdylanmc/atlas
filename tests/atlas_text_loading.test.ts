@@ -93,6 +93,11 @@ test("rejects absolute, traversal, backslash, and non-Atlas paths", () => {
     ".atlas",
     ".atlas/",
     ".atlas/\0page.md",
+    ".atlas/concepts/\u001b[2Kpage.md",
+    ".atlas/concepts/\u0007page.md",
+    ".atlas/concepts/\u009bpage.md",
+    ".atlas/concepts/\u202egnp.dm.md",
+    ".atlas/concepts/\u2066page.md",
   ]) {
     assert.equal(
       errorCode(() => loadAtlasText([captured(path, "text")], BUDGETS)),
