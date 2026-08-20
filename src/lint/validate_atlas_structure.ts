@@ -39,6 +39,7 @@ const finding = sdkFindings("sdk-core.structural-validation");
 
 const parseCodes = Object.freeze({
   FRONTMATTER_TOO_DEEP: "ATLAS_PAGE_FRONTMATTER_TOO_DEEP",
+  FRONTMATTER_TOO_LARGE: "ATLAS_PAGE_FRONTMATTER_TOO_LARGE",
   INVALID_PAGE_ENVELOPE: "ATLAS_PAGE_INVALID_ENVELOPE",
   MALFORMED_FRONTMATTER: "ATLAS_PAGE_MALFORMED_FRONTMATTER",
   MISSING_FRONTMATTER: "ATLAS_PAGE_MISSING_FRONTMATTER",
@@ -46,6 +47,7 @@ const parseCodes = Object.freeze({
 
 const parseMessages = Object.freeze({
   FRONTMATTER_TOO_DEEP: "Atlas page frontmatter nests deeper than Atlas SDK reads.",
+  FRONTMATTER_TOO_LARGE: "Atlas page frontmatter is larger than Atlas SDK reads.",
   INVALID_PAGE_ENVELOPE: "Atlas page frontmatter does not satisfy the page envelope.",
   MALFORMED_FRONTMATTER: "Atlas page frontmatter is malformed.",
   MISSING_FRONTMATTER: "Atlas page frontmatter is missing.",
@@ -754,23 +756,67 @@ function parseOne(file: AtlasTextFile): ParsedAtlasPage | Finding {
   );
 }
 
-// Every nested Markdown block costs at least one quote marker or two columns of
-// indentation, so this scan can only overstate the nesting it measures.
+// Reading Markdown costs more than the bytes it holds. Nesting multiplies the
+// work each block costs, and blocks and emphasis marks each cost more the more
+// of them a body carries, so how deeply and how much markup Atlas SDK reads are
+// both declared, and both are measured from the text before any reader runs
+// over it. Every nested block costs at least one quote marker, one list marker,
+// or two columns of indentation, and every nested inline span costs one
+// bracket, so the scan can only overstate the nesting it measures. Prose costs
+// only what its bytes cost, so a page carrying no markup is read whole however
+// much prose it holds.
 const maxBodyNestingDepth = 64;
+const maxBodyMarkupMarks = 4096;
 
-function bodyNestingBound(body: string): number {
-  let bound = 0;
+const listMarkerAt = /(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)/uy;
+const markupMarks: ReadonlySet<string> = new Set(["*", "_", "~", "`", "[", "]"]);
+
+interface BodyMarkdownBound {
+  readonly marks: number;
+  readonly nesting: number;
+}
+
+function bodyMarkdownBound(body: string): BodyMarkdownBound {
+  let marks = 0;
+  let nesting = 0;
   for (const line of body.split("\n")) {
-    let quotes = 0;
-    let spaces = 0;
-    for (const character of line) {
-      if (character === ">") quotes += 1;
-      else if (character === " ") spaces += 1;
-      else break;
+    let blocks = 1;
+    let columns = 0;
+    let index = 0;
+    for (; index < line.length;) {
+      const character = line[index];
+      if (character === " " || character === "\t") {
+        columns += 1;
+        index += 1;
+        continue;
+      }
+      if (character === ">") {
+        blocks += 1;
+        index += 1;
+        continue;
+      }
+      listMarkerAt.lastIndex = index;
+      const marker = listMarkerAt.exec(line);
+      if (marker === null) break;
+      blocks += 2;
+      index += marker[0].length;
     }
-    bound = Math.max(bound, quotes + Math.floor(spaces / 2) + 1);
+    blocks += Math.floor(columns / 2);
+    nesting = Math.max(nesting, blocks);
+    marks += blocks - 1;
+
+    let spans = 0;
+    for (const character of line.slice(index)) {
+      if (markupMarks.has(character)) marks += 1;
+      if (character === "[") {
+        spans += 1;
+        nesting = Math.max(nesting, blocks + spans);
+      } else if (character === "]") {
+        spans = Math.max(0, spans - 1);
+      }
+    }
   }
-  return bound;
+  return { marks, nesting };
 }
 
 function compareFindings(left: Finding, right: Finding): number {
@@ -825,14 +871,24 @@ export function validateAtlasStructure(
     const result = parseOne(file);
     if ("code" in result) findings.push(result);
     else {
-      // Reading Markdown costs more than the bytes it holds, because nesting
-      // multiplies the work each block costs, so a body nesting deeper than
-      // Atlas SDK reads is reported from a scan of the text rather than parsed.
-      if (bodyNestingBound(result.page.body) > maxBodyNestingDepth) {
+      // A body carrying more Markdown than Atlas SDK reads is reported from the
+      // scan of its text rather than read.
+      const bound = bodyMarkdownBound(result.page.body);
+      if (bound.nesting > maxBodyNestingDepth) {
         findings.push(
           finding(
             "ATLAS_PAGE_BODY_TOO_DEEP",
             "Atlas page body nests deeper than Atlas SDK reads.",
+            file.path,
+          ),
+        );
+        continue;
+      }
+      if (bound.marks > maxBodyMarkupMarks) {
+        findings.push(
+          finding(
+            "ATLAS_PAGE_BODY_TOO_MARKED",
+            "Atlas page body carries more Markdown markup than Atlas SDK reads.",
             file.path,
           ),
         );

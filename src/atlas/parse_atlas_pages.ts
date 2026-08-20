@@ -27,12 +27,14 @@ export interface ParsedAtlasPage {
 
 export type AtlasPageParseErrorCode =
   | "FRONTMATTER_TOO_DEEP"
+  | "FRONTMATTER_TOO_LARGE"
   | "INVALID_PAGE_ENVELOPE"
   | "MALFORMED_FRONTMATTER"
   | "MISSING_FRONTMATTER";
 
 const errorMessages: Readonly<Record<AtlasPageParseErrorCode, string>> = Object.freeze({
   FRONTMATTER_TOO_DEEP: "Atlas page frontmatter nests deeper than Atlas SDK reads.",
+  FRONTMATTER_TOO_LARGE: "Atlas page frontmatter is larger than Atlas SDK reads.",
   INVALID_PAGE_ENVELOPE: "Atlas page frontmatter does not satisfy the page envelope.",
   MALFORMED_FRONTMATTER: "Atlas page frontmatter is malformed.",
   MISSING_FRONTMATTER: "Atlas page frontmatter is missing.",
@@ -61,6 +63,12 @@ export class AtlasPageParseError extends Error {
 // level one bracket, so this scan can only overstate the nesting it measures,
 // and a page it refuses is refused on every run.
 export const maxFrontmatterDepth = 64;
+
+// Reading YAML costs more than the characters it holds, because every mapping
+// key is checked against the keys beside it, so the frontmatter Atlas SDK reads
+// is declared as well. Frontmatter carries what a page is, not what it says, so
+// a page needing more than this is saying it in the wrong place.
+export const maxFrontmatterCharacters = 32 * 1024;
 
 function frontmatterDepthBound(frontmatter: string): number {
   let bound = 0;
@@ -207,6 +215,9 @@ export function parseAtlasPage(
   const closingLine = lineAt(file.content, closing.index);
   const frontmatterText = file.content.slice(openingLength, closing.index);
   const body = file.content.slice(closing.index + closing.length);
+  if (frontmatterText.length > maxFrontmatterCharacters) {
+    return new AtlasPageParseError("FRONTMATTER_TOO_LARGE", file.path, 2);
+  }
   if (frontmatterDepthBound(frontmatterText) > maxFrontmatterDepth) {
     return new AtlasPageParseError("FRONTMATTER_TOO_DEEP", file.path, 2);
   }

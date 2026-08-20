@@ -420,10 +420,24 @@ test("resolves Citations through canonical parser footnote identity", () => {
 });
 
 test("handles high-cardinality valid Citation references deterministically", () => {
-  const body = `# Page\n\n${"x[^a]".repeat(70_000)}\n\n[^a]: [[.atlas/sources/source]]\n`;
+  const body = `# Page\n\n${"x[^a]".repeat(2000)}\n\n[^a]: [[.atlas/sources/source]]\n`;
   const files = citing(body);
   const first = validateAtlasStructure(files);
   assert.deepEqual(first, []);
+  assert.deepEqual(validateAtlasStructure(files), first);
+});
+
+test("refuses a page carrying more Markdown markup than it reads", () => {
+  // Reading one Citation marker costs more the more markers stand beside it, so
+  // cardinality this far past what a page says is refused from a scan instead.
+  const body = `# Page\n\n${"x[^a]".repeat(70_000)}\n\n[^a]: [[.atlas/sources/source]]\n`;
+  const files = citing(body);
+  const first = validateAtlasStructure(files);
+
+  assert.deepEqual(
+    first.map((found) => ({ code: found.code, path: found.path })),
+    [{ code: "ATLAS_PAGE_BODY_TOO_MARKED", path: ".atlas/concepts/cited.md" }],
+  );
   assert.deepEqual(validateAtlasStructure(files), first);
 });
 
@@ -890,24 +904,24 @@ test("locates literal Citation markers exactly across one text node", () => {
 });
 
 test("reports high-cardinality literal Citation markers deterministically", () => {
-  const files = citing(`# Page\n\n${"x[^a]".repeat(20_000)}\n`);
+  const files = citing(`# Page\n\n${"x[^a]".repeat(2_000)}\n`);
   const first = validateAtlasStructure(files);
-  assert.equal(first.length, 20_000);
+  assert.equal(first.length, 2_000);
   assert.deepEqual(first.at(-1)?.location, {
-    end: { column: 100_001, line: 17 },
-    start: { column: 99_997, line: 17 },
+    end: { column: 10_001, line: 17 },
+    start: { column: 9_997, line: 17 },
   });
   assert.deepEqual(validateAtlasStructure(files), first);
   assert.deepEqual(validateAtlasStructure(files.toReversed()), first);
 });
 
 test("reports high-cardinality formatting-split Citations deterministically", () => {
-  const files = citing(`# Page\n\n${"x[^a*b*c]".repeat(4_000)}\n`);
+  const files = citing(`# Page\n\n${"x[^a*b*c]".repeat(1_000)}\n`);
   const first = validateAtlasStructure(files);
-  assert.equal(first.length, 4_000);
+  assert.equal(first.length, 1_000);
   assert.deepEqual(first.at(-1)?.location, {
-    end: { column: 36_001, line: 17 },
-    start: { column: 35_993, line: 17 },
+    end: { column: 9_001, line: 17 },
+    start: { column: 8_993, line: 17 },
   });
   assert.deepEqual(validateAtlasStructure(files), first);
   assert.deepEqual(validateAtlasStructure(files.toReversed()), first);

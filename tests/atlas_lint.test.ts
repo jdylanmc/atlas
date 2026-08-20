@@ -369,33 +369,127 @@ test("refuses a body nesting deeper than it reads, without reading it", () => {
   for (const finding of result.findings) assert.equal(checkFinding(finding), true);
 });
 
-test("reads a large pathological body in bounded time", () => {
-  // Nesting multiplies what each Markdown block costs, so a body this size
-  // could otherwise take hours rather than the bytes it holds.
-  const line = `${"> ".repeat(2000)}quoted\n`;
-  const body = line.repeat(Math.ceil((1024 * 1024) / line.length));
-  const atlas = completeAtlas("valid").map((file) =>
+test("reads every large pathological body in bounded time", () => {
+  // Nesting multiplies what each Markdown block costs, and blocks and emphasis
+  // marks each cost more the more of them a body carries, so any of these
+  // bodies could otherwise take hours rather than the bytes they hold.
+  const megabyte = 1024 * 1024;
+  const fill = (line: string): string => line.repeat(Math.ceil(megabyte / line.length));
+  const bodies: Readonly<Record<string, string>> = {
+    ATLAS_PAGE_BODY_TOO_DEEP: fill(`${"> ".repeat(2000)}quoted\n`),
+    ATLAS_PAGE_BODY_TOO_MARKED: fill("- item\n"),
+  };
+
+  for (const [code, body] of Object.entries(bodies)) {
+    const atlas = completeAtlas("valid").map((file) =>
+      file.path === ".atlas/anchors/lint.md"
+        ? {
+            bytes: encoder.encode(`${fixtureText(file.path)}\n${body}`),
+            path: file.path,
+          }
+        : file,
+    );
+
+    const started = performance.now();
+    const result = lintAtlas(atlas, {
+      maxFileBytes: 4 * megabyte,
+      maxTotalBytes: 8 * megabyte,
+    });
+    const elapsed = performance.now() - started;
+
+    assert.ok(result.outcome === "invalid", JSON.stringify(result));
+    assert.deepEqual(
+      result.findings.map((finding) => finding.code),
+      [code],
+    );
+    assert.ok(elapsed < 2000, `linting ${code} took ${String(elapsed)}ms`);
+  }
+});
+
+test("refuses every shape of Markdown that costs more than its bytes", () => {
+  // Each of these was measured taking seconds to minutes, and hours at the
+  // sizes a caller's own byte budget still admits.
+  const megabyte = 1024 * 1024;
+  const shapes: Readonly<Record<string, string>> = {
+    "nested brackets": `${"[".repeat(megabyte)}x`,
+    "flat brackets": "[x]".repeat(megabyte / 3),
+    "emphasis marks": "*a".repeat(megabyte / 2),
+    "underscore marks": "_a".repeat(megabyte / 2),
+    "one nested list line": `${"- ".repeat(megabyte / 2)}x`,
+    "many nested list lines": `${"- ".repeat(200)}x\n`.repeat(megabyte / 400),
+    "one quoted line": ">".repeat(megabyte),
+    "many quoted lines": `${">".repeat(60)} x\n`.repeat(megabyte / 62),
+    "many list items": "- x\n".repeat(megabyte / 4),
+    "deep indentation": `${"  ".repeat(megabyte / 2)}x`,
+    "many footnotes": "[^a]: x\n".repeat(megabyte / 8),
+  };
+  const refused = new Set(["ATLAS_PAGE_BODY_TOO_DEEP", "ATLAS_PAGE_BODY_TOO_MARKED"]);
+
+  for (const [shape, body] of Object.entries(shapes)) {
+    const atlas = completeAtlas("valid").map((file) =>
+      file.path === ".atlas/anchors/lint.md"
+        ? {
+            bytes: encoder.encode(`${fixtureText(file.path)}\n${body}\n`),
+            path: file.path,
+          }
+        : file,
+    );
+
+    const started = performance.now();
+    const result = lintAtlas(atlas, {
+      maxFileBytes: 4 * megabyte,
+      maxTotalBytes: 8 * megabyte,
+    });
+    const elapsed = performance.now() - started;
+
+    assert.ok(result.outcome === "invalid", `${shape}: ${JSON.stringify(result)}`);
+    const [reported] = result.findings.map((finding) => finding.code);
+    assert.ok(
+      reported !== undefined && refused.has(reported),
+      `${shape}: ${String(reported)}`,
+    );
+    assert.ok(elapsed < 2000, `linting ${shape} took ${String(elapsed)}ms`);
+  }
+});
+
+test("refuses frontmatter larger than it reads, and reads plain prose whole", () => {
+  const megabyte = 1024 * 1024;
+  const heavy = `{${Array.from({ length: megabyte / 8 }, (_, index) => `k${String(index)}: 1`).join(",")}}`;
+  const oversized = completeAtlas("valid").map((file) =>
     file.path === ".atlas/anchors/lint.md"
       ? {
-          bytes: encoder.encode(`${fixtureText(file.path)}\n${body}`),
+          bytes: encoder.encode(
+            fixtureText(file.path).replace("atlas: {}", `atlas: {}\nheavy: ${heavy}`),
+          ),
+          path: file.path,
+        }
+      : file,
+  );
+  const budgets = { maxFileBytes: 4 * megabyte, maxTotalBytes: 8 * megabyte };
+
+  const started = performance.now();
+  const result = lintAtlas(oversized, budgets);
+  const elapsed = performance.now() - started;
+
+  assert.ok(result.outcome === "invalid", JSON.stringify(result));
+  assert.deepEqual(
+    result.findings.map((finding) => finding.code),
+    ["ATLAS_PAGE_FRONTMATTER_TOO_LARGE"],
+  );
+  assert.ok(elapsed < 2000, `linting took ${String(elapsed)}ms`);
+
+  // Prose carries no markup, so a page holding a megabyte of it is still read.
+  const prose = `${"word ".repeat(16)}\n`.repeat(megabyte / 80);
+  const large = completeAtlas("valid").map((file) =>
+    file.path === ".atlas/anchors/lint.md"
+      ? {
+          bytes: encoder.encode(`${fixtureText(file.path)}\n${prose}`),
           path: file.path,
         }
       : file,
   );
 
-  const started = performance.now();
-  const result = lintAtlas(atlas, {
-    maxFileBytes: 4 * 1024 * 1024,
-    maxTotalBytes: 8 * 1024 * 1024,
-  });
-  const elapsed = performance.now() - started;
-
-  assert.ok(result.outcome === "invalid", JSON.stringify(result));
-  assert.deepEqual(
-    result.findings.map(({ code }) => code),
-    ["ATLAS_PAGE_BODY_TOO_DEEP"],
-  );
-  assert.ok(elapsed < 2000, `linting took ${String(elapsed)}ms`);
+  assert.equal(lintAtlas(large, budgets).outcome, "valid");
 });
 
 test("reports a Lint it could not complete as one whole-Atlas Finding", () => {
