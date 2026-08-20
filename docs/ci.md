@@ -109,7 +109,12 @@ read where that surface can actually occur:
 A directory name or page-ID prefix must resolve to a glossary term or to a
 directory Atlas SDK reserves without one, and a term listed under an `_Avoid_`
 line may never appear in any of those surfaces — including as the opening word
-of a Finding message. An `_Avoid_` entry followed by a lower-case qualifier, such
+of a Finding message. A term of several words is read as one name: a diagnostic
+code and a Finding message are scanned in adjacent runs as well as single words,
+so `ATLAS_REALM_CHRONICLE_MISSING` and `"… a Realm Chronicle here."` both fail
+against `_Avoid_: Realm Chronicle`, and the words must be adjacent, joined by a
+single space or underscore. An `_Avoid_` entry followed by a lower-case
+qualifier, such
 as `_Avoid_: Query, when naming the user-facing skill`, states a condition
 validation cannot judge, so it stays advisory. The qualifier scopes the one entry
 before it and runs to the end of its line; an avoidance line that opens with a

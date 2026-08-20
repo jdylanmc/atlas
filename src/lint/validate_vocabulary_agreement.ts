@@ -40,6 +40,9 @@ const idPrefixPattern = /(?<![\p{L}\p{N}_-])([a-z][a-z0-9-]*):(?=[a-z0-9$])/gu;
 const pageTypePattern = /^[a-z][a-z0-9-]*$/u;
 /** A capitalized word in a Finding message, which may name a domain concept. */
 const capitalizedPattern = /\p{Lu}[\p{L}\p{N}]*/gu;
+/** Words a single space or underscore joins, the shape a run of tokens spells
+ * when it names one multi-word term. */
+const phrasePattern = /^[\p{L}\p{N}]+(?:[ _][\p{L}\p{N}]+)*$/u;
 
 interface GlossaryEntry {
   readonly line: number;
@@ -243,6 +246,7 @@ interface ContractVocabulary {
   readonly avoided: ReadonlyMap<string, GlossaryEntry>;
   readonly directories: ReadonlySet<string>;
   readonly glossaryPath: string;
+  readonly phrase: number;
   readonly prefixes: ReadonlySet<string>;
 }
 
@@ -298,10 +302,59 @@ function maskSpecifiers(content: string): string {
   );
 }
 
+interface TokenSpan {
+  readonly index: number;
+  readonly length: number;
+}
+
+/**
+ * Reports every run of adjacent tokens that spells an avoided term. A term of
+ * several words, such as one an `_Avoid_` line writes with a space, reaches a
+ * token surface split across as many tokens, so a run is read as the text that
+ * spans it. Runs are read longest first, and a run that names a term is not
+ * read again in shorter parts.
+ */
+function scanRuns(
+  vocabulary: ContractVocabulary,
+  surface: string,
+  text: string,
+  tokens: readonly TokenSpan[],
+  at: (index: number, length: number) => FindingLocation,
+  file: VocabularyTextFile,
+  findings: Finding[],
+): void {
+  for (let start = 0; start < tokens.length;) {
+    let named = 0;
+    for (
+      let run = Math.min(vocabulary.phrase, tokens.length - start);
+      run > 0 && named === 0;
+      run -= 1
+    ) {
+      const first = tokens[start] as TokenSpan;
+      const last = tokens[start + run - 1] as TokenSpan;
+      const length = last.index + last.length - first.index;
+      const token = text.slice(first.index, first.index + length);
+      if (!phrasePattern.test(token)) continue;
+      const result = avoidedFinding(
+        vocabulary,
+        surface,
+        token,
+        file,
+        at(first.index, length),
+      );
+      if (result !== undefined) {
+        findings.push(result);
+        named = run;
+      }
+    }
+    start += Math.max(named, 1);
+  }
+}
+
 /**
  * Scans the diagnostic codes a contract declares. Ordinary prose does not spell
  * this shape, so each segment is vocabulary wherever the code appears, comments
- * included.
+ * included, and adjacent segments spell a term of as many words.
  */
 function scanDiagnostics(
   vocabulary: ContractVocabulary,
@@ -311,18 +364,21 @@ function scanDiagnostics(
 ): void {
   for (const match of file.content.matchAll(diagnosticPattern)) {
     const code = match[0];
+    const tokens: TokenSpan[] = [];
     let offset = match.index;
     for (const segment of code.split("_")) {
-      const result = avoidedFinding(
-        vocabulary,
-        `the diagnostic code ${code}`,
-        segment,
-        file,
-        positions.rangeAt(offset, offset + segment.length),
-      );
-      if (result !== undefined) findings.push(result);
+      tokens.push({ index: offset, length: segment.length });
       offset += segment.length + 1;
     }
+    scanRuns(
+      vocabulary,
+      `the diagnostic code ${code}`,
+      file.content,
+      tokens,
+      (index, length) => positions.rangeAt(index, index + length),
+      file,
+      findings,
+    );
   }
 }
 
@@ -355,9 +411,11 @@ function scanDirectories(
  * Scans the single-line literals a contract declares, where a page-ID prefix, a
  * page type, and a Finding message are spelled. A Finding message is a literal of
  * several words ending in a full stop, which is the shape every Atlas SDK message
- * carries and which a Markdown code span in a comment does not. Every surface
- * reads the literal with each substitution blanked at its own length, so
- * locations stay exact and a substituted value is never read as literal text.
+ * carries and which a Markdown code span in a comment does not. Its capitalized
+ * words are read singly and in adjacent runs, so a term of several words is read
+ * as one name. Every surface reads the literal with each substitution blanked at
+ * its own length, so locations stay exact and a substituted value is never read
+ * as literal text.
  */
 function scanLiterals(
   vocabulary: ContractVocabulary,
@@ -397,16 +455,18 @@ function scanLiterals(
       if (result !== undefined) findings.push(result);
     }
     if (!text.includes(" ") || !text.endsWith(".")) continue;
-    for (const word of text.matchAll(capitalizedPattern)) {
-      const result = avoidedFinding(
-        vocabulary,
-        "a Finding message",
-        word[0],
-        file,
-        at(word.index, word[0].length),
-      );
-      if (result !== undefined) findings.push(result);
-    }
+    scanRuns(
+      vocabulary,
+      "a Finding message",
+      text,
+      [...text.matchAll(capitalizedPattern)].map((word) => ({
+        index: word.index,
+        length: word[0].length,
+      })),
+      at,
+      file,
+      findings,
+    );
   }
 }
 
@@ -464,6 +524,10 @@ export function validateVocabularyAgreement(
       ...reservedPageDirectories,
     ]),
     glossaryPath: glossary.path,
+    phrase: Math.max(
+      1,
+      ...[...parsed.avoided.values()].map((entry) => entry.name.split(" ").length),
+    ),
     prefixes: new Set(identifiers.map((archetype) => archetype.idPrefix)),
   };
   for (const file of [...contracts].sort((left, right) =>

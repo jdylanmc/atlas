@@ -434,6 +434,37 @@ test("an identifier bound to no glossary term fails with its own diagnostic", ()
   );
 });
 
+test("an avoided term of several words is read as one name", () => {
+  const lines = [
+    "# Atlas SDK",
+    "",
+    "**Anchor**:",
+    "A page through which an agent enters a region of knowledge.",
+    "_Avoid_: Bonfire, Realm Chronicle",
+    "",
+  ];
+  const source = [
+    'const a = "Atlas SDK rejects a Realm Chronicle here.";',
+    'const b = "Atlas SDK rejects a Realm, Chronicle here.";',
+    'const c = "ATLAS_REALM_CHRONICLE_MISSING";',
+    'const d = "Atlas SDK rejects a Realm Chronicle Bonfire here.";',
+    'const e = ".atlas/realm-chronicles/";',
+  ].join("\n");
+  const findings = validate(anchorBinding, [contract(source)], lines);
+
+  assert.deepEqual(summarize(findings), [
+    'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "Realm Chronicle" in a Finding message, which CONTEXT.md lists as the avoided term "Realm Chronicle".',
+    'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "REALM_CHRONICLE" in the diagnostic code ATLAS_REALM_CHRONICLE_MISSING, which CONTEXT.md lists as the avoided term "Realm Chronicle".',
+    'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "Realm Chronicle" in a Finding message, which CONTEXT.md lists as the avoided term "Realm Chronicle".',
+    'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "Bonfire" in a Finding message, which CONTEXT.md lists as the avoided term "Bonfire".',
+    'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "realm-chronicles" in an Atlas page directory name, which CONTEXT.md lists as the avoided term "Realm Chronicle".',
+  ]);
+  assert.deepEqual(findings[0]?.location, {
+    end: { column: 47, line: 1 },
+    start: { column: 32, line: 1 },
+  });
+});
+
 test("ordinary English prose that matches a domain term does not fail", () => {
   assert.deepEqual(
     validate(anchorBinding, [
