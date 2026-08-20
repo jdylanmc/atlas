@@ -10,15 +10,15 @@ function busy(iterations: number): void {
   }
 }
 
-test("growth helper rejects superlinear work", () => {
+test("growth helper rejects work above the 2.5x doubling bound", () => {
   assert.throws(
     () =>
       assertGrowthRatio({
         large: () => busy(3_400_000),
-        name: "synthetic superlinear workload",
+        name: "synthetic above-bound workload",
         small: () => busy(1_200_000),
       }),
-    /synthetic superlinear workload grew/u,
+    /synthetic above-bound workload grew/u,
   );
 });
 
@@ -33,10 +33,10 @@ test("wall-clock helper rejects fixed constant delay", () => {
   );
 });
 
-test("growth helper accepts linear work", () => {
+test("growth helper accepts work below the 2.5x doubling bound", () => {
   assertGrowthRatio({
     large: () => busy(1_000_000),
-    name: "synthetic linear workload",
+    name: "synthetic below-bound workload",
     small: () => busy(500_000),
   });
 });

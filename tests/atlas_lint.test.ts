@@ -511,9 +511,8 @@ test("refuses frontmatter larger than it reads, and reads plain prose whole", ()
   assert.equal(lintAtlas(large, budgets).outcome, "valid");
 });
 
-// A body twice the size costs about twice as much to refuse when the cost is
-// the bytes; anything superlinear shows up as a ratio near four or above. A
-// growth ratio survives a slower machine, where a fixed millisecond budget
+// A body twice the size should stay below the empirical 2.5x doubling bound.
+// This ratio guard survives a slower machine, where a fixed millisecond budget
 // would only report the machine.
 function lintBody(body: string, budgets: AtlasTextBudgets): void {
   const atlas = completeAtlas("valid").map((file) =>
@@ -527,11 +526,11 @@ function lintBody(body: string, budgets: AtlasTextBudgets): void {
   lintAtlas(atlas, budgets);
 }
 
-test("costs no more than the bytes it is given as those bytes double", () => {
+test("keeps doubling cost below 2.5x as Atlas body bytes double", () => {
   const megabyte = 1024 * 1024;
   const budgets = { maxFileBytes: 16 * megabyte, maxTotalBytes: 32 * megabyte };
-  // Each shape was measured superlinear before it was bounded, so each is read
-  // at one size and at twice that size and the two costs compared.
+  // Each shape was measured exceeding this bound before it was capped, so each
+  // is read at one size and at twice that size and the two costs compared.
   const shapes: Readonly<Record<string, (count: number) => string>> = {
     "character references": (count) => "&amp;".repeat(count),
     "emphasis marks": (count) => "*a".repeat(count),
