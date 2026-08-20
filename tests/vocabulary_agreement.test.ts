@@ -583,6 +583,64 @@ test("a token-dense contract stays linear in its own length", () => {
   );
 });
 
+test("an unterminated literal cannot make the check run long", () => {
+  const started = process.hrtime.bigint();
+  assert.deepEqual(
+    validate(anchorBinding, [contract(`// "${'\\"'.repeat(100_000)}`)]),
+    [],
+  );
+  const elapsedMs = Number(process.hrtime.bigint() - started) / 1_000_000;
+
+  assert.ok(elapsedMs < 2000, `scanning took ${String(elapsedMs)}ms`);
+});
+
+test("a contract longer than Atlas SDK reads is reported, not scanned", () => {
+  const oversize = `const a = "bonfire";\n${" ".repeat(1_048_576)}`;
+
+  assert.deepEqual(summarize(validate(anchorBinding, [contract(oversize)])), [
+    "ATLAS_VOCABULARY_CONTRACT_OVERSIZE Atlas SDK reads a contract of at most 1048576 characters, and src/lint/example.ts is longer, so its vocabulary went unread.",
+  ]);
+});
+
+test("a method named for module syntax does not hide the literal it reads", () => {
+  assert.deepEqual(
+    summarize(
+      validate(anchorBinding, [
+        contract(
+          [
+            'const a = Buffer.from("ATLAS_BONFIRE_MISSING");',
+            'const b = Array.from(".atlas/bonfires/page.md");',
+            'const c = Buffer.from("Atlas SDK lights a Bonfire here.");',
+            'import d from "node:fs";',
+            'const e = require("node:fs");',
+            'const f = import.meta.resolve("node:fs");',
+            'export { g } from "node:fs";',
+          ].join("\n"),
+        ),
+      ]),
+    ),
+    [
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "BONFIRE" in the diagnostic code ATLAS_BONFIRE_MISSING, which CONTEXT.md lists as the avoided term "Bonfire".',
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "bonfires" in an Atlas page directory name, which CONTEXT.md lists as the avoided term "Bonfire".',
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "Bonfire" in a Finding message, which CONTEXT.md lists as the avoided term "Bonfire".',
+    ],
+  );
+});
+
+test("a directory name is located where it is written, not where it repeats", () => {
+  const findings = validate(anchorBinding, [
+    contract('const page = ".atlas/atlas/page.md";'),
+  ]);
+
+  assert.deepEqual(summarize(findings), [
+    'ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED Atlas SDK uses the identifier "atlas" in an Atlas page directory name, which no CONTEXT.md term defines.',
+  ]);
+  assert.deepEqual(findings[0]?.location, {
+    end: { column: 27, line: 1 },
+    start: { column: 22, line: 1 },
+  });
+});
+
 test("the validator command reports agreement and disagreement", () => {
   const logs: string[] = [];
   const errors: string[] = [];

@@ -25,12 +25,16 @@ const avoidedTermPattern = /^\p{Lu}/u;
 /** An Atlas SDK diagnostic code, a shape ordinary prose does not spell. */
 const diagnosticPattern = /ATLAS_[A-Z0-9_]+/gu;
 /** An `.atlas/` directory reference, in plain or regular-expression form. */
-const directoryPattern = /\\?\.atlas\\?\/([A-Za-z0-9_.-]+)\\?\//gu;
-/** A module specifier, which names a file or a runtime scheme, not an Atlas page. */
+const directoryPattern = /\\?\.atlas\\?\/([A-Za-z0-9_.-]+)\\?\//dgu;
+/** A module specifier, which names a file or a runtime scheme, not an Atlas page.
+ * Each keyword opens a statement rather than continuing an expression, so a
+ * method named `from` or `require` does not mask the literal it reads. */
 const specifierPattern =
-  /(?:\bfrom|\bimport(?:\.meta\.resolve)?|\brequire)\s*(?:\(\s*)?(["'])((?:[^"'\n\\]|\\.)*)\1/gu;
-/** A single-line string or template literal. */
-const literalPattern = /"((?:[^"\\\n]|\\.)*)"|`([^`\n]*)`/gu;
+  /(?<![.?\]\w$])(?:from|import(?:\.meta\.resolve)?|require)\s{0,64}(?:\(\s{0,64})?(["'])((?:[^"'\n\\]|\\.)*)\1/gu;
+/** A single-line string or template literal. The opening quote follows no
+ * backslash and the body cannot backtrack, so each literal is read once and a
+ * line of escaped quotes costs one pass rather than one pass for each quote. */
+const literalPattern = /(?<!\\)"(?=((?:[^"\\\n]|\\.)*))\1"|(?<!\\)`(?=([^`\n]*))\2`/dgu;
 /** A template-literal substitution, whose value is not literal text. Blanking it
  * keeps its opening `$`, so a page-ID prefix spelled before it stays readable. */
 const substitutionPattern = /\$\{[^}]*\}/gu;
@@ -43,6 +47,10 @@ const capitalizedPattern = /\p{Lu}[\p{L}\p{N}]*/gu;
 /** Words a single space or underscore joins, the shape a run of tokens spells
  * when it names one multi-word term. */
 const phrasePattern = /^[\p{L}\p{N}]+(?:[ _][\p{L}\p{N}]+)*$/u;
+/** The longest contract Atlas SDK reads, five times its own largest source. A
+ * longer file is reported rather than scanned, so no contract can spend the
+ * whole of a continuous integration run. */
+const CONTRACT_LIMIT = 1_048_576;
 
 interface GlossaryEntry {
   readonly line: number;
@@ -307,6 +315,13 @@ interface TokenSpan {
   readonly length: number;
 }
 
+/** Where a capture group matched, which a `d` pattern records exactly rather
+ * than a search of the whole match recovering by guess. */
+function captureAt(match: RegExpExecArray, group: number): readonly [number, number] {
+  const indices = match.indices as RegExpIndicesArray;
+  return indices[group] as [number, number];
+}
+
 /**
  * Reports every run of adjacent tokens that spells an avoided term. A term of
  * several words, such as one an `_Avoid_` line writes with a space, reaches a
@@ -394,7 +409,7 @@ function scanDirectories(
 ): void {
   for (const match of file.content.matchAll(directoryPattern)) {
     const directory = match[1] as string;
-    const start = match.index + match[0].indexOf(directory);
+    const [start] = captureAt(match, 1);
     const result = declaredFinding(
       vocabulary,
       "an Atlas page directory name",
@@ -424,8 +439,9 @@ function scanLiterals(
   findings: Finding[],
 ): void {
   for (const match of file.content.matchAll(literalPattern)) {
-    const raw = (match[1] ?? match[2]) as string;
-    const start = match.index + match[0].indexOf(raw);
+    const quoted = match[1] !== undefined;
+    const raw = (quoted ? match[1] : match[2]) as string;
+    const [start] = captureAt(match, quoted ? 1 : 2);
     const text = raw.replaceAll(
       substitutionPattern,
       (value) => `$${" ".repeat(value.length - 1)}`,
@@ -533,6 +549,16 @@ export function validateVocabularyAgreement(
   for (const file of [...contracts].sort((left, right) =>
     compareCodePoints(left.path, right.path),
   )) {
+    if (file.content.length > CONTRACT_LIMIT) {
+      findings.push(
+        finding(
+          "ATLAS_VOCABULARY_CONTRACT_OVERSIZE",
+          `Atlas SDK reads a contract of at most ${String(CONTRACT_LIMIT)} characters, and ${file.path} is longer, so its vocabulary went unread.`,
+          file.path,
+        ),
+      );
+      continue;
+    }
     const scanned: VocabularyTextFile = {
       content: maskSpecifiers(file.content),
       path: file.path,

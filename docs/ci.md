@@ -103,8 +103,13 @@ read where that surface can actually occur:
   Finding message is a literal of several words ending in a full stop.
 - Module specifiers are masked before scanning, so the `node:` prefix in an
   `import`, `export ... from`, `require`, or `import.meta.resolve` is not read
-  as a page-ID prefix. A `node:` specifier reached any other way is not masked
-  and would raise a false positive.
+  as a page-ID prefix. The mask requires the keyword to open a statement rather
+  than continue an expression, so `Buffer.from("…")` masks nothing. A `node:`
+  specifier reached any other way is not masked and would raise a false
+  positive.
+- A source longer than 1 MiB is reported rather than scanned, so no single
+  contract can spend a continuous integration run. The largest file under `src/`
+  is a fifth of that.
 
 A directory name or page-ID prefix must resolve to a glossary term or to a
 directory Atlas SDK reserves without one, and a term listed under an `_Avoid_`
