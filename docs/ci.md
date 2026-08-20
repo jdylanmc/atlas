@@ -64,8 +64,8 @@ npm run ci
 
 `npm run ci` performs deterministic Prettier checks, type-aware ESLint flat
 configuration, strict TypeScript checking with `erasableSyntaxOnly`, fail-closed
-Node.js test-runner coverage, byte-exact Cacophony prompt validation, and
-Actionlint `1.7.7`.
+Node.js test-runner coverage, glossary and contract vocabulary agreement,
+byte-exact Cacophony prompt validation, and Actionlint `1.7.7`.
 The Actionlint launcher also pins ShellCheck `0.11.0`, disables Python-based
 Pyflakes integration, downloads only the assets for the current supported
 platform and architecture, and verifies their release checksums before
@@ -73,12 +73,75 @@ execution.
 
 Focused commands are `npm run format:check`, `npm run lint`,
 `npm run typecheck`, `npm run test:coverage`, `npm run test:unit`,
-`npm run atlas-sdk:validate`, `npm run cacophony:validate`, and
-`npm run workflow:lint`. Use `npm run cacophony:sync` only after editing a
-Persona, Directive, or composition reference.
+`npm run atlas-sdk:validate`, `npm run vocabulary:validate`,
+`npm run cacophony:validate`, and `npm run workflow:lint`. Use
+`npm run cacophony:sync` only after editing a Persona, Directive, or composition
+reference.
 
-Future product TypeScript under `src/` participates in formatting, linting,
-strict type checking, tests, and the existing 100% product coverage gate.
+## Glossary and contract vocabulary agreement
+
+`CONTEXT.md` is the authoritative domain glossary, and `src/domain/core_archetype.ts`
+carries the Vocabulary Binding each Core Archetype term fixes across SDK-owned
+contracts: its `.atlas/` directory name, page type, page-ID prefix, and
+diagnostic code stem. Every one of those identifiers is spelled from the term
+itself, so the check verifies the spelling rather than trusting a second copy of
+it, and the contracts spell each identifier from the binding rather than
+restating it. `npm run vocabulary:validate` reports every disagreement between
+the two as a trusted `sdk-core.vocabulary-agreement` Finding, so a rename on
+either side fails the gate instead of shipping silently.
+
+The check binds identifiers and contracts rather than prose, and each surface is
+read where that surface can actually occur:
+
+- `ATLAS_*` diagnostic codes and `.atlas/<directory>/` references are read
+  anywhere in an SDK-owned source, comments included, because neither shape
+  occurs in ordinary English.
+- Page-ID prefixes, Atlas page types, and Finding messages are read only inside
+  single-line string and template literals, because those shapes do occur in
+  prose. A `todo:fixme` comment tag is therefore not a page-ID prefix. Inside a
+  literal, any `word:identifier` token is read as a page-ID prefix, and a
+  Finding message is a literal of several words ending in a full stop.
+- Module specifiers are masked before scanning, so the `node:` prefix in an
+  `import`, `export ... from`, `require`, or `import.meta.resolve` is not read
+  as a page-ID prefix. The mask requires the keyword to open a statement rather
+  than continue an expression, so `Buffer.from("…")` masks nothing. A `node:`
+  specifier reached any other way is not masked and would raise a false
+  positive.
+- A source longer than 1 MiB is reported rather than scanned, so no one
+  contract can spend a whole continuous integration run.
+
+A directory name or page-ID prefix must resolve to a glossary term or to a
+directory Atlas SDK reserves without one, and a term listed under an `_Avoid_`
+line may never appear in any of those surfaces — including as the opening word
+of a Finding message. A term of several words is read as one name: a diagnostic
+code and a Finding message are scanned in adjacent runs as well as single words,
+so `ATLAS_REALM_CHRONICLE_MISSING` and `"… a Realm Chronicle here."` both fail
+against `_Avoid_: Realm Chronicle`, and the words must be adjacent, joined by a
+single space or underscore. Spacing and punctuation do not distinguish a term, so
+a message that splits `Landmark` across two capitalized words is read as that
+term. An `_Avoid_` entry followed by a lower-case
+qualifier, such
+as `_Avoid_: Query, when naming the user-facing skill`, states a condition
+validation cannot judge, so it stays advisory. The qualifier scopes the one entry
+before it and runs to the end of its line; an avoidance line that opens with a
+qualifier, that hides a further term behind one, or that leaves an entry empty
+through a stray comma, is reported rather than silently obeyed. Atlas page types
+are checked
+against the avoided terms only, because the set of ordinary lower-case words a
+source may legitimately quote is not closed. Ordinary English usage of a word
+that happens to match a domain term raises nothing, because prose carries none
+of the identifier shapes above.
+
+Only `src/**/*.ts` is scanned. That is not the whole surface that ships bound
+vocabulary: `scripts/atlas_sdk_agents.ts` and the Personas under
+`docs/agents/atlas-sdk/personas/` emit product text carrying Core Archetype
+terms into user Atlases, and a rename would leave those prompts stale with the
+gate still green. Issue #117 tracks extending the check to SDK-authored
+generated prompts.
+
+Product TypeScript under `src/` participates in formatting, linting, strict type
+checking, tests, vocabulary agreement, and the existing 100% product coverage
+gate.
 ESLint mechanically enforces the settled inward source dependency order from
 `domain` through `interfaces`, including keeping Node.js built-ins out of the
 application core.

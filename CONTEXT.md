@@ -115,6 +115,9 @@ The Atlas Site's current evidence-linked view of whether the published Atlas Hea
 **Knowledge Evolution**:
 The Atlas Site's reconstruction of how an Atlas's knowledge, evidence, graph, and governance changed across Changelog operation IDs in Git history. It describes durable understanding rather than agent or contributor productivity.
 
+**Core Archetype**:
+A page kind Atlas SDK owns and names in every Atlas, rather than one an Atlas defines for itself. An Atlas Schema extends a Core Archetype but never redefines what it means.
+
 **Anchor**:
 A human-approved, Atlas-local page through which an agent enters a region of knowledge and from which every route to a result begins. It provides cited orientation and named paths while Concepts hold detailed understanding, and an Atlas establishes one where related ideas strongly intersect. Ingest and Lint may recommend Anchors according to Atlas policy, but agents do not establish them autonomously. An Anchor may connect through a cross-Atlas Edge to another Atlas, but it is not authoritative source material.
 _Avoid_: Bonfire, Landmark, Hub
@@ -197,6 +200,9 @@ _Avoid_: Fleet
 
 **Candidate Graph**:
 The proposed concepts, Edges, and Citations Crawlers return from one source, reconciled against existing knowledge before anything is written. It is working material, not Atlas knowledge.
+
+**Vocabulary Binding**:
+The correspondence between one term in this glossary and the identifiers Atlas SDK contracts spell that term with. A term fixes those spellings, so a binding records them and trusted validation verifies both sides agree: a disagreement between the glossary and the product is a reported Finding rather than an unnoticed rename, and an avoided term may never be bound.
 
 **Lint**:
 The human-facing workflow for validating an Atlas. Trusted deterministic validation runs before isolated Atlas-owned deterministic checks and semantic verification, and every semantic verdict must survive a Challenge before it counts; pure Lint reports findings without mutating knowledge. Lint also reports what an Atlas is missing, and validates an Atlas's edges into tracked Atlases rather than their contents.

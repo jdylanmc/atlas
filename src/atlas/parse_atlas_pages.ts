@@ -3,16 +3,9 @@ import {
   checkAtlasPageEnvelope,
   type AtlasPageEnvelope,
 } from "../domain/atlas_page.ts";
+import { corePageDirectories } from "../domain/core_archetype.ts";
 import { compareCodePoints } from "./compare_code_points.ts";
 import type { AtlasTextFile } from "./load_atlas_text.ts";
-
-const pageDirectories = new Set([
-  "anchors",
-  "concepts",
-  "sources",
-  "principles",
-  "edges",
-]);
 
 export type AtlasTextClassification = "page" | "opaque";
 
@@ -117,7 +110,9 @@ export function classifyAtlasTextPath(path: string): AtlasTextClassification {
     return "page";
   }
   const match = /^\.atlas\/([^/]+)\/.+\.md$/u.exec(path);
-  return match !== null && pageDirectories.has(match[1] as string) ? "page" : "opaque";
+  return match !== null && corePageDirectories.has(match[1] as string)
+    ? "page"
+    : "opaque";
 }
 
 // Only the document start or a position immediately after an actual LF begins a
