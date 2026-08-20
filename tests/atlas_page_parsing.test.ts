@@ -8,6 +8,7 @@ import {
   AtlasPageEnvelopeSchema,
 } from "../src/domain/atlas_page.ts";
 import {
+  atlasFrontmatterSpan,
   classifyAtlasTextPath,
   parseAtlasPages,
   AtlasPageParseError,
@@ -461,4 +462,25 @@ test("a failure of the running process is never answered for as a page failure",
     rethrowProcessLimit(limit);
   }, limit);
   assert.equal(rethrowProcessLimit(new TypeError("captured bytes")), undefined);
+});
+
+test("reports the same frontmatter span the parse read", () => {
+  const page = `${validPage("concept:a")}\n# Page\n`;
+  const span = atlasFrontmatterSpan(page);
+
+  assert.ok(span);
+  assert.equal(page.slice(0, span.start), "---\n");
+  assert.equal(page.slice(span.end, span.end + 4), "---\n");
+  // The parse counts the same lines, so the span ends where its frontmatter did.
+  const [parsed] = parseAtlasPages([text(".atlas/concepts/a.md", page)]);
+  assert.ok(parsed);
+  assert.equal(
+    page.slice(0, span.end).split("\n").length - 1,
+    parsed.source.frontmatter.endLine,
+  );
+
+  // A lone carriage return starts a line for a regular expression under the
+  // multiline flag, and neither reader begins a delimiter line there.
+  assert.equal(atlasFrontmatterSpan("---\nsdk: 1\r---\r\n"), undefined);
+  assert.equal(atlasFrontmatterSpan("no frontmatter\n"), undefined);
 });

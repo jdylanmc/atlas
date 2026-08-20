@@ -507,6 +507,83 @@ test("refuses frontmatter larger than it reads, and reads plain prose whole", ()
   assert.equal(lintAtlas(large, budgets).outcome, "valid");
 });
 
+// A body twice the size costs about twice as much to refuse when the cost is
+// the bytes; anything superlinear shows up as a ratio near four or above. A
+// growth ratio survives a slower machine, where a fixed millisecond budget
+// would only report the machine.
+function lintCost(body: string, budgets: AtlasTextBudgets): number {
+  const atlas = completeAtlas("valid").map((file) =>
+    file.path === ".atlas/anchors/lint.md"
+      ? {
+          bytes: encoder.encode(`${fixtureText(file.path)}\n${body}\n`),
+          path: file.path,
+        }
+      : file,
+  );
+  lintAtlas(atlas, budgets);
+  let best = Number.POSITIVE_INFINITY;
+  for (let run = 0; run < 3; run += 1) {
+    const started = performance.now();
+    lintAtlas(atlas, budgets);
+    best = Math.min(best, performance.now() - started);
+  }
+  return best;
+}
+
+test("costs no more than the bytes it is given as those bytes double", () => {
+  const megabyte = 1024 * 1024;
+  const budgets = { maxFileBytes: 16 * megabyte, maxTotalBytes: 32 * megabyte };
+  // Each shape was measured superlinear before it was bounded, so each is read
+  // at one size and at twice that size and the two costs compared.
+  const shapes: Readonly<Record<string, (count: number) => string>> = {
+    "character references": (count) => "&amp;".repeat(count),
+    "emphasis marks": (count) => "*a".repeat(count),
+    "list items": (count) => "- x\n".repeat(count),
+    "setext headings after a carriage return": (count) => "x\r=\r".repeat(count),
+    "table pipes": (count) => "|x|\n".repeat(count),
+  };
+
+  for (const [shape, make] of Object.entries(shapes)) {
+    const count = 128 * 1024;
+    const growth = lintCost(make(count * 2), budgets) / lintCost(make(count), budgets);
+    assert.ok(growth < 3, `refusing ${shape} grew ${growth.toFixed(2)} times`);
+  }
+
+  // Prose is read rather than refused, so the accepted path is measured too,
+  // below every declared bound at both sizes.
+  const prose = (count: number): string => `${"word ".repeat(16)}\n`.repeat(count);
+  const growth = lintCost(prose(8192), budgets) / lintCost(prose(4096), budgets);
+  assert.ok(growth < 3, `reading prose grew ${growth.toFixed(2)} times`);
+});
+
+test("locates a value in frontmatter no reader would end early", () => {
+  // A lone carriage return starts a line for a JavaScript regular expression
+  // under the multiline flag but not for the YAML reader, so a comment holding
+  // one used to end the frontmatter early for the stage locating a value, and
+  // the Lint answered that it could not complete instead of reporting the page.
+  const backdated = fixtureText(".atlas/concepts/canonical-serialization.md")
+    .replace("sdk:\n", "sdk:\n  # note\r---\r\n")
+    .replace(/updated-at: "[^"]+"/u, 'updated-at: "2020-01-01T00:00:00Z"');
+  const atlas = completeAtlas("valid").map((file) =>
+    file.path === ".atlas/concepts/canonical-serialization.md"
+      ? { bytes: encoder.encode(backdated), path: file.path }
+      : file,
+  );
+
+  const result = lintAtlas(atlas, { maxFileBytes: 8192, maxTotalBytes: 65536 });
+
+  assert.ok(result.outcome === "invalid", JSON.stringify(result));
+  assert.deepEqual(
+    result.findings.map(({ code, path }) => ({ code, path })),
+    [
+      {
+        code: "ATLAS_PAGE_UPDATED_BEFORE_CREATED",
+        path: ".atlas/concepts/canonical-serialization.md",
+      },
+    ],
+  );
+});
+
 test("reports a Lint it could not complete as one whole-Atlas Finding", () => {
   // The only failure no stage describes is running out of room to work in, so
   // the boundary is exercised by calling it from a stack already nearly spent.

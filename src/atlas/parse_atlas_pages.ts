@@ -14,6 +14,11 @@ export interface SourceLines {
   readonly startLine: number;
 }
 
+export interface AtlasFrontmatterSpan {
+  readonly end: number;
+  readonly start: number;
+}
+
 export interface AtlasPageSource {
   readonly body: SourceLines;
   readonly frontmatter: SourceLines;
@@ -64,8 +69,9 @@ export class AtlasPageParseError extends Error {
 // and a page it refuses is refused on every run.
 export const maxFrontmatterDepth = 64;
 
-// YAML begins a line after a line feed, a carriage return, or both, so the scan
-// reads the same lines the parser will.
+// The scan starts a line at every break any reader may honor - a line feed, a
+// carriage return, or both - which is at least every line the YAML reader
+// begins, so the indentation it measures can only overstate the nesting.
 const yamlLineBreak = /\r\n|[\n\r]/u;
 
 // Reading YAML costs more than the characters it holds, because every mapping
@@ -73,6 +79,26 @@ const yamlLineBreak = /\r\n|[\n\r]/u;
 // is declared as well. Frontmatter carries what a page is, not what it says, so
 // a page needing more than this is saying it in the wrong place.
 export const maxFrontmatterCharacters = 32 * 1024;
+
+function openingLengthOf(content: string): number {
+  return content.startsWith("---\r\n") ? 5 : content.startsWith("---\n") ? 4 : 0;
+}
+
+/**
+ * Answers where the frontmatter of a captured Atlas page begins and ends, so a
+ * later stage locating a value inside it reads the page the same way the parse
+ * did instead of describing the delimiter a second time. "reports the same
+ * frontmatter span the parse read" pins the two against each other.
+ */
+export function atlasFrontmatterSpan(
+  content: string,
+): AtlasFrontmatterSpan | undefined {
+  const start = openingLengthOf(content);
+  if (start === 0) return undefined;
+  const closing = findClosingDelimiter(content, start);
+  if (closing === undefined) return undefined;
+  return Object.freeze({ end: closing.index, start });
+}
 
 function frontmatterDepthBound(frontmatter: string): number {
   let bound = 0;
@@ -98,7 +124,8 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 }
 
 // A value YAML can hold but JSON cannot is answered rather than raised, so
-// reading a page never depends on catching an exception.
+// reading a page does not depend on catching an exception. "rejects non-JSON
+// and unresolved YAML tags" pins the answer.
 const notJson = Symbol("not-json");
 
 function cloneAndFreezeJson(value: unknown): unknown {
@@ -164,9 +191,10 @@ export function classifyAtlasTextPath(path: string): AtlasTextClassification {
 }
 
 // Only the document start or a position immediately after an actual LF begins a
-// line, so separators that JavaScript regular expressions treat as line starts
-// (U+2028 and U+2029, which YAML emits literally inside scalars) can never be
-// mistaken for the closing frontmatter delimiter.
+// line, so separators JavaScript regular expressions treat as line starts - a
+// lone carriage return under the multiline flag, and U+2028 and U+2029, which
+// YAML emits literally inside scalars - are not read as the closing frontmatter
+// delimiter. "only an LF starts a closing delimiter line" pins this.
 function findClosingDelimiter(
   content: string,
   from: number,
@@ -196,17 +224,14 @@ function findClosingDelimiter(
 
 /**
  * Reads one captured Atlas page, answering with the parse failure rather than
- * raising it, so a caller never has to tell a failure of the page from a
- * failure of the process running the read.
+ * raising it, so a caller does not have to tell a failure of the page from a
+ * failure of the process running the read. "a failure of the running process is
+ * never answered for as a page failure" pins the difference.
  */
 export function parseAtlasPage(
   file: AtlasTextFile,
 ): ParsedAtlasPage | AtlasPageParseError {
-  const openingLength = file.content.startsWith("---\r\n")
-    ? 5
-    : file.content.startsWith("---\n")
-      ? 4
-      : 0;
+  const openingLength = openingLengthOf(file.content);
   if (openingLength === 0) {
     return new AtlasPageParseError("MISSING_FRONTMATTER", file.path, 1);
   }

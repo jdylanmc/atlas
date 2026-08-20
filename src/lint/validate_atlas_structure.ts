@@ -27,9 +27,11 @@ import { rethrowProcessLimit } from "../atlas/process_limit.ts";
 import { positionIndex } from "./source_position.ts";
 import { sdkFindings } from "./sdk_finding.ts";
 import {
+  atlasFrontmatterSpan,
   classifyAtlasTextPath,
   parseAtlasPage,
   AtlasPageParseError,
+  type AtlasFrontmatterSpan,
   type ParsedAtlasPage,
 } from "../atlas/parse_atlas_pages.ts";
 
@@ -86,22 +88,19 @@ function sdkKeyLocation(
   content: string,
   key: "created-at" | "id" | "type" | "updated-at",
 ): FindingLocation {
-  const openingLength = content.indexOf("\n") + 1;
-  const closing = /^---(?:\r?\n|$)/gmu;
-  closing.lastIndex = openingLength;
-  const match = closing.exec(content) as RegExpExecArray;
+  // Only a page the parse already read reaches here, so the span is answered.
+  // Asking the parse where its frontmatter was keeps one rule for the closing
+  // delimiter instead of a second description that can disagree with it.
+  const span = atlasFrontmatterSpan(content) as AtlasFrontmatterSpan;
 
-  const document = parseDocument(content.slice(openingLength, match.index), {
+  const document = parseDocument(content.slice(span.start, span.end), {
     strict: true,
     uniqueKeys: true,
   });
   const sdk = pairFor(document.contents, "sdk");
   const target = pairFor(sdk.value, key);
   const range = target.key.range as [number, number, number];
-  return positionIndex(content).rangeAt(
-    openingLength + range[0],
-    openingLength + range[1],
-  );
+  return positionIndex(content).rangeAt(span.start + range[0], span.start + range[1]);
 }
 
 function expectedType(path: string): string | undefined {

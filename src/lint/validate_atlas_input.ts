@@ -28,7 +28,8 @@ const loadCodes: Readonly<Record<AtlasLoadErrorCode, string>> = Object.freeze({
 
 // A loading failure concerns the captured Atlas tree as a whole rather than one
 // resolved page, and AtlasLoadError deliberately withholds the offending raw
-// path so an unsafe caller path can never leak into a sanitized Finding.
+// path so an unsafe caller path does not leak into a sanitized Finding.
+// "sanitizes loading failures and never leaks the offending raw path" pins it.
 const atlasSubjectPath = ".atlas";
 
 function loadFinding(code: string, message: string): Finding {
@@ -129,7 +130,10 @@ const noFiles: readonly AtlasTextFile[] = Object.freeze([]);
  * further stages can carry exactly the immutable text that was validated
  * instead of loading the same captured bytes a second time and risking a
  * different answer. Every value the caller owns is read once, so accessors that
- * answer differently on a later read cannot make loading disagree with itself.
+ * answer differently on a later read do not make loading disagree with itself:
+ * "decides one whole-Atlas Lint from one reading of every input" counts the
+ * reads, and "carries the loaded text its Findings were decided from" pins the
+ * text that is carried.
  */
 export function loadAndValidateAtlasInput(
   capturedFiles: readonly CapturedAtlasFile[],
