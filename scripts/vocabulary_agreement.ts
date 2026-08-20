@@ -19,10 +19,13 @@ export class ContractError extends Error {}
 
 function readText(root: string, relativePath: string): VocabularyTextFile {
   const path = resolve(root, relativePath);
-  const stat = lstatSync(path, { throwIfNoEntry: false });
-  if (stat === undefined || !stat.isFile()) {
-    throw new ContractError(`${relativePath} must be a regular file`);
+  let regular: boolean;
+  try {
+    regular = lstatSync(path, { throwIfNoEntry: false })?.isFile() === true;
+  } catch {
+    throw new ContractError(`${relativePath} must be a readable regular file`);
   }
+  if (!regular) throw new ContractError(`${relativePath} must be a regular file`);
   try {
     return { content: readFileSync(path, "utf8"), path: relativePath };
   } catch {
@@ -53,6 +56,10 @@ export function collectContracts(root: string, relativePath: string): string[] {
   return paths;
 }
 
+/**
+ * Validates the repository rooted at `root` against the Vocabulary Binding of
+ * the running Atlas SDK, which is the binding those contracts are written for.
+ */
 export function validateRepository(root: string): readonly Finding[] {
   return validateVocabularyAgreement(
     coreArchetypes,
@@ -70,22 +77,13 @@ export function formatFinding(finding: Finding): string {
 }
 
 export function main(arguments_: readonly string[]): number {
-  const [command, ...options] = arguments_;
-  let root = process.cwd();
-  if (command !== "validate" || (options.length > 0 && options.length !== 2)) {
-    console.error("usage: vocabulary_agreement.ts validate [--root PATH]");
+  if (arguments_.length !== 1 || arguments_[0] !== "validate") {
+    console.error("usage: vocabulary_agreement.ts validate");
     return 2;
-  }
-  if (options.length === 2) {
-    if (options[0] !== "--root" || !options[1]) {
-      console.error("usage: vocabulary_agreement.ts validate [--root PATH]");
-      return 2;
-    }
-    root = options[1];
   }
   let findings: readonly Finding[];
   try {
-    findings = validateRepository(root);
+    findings = validateRepository(process.cwd());
   } catch (error) {
     if (!(error instanceof ContractError)) throw error;
     console.error(`error: ${error.message}`);

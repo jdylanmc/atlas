@@ -20,10 +20,11 @@ import {
   corePageTypesByDirectory,
   rootAnchorPageId,
 } from "../domain/core_archetype.ts";
-import type { Finding } from "../domain/finding.ts";
+import type { Finding, FindingLocation } from "../domain/finding.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import type { AtlasTextFile } from "../atlas/load_atlas_text.ts";
-import { rangeAt } from "../atlas/source_position.ts";
+import { rangeAt } from "./source_position.ts";
+import { sdkFindings } from "./sdk_finding.ts";
 import {
   classifyAtlasTextPath,
   parseAtlasPages,
@@ -31,14 +32,9 @@ import {
   type ParsedAtlasPage,
 } from "../atlas/parse_atlas_pages.ts";
 
-type FindingLocation = NonNullable<Finding["location"]>;
 type MarkdownPosition = NonNullable<Nodes["position"]>;
 
-const attribution = Object.freeze({
-  checkId: "sdk-core.structural-validation",
-  kind: "sdk-core" as const,
-  trusted: true as const,
-});
+const finding = sdkFindings("sdk-core.structural-validation");
 
 const parseCodes = Object.freeze({
   INVALID_PAGE_ENVELOPE: "ATLAS_PAGE_INVALID_ENVELOPE",
@@ -62,30 +58,6 @@ const markdownOptions = Object.freeze({
   extensions: [gfmFootnote()],
   mdastExtensions: [gfmFootnoteFromMarkdown()],
 });
-
-function freezeLocation(location: FindingLocation): FindingLocation {
-  return Object.freeze({
-    end: Object.freeze({ ...location.end }),
-    start: Object.freeze({ ...location.start }),
-  });
-}
-
-function finding(
-  code: string,
-  message: string,
-  path: string,
-  location?: FindingLocation,
-): Finding {
-  return Object.freeze({
-    attribution,
-    code,
-    "finding-schema": "1.0.0",
-    ...(location === undefined ? {} : { location: freezeLocation(location) }),
-    message,
-    path,
-    severity: "error",
-  });
-}
 
 function lineLocation(content: string, line: number): FindingLocation | undefined {
   const lines = content.split(/\r?\n/u);
@@ -123,7 +95,7 @@ function sdkKeyLocation(
 }
 
 function expectedType(path: string): string | undefined {
-  if (path === ".atlas/index.md") return "anchor";
+  if (path === ".atlas/index.md") return coreArchetypes.Anchor.pageType;
   const custom = /^\.atlas\/types\/([^/]+)\/.+\.md$/u.exec(path);
   if (custom !== null) return custom[1];
   const start = ".atlas/".length;
@@ -738,7 +710,7 @@ function validatePage(
     findings.push(
       finding(
         "ATLAS_ROOT_ANCHOR_ID_INVALID",
-        "The Root Anchor must use the stable ID anchor:root.",
+        `The Root Anchor must use the stable ID ${rootAnchorPageId}.`,
         file.path,
         sdkKeyLocation(file.content, "id"),
       ),

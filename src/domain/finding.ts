@@ -63,6 +63,9 @@ export const FindingSchema = Type.Object(
 
 export type Finding = Static<typeof FindingSchema>;
 
+/** The source range a Finding points at, owned by the Finding contract. */
+export type FindingLocation = NonNullable<Finding["location"]>;
+
 const Ajv2020 = Ajv2020Module.default;
 const validateFinding = new Ajv2020({ strict: true }).compile(FindingSchema);
 

@@ -81,20 +81,42 @@ reference.
 ## Glossary and contract vocabulary agreement
 
 `CONTEXT.md` is the authoritative domain glossary, and `src/domain/core_archetype.ts`
-declares the Vocabulary Binding each Core Archetype term carries into SDK-owned
+carries the Vocabulary Binding each Core Archetype term fixes across SDK-owned
 contracts: its `.atlas/` directory name, page type, page-ID prefix, and
-diagnostic code stem. `npm run vocabulary:validate` reports every disagreement
-between the two as a trusted `sdk-core.vocabulary-agreement` Finding, so a
-rename on either side fails the gate instead of shipping silently.
+diagnostic code stem. Every one of those identifiers is spelled from the term
+itself, so the check verifies the spelling rather than trusting a second copy of
+it. `npm run vocabulary:validate` reports every disagreement between the two as
+a trusted `sdk-core.vocabulary-agreement` Finding, so a rename on either side
+fails the gate instead of shipping silently.
 
-The check binds identifiers and contracts rather than prose. It reads the
-declared bindings, `ATLAS_*` diagnostic codes, `.atlas/` directory references,
-page-ID prefixes, and the Finding messages SDK-owned sources declare; an
-identifier or diagnostic word must be a glossary term or a reviewed structural
-word, and a term listed under an `_Avoid_` line may never appear as a live
-identifier. Ordinary English usage of a word that happens to match a domain term
-raises nothing, because comments and lower-case prose are never vocabulary
-evidence.
+The check binds identifiers and contracts rather than prose, and each surface is
+read where that surface can actually occur:
+
+- `ATLAS_*` diagnostic codes and `.atlas/<directory>/` references are read
+  anywhere in an SDK-owned source, comments included, because neither shape
+  occurs in ordinary English.
+- Page-ID prefixes, Atlas page types, and Finding messages are read only inside
+  single-line string and template literals, because those shapes do occur in
+  prose. A `todo:fixme` comment tag is therefore not a page-ID prefix.
+- Module specifiers are masked before scanning, so the `node:` prefix in an
+  `import`, `export ... from`, `require`, or `import.meta.resolve` is not read
+  as a page-ID prefix. A `node:` specifier reached any other way is not masked
+  and would raise a false positive.
+
+A directory name or page-ID prefix must resolve to a glossary term, and a term
+listed under an `_Avoid_` line may never appear in any of those surfaces —
+including as the opening word of a Finding message. Atlas page types are checked
+against the avoided terms only, because the set of ordinary lower-case words a
+source may legitimately quote is not closed. Ordinary English usage of a word
+that happens to match a domain term raises nothing, because prose carries none
+of the identifier shapes above.
+
+Only `src/**/*.ts` is scanned. That is not the whole surface that ships bound
+vocabulary: `scripts/atlas_sdk_agents.ts` and the Personas under
+`docs/agents/atlas-sdk/personas/` emit product text carrying Core Archetype
+terms into user Atlases, and a rename would leave those prompts stale with the
+gate still green. Issue #117 tracks extending the check to SDK-authored
+generated prompts.
 
 Product TypeScript under `src/` participates in formatting, linting, strict type
 checking, tests, vocabulary agreement, and the existing 100% product coverage

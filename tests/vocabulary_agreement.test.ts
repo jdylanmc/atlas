@@ -84,6 +84,16 @@ function scratchRepository(): string {
   return directory;
 }
 
+function inDirectory<T>(directory: string, run: () => T): T {
+  const previous = process.cwd();
+  process.chdir(directory);
+  try {
+    return run();
+  } finally {
+    process.chdir(previous);
+  }
+}
+
 test("Atlas SDK contracts and the glossary bind one vocabulary", () => {
   assert.deepEqual(validateRepository(ROOT), []);
   assert.ok(collectContracts(ROOT, "src").includes("src/domain/core_archetype.ts"));
@@ -166,17 +176,89 @@ test("a contract rename that leaves the glossary behind names both sides", () =>
   });
 });
 
-test("a bound term the glossary avoids fails at its avoidance line", () => {
-  const avoided = glossaryLines.map((line) =>
-    line === "_Avoid_: Bonfire, Landmark" ? "_Avoid_: Anchor, Bonfire" : line,
+test("a term spells its own directory, however that term pluralizes", () => {
+  const lines = [
+    "# Atlas SDK",
+    "",
+    "**Policy**:",
+    "A rule an Atlas states about its own knowledge.",
+    "",
+  ];
+  const consistent: CoreArchetypeBindings = {
+    Policy: {
+      diagnosticStem: "POLICY",
+      directory: "policies",
+      idPrefix: "policy",
+      pageType: "policy",
+    },
+  };
+
+  assert.deepEqual(validate(consistent, [], lines), []);
+  assert.deepEqual(
+    summarize(
+      validate(
+        {
+          Policy: {
+            ...(consistent["Policy"] as CoreArchetypeBindings[string]),
+            directory: "policys",
+          },
+        },
+        [],
+        lines,
+      ),
+    ),
+    [
+      'ATLAS_VOCABULARY_IDENTIFIER_MISMATCH Atlas SDK binds page directory "policys" to the term "Policy", which requires "policies".',
+    ],
   );
-  const findings = validate(anchorBinding, [], avoided);
+});
+
+test("a term Atlas SDK cannot spell is refused before it is bound", () => {
+  assert.deepEqual(
+    summarize(
+      validate(
+        {
+          "Atlas Policy": {
+            diagnosticStem: "ATLAS_POLICY",
+            directory: "atlas policies",
+            idPrefix: "atlas-policy",
+            pageType: "atlas policy",
+          },
+          Waypoint: {
+            diagnosticStem: "WAYPOINT",
+            directory: "waypoints",
+            idPrefix: "waypoint",
+            pageType: "waypoint",
+          },
+        },
+        [],
+      ),
+    ),
+    [
+      'ATLAS_VOCABULARY_TERM_UNDEFINED Atlas SDK contracts bind the term "Waypoint", which CONTEXT.md does not define.',
+      'ATLAS_VOCABULARY_TERM_UNSUPPORTED Atlas SDK contracts bind the term "Atlas Policy", which is not one capitalized word.',
+    ],
+  );
+});
+
+test("a bound term the glossary avoids fails at its avoidance line", () => {
+  const findings = validate(
+    {
+      Bonfire: {
+        diagnosticStem: "BONFIRE",
+        directory: "bonfires",
+        idPrefix: "bonfire",
+        pageType: "bonfire",
+      },
+    },
+    [],
+  );
 
   assert.deepEqual(summarize(findings), [
-    'ATLAS_VOCABULARY_TERM_AVOIDED Atlas SDK contracts bind the term "Anchor", which CONTEXT.md lists as an avoided term.',
+    'ATLAS_VOCABULARY_TERM_AVOIDED Atlas SDK contracts bind the term "Bonfire", which CONTEXT.md lists as an avoided term.',
   ]);
   assert.deepEqual(findings[0]?.location, {
-    end: { column: 25, line: 10 },
+    end: { column: 27, line: 10 },
     start: { column: 1, line: 10 },
   });
 });
@@ -185,49 +267,74 @@ test("an avoided term used as a live identifier fails in every contract surface"
   const findings = validate(anchorBinding, [
     contract(
       [
-        'const directory = ".atlas/bonfires/";',
         'const code = "ATLAS_BONFIRE_MISSING";',
+        'const directory = ".atlas/bonfires/";',
         'const id = "bonfire:root";',
-        'const message = "Atlas SDK requires a Bonfire.";',
-        "const template = `Atlas SDK rejects ${directory} the Landmark.`;",
+        'const type = "bonfire";',
+        'const message = "Bonfire pages are required.";',
+        'const trailing = "Atlas SDK reads one anchor. Landmark pages are ignored.";',
       ].join("\n"),
     ),
   ]);
 
-  assert.deepEqual(summarize(findings), [
-    'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "bonfires" in an Atlas page directory name, which CONTEXT.md lists as the avoided term "Bonfire".',
+  assert.deepEqual(
+    findings.map((found) => `${found.code} ${String(found.location?.start.line)}`),
+    [
+      "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED 1",
+      "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED 2",
+      "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED 3",
+      "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED 4",
+      "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED 5",
+      "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED 6",
+    ],
+  );
+  assert.deepEqual(summarize(findings).toSorted(), [
     'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "BONFIRE" in the diagnostic code ATLAS_BONFIRE_MISSING, which CONTEXT.md lists as the avoided term "Bonfire".',
-    'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "bonfire" in an Atlas page-ID prefix, which CONTEXT.md lists as the avoided term "Bonfire".',
     'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "Bonfire" in a Finding message, which CONTEXT.md lists as the avoided term "Bonfire".',
+    'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "Landmark" in a Finding message, which CONTEXT.md lists as the avoided term "Landmark".',
+    'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "bonfire" in an Atlas page type, which CONTEXT.md lists as the avoided term "Bonfire".',
+    'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "bonfire" in an Atlas page-ID prefix, which CONTEXT.md lists as the avoided term "Bonfire".',
+    'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "bonfires" in an Atlas page directory name, which CONTEXT.md lists as the avoided term "Bonfire".',
+  ]);
+});
+
+test("sentence position never excuses an avoided term in a message", () => {
+  const findings = validate(anchorBinding, [
+    contract('const opening = "Landmark pages are ignored.";'),
+  ]);
+
+  assert.deepEqual(summarize(findings), [
     'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "Landmark" in a Finding message, which CONTEXT.md lists as the avoided term "Landmark".',
   ]);
   assert.deepEqual(findings[0]?.location, {
-    end: { column: 35, line: 1 },
-    start: { column: 27, line: 1 },
+    end: { column: 26, line: 1 },
+    start: { column: 18, line: 1 },
+  });
+});
+
+test("a substitution keeps the words after it at their own location", () => {
+  const findings = validate(anchorBinding, [
+    contract("const message = `Atlas SDK rejects ${directory} the Landmark.`;"),
+  ]);
+
+  assert.deepEqual(findings[0]?.location, {
+    end: { column: 61, line: 1 },
+    start: { column: 53, line: 1 },
   });
 });
 
 test("an identifier bound to no glossary term fails with its own diagnostic", () => {
-  const findings = validate(anchorBinding, [
-    contract(
-      [
-        "const pattern = /^\\.atlas\\/waypoints\\/.+\\.md$/u;",
-        'const id = "waypoint:root";',
-        'const code = "ATLAS_WAYPOINT_MISSING";',
-        'const message = "Atlas SDK reads .atlas/Waypoints/ pages.";',
-        'const qualifier = "ATLAS_WHEN_MISSING";',
-      ].join("\n"),
+  assert.deepEqual(
+    summarize(
+      validate(anchorBinding, [
+        contract('const directory = ".atlas/waypoints/";\nconst id = "waypoint:root";'),
+      ]),
     ),
-  ]);
-
-  assert.deepEqual(summarize(findings), [
-    'ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED Atlas SDK uses the identifier "waypoints" in an Atlas page directory name, which no CONTEXT.md term defines.',
-    'ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED Atlas SDK uses the identifier "waypoint" in an Atlas page-ID prefix, which no CONTEXT.md term defines.',
-    'ATLAS_VOCABULARY_WORD_UNKNOWN Atlas SDK uses the word "WAYPOINT" in the diagnostic code ATLAS_WAYPOINT_MISSING, which no CONTEXT.md term defines.',
-    'ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED Atlas SDK uses the identifier "Waypoints" in an Atlas page directory name, which no CONTEXT.md term defines.',
-    'ATLAS_VOCABULARY_WORD_UNKNOWN Atlas SDK uses the word "Waypoints" in a Finding message, which no CONTEXT.md term defines.',
-    'ATLAS_VOCABULARY_WORD_UNKNOWN Atlas SDK uses the word "WHEN" in the diagnostic code ATLAS_WHEN_MISSING, which no CONTEXT.md term defines.',
-  ]);
+    [
+      'ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED Atlas SDK uses the identifier "waypoints" in an Atlas page directory name, which no CONTEXT.md term defines.',
+      'ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED Atlas SDK uses the identifier "waypoint" in an Atlas page-ID prefix, which no CONTEXT.md term defines.',
+    ],
+  );
 });
 
 test("ordinary English prose that matches a domain term does not fail", () => {
@@ -237,15 +344,18 @@ test("ordinary English prose that matches a domain term does not fail", () => {
         [
           "// A Bonfire is a Landmark, and a Query names an ordinary hub.",
           "/* The Anchor of this Region is only prose about a Query. */",
+          "// Landmark pages are ignored, and a todo:fixme tag is not a page.",
           'const format = "date-time";',
           'const schema = "https://atlas.dev/schema/finding.json";',
           'const label = "Atlas page";',
           'const reserved = ".atlas/types/";',
-          'const message = "Atlas SDK reads one anchor. Landmark pages are ignored.";',
-          'const opening = "Waypoints open no sentence here.";',
+          'const encoding = "utf8";',
+          'const message = "Atlas SDK reads one Anchor page.";',
           "const anchors = `${format} ${schema}`;",
           'import { readFileSync } from "node:fs";',
-          'export { anchors } from "./bonfire-report.ts";',
+          'export { anchors } from "./landmark-report.ts";',
+          'const resolved = import.meta.resolve("node:path");',
+          'const legacy = require("node:url");',
         ].join("\n"),
       ),
     ]),
@@ -291,7 +401,7 @@ test("vocabulary Findings are deterministic, ordered, and deeply frozen", () => 
   const findings = validate(bindings, contracts);
 
   assert.deepEqual(
-    findings.map((finding) => `${finding.path} ${finding.code}`),
+    findings.map((found) => `${found.path} ${found.code}`),
     [
       "CONTEXT.md ATLAS_VOCABULARY_TERM_UNDEFINED",
       "CONTEXT.md ATLAS_VOCABULARY_TERM_AVOIDED",
@@ -318,6 +428,17 @@ test("the repository binds every declared Core Archetype", () => {
   ]);
 });
 
+test("a hostile contract cannot make the check run long", () => {
+  const started = process.hrtime.bigint();
+  assert.deepEqual(
+    validate(anchorBinding, [contract(`// from${" ".repeat(200_000)}`)]),
+    [],
+  );
+  const elapsedMs = Number(process.hrtime.bigint() - started) / 1_000_000;
+
+  assert.ok(elapsedMs < 2000, `scanning took ${String(elapsedMs)}ms`);
+});
+
 test("the validator command reports agreement and disagreement", () => {
   const logs: string[] = [];
   const errors: string[] = [];
@@ -327,14 +448,15 @@ test("the validator command reports agreement and disagreement", () => {
   console.error = (value: string) => errors.push(value);
   const workspace = scratchRepository();
   try {
-    assert.equal(main(["validate", "--root", ROOT]), 0);
+    assert.equal(
+      inDirectory(ROOT, () => main(["validate"])),
+      0,
+    );
     assert.deepEqual(logs, ["validated glossary and contract vocabulary agreement"]);
     assert.equal(main([]), 2);
     assert.equal(main(["render"]), 2);
     assert.equal(main(["validate", "--root"]), 2);
-    assert.equal(main(["validate", "--directory", ROOT]), 2);
-    assert.equal(main(["validate", "--root", ""]), 2);
-    assert.deepEqual(errors, Array(5).fill(errors[0]));
+    assert.deepEqual(errors, Array(3).fill(errors[0]));
 
     writeFileSync(join(workspace, "CONTEXT.md"), glossaryLines.join("\n"));
     writeFileSync(
@@ -342,7 +464,10 @@ test("the validator command reports agreement and disagreement", () => {
       'export const code = "ATLAS_BONFIRE_MISSING";\n',
     );
     writeFileSync(join(workspace, "src", "lint", "notes.md"), "ignored\n");
-    assert.equal(main(["validate", "--root", workspace]), 1);
+    assert.equal(
+      inDirectory(workspace, () => main(["validate"])),
+      1,
+    );
     assert.match(
       errors.at(-1) as string,
       /^error: src\/lint\/drift\.ts:1:28: ATLAS_VOCABULARY_IDENTIFIER_AVOIDED /u,
@@ -355,7 +480,8 @@ test("the validator command reports agreement and disagreement", () => {
 });
 
 test("the validator is directly executable", () => {
-  const output = execFileSync("node", [SCRIPT, "validate", "--root", ROOT], {
+  const output = execFileSync("node", [SCRIPT, "validate"], {
+    cwd: ROOT,
     encoding: "utf8",
   });
   assert.equal(output, "validated glossary and contract vocabulary agreement\n");
@@ -382,11 +508,17 @@ test("the validator refuses unreadable contracts instead of following them", () 
   console.error = (value: string) => errors.push(value);
   const workspace = scratchRepository();
   try {
-    assert.equal(main(["validate", "--root", workspace]), 1);
+    assert.equal(
+      inDirectory(workspace, () => main(["validate"])),
+      1,
+    );
     assert.deepEqual(errors, ["error: CONTEXT.md must be a regular file"]);
 
     symlinkSync(join(workspace, "src", "lint"), join(workspace, "CONTEXT.md"));
-    assert.equal(main(["validate", "--root", workspace]), 1);
+    assert.equal(
+      inDirectory(workspace, () => main(["validate"])),
+      1,
+    );
     assert.equal(errors.at(-1), "error: CONTEXT.md must be a regular file");
 
     const linked = scratchRepository();
@@ -402,7 +534,10 @@ test("the validator refuses unreadable contracts instead of following them", () 
     const missing = scratchRepository();
     writeFileSync(join(missing, "CONTEXT.md"), glossaryLines.join("\n"));
     rmSync(join(missing, "src"), { recursive: true, force: true });
-    assert.equal(main(["validate", "--root", missing]), 1);
+    assert.equal(
+      inDirectory(missing, () => main(["validate"])),
+      1,
+    );
     assert.equal(errors.at(-1), "error: src must be a readable directory");
     rmSync(missing, { recursive: true, force: true });
   } finally {

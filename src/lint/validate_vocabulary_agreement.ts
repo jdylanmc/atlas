@@ -1,95 +1,44 @@
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
-import { positionAt } from "../atlas/source_position.ts";
 import {
   reservedPageDirectories,
   type CoreArchetypeBindings,
 } from "../domain/core_archetype.ts";
-import type { Finding } from "../domain/finding.ts";
+import type { Finding, FindingLocation } from "../domain/finding.ts";
+import { sdkFindings } from "./sdk_finding.ts";
+import { rangeAt } from "./source_position.ts";
 
 export interface VocabularyTextFile {
   readonly content: string;
   readonly path: string;
 }
 
-type FindingLocation = NonNullable<Finding["location"]>;
-
-const attribution = Object.freeze({
-  checkId: "sdk-core.vocabulary-agreement",
-  kind: "sdk-core" as const,
-  trusted: true as const,
-});
-
-/**
- * Words Atlas SDK identifiers and Finding messages may use without naming a
- * domain concept. Every other capitalized word must be a CONTEXT.md term, so a
- * renamed archetype cannot survive anywhere in an SDK-owned contract.
- */
-const structuralWords: readonly string[] = Object.freeze([
-  "avoided",
-  "before",
-  "budget",
-  "byte",
-  "created",
-  "custom",
-  "definition",
-  "duplicate",
-  "empty",
-  "envelope",
-  "failed",
-  "file",
-  "frontmatter",
-  "glossary",
-  "h1",
-  "id",
-  "identifier",
-  "invalid",
-  "json",
-  "large",
-  "load",
-  "malformed",
-  "markdown",
-  "mismatch",
-  "missing",
-  "name",
-  "not",
-  "page",
-  "parse",
-  "path",
-  "required",
-  "reserved",
-  "shared",
-  "target",
-  "term",
-  "title",
-  "too",
-  "total",
-  "undeclared",
-  "undefined",
-  "unknown",
-  "updated",
-  "utf",
-  "utf8",
-  "word",
-]);
+const finding = sdkFindings("sdk-core.vocabulary-agreement");
 
 /** A glossary definition heading, for example `**Anchor**:`. */
 const definitionPattern = /^\*\*(.+)\*\*:$/u;
 /** A glossary avoidance line, for example `_Avoid_: Bonfire, Landmark, Hub`. */
 const avoidancePattern = /^_Avoid_: (.+)$/u;
-/** An Atlas SDK diagnostic code, which prose can never produce. */
+/** A term Atlas SDK can bind: one capitalized word. */
+const termPattern = /^\p{Lu}[\p{Ll}\p{N}]*$/u;
+/** A word an avoidance entry names, rather than a human qualifier. */
+const avoidedTermPattern = /^\p{Lu}/u;
+/** An Atlas SDK diagnostic code, a shape ordinary prose does not spell. */
 const diagnosticPattern = /ATLAS_[A-Z0-9_]+/gu;
 /** An `.atlas/` directory reference, in plain or regular-expression form. */
 const directoryPattern = /\\?\.atlas\\?\/([A-Za-z0-9_.-]+)\\?\//gu;
-/** A page-ID prefix, which requires an identifier immediately after its colon. */
-const idPrefixPattern = /(?<![\p{L}\p{N}_-])([a-z][a-z0-9-]*):(?=[a-z0-9])/gu;
 /** A module specifier, which names a file or a runtime scheme, not an Atlas page. */
-const specifierPattern = /(?:\bfrom|\bimport)\s*\(?\s*(["'])((?:[^"'\n\\]|\\.)*)\1/gu;
+const specifierPattern =
+  /(?:\bfrom|\bimport(?:\.meta\.resolve)?|\brequire)\s*(?:\(\s*)?(["'])((?:[^"'\n\\]|\\.)*)\1/gu;
 /** A single-line string or template literal. */
 const literalPattern = /"((?:[^"\\\n]|\\.)*)"|`([^`\n]*)`/gu;
 /** A template-literal substitution, whose value is not literal text. */
 const substitutionPattern = /\$\{[^}]*\}/gu;
-const wordPattern = /[A-Za-z][A-Za-z0-9]*/gu;
-const sentenceEndPattern = /[.!?]["')\]]?\s+$/u;
+/** A page-ID prefix, which requires an identifier immediately after its colon. */
+const idPrefixPattern = /(?<![\p{L}\p{N}_-])([a-z][a-z0-9-]*):(?=[a-z0-9])/gu;
+/** A literal that is one lower-case identifier, the shape of a page type. */
+const pageTypePattern = /^[a-z][a-z0-9-]*$/u;
+/** A capitalized word in a Finding message, which may name a domain concept. */
+const capitalizedPattern = /\p{Lu}[\p{L}\p{N}]*/gu;
 
 interface GlossaryEntry {
   readonly line: number;
@@ -99,87 +48,50 @@ interface GlossaryEntry {
 interface Glossary {
   readonly avoided: ReadonlyMap<string, GlossaryEntry>;
   readonly terms: ReadonlyMap<string, number>;
-  readonly words: ReadonlySet<string>;
 }
 
 /**
- * Reduces one term, identifier, or word to the form both sides of a Vocabulary
- * Binding share, so `Anchor`, `anchors`, and `ANCHOR` compare equal while
- * ordinary prose keeps its own spelling.
+ * Folds case and punctuation away, so `Anchor`, `anchor`, and `ANCHOR` compare
+ * equal. A plural is registered explicitly rather than stemmed, so no word is
+ * silently truncated.
  */
 function normalize(text: string): string {
-  const compact = text.toLowerCase().replaceAll(/[^a-z0-9]/gu, "");
-  return compact.length > 3 && compact.endsWith("s") ? compact.slice(0, -1) : compact;
+  return text.toLowerCase().replaceAll(/[^a-z0-9]/gu, "");
 }
 
-function freezeLocation(location: FindingLocation): FindingLocation {
-  return Object.freeze({
-    end: Object.freeze({ ...location.end }),
-    start: Object.freeze({ ...location.start }),
-  });
-}
-
-function finding(
-  code: string,
-  message: string,
-  path: string,
-  location?: FindingLocation,
-): Finding {
-  return Object.freeze({
-    attribution,
-    code,
-    "finding-schema": "1.0.0",
-    ...(location === undefined ? {} : { location: freezeLocation(location) }),
-    message,
-    path,
-    severity: "error",
-  });
-}
-
-function lineLocation(line: number, text: string): FindingLocation {
-  return { end: { column: text.length + 1, line }, start: { column: 1, line } };
-}
-
-function tokenLocation(
-  content: string,
-  start: number,
-  length: number,
-): FindingLocation {
-  return {
-    end: positionAt(content, start + length),
-    start: positionAt(content, start),
-  };
+/** The plural Atlas SDK spells a lower-case term with. */
+function pluralOf(word: string): string {
+  return /[^aeiou]y$/u.test(word) ? `${word.slice(0, -1)}ies` : `${word}s`;
 }
 
 /**
- * Reads CONTEXT.md as the authoritative glossary: every defined term, every
- * avoided term, and every word those terms are spelled with. An avoidance entry
- * that begins in lower case is a human qualifier rather than an avoided term.
+ * Reads CONTEXT.md as the authoritative glossary: every defined term, and every
+ * avoided term in singular and plural form. An avoidance entry that begins in
+ * lower case is a human qualifier rather than an avoided term.
  */
 export function parseGlossary(content: string): Glossary {
   const avoided = new Map<string, GlossaryEntry>();
   const terms = new Map<string, number>();
-  const words = new Set<string>();
-  const lines = content.split(/\r?\n/u);
-  lines.forEach((text, index) => {
+  content.split(/\r?\n/u).forEach((text, index) => {
     const line = index + 1;
     const definition = definitionPattern.exec(text);
     if (definition !== null) {
       const name = definition[1] as string;
       if (!terms.has(name)) terms.set(name, line);
-      for (const word of name.matchAll(wordPattern)) words.add(normalize(word[0]));
       return;
     }
     const avoidance = avoidancePattern.exec(text);
     if (avoidance === null) return;
     for (const entry of (avoidance[1] as string).split(",")) {
       const name = entry.trim();
-      if (!/^\p{Lu}/u.test(name)) continue;
-      const key = normalize(name);
-      if (!avoided.has(key)) avoided.set(key, { line, name });
+      if (!avoidedTermPattern.test(name)) continue;
+      const singular = normalize(name);
+      for (const key of [singular, pluralOf(singular)]) {
+        if (!avoided.has(key)) avoided.set(key, { line, name });
+      }
     }
   });
-  return { avoided, terms, words };
+  return { avoided, terms };
 }
 
 interface BindingDisagreement {
@@ -189,10 +101,10 @@ interface BindingDisagreement {
 }
 
 /**
- * Derives the identifiers a glossary term requires. A Core Archetype term is one
- * capitalized word, its page type and page-ID prefix are that word in lower
- * case, its `.atlas/` directory is the plural of that word, and its diagnostic
- * stem is that word in upper case.
+ * The identifiers a glossary term requires. Atlas SDK spells a Core Archetype's
+ * page type and page-ID prefix as the term in lower case, its `.atlas/`
+ * directory as the plural of that word, and its diagnostic stem as the term in
+ * upper case, so a binding records the spelling its term already fixes.
  */
 function disagreements(
   term: string,
@@ -208,7 +120,7 @@ function disagreements(
     },
     {
       actual: identifiers.directory,
-      expected: `${base}s`,
+      expected: pluralOf(base),
       surface: "page directory",
     },
     { actual: identifiers.idPrefix, expected: base, surface: "page-ID prefix" },
@@ -225,7 +137,21 @@ function validateBindings(
   findings: Finding[],
 ): void {
   const lines = content.split(/\r?\n/u);
+  const lineLocation = (line: number): FindingLocation => ({
+    end: { column: (lines[line - 1] as string).length + 1, line },
+    start: { column: 1, line },
+  });
   for (const term of Object.keys(bindings)) {
+    if (!termPattern.test(term)) {
+      findings.push(
+        finding(
+          "ATLAS_VOCABULARY_TERM_UNSUPPORTED",
+          `Atlas SDK contracts bind the term ${JSON.stringify(term)}, which is not one capitalized word.`,
+          glossaryPath,
+        ),
+      );
+      continue;
+    }
     const avoided = glossary.avoided.get(normalize(term));
     if (avoided !== undefined) {
       findings.push(
@@ -233,7 +159,7 @@ function validateBindings(
           "ATLAS_VOCABULARY_TERM_AVOIDED",
           `Atlas SDK contracts bind the term ${JSON.stringify(term)}, which ${glossaryPath} lists as an avoided term.`,
           glossaryPath,
-          lineLocation(avoided.line, lines[avoided.line - 1] as string),
+          lineLocation(avoided.line),
         ),
       );
       continue;
@@ -255,7 +181,7 @@ function validateBindings(
           "ATLAS_VOCABULARY_IDENTIFIER_MISMATCH",
           `Atlas SDK binds ${surface} ${JSON.stringify(actual)} to the term ${JSON.stringify(term)}, which requires ${JSON.stringify(expected)}.`,
           glossaryPath,
-          lineLocation(definitionLine, lines[definitionLine - 1] as string),
+          lineLocation(definitionLine),
         ),
       );
     }
@@ -267,7 +193,6 @@ interface ContractVocabulary {
   readonly directories: ReadonlySet<string>;
   readonly glossaryPath: string;
   readonly prefixes: ReadonlySet<string>;
-  readonly words: ReadonlySet<string>;
 }
 
 function avoidedFinding(
@@ -306,28 +231,11 @@ function declaredFinding(
   );
 }
 
-function wordFinding(
-  vocabulary: ContractVocabulary,
-  surface: string,
-  word: string,
-  file: VocabularyTextFile,
-  location: FindingLocation,
-): Finding | undefined {
-  const avoided = avoidedFinding(vocabulary, surface, word, file, location);
-  if (avoided !== undefined) return avoided;
-  if (vocabulary.words.has(normalize(word))) return undefined;
-  return finding(
-    "ATLAS_VOCABULARY_WORD_UNKNOWN",
-    `Atlas SDK uses the word ${JSON.stringify(word)} in ${surface}, which no ${vocabulary.glossaryPath} term defines.`,
-    file.path,
-    location,
-  );
-}
-
 /**
- * Blanks the module specifiers a contract imports, so a runtime scheme such as
- * `node:` is never read as a page-ID prefix. Blanking preserves every offset, so
- * reported locations stay exact.
+ * Blanks the module specifier of an import, a `require`, or an
+ * `import.meta.resolve`, so a runtime scheme such as `node:` is not read as a
+ * page-ID prefix. Blanking preserves every offset, so locations stay exact. A
+ * specifier reached any other way stays visible to the scan.
  */
 function maskSpecifiers(content: string): string {
   return content.replaceAll(
@@ -339,6 +247,11 @@ function maskSpecifiers(content: string): string {
   );
 }
 
+/**
+ * Scans the diagnostic codes a contract declares. Ordinary prose does not spell
+ * this shape, so each segment is vocabulary wherever the code appears, comments
+ * included.
+ */
 function scanDiagnostics(
   vocabulary: ContractVocabulary,
   file: VocabularyTextFile,
@@ -348,12 +261,12 @@ function scanDiagnostics(
     const code = match[0];
     let offset = match.index;
     for (const segment of code.split("_")) {
-      const result = wordFinding(
+      const result = avoidedFinding(
         vocabulary,
         `the diagnostic code ${code}`,
         segment,
         file,
-        tokenLocation(file.content, offset, segment.length),
+        rangeAt(file.content, offset, offset + segment.length),
       );
       if (result !== undefined) findings.push(result);
       offset += segment.length + 1;
@@ -361,67 +274,78 @@ function scanDiagnostics(
   }
 }
 
-function scanIdentifiers(
+/**
+ * Scans the `.atlas/` directory names a contract references. The `.atlas/`
+ * prefix makes the name that follows it an Atlas page directory.
+ */
+function scanDirectories(
   vocabulary: ContractVocabulary,
   file: VocabularyTextFile,
   findings: Finding[],
 ): void {
   for (const match of file.content.matchAll(directoryPattern)) {
     const directory = match[1] as string;
+    const start = match.index + match[0].indexOf(directory);
     const result = declaredFinding(
       vocabulary,
       "an Atlas page directory name",
       vocabulary.directories,
       directory,
       file,
-      tokenLocation(
-        file.content,
-        match.index + match[0].indexOf(directory),
-        directory.length,
-      ),
-    );
-    if (result !== undefined) findings.push(result);
-  }
-  for (const match of file.content.matchAll(idPrefixPattern)) {
-    const prefix = match[1] as string;
-    const result = declaredFinding(
-      vocabulary,
-      "an Atlas page-ID prefix",
-      vocabulary.prefixes,
-      prefix,
-      file,
-      tokenLocation(file.content, match.index, prefix.length),
+      rangeAt(file.content, start, start + directory.length),
     );
     if (result !== undefined) findings.push(result);
   }
 }
 
 /**
- * Scans the Finding messages an SDK-owned contract declares. A message is a
- * single-line literal that contains a space and ends a sentence, so identifiers,
- * paths, and formats are never read as prose. Only a capitalized word that does
- * not open a sentence names a domain concept.
+ * Scans the single-line literals a contract declares, where a page-ID prefix, a
+ * page type, and a Finding message are spelled. A substitution is blanked at its
+ * own length, so locations stay exact.
  */
-function scanMessages(
+function scanLiterals(
   vocabulary: ContractVocabulary,
   file: VocabularyTextFile,
   findings: Finding[],
 ): void {
   for (const match of file.content.matchAll(literalPattern)) {
-    const text = (match[1] ?? match[2]) as string;
+    const raw = (match[1] ?? match[2]) as string;
+    const start = match.index + match[0].indexOf(raw);
+    const text = raw.replaceAll(substitutionPattern, (value) =>
+      " ".repeat(value.length),
+    );
+    const at = (offset: number, length: number): FindingLocation =>
+      rangeAt(file.content, start + offset, start + offset + length);
+    for (const prefix of text.matchAll(idPrefixPattern)) {
+      const token = prefix[1] as string;
+      const result = declaredFinding(
+        vocabulary,
+        "an Atlas page-ID prefix",
+        vocabulary.prefixes,
+        token,
+        file,
+        at(prefix.index, token.length),
+      );
+      if (result !== undefined) findings.push(result);
+    }
+    if (pageTypePattern.test(text)) {
+      const result = avoidedFinding(
+        vocabulary,
+        "an Atlas page type",
+        text,
+        file,
+        at(0, text.length),
+      );
+      if (result !== undefined) findings.push(result);
+    }
     if (!text.includes(" ") || !text.endsWith(".")) continue;
-    const message = text.replaceAll(substitutionPattern, " ");
-    const start = match.index + match[0].indexOf(text);
-    for (const word of message.matchAll(wordPattern)) {
-      if (!/^\p{Lu}/u.test(word[0])) continue;
-      if (sentenceEndPattern.test(message.slice(0, word.index))) continue;
-      if (word.index === 0) continue;
-      const result = wordFinding(
+    for (const word of text.matchAll(capitalizedPattern)) {
+      const result = avoidedFinding(
         vocabulary,
         "a Finding message",
         word[0],
         file,
-        tokenLocation(file.content, start + word.index, word[0].length),
+        at(word.index, word[0].length),
       );
       if (result !== undefined) findings.push(result);
     }
@@ -444,10 +368,14 @@ function compareFindings(left: Finding, right: Finding): number {
  * Validates that the CONTEXT.md glossary and the vocabulary bound into Atlas
  * SDK-owned contracts agree in both directions. Disagreement is reported as a
  * deeply immutable, trusted Finding naming the glossary term and the contract
- * identifier that disagree. The check reads identifiers, diagnostic codes, and
- * Finding messages rather than prose, so ordinary English that happens to match
- * a domain term produces no Finding. Identical input produces identical ordered
- * Findings.
+ * identifier that disagree.
+ *
+ * The check reads identifiers rather than prose. A diagnostic code and an
+ * `.atlas/` directory reference are identifiers wherever a contract writes them;
+ * a page-ID prefix, a page type, and a Finding message are read only inside a
+ * single-line literal. Ordinary English writes none of those shapes, so a
+ * sentence that uses a domain word raises nothing. Identical input produces
+ * identical ordered Findings.
  */
 export function validateVocabularyAgreement(
   bindings: CoreArchetypeBindings,
@@ -478,7 +406,6 @@ export function validateVocabularyAgreement(
     ]),
     glossaryPath: glossary.path,
     prefixes: new Set(identifiers.map((archetype) => archetype.idPrefix)),
-    words: new Set([...parsed.words, ...structuralWords.map(normalize)]),
   };
   for (const file of [...contracts].sort((left, right) =>
     compareCodePoints(left.path, right.path),
@@ -488,8 +415,8 @@ export function validateVocabularyAgreement(
       path: file.path,
     };
     scanDiagnostics(vocabulary, scanned, findings);
-    scanIdentifiers(vocabulary, scanned, findings);
-    scanMessages(vocabulary, scanned, findings);
+    scanDirectories(vocabulary, scanned, findings);
+    scanLiterals(vocabulary, scanned, findings);
   }
 
   return Object.freeze(findings.toSorted(compareFindings));

@@ -7,9 +7,9 @@ export interface CoreArchetypeIdentifiers {
 
 /**
  * The Vocabulary Binding of every Core Archetype: one CONTEXT.md glossary term
- * mapped to the identifiers Atlas SDK contracts derive from it. Each identifier
- * is declared rather than computed, so renaming one side alone is a visible
- * disagreement that trusted vocabulary validation reports.
+ * mapped to the identifiers Atlas SDK contracts spell it with. A term fixes
+ * those spellings, so this table records them in one place and trusted
+ * vocabulary validation verifies that the glossary and the table still agree.
  */
 export type CoreArchetypeBindings = Readonly<Record<string, CoreArchetypeIdentifiers>>;
 
