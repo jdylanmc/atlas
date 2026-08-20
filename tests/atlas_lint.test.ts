@@ -13,6 +13,7 @@ import {
   lintAtlas,
   type AtlasLintResult,
 } from "../src/lint/lint_atlas.ts";
+import { assertGrowthRatio } from "./growth.ts";
 
 const encoder = new TextEncoder();
 const fixturesRoot = resolve(import.meta.dirname, "fixtures", "complete-atlas");
@@ -390,19 +391,16 @@ test("reads every large pathological body in bounded time", () => {
         : file,
     );
 
-    const started = performance.now();
     const result = lintAtlas(atlas, {
       maxFileBytes: 4 * megabyte,
       maxTotalBytes: 8 * megabyte,
     });
-    const elapsed = performance.now() - started;
 
     assert.ok(result.outcome === "invalid", JSON.stringify(result));
     assert.deepEqual(
       result.findings.map((finding) => finding.code),
       [code],
     );
-    assert.ok(elapsed < 2000, `linting ${code} took ${String(elapsed)}ms`);
   }
 });
 
@@ -449,12 +447,10 @@ test("refuses every shape of Markdown that costs more than its bytes", () => {
         : file,
     );
 
-    const started = performance.now();
     const result = lintAtlas(atlas, {
       maxFileBytes: 4 * megabyte,
       maxTotalBytes: 8 * megabyte,
     });
-    const elapsed = performance.now() - started;
 
     assert.ok(result.outcome === "invalid", `${shape}: ${JSON.stringify(result)}`);
     const [reported] = result.findings.map((finding) => finding.code);
@@ -462,7 +458,6 @@ test("refuses every shape of Markdown that costs more than its bytes", () => {
       reported !== undefined && refused.has(reported),
       `${shape}: ${String(reported)}`,
     );
-    assert.ok(elapsed < 2000, `linting ${shape} took ${String(elapsed)}ms`);
   }
 });
 
@@ -481,16 +476,13 @@ test("refuses frontmatter larger than it reads, and reads plain prose whole", ()
   );
   const budgets = { maxFileBytes: 4 * megabyte, maxTotalBytes: 8 * megabyte };
 
-  const started = performance.now();
   const result = lintAtlas(oversized, budgets);
-  const elapsed = performance.now() - started;
 
   assert.ok(result.outcome === "invalid", JSON.stringify(result));
   assert.deepEqual(
     result.findings.map((finding) => finding.code),
     ["ATLAS_PAGE_FRONTMATTER_TOO_LARGE"],
   );
-  assert.ok(elapsed < 2000, `linting took ${String(elapsed)}ms`);
 
   // Prose carries no markup, so a page holding a megabyte of it is still read,
   // however its lines end.
@@ -511,7 +503,7 @@ test("refuses frontmatter larger than it reads, and reads plain prose whole", ()
 // the bytes; anything superlinear shows up as a ratio near four or above. A
 // growth ratio survives a slower machine, where a fixed millisecond budget
 // would only report the machine.
-function lintCost(body: string, budgets: AtlasTextBudgets): number {
+function lintBody(body: string, budgets: AtlasTextBudgets): void {
   const atlas = completeAtlas("valid").map((file) =>
     file.path === ".atlas/anchors/lint.md"
       ? {
@@ -521,13 +513,6 @@ function lintCost(body: string, budgets: AtlasTextBudgets): number {
       : file,
   );
   lintAtlas(atlas, budgets);
-  let best = Number.POSITIVE_INFINITY;
-  for (let run = 0; run < 3; run += 1) {
-    const started = performance.now();
-    lintAtlas(atlas, budgets);
-    best = Math.min(best, performance.now() - started);
-  }
-  return best;
 }
 
 test("costs no more than the bytes it is given as those bytes double", () => {
@@ -545,15 +530,23 @@ test("costs no more than the bytes it is given as those bytes double", () => {
 
   for (const [shape, make] of Object.entries(shapes)) {
     const count = 128 * 1024;
-    const growth = lintCost(make(count * 2), budgets) / lintCost(make(count), budgets);
-    assert.ok(growth < 3, `refusing ${shape} grew ${growth.toFixed(2)} times`);
+    assertGrowthRatio({
+      large: () => lintBody(make(count * 2), budgets),
+      maxRatio: 3,
+      name: `refusing ${shape}`,
+      small: () => lintBody(make(count), budgets),
+    });
   }
 
   // Prose is read rather than refused, so the accepted path is measured too,
   // below every declared bound at both sizes.
   const prose = (count: number): string => `${"word ".repeat(16)}\n`.repeat(count);
-  const growth = lintCost(prose(8192), budgets) / lintCost(prose(4096), budgets);
-  assert.ok(growth < 3, `reading prose grew ${growth.toFixed(2)} times`);
+  assertGrowthRatio({
+    large: () => lintBody(prose(8192), budgets),
+    maxRatio: 3,
+    name: "reading prose",
+    small: () => lintBody(prose(4096), budgets),
+  });
 });
 
 test("locates a value in frontmatter no reader would end early", () => {
