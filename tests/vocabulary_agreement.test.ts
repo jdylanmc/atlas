@@ -362,12 +362,46 @@ test("an avoidance qualifier that hides a term is reported, not obeyed", () => {
   for (const lines of [leading, buried]) {
     const findings = validate(anchorBinding, [contract('const t = "bonfire";')], lines);
     assert.deepEqual(summarize(findings).slice(0, 1), [
-      "ATLAS_VOCABULARY_AVOIDANCE_MALFORMED Atlas SDK requires an avoidance qualifier in CONTEXT.md to follow the one term it scopes and to end its line.",
+      "ATLAS_VOCABULARY_AVOIDANCE_MALFORMED Atlas SDK requires every avoidance entry in CONTEXT.md to name a term, and a qualifier to follow the one term it scopes and to end its line.",
     ]);
     assert.deepEqual(findings[0]?.location, {
       end: { column: (lines[4] as string).length + 1, line: 5 },
       start: { column: 1, line: 5 },
     });
+  }
+});
+
+test("a stray comma in an avoidance line is reported, and every term keeps binding", () => {
+  const base = [
+    "# Atlas SDK",
+    "",
+    "**Anchor**:",
+    "A page through which an agent enters a region of knowledge.",
+    "_Avoid_: Bonfire, Landmark",
+    "",
+  ];
+
+  for (const entries of [
+    "Bonfire, Landmark,",
+    "Bonfire, Landmark, ",
+    "Bonfire,, Landmark",
+  ]) {
+    const lines = [...base];
+    lines[4] = `_Avoid_: ${entries}`;
+    assert.deepEqual(
+      summarize(
+        validate(
+          anchorBinding,
+          [contract('const type = "landmark";\nconst code = "ATLAS_BONFIRE_MISSING";')],
+          lines,
+        ),
+      ),
+      [
+        "ATLAS_VOCABULARY_AVOIDANCE_MALFORMED Atlas SDK requires every avoidance entry in CONTEXT.md to name a term, and a qualifier to follow the one term it scopes and to end its line.",
+        'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "landmark" in an Atlas page type, which CONTEXT.md lists as the avoided term "Landmark".',
+        'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "BONFIRE" in the diagnostic code ATLAS_BONFIRE_MISSING, which CONTEXT.md lists as the avoided term "Bonfire".',
+      ],
+    );
   }
 });
 

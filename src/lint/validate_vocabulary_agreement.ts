@@ -78,6 +78,8 @@ function pluralOf(word: string): string {
  * before it to a condition validation cannot judge, so that entry stays
  * advisory. A qualifier that scopes no entry, or that hides an entry behind it,
  * leaves an avoidance no reader can rely on, and its line is reported malformed.
+ * An empty entry, which a stray comma leaves behind, is neither a term nor a
+ * qualifier: every term on the line keeps binding and the line is reported.
  */
 export function parseGlossary(content: string): Glossary {
   const avoided = new Map<string, GlossaryEntry>();
@@ -102,15 +104,16 @@ export function parseGlossary(content: string): Glossary {
     const avoidance = avoidancePattern.exec(text);
     if (avoidance === null) return;
     const entries = (avoidance[1] as string).split(",").map((entry) => entry.trim());
-    const qualifier = entries.findIndex((entry) => !isAvoidedName(entry));
-    if (qualifier < 0) {
-      register(entries, line);
-      return;
-    }
-    if (qualifier === 0 || entries.slice(qualifier + 1).some(isAvoidedName)) {
+    const named = entries.filter((entry) => entry.length > 0);
+    const qualifier = named.findIndex((entry) => !isAvoidedName(entry));
+    const hidden = qualifier >= 0 && named.slice(qualifier + 1).some(isAvoidedName);
+    if (named.length !== entries.length || qualifier === 0 || hidden) {
       malformed.push(line);
     }
-    register(entries.slice(0, Math.max(qualifier - 1, 0)), line);
+    register(
+      named.slice(0, qualifier < 0 ? named.length : Math.max(qualifier - 1, 0)),
+      line,
+    );
   });
   return { avoided, malformed, terms };
 }
@@ -151,9 +154,9 @@ function disagreements(
 }
 
 /**
- * Reports every avoidance line whose qualifier leaves an entry unenforced
- * without saying so, which would let a rule the glossary states silently bind
- * nothing.
+ * Reports every avoidance line that a reader and validation would read
+ * differently: a qualifier that leaves an entry unenforced without saying so,
+ * or a stray comma that leaves an entry empty.
  */
 function validateAvoidance(
   glossary: Glossary,
@@ -165,7 +168,7 @@ function validateAvoidance(
     findings.push(
       finding(
         "ATLAS_VOCABULARY_AVOIDANCE_MALFORMED",
-        `Atlas SDK requires an avoidance qualifier in ${file.path} to follow the one term it scopes and to end its line.`,
+        `Atlas SDK requires every avoidance entry in ${file.path} to name a term, and a qualifier to follow the one term it scopes and to end its line.`,
         file.path,
         {
           end: { column: (lines[line - 1] as string).length + 1, line },
