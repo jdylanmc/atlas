@@ -85,9 +85,10 @@ carries the Vocabulary Binding each Core Archetype term fixes across SDK-owned
 contracts: its `.atlas/` directory name, page type, page-ID prefix, and
 diagnostic code stem. Every one of those identifiers is spelled from the term
 itself, so the check verifies the spelling rather than trusting a second copy of
-it. `npm run vocabulary:validate` reports every disagreement between the two as
-a trusted `sdk-core.vocabulary-agreement` Finding, so a rename on either side
-fails the gate instead of shipping silently.
+it, and the contracts spell each identifier from the binding rather than
+restating it. `npm run vocabulary:validate` reports every disagreement between
+the two as a trusted `sdk-core.vocabulary-agreement` Finding, so a rename on
+either side fails the gate instead of shipping silently.
 
 The check binds identifiers and contracts rather than prose, and each surface is
 read where that surface can actually occur:
@@ -97,15 +98,20 @@ read where that surface can actually occur:
   occurs in ordinary English.
 - Page-ID prefixes, Atlas page types, and Finding messages are read only inside
   single-line string and template literals, because those shapes do occur in
-  prose. A `todo:fixme` comment tag is therefore not a page-ID prefix.
+  prose. A `todo:fixme` comment tag is therefore not a page-ID prefix. Inside a
+  literal, any `word:identifier` token is read as a page-ID prefix, and a
+  Finding message is a literal of several words ending in a full stop.
 - Module specifiers are masked before scanning, so the `node:` prefix in an
   `import`, `export ... from`, `require`, or `import.meta.resolve` is not read
   as a page-ID prefix. A `node:` specifier reached any other way is not masked
   and would raise a false positive.
 
-A directory name or page-ID prefix must resolve to a glossary term, and a term
-listed under an `_Avoid_` line may never appear in any of those surfaces —
-including as the opening word of a Finding message. Atlas page types are checked
+A directory name or page-ID prefix must resolve to a glossary term or to a
+directory Atlas SDK reserves without one, and a term listed under an `_Avoid_`
+line may never appear in any of those surfaces — including as the opening word
+of a Finding message. An `_Avoid_` entry followed by a lower-case qualifier, such
+as `_Avoid_: Query, when naming the user-facing skill`, states a condition
+validation cannot judge, so it stays advisory. Atlas page types are checked
 against the avoided terms only, because the set of ordinary lower-case words a
 source may legitimately quote is not closed. Ordinary English usage of a word
 that happens to match a domain term raises nothing, because prose carries none

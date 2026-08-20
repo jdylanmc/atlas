@@ -50,6 +50,8 @@ const parseMessages = Object.freeze({
 
 const sourcePrefix = `.atlas/${coreArchetypes.Source.directory}/`;
 
+const rootAnchorDiagnostic = `ATLAS_ROOT_${coreArchetypes.Anchor.diagnosticStem}`;
+
 const citationLabelBreak = /[\t\n\r ]/u;
 const citationLabelEscapable: ReadonlySet<string> = new Set(["[", "\\", "]"]);
 const citationLabelLimit = 999;
@@ -709,7 +711,7 @@ function validatePage(
   if (file.path === ".atlas/index.md" && parsed.page.sdk.id !== rootAnchorPageId) {
     findings.push(
       finding(
-        "ATLAS_ROOT_ANCHOR_ID_INVALID",
+        `${rootAnchorDiagnostic}_ID_INVALID`,
         `The Root Anchor must use the stable ID ${rootAnchorPageId}.`,
         file.path,
         sdkKeyLocation(file.content, "id"),
@@ -818,7 +820,7 @@ export function validateAtlasStructure(
   if (!pageRecords.some((file) => file.path === ".atlas/index.md")) {
     findings.push(
       finding(
-        "ATLAS_ROOT_ANCHOR_REQUIRED",
+        `${rootAnchorDiagnostic}_REQUIRED`,
         "Atlas must contain the Root Anchor at .atlas/index.md.",
         ".atlas/index.md",
       ),

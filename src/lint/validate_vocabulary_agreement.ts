@@ -33,8 +33,8 @@ const specifierPattern =
 const literalPattern = /"((?:[^"\\\n]|\\.)*)"|`([^`\n]*)`/gu;
 /** A template-literal substitution, whose value is not literal text. */
 const substitutionPattern = /\$\{[^}]*\}/gu;
-/** A page-ID prefix, which requires an identifier immediately after its colon. */
-const idPrefixPattern = /(?<![\p{L}\p{N}_-])([a-z][a-z0-9-]*):(?=[a-z0-9])/gu;
+/** A page-ID prefix, which requires an identifier or a substitution after its colon. */
+const idPrefixPattern = /(?<![\p{L}\p{N}_-])([a-z][a-z0-9-]*):(?=[a-z0-9$])/gu;
 /** A literal that is one lower-case identifier, the shape of a page type. */
 const pageTypePattern = /^[a-z][a-z0-9-]*$/u;
 /** A capitalized word in a Finding message, which may name a domain concept. */
@@ -66,8 +66,9 @@ function pluralOf(word: string): string {
 
 /**
  * Reads CONTEXT.md as the authoritative glossary: every defined term, and every
- * avoided term in singular and plural form. An avoidance entry that begins in
- * lower case is a human qualifier rather than an avoided term.
+ * unconditionally avoided term in singular and plural form. An avoidance entry
+ * that begins in lower case is a human qualifier, and it scopes the entry before
+ * it to a condition validation cannot judge, so that entry stays advisory.
  */
 export function parseGlossary(content: string): Glossary {
   const avoided = new Map<string, GlossaryEntry>();
@@ -82,9 +83,16 @@ export function parseGlossary(content: string): Glossary {
     }
     const avoidance = avoidancePattern.exec(text);
     if (avoidance === null) return;
+    const named: string[] = [];
     for (const entry of (avoidance[1] as string).split(",")) {
       const name = entry.trim();
-      if (!avoidedTermPattern.test(name)) continue;
+      if (avoidedTermPattern.test(name)) {
+        named.push(name);
+        continue;
+      }
+      named.pop();
+    }
+    for (const name of named) {
       const singular = normalize(name);
       for (const key of [singular, pluralOf(singular)]) {
         if (!avoided.has(key)) avoided.set(key, { line, name });
@@ -300,8 +308,12 @@ function scanDirectories(
 
 /**
  * Scans the single-line literals a contract declares, where a page-ID prefix, a
- * page type, and a Finding message are spelled. A substitution is blanked at its
- * own length, so locations stay exact.
+ * page type, and a Finding message are spelled. A Finding message is a literal of
+ * several words ending in a full stop, which is the shape every Atlas SDK message
+ * carries and which a Markdown code span in a comment does not. A page-ID prefix is read from the
+ * literal as written, so a substituted value still shows its prefix; every other
+ * surface reads the literal with each substitution blanked at its own length, so
+ * locations stay exact.
  */
 function scanLiterals(
   vocabulary: ContractVocabulary,
@@ -316,7 +328,7 @@ function scanLiterals(
     );
     const at = (offset: number, length: number): FindingLocation =>
       rangeAt(file.content, start + offset, start + offset + length);
-    for (const prefix of text.matchAll(idPrefixPattern)) {
+    for (const prefix of raw.matchAll(idPrefixPattern)) {
       const token = prefix[1] as string;
       const result = declaredFinding(
         vocabulary,

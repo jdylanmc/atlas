@@ -323,6 +323,39 @@ test("a substitution keeps the words after it at their own location", () => {
   });
 });
 
+test("a conditional avoidance stays advice, and an unconditional one binds", () => {
+  const lines = [
+    "# Atlas SDK",
+    "",
+    "**Anchor**:",
+    "A page through which an agent enters a region of knowledge.",
+    "_Avoid_: Bonfire, Query, when naming the user-facing skill",
+    "",
+  ];
+
+  assert.deepEqual(
+    summarize(
+      validate(
+        anchorBinding,
+        [contract('const skill = "query";\nconst type = "bonfire";')],
+        lines,
+      ),
+    ),
+    [
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "bonfire" in an Atlas page type, which CONTEXT.md lists as the avoided term "Bonfire".',
+    ],
+  );
+});
+
+test("a page-ID prefix is read even when a substitution supplies its value", () => {
+  assert.deepEqual(
+    summarize(validate(anchorBinding, [contract("const id = `bonfire:${slug}`;")])),
+    [
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "bonfire" in an Atlas page-ID prefix, which CONTEXT.md lists as the avoided term "Bonfire".',
+    ],
+  );
+});
+
 test("an identifier bound to no glossary term fails with its own diagnostic", () => {
   assert.deepEqual(
     summarize(
@@ -345,6 +378,7 @@ test("ordinary English prose that matches a domain term does not fail", () => {
           "// A Bonfire is a Landmark, and a Query names an ordinary hub.",
           "/* The Anchor of this Region is only prose about a Query. */",
           "// Landmark pages are ignored, and a todo:fixme tag is not a page.",
+          "/** An avoidance line, for example `_Avoid_: Bonfire, Landmark, Hub`. */",
           'const format = "date-time";',
           'const schema = "https://atlas.dev/schema/finding.json";',
           'const label = "Atlas page";',
