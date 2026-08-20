@@ -64,8 +64,8 @@ npm run ci
 
 `npm run ci` performs deterministic Prettier checks, type-aware ESLint flat
 configuration, strict TypeScript checking with `erasableSyntaxOnly`, fail-closed
-Node.js test-runner coverage, byte-exact Cacophony prompt validation, and
-Actionlint `1.7.7`.
+Node.js test-runner coverage, glossary and contract vocabulary agreement,
+byte-exact Cacophony prompt validation, and Actionlint `1.7.7`.
 The Actionlint launcher also pins ShellCheck `0.11.0`, disables Python-based
 Pyflakes integration, downloads only the assets for the current supported
 platform and architecture, and verifies their release checksums before
@@ -73,12 +73,32 @@ execution.
 
 Focused commands are `npm run format:check`, `npm run lint`,
 `npm run typecheck`, `npm run test:coverage`, `npm run test:unit`,
-`npm run atlas-sdk:validate`, `npm run cacophony:validate`, and
-`npm run workflow:lint`. Use `npm run cacophony:sync` only after editing a
-Persona, Directive, or composition reference.
+`npm run atlas-sdk:validate`, `npm run vocabulary:validate`,
+`npm run cacophony:validate`, and `npm run workflow:lint`. Use
+`npm run cacophony:sync` only after editing a Persona, Directive, or composition
+reference.
 
-Future product TypeScript under `src/` participates in formatting, linting,
-strict type checking, tests, and the existing 100% product coverage gate.
+## Glossary and contract vocabulary agreement
+
+`CONTEXT.md` is the authoritative domain glossary, and `src/domain/core_archetype.ts`
+declares the Vocabulary Binding each Core Archetype term carries into SDK-owned
+contracts: its `.atlas/` directory name, page type, page-ID prefix, and
+diagnostic code stem. `npm run vocabulary:validate` reports every disagreement
+between the two as a trusted `sdk-core.vocabulary-agreement` Finding, so a
+rename on either side fails the gate instead of shipping silently.
+
+The check binds identifiers and contracts rather than prose. It reads the
+declared bindings, `ATLAS_*` diagnostic codes, `.atlas/` directory references,
+page-ID prefixes, and the Finding messages SDK-owned sources declare; an
+identifier or diagnostic word must be a glossary term or a reviewed structural
+word, and a term listed under an `_Avoid_` line may never appear as a live
+identifier. Ordinary English usage of a word that happens to match a domain term
+raises nothing, because comments and lower-case prose are never vocabulary
+evidence.
+
+Product TypeScript under `src/` participates in formatting, linting, strict type
+checking, tests, vocabulary agreement, and the existing 100% product coverage
+gate.
 ESLint mechanically enforces the settled inward source dependency order from
 `domain` through `interfaces`, including keeping Node.js built-ins out of the
 application core.

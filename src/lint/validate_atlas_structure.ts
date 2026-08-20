@@ -14,8 +14,16 @@ import { gfmFootnoteFromMarkdown } from "mdast-util-gfm-footnote";
 import { toString } from "mdast-util-to-string";
 import { gfmFootnote } from "micromark-extension-gfm-footnote";
 import { isScalar, parseDocument, type Node, type Pair, type YAMLMap } from "yaml";
+import {
+  coreArchetypes,
+  corePageTypes,
+  corePageTypesByDirectory,
+  rootAnchorPageId,
+} from "../domain/core_archetype.ts";
 import type { Finding } from "../domain/finding.ts";
+import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import type { AtlasTextFile } from "../atlas/load_atlas_text.ts";
+import { rangeAt } from "../atlas/source_position.ts";
 import {
   classifyAtlasTextPath,
   parseAtlasPages,
@@ -44,16 +52,7 @@ const parseMessages = Object.freeze({
   MISSING_FRONTMATTER: "Atlas page frontmatter is missing.",
 });
 
-const corePathTypes = Object.freeze({
-  anchors: "anchor",
-  concepts: "concept",
-  sources: "source",
-  principles: "principle",
-  edges: "edge",
-} as const);
-const coreTypeNames: ReadonlySet<string> = new Set(Object.values(corePathTypes));
-
-const sourcePrefix = ".atlas/sources/";
+const sourcePrefix = `.atlas/${coreArchetypes.Source.directory}/`;
 
 const citationLabelBreak = /[\t\n\r ]/u;
 const citationLabelEscapable: ReadonlySet<string> = new Set(["[", "\\", "]"]);
@@ -63,17 +62,6 @@ const markdownOptions = Object.freeze({
   extensions: [gfmFootnote()],
   mdastExtensions: [gfmFootnoteFromMarkdown()],
 });
-
-function compareCodePoints(left: string, right: string): number {
-  const leftPoints = Array.from(left, (point) => point.codePointAt(0) as number);
-  const rightPoints = Array.from(right, (point) => point.codePointAt(0) as number);
-  const length = Math.min(leftPoints.length, rightPoints.length);
-  for (let index = 0; index < length; index += 1) {
-    const difference = (leftPoints[index] as number) - (rightPoints[index] as number);
-    if (difference !== 0) return difference;
-  }
-  return leftPoints.length - rightPoints.length;
-}
 
 function freezeLocation(location: FindingLocation): FindingLocation {
   return Object.freeze({
@@ -97,19 +85,6 @@ function finding(
     path,
     severity: "error",
   });
-}
-
-function positionAt(content: string, offset: number): FindingLocation["start"] {
-  const before = content.slice(0, offset);
-  const lines = before.split(/\r?\n/u);
-  return {
-    column: (lines.at(-1) as string).length + 1,
-    line: lines.length,
-  };
-}
-
-function rangeAt(content: string, start: number, end: number): FindingLocation {
-  return { end: positionAt(content, end), start: positionAt(content, start) };
 }
 
 function lineLocation(content: string, line: number): FindingLocation | undefined {
@@ -153,7 +128,7 @@ function expectedType(path: string): string | undefined {
   if (custom !== null) return custom[1];
   const start = ".atlas/".length;
   const directory = path.slice(start, path.indexOf("/", start));
-  return corePathTypes[directory as keyof typeof corePathTypes];
+  return corePageTypesByDirectory.get(directory);
 }
 
 function customTypeName(path: string): string | undefined {
@@ -749,7 +724,7 @@ function validatePage(
   }
 
   const custom = customTypeName(file.path);
-  if (custom !== undefined && coreTypeNames.has(custom)) {
+  if (custom !== undefined && corePageTypes.has(custom)) {
     findings.push(
       finding(
         "ATLAS_CUSTOM_TYPE_NAME_RESERVED",
@@ -759,7 +734,7 @@ function validatePage(
     );
   }
 
-  if (file.path === ".atlas/index.md" && parsed.page.sdk.id !== "anchor:root") {
+  if (file.path === ".atlas/index.md" && parsed.page.sdk.id !== rootAnchorPageId) {
     findings.push(
       finding(
         "ATLAS_ROOT_ANCHOR_ID_INVALID",
