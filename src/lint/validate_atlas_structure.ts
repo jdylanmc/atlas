@@ -23,7 +23,7 @@ import {
 import type { Finding, FindingLocation } from "../domain/finding.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import type { AtlasTextFile } from "../atlas/load_atlas_text.ts";
-import { rangeAt } from "./source_position.ts";
+import { positionIndex } from "./source_position.ts";
 import { sdkFindings } from "./sdk_finding.ts";
 import {
   classifyAtlasTextPath,
@@ -93,7 +93,10 @@ function sdkKeyLocation(
   const sdk = pairFor(document.contents, "sdk");
   const target = pairFor(sdk.value, key);
   const range = target.key.range as [number, number, number];
-  return rangeAt(content, openingLength + range[0], openingLength + range[1]);
+  return positionIndex(content).rangeAt(
+    openingLength + range[0],
+    openingLength + range[1],
+  );
 }
 
 function expectedType(path: string): string | undefined {

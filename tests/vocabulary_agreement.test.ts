@@ -473,6 +473,21 @@ test("a hostile contract cannot make the check run long", () => {
   assert.ok(elapsedMs < 2000, `scanning took ${String(elapsedMs)}ms`);
 });
 
+test("a token-dense contract stays linear in its own length", () => {
+  const line =
+    'const found = finding("ATLAS_CORE_EXAMPLE_INVALID", "Atlas SDK reports One Page Here Today.", ".atlas/anchors/page.md");';
+  const dense = `${line}\n`.repeat(3000);
+  const started = process.hrtime.bigint();
+
+  assert.deepEqual(validate(anchorBinding, [contract(dense)]), []);
+
+  const elapsedMs = Number(process.hrtime.bigint() - started) / 1_000_000;
+  assert.ok(
+    elapsedMs < 2000,
+    `scanning ${String(dense.length)} characters took ${String(elapsedMs)}ms`,
+  );
+});
+
 test("the validator command reports agreement and disagreement", () => {
   const logs: string[] = [];
   const errors: string[] = [];

@@ -5,7 +5,7 @@ import {
 } from "../domain/core_archetype.ts";
 import type { Finding, FindingLocation } from "../domain/finding.ts";
 import { sdkFindings } from "./sdk_finding.ts";
-import { rangeAt } from "./source_position.ts";
+import { positionIndex, type PositionIndex } from "./source_position.ts";
 
 export interface VocabularyTextFile {
   readonly content: string;
@@ -263,6 +263,7 @@ function maskSpecifiers(content: string): string {
 function scanDiagnostics(
   vocabulary: ContractVocabulary,
   file: VocabularyTextFile,
+  positions: PositionIndex,
   findings: Finding[],
 ): void {
   for (const match of file.content.matchAll(diagnosticPattern)) {
@@ -274,7 +275,7 @@ function scanDiagnostics(
         `the diagnostic code ${code}`,
         segment,
         file,
-        rangeAt(file.content, offset, offset + segment.length),
+        positions.rangeAt(offset, offset + segment.length),
       );
       if (result !== undefined) findings.push(result);
       offset += segment.length + 1;
@@ -289,6 +290,7 @@ function scanDiagnostics(
 function scanDirectories(
   vocabulary: ContractVocabulary,
   file: VocabularyTextFile,
+  positions: PositionIndex,
   findings: Finding[],
 ): void {
   for (const match of file.content.matchAll(directoryPattern)) {
@@ -300,7 +302,7 @@ function scanDirectories(
       vocabulary.directories,
       directory,
       file,
-      rangeAt(file.content, start, start + directory.length),
+      positions.rangeAt(start, start + directory.length),
     );
     if (result !== undefined) findings.push(result);
   }
@@ -318,6 +320,7 @@ function scanDirectories(
 function scanLiterals(
   vocabulary: ContractVocabulary,
   file: VocabularyTextFile,
+  positions: PositionIndex,
   findings: Finding[],
 ): void {
   for (const match of file.content.matchAll(literalPattern)) {
@@ -327,7 +330,7 @@ function scanLiterals(
       " ".repeat(value.length),
     );
     const at = (offset: number, length: number): FindingLocation =>
-      rangeAt(file.content, start + offset, start + offset + length);
+      positions.rangeAt(start + offset, start + offset + length);
     for (const prefix of raw.matchAll(idPrefixPattern)) {
       const token = prefix[1] as string;
       const result = declaredFinding(
@@ -426,9 +429,10 @@ export function validateVocabularyAgreement(
       content: maskSpecifiers(file.content),
       path: file.path,
     };
-    scanDiagnostics(vocabulary, scanned, findings);
-    scanDirectories(vocabulary, scanned, findings);
-    scanLiterals(vocabulary, scanned, findings);
+    const positions = positionIndex(scanned.content);
+    scanDiagnostics(vocabulary, scanned, positions, findings);
+    scanDirectories(vocabulary, scanned, positions, findings);
+    scanLiterals(vocabulary, scanned, positions, findings);
   }
 
   return Object.freeze(findings.toSorted(compareFindings));
