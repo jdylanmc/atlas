@@ -6,7 +6,13 @@ import {
 import { compareCodePoints } from "./compare_code_points.ts";
 import type { RealmTextFile } from "./load_realm_text.ts";
 
-const pageDirectories = new Set(["bonfires", "insights", "lore", "pillars", "threads"]);
+const pageDirectories = new Set([
+  "anchors",
+  "concepts",
+  "sources",
+  "principles",
+  "edges",
+]);
 
 export type RealmTextClassification = "page" | "opaque";
 

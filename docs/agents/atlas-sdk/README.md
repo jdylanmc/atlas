@@ -16,7 +16,7 @@ Canonical Realm Initialization will eventually copy the approved Persona to
 
 The composition remains inactive until Atlas SDK Realm Initialization supports
 trusted Agent Persona validation, Agent Directive loading and precedence,
-plain fallback, and full Fletcher and Weave enforcement. The three referenced
+plain fallback, and full Fletcher and Lint enforcement. The three referenced
 Directives are intention identifiers only; their bodies are not duplicated
 here:
 

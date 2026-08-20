@@ -8,7 +8,7 @@ const sourceLayers = [
   "domain",
   "realm",
   "graph",
-  "weave",
+  "lint",
   "operations",
   "platform",
   "adapters",

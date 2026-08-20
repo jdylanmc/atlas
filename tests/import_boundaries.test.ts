@@ -11,8 +11,8 @@ const fixtures = [
     [
       ["domain", "../realm/example.ts"],
       ["realm", "../graph/example.ts"],
-      ["graph", "../weave/example.ts"],
-      ["weave", "../operations/example.ts"],
+      ["graph", "../lint/example.ts"],
+      ["lint", "../operations/example.ts"],
       ["operations", "../platform/example.ts"],
       ["platform", "../adapters/example.ts"],
       ["adapters", "../framework/example.ts"],
@@ -67,8 +67,8 @@ const fixtures = [
     ruleId: null,
   },
   {
-    name: "inward-weave.ts",
-    layer: "weave",
+    name: "inward-lint.ts",
+    layer: "lint",
     source: 'import "../domain/example.ts";\n',
     ruleId: null,
   },

@@ -41,11 +41,11 @@ function parseError(file: RealmTextFile): RealmPageParseError {
 test("classifies only settled core Realm page locations", () => {
   for (const path of [
     ".atlas/index.md",
-    ".atlas/bonfires/entry.md",
-    ".atlas/insights/topic.md",
-    ".atlas/lore/source.md",
-    ".atlas/pillars/truth.md",
-    ".atlas/threads/path.md",
+    ".atlas/anchors/entry.md",
+    ".atlas/concepts/topic.md",
+    ".atlas/sources/source.md",
+    ".atlas/principles/truth.md",
+    ".atlas/edges/path.md",
     ".atlas/types/field-guide/page.md",
     ".atlas/types/field-guide/nested/page.md",
   ]) {
@@ -55,13 +55,13 @@ test("classifies only settled core Realm page locations", () => {
   for (const path of [
     ".atlas/CHANGELOG.md",
     ".atlas/framework/README.md",
-    ".atlas/framework/insights/not-a-page.md",
-    ".atlas/skills/gather.md",
+    ".atlas/framework/concepts/not-a-page.md",
+    ".atlas/skills/ingest.md",
     ".atlas/directives/guide.md",
     ".atlas/realm/schemas/page.md",
     ".atlas/types/page.md",
     ".atlas/notes.md",
-    ".atlas/insights/not-markdown.txt",
+    ".atlas/concepts/not-markdown.txt",
   ]) {
     assert.equal(classifyRealmTextPath(path), "opaque", path);
   }
@@ -70,7 +70,7 @@ test("classifies only settled core Realm page locations", () => {
 test("parses the canonical fixture and ignores opaque Markdown", () => {
   const records = [
     fixture(".atlas/framework/README.md"),
-    fixture(".atlas/insights/parsing.md"),
+    fixture(".atlas/concepts/parsing.md"),
     fixture(".atlas/CHANGELOG.md"),
     fixture(".atlas/index.md"),
   ];
@@ -84,19 +84,19 @@ test("parses the canonical fixture and ignores opaque Markdown", () => {
     })),
     [
       {
-        id: "bonfire:root",
-        path: ".atlas/index.md",
-        type: "bonfire",
+        id: "concept:parsing",
+        path: ".atlas/concepts/parsing.md",
+        type: "concept",
       },
       {
-        id: "insight:parsing",
-        path: ".atlas/insights/parsing.md",
-        type: "insight",
+        id: "anchor:root",
+        path: ".atlas/index.md",
+        type: "anchor",
       },
     ],
   );
-  assert.ok(pages[1]);
-  const page = pages[1].page as unknown as {
+  assert.ok(pages[0]);
+  const page = pages[0].page as unknown as {
     readonly realm: Readonly<Record<string, unknown>>;
   };
   assert.equal(page.realm["confidence"], "reviewed");
@@ -287,12 +287,12 @@ test("preserves body bytes and stable source lines", () => {
 
 test("only an LF starts a closing delimiter line", () => {
   for (const separator of ["\u2028", "\u2029"]) {
-    const frontmatter = validPage("insight:separators").replace(
+    const frontmatter = validPage("concept:separators").replace(
       "realm: {}",
       `realm:\n  note: "a${separator}---${separator}b"\n  zebra: last`,
     );
     const [parsed] = parseRealmPages([
-      text(".atlas/insights/separators.md", `${frontmatter}\nbody\n`),
+      text(".atlas/concepts/separators.md", `${frontmatter}\nbody\n`),
     ]);
 
     assert.ok(parsed);
@@ -305,31 +305,31 @@ test("only an LF starts a closing delimiter line", () => {
 });
 
 test("reversed record input produces identical ordered pages and errors", () => {
-  const valid = [fixture(".atlas/insights/parsing.md"), fixture(".atlas/index.md")];
+  const valid = [fixture(".atlas/concepts/parsing.md"), fixture(".atlas/index.md")];
   assert.deepEqual(parseRealmPages(valid), parseRealmPages([...valid].reverse()));
 
   const invalid = [
-    text(".atlas/threads/z.md", "missing"),
-    text(".atlas/bonfires/a.md", "also missing"),
+    text(".atlas/edges/z.md", "missing"),
+    text(".atlas/anchors/a.md", "also missing"),
   ];
   assert.throws(
     () => parseRealmPages(invalid),
     (error: unknown) =>
-      error instanceof RealmPageParseError && error.path === ".atlas/bonfires/a.md",
+      error instanceof RealmPageParseError && error.path === ".atlas/anchors/a.md",
   );
   assert.throws(
     () => parseRealmPages([...invalid].reverse()),
     (error: unknown) =>
-      error instanceof RealmPageParseError && error.path === ".atlas/bonfires/a.md",
+      error instanceof RealmPageParseError && error.path === ".atlas/anchors/a.md",
   );
 
   const prefixPaths = [
-    text(".atlas/insights/a.md/b.md", validPage("custom:child")),
-    text(".atlas/insights/a.md", validPage("custom:parent")),
+    text(".atlas/concepts/a.md/b.md", validPage("custom:child")),
+    text(".atlas/concepts/a.md", validPage("custom:parent")),
   ];
   assert.deepEqual(
     parseRealmPages(prefixPaths).map(({ source }) => source.path),
-    [".atlas/insights/a.md", ".atlas/insights/a.md/b.md"],
+    [".atlas/concepts/a.md", ".atlas/concepts/a.md/b.md"],
   );
 });
 
@@ -401,7 +401,7 @@ test("validates canonical date-time calendar and clock values", () => {
   const withCreatedAt = (timestamp: string): RealmTextFile =>
     text(
       ".atlas/index.md",
-      validPage("bonfire:root").replace("2026-08-17T00:00:00Z", timestamp),
+      validPage("anchor:root").replace("2026-08-17T00:00:00Z", timestamp),
     );
 
   for (const timestamp of [
@@ -442,9 +442,7 @@ test("does not mutate TypeBox date-time format registration", async () => {
 });
 
 test("accepts an empty body after an end-of-file delimiter", () => {
-  const [parsed] = parseRealmPages([
-    text(".atlas/index.md", validPage("bonfire:root")),
-  ]);
+  const [parsed] = parseRealmPages([text(".atlas/index.md", validPage("anchor:root"))]);
   assert.ok(parsed);
   assert.equal(parsed.page.body, "");
   assert.deepEqual(parsed.source.body, { endLine: 15, startLine: 15 });

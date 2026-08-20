@@ -41,7 +41,7 @@ Keep a Changelog 2.0.0 specification released 2026-06-07.
 
 ## Atlas adaptation
 
-### Realm Chronicle
+### Realm Changelog
 
 Each Realm keeps `.atlas/CHANGELOG.md`. The Realm is versioned by dated
 knowledge revisions rather than software versions, and its preamble says so.
@@ -56,17 +56,17 @@ modifying the pull request that verifies it.
 
 The operation drafts its entry inside its pull request and a human curates it
 during the same review that approves the knowledge change. Realms are
-sovereign, so a repository holding several Realms keeps one Chronicle per
+sovereign, so a repository holding several Realms keeps one Changelog per
 Realm and no central roll-up. Knowledge later adjudicated false is marked
 `[RETRACTED]` rather than deleted.
 
 ### Page amendment histories
 
-Pillars, Laws, and Lore keep their own in-file amendment histories, which
-answer a different question than the Chronicle: the provenance of one
+Principles, Policies, and Sources keep their own in-file amendment histories, which
+answer a different question than the Changelog: the provenance of one
 governed truth rather than the notable history of the Realm. Amendments use
 monotonically increasing amendment numbers and ISO dates rather than software
-versions, and Lore uses refresh numbers. Each amendment records the directing
+versions, and Source uses refresh numbers. Each amendment records the directing
 or approving human, the rationale, and a change reference.
 
 ## Primary sources

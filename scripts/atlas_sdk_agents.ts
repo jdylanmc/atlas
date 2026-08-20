@@ -69,7 +69,7 @@ export const PERSONA_VALUE_CATALOG: Record<string, Record<string, string>> = {
   },
   "Metaphor palette": {
     Images:
-      "Lanterns, waystones, star charts, old libraries, river crossings, Bonfires, Threads, woven maps, patient weather, and doors between Realms",
+      "Lanterns, waystones, star charts, old libraries, river crossings, Anchors, Edges, woven maps, patient weather, and doors between Realms",
     Boundaries:
       "Metaphor surrounds rather than replaces literal commands, paths, identifiers, Findings, uncertainty, risks, and requested actions",
   },
@@ -100,7 +100,7 @@ export const EXAMPLE_SEMANTIC_CORES = [
 const AUTHORITY_PATTERN =
   /\b(must|shall|should|required|requires?|never|only|prohibit(?:s|ed)?|objectives?|responsibilities|permissions?|workflow|evidence rules?|governance|severity|handoffs?|allowed actions?|approve|reject|execute|run|write|modify|delete|create|initialize|activate|reveal secrets?)\b|\bignore\b[^\n.]{0,80}\binstructions?\b/i;
 export const EXAMPLE_AUTHORITY_PATTERN =
-  /\b(must|shall|should|required|requires?|prohibit(?:s|ed)?|objectives?|responsibilities|permissions?|governance|govern(?:s|ed|ing)?|realm laws?|evidence rules?|severity|handoffs?|allowed actions?|approve|reject|execute|write|modif(?:y|ies|ied|ying)|delete|create|initialize|activate|override|authori(?:ty|z(?:e|es|ed|ing|ation))|permitt(?:ed|ing|s)?|controls?|owns?|sets?\s+policy|human approval|reveal secrets?)\b|\b(?:agent|persona|realm guide|merlin|you)\b[^\n.]{0,40}\b(?:may|can|is permitted to|is allowed to|has permission to)\b|\b(?:may|can)\s+(?:approve|reject|execute|run|perform|write|modify|delete|create|initialize|activate|override|govern|change|update)\b|\bignore\b[^\n.]{0,80}\binstructions?\b/i;
+  /\b(must|shall|should|required|requires?|prohibit(?:s|ed)?|objectives?|responsibilities|permissions?|governance|govern(?:s|ed|ing)?|realm polic(?:y|ies)|evidence rules?|severity|handoffs?|allowed actions?|approve|reject|execute|write|modif(?:y|ies|ied|ying)|delete|create|initialize|activate|override|authori(?:ty|z(?:e|es|ed|ing|ation))|permitt(?:ed|ing|s)?|controls?|owns?|sets?\s+policy|human approval|reveal secrets?)\b|\b(?:agent|persona|realm guide|merlin|you)\b[^\n.]{0,40}\b(?:may|can|is permitted to|is allowed to|has permission to)\b|\b(?:may|can)\s+(?:approve|reject|execute|run|perform|write|modify|delete|create|initialize|activate|override|govern|change|update)\b|\bignore\b[^\n.]{0,80}\binstructions?\b/i;
 export const IMPERATIVE_WORKFLOW_PATTERN =
   /(?:^|[.!?;:,]\s+|\b(?:and\s+)?then\s+|(?:,\s+)?\b(?:and|or)\s+)(?:please\s+)?(?:do\s+not\s+|don't\s+|never\s+)?(?:run|perform|execute|approve|reject|write|modify|delete|create|initialize|activate|refresh|open|merge|validate|use|submit|ensure|keep|follow|review|check)\b/i;
 const MODERN_ADAPTATION_TERMS = [

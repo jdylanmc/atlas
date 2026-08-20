@@ -1,3 +1,3 @@
 # Changelog
 
-This Chronicle is opaque to page parsing.
+This Changelog is opaque to page parsing.

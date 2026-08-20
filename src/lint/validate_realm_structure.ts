@@ -45,15 +45,15 @@ const parseMessages = Object.freeze({
 });
 
 const corePathTypes = Object.freeze({
-  bonfires: "bonfire",
-  insights: "insight",
-  lore: "lore",
-  pillars: "pillar",
-  threads: "thread",
+  anchors: "anchor",
+  concepts: "concept",
+  sources: "source",
+  principles: "principle",
+  edges: "edge",
 } as const);
 const coreTypeNames: ReadonlySet<string> = new Set(Object.values(corePathTypes));
 
-const lorePrefix = ".atlas/lore/";
+const sourcePrefix = ".atlas/sources/";
 
 const citationLabelBreak = /[\t\n\r ]/u;
 const citationLabelEscapable: ReadonlySet<string> = new Set(["[", "\\", "]"]);
@@ -148,7 +148,7 @@ function atlasKeyLocation(
 }
 
 function expectedType(path: string): string | undefined {
-  if (path === ".atlas/index.md") return "bonfire";
+  if (path === ".atlas/index.md") return "anchor";
   const custom = /^\.atlas\/types\/([^/]+)\/.+\.md$/u.exec(path);
   if (custom !== null) return custom[1];
   const start = ".atlas/".length;
@@ -218,7 +218,7 @@ interface CitationSourceRange {
 type CitationTargetResolution =
   | { readonly kind: "invalid" }
   | { readonly kind: "missing" }
-  | { readonly kind: "not-lore" }
+  | { readonly kind: "not-source" }
   | { readonly kind: "valid" };
 
 /**
@@ -255,7 +255,7 @@ function citationTargets(
 }
 
 /**
- * Normalizes one Citation target to its canonical Realm-relative Lore page path.
+ * Normalizes one Citation target to its canonical Realm-relative Source page path.
  * Fragments, aliases, extensions, traversal, and non-canonical segments are
  * rejected outright rather than repaired.
  */
@@ -276,7 +276,7 @@ function resolveCitationTarget(
 ): CitationTargetResolution {
   const path = citationTargetPath(text);
   if (path === undefined) return { kind: "invalid" };
-  if (!path.startsWith(lorePrefix)) return { kind: "not-lore" };
+  if (!path.startsWith(sourcePrefix)) return { kind: "not-source" };
   if (!pagePaths.has(path)) return { kind: "missing" };
   return { kind: "valid" };
 }
@@ -284,14 +284,14 @@ function resolveCitationTarget(
 const targetCodes = Object.freeze({
   invalid: "ATLAS_CITATION_TARGET_INVALID",
   missing: "ATLAS_CITATION_TARGET_MISSING",
-  "not-lore": "ATLAS_CITATION_TARGET_NOT_LORE",
+  "not-source": "ATLAS_CITATION_TARGET_NOT_SOURCE",
 });
 
 const targetMessages = Object.freeze({
   invalid:
     "Citation target must be a canonical Realm-relative path without fragment, alias, extension, or traversal.",
-  missing: "Citation target must resolve to an existing local Lore page.",
-  "not-lore": "Citation target must address a Realm Lore page.",
+  missing: "Citation target must resolve to an existing local Source page.",
+  "not-source": "Citation target must address a Realm Source page.",
 });
 
 function offsetLocation(
@@ -639,7 +639,7 @@ function citationSourceRanges(
 
 /**
  * Validates every parser-recognized Citation reference against the definition
- * carrying its Lore target. Reference and definition identity is the parser's
+ * carrying its Source target. Reference and definition identity is the parser's
  * canonical footnote identifier; source labels and positions stay separate.
  */
 function validateCitations(
@@ -680,7 +680,7 @@ function validateCitations(
       findings.push(
         finding(
           "ATLAS_CITATION_DEFINITION_MALFORMED",
-          "Citation definition must contain exactly one Realm-local Lore target.",
+          "Citation definition must contain exactly one Realm-local Source target.",
           file.path,
           markdownLocation(parsed, position),
         ),
@@ -759,11 +759,11 @@ function validatePage(
     );
   }
 
-  if (file.path === ".atlas/index.md" && parsed.page.atlas.id !== "bonfire:root") {
+  if (file.path === ".atlas/index.md" && parsed.page.atlas.id !== "anchor:root") {
     findings.push(
       finding(
-        "ATLAS_ROOT_BONFIRE_ID_INVALID",
-        "The Root Bonfire must use the stable ID bonfire:root.",
+        "ATLAS_ROOT_ANCHOR_ID_INVALID",
+        "The Root Anchor must use the stable ID anchor:root.",
         file.path,
         atlasKeyLocation(file.content, "id"),
       ),
@@ -840,7 +840,7 @@ function capturePageRecord(input: RealmTextFile): RealmTextFile | Finding | unde
 /**
  * Parses and validates captured Realm text, returning deeply immutable Findings
  * ordered by path, source position, code, then message using Unicode code points.
- * Opaque Framework, Chronicle, and non-page Markdown records produce no Findings.
+ * Opaque Framework, Changelog, and non-page Markdown records produce no Findings.
  */
 export function validateRealmStructure(
   files: readonly RealmTextFile[],
@@ -871,8 +871,8 @@ export function validateRealmStructure(
   if (!pageRecords.some((file) => file.path === ".atlas/index.md")) {
     findings.push(
       finding(
-        "ATLAS_ROOT_BONFIRE_REQUIRED",
-        "Realm must contain the Root Bonfire at .atlas/index.md.",
+        "ATLAS_ROOT_ANCHOR_REQUIRED",
+        "Realm must contain the Root Anchor at .atlas/index.md.",
         ".atlas/index.md",
       ),
     );

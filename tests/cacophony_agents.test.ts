@@ -45,10 +45,10 @@ const EXPECTED_DIRECTIVE_SETS = {
   smaug: ["simplicity-and-code-truth-review"],
 } as const;
 const EXPECTED_PROMPT_HASHES = {
-  balerion: "6b69f3c6af654e0bbccf55d212ebc19c57d0c5f069e017d0f7c5eb649dcf1724",
-  bolas: "32f9f2cb778e83361ad462a6308504fc2395272eb48ccc755f0cefc8b95a90ce",
-  fletcher: "2a8aa40979c85fcbbc32a994dff3dbd85dea69a02e834dd8af218ab6514b811b",
-  smaug: "34863bc7736edcf5abc943ea38f88d29db447b5753478d2a4b56d17ba8be6f2a",
+  balerion: "021c850a15c4f96c2bfcdaf7ed64ede5402423b73998c74cc645c5a6f6d4ffd6",
+  bolas: "47d3bd112fa7cf8b78b16bac1526129dc3b93e880b38088e930e279532832610",
+  fletcher: "364f2a6d0d2c7247487f9cde216fb16f2446fe431d08dd8499e6b16c0d8e2cb3",
+  smaug: "73d00b7102b4b99a13f3fbf67e2fe93ea7995fe8cd0cd572363145560615b41a",
 } as const;
 
 class OverlaySource implements Source {
@@ -366,7 +366,7 @@ test("generated composition declares precedence and neutrality", () => {
   assert.match(composed, /directives="listed-later-wins"/);
   assert.match(composed, /order="1" id="domain-architecture-review"/);
   assert.match(composed, /order="2" id="simplicity-and-code-truth-review"/);
-  assert.match(composed, /Insights, Pillars, diagnostics, evidence/);
+  assert.match(composed, /Concepts, Principles, diagnostics, evidence/);
 });
 
 test("reviewers use diff for staged generated prompts", () => {
@@ -421,7 +421,7 @@ test("Fletcher marks boundary violations high severity", () => {
   assert.match(directive, /stable identifier state its review intention/);
   assert.match(directive, /Replacing a Persona changes only/);
   assert.match(directive, /non-empty list of unique/);
-  assert.match(directive, /Insights, Pillars, diagnostics/);
+  assert.match(directive, /Concepts, Principles, diagnostics/);
   assert.match(directive, /answering every question as the/);
   assert.match(directive, /high-severity defect/);
 });

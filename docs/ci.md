@@ -20,7 +20,7 @@ Persona/Directive conflict resolves to the Directives.
 
 Persona may affect only optional conversational or presentation surfaces that
 the Directives permit. It never changes semantics or instructions and remains
-neutral for Insights, Pillars, diagnostics, evidence, schemas, code,
+neutral for Concepts, Principles, diagnostics, evidence, schemas, code,
 machine-consumed output, and other authoritative artifacts.
 
 The generator writes `.cacophony/agents/<compatibility-agent>.md` with explicit

@@ -150,7 +150,9 @@ test("Merlin persona rejects authority and imperatives across examples", () => {
   for (const authority of [
     "The Agent has permission to update the Realm.",
     "The Agent governs Realm policy.",
-    "The Agent may modify Realm Laws without human approval.",
+    "The Agent may modify Realm Policies without human approval.",
+    "Merlin decides Realm Policy.",
+    "Merlin decides Realm Policies.",
     "Changes proceed without human approval.",
   ]) {
     assert.match(authority, EXAMPLE_AUTHORITY_PATTERN);

@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 import { checkFinding, FindingSchema, type Finding } from "../src/domain/finding.ts";
 import type { RealmTextFile } from "../src/realm/load_realm_text.ts";
-import { validateRealmStructure } from "../src/weave/validate_realm_structure.ts";
+import { validateRealmStructure } from "../src/lint/validate_realm_structure.ts";
 
 const fixturesRoot = resolve(import.meta.dirname, "fixtures");
 
@@ -31,8 +31,8 @@ function page(
       "atlas:",
       "  atlas-schema: 1.0.0",
       "  realm-schema: 1.0.0",
-      `  id: ${options.id ?? "insight:page"}`,
-      `  type: ${options.type ?? "insight"}`,
+      `  id: ${options.id ?? "concept:page"}`,
+      `  type: ${options.type ?? "concept"}`,
       `  title: ${title}`,
       '  created-at: "2026-08-17T00:00:00Z"',
       '  updated-at: "2026-08-17T00:00:00Z"',
@@ -51,15 +51,15 @@ const validFiles = [
   ".atlas/framework/README.md",
   ".atlas/CHANGELOG.md",
   ".atlas/index.md",
-  ".atlas/insights/parsing.md",
-  ".atlas/lore/parser-source.md",
+  ".atlas/concepts/parsing.md",
+  ".atlas/sources/parser-source.md",
 ].map((path) => fixture("realm-pages", path));
 
 const invalidFiles = [
   ".atlas/framework/README.md",
   ".atlas/index.md",
-  ".atlas/insights/second.md",
-  ".atlas/lore/malformed.md",
+  ".atlas/concepts/second.md",
+  ".atlas/sources/malformed.md",
   ".atlas/types/guide/page.md",
 ].map((path) => fixture("structural-validation", path));
 
@@ -78,10 +78,18 @@ test("aggregates exact sanitized structural Findings", () => {
           end: { column: 5, line: 5 },
           start: { column: 3, line: 5 },
         },
+        path: ".atlas/concepts/second.md",
+      },
+      {
+        code: "ATLAS_PAGE_ID_DUPLICATE",
+        location: {
+          end: { column: 5, line: 5 },
+          start: { column: 3, line: 5 },
+        },
         path: ".atlas/index.md",
       },
       {
-        code: "ATLAS_ROOT_BONFIRE_ID_INVALID",
+        code: "ATLAS_ROOT_ANCHOR_ID_INVALID",
         location: {
           end: { column: 5, line: 5 },
           start: { column: 3, line: 5 },
@@ -113,20 +121,12 @@ test("aggregates exact sanitized structural Findings", () => {
         path: ".atlas/index.md",
       },
       {
-        code: "ATLAS_PAGE_ID_DUPLICATE",
-        location: {
-          end: { column: 5, line: 5 },
-          start: { column: 3, line: 5 },
-        },
-        path: ".atlas/insights/second.md",
-      },
-      {
         code: "ATLAS_PAGE_MALFORMED_FRONTMATTER",
         location: {
           end: { column: 44, line: 2 },
           start: { column: 1, line: 2 },
         },
-        path: ".atlas/lore/malformed.md",
+        path: ".atlas/sources/malformed.md",
       },
       {
         code: "ATLAS_PAGE_TYPE_PATH_MISMATCH",
@@ -161,7 +161,7 @@ test("requires the first CommonMark block to be the matching H1", () => {
   ]) {
     const findings = validateRealmStructure([
       validFiles[2] as RealmTextFile,
-      page(".atlas/insights/page.md", body),
+      page(".atlas/concepts/page.md", body),
     ]);
     assert.equal(
       findings.some(({ code }) => code === "ATLAS_PAGE_TITLE_H1_REQUIRED"),
@@ -172,14 +172,14 @@ test("requires the first CommonMark block to be the matching H1", () => {
   assert.deepEqual(
     validateRealmStructure([
       validFiles[2] as RealmTextFile,
-      page(".atlas/insights/page.md", "# **Pa**ge"),
+      page(".atlas/concepts/page.md", "# **Pa**ge"),
     ]),
     [],
   );
 });
 
 test("reports an empty body at EOF without fabricating a location", () => {
-  const emptyAtEof = page(".atlas/insights/empty.md", "");
+  const emptyAtEof = page(".atlas/concepts/empty.md", "");
   const [finding] = validateRealmStructure([
     validFiles[2] as RealmTextFile,
     { ...emptyAtEof, content: emptyAtEof.content.slice(0, -1) },
@@ -192,7 +192,7 @@ test("reports an empty body at EOF without fabricating a location", () => {
 test("rejects Atlas core archetype names in Realm-owned custom paths", () => {
   const findings = validateRealmStructure([
     validFiles[2] as RealmTextFile,
-    page(".atlas/types/insight/page.md", "# Page"),
+    page(".atlas/types/concept/page.md", "# Page"),
   ]);
   assert.equal(findings.length, 1);
   const [finding] = findings;
@@ -211,7 +211,7 @@ test("uses YAML AST locations and never confuses realm.id with atlas.id", () => 
       "  atlas-schema: 1.0.0",
       "  realm-schema: 1.0.0",
       "  id: wrong:root",
-      "  type: bonfire",
+      "  type: anchor",
       "  title: Root",
       '  created-at: "2026-08-17T00:00:00Z"',
       '  updated-at: "2026-08-17T00:00:00Z"',
@@ -224,26 +224,26 @@ test("uses YAML AST locations and never confuses realm.id with atlas.id", () => 
     path: ".atlas/index.md",
   });
   const idFinding = validateRealmStructure([root]).find(
-    ({ code }) => code === "ATLAS_ROOT_BONFIRE_ID_INVALID",
+    ({ code }) => code === "ATLAS_ROOT_ANCHOR_ID_INVALID",
   );
   assert.deepEqual(idFinding?.location, {
     end: { column: 5, line: 7 },
     start: { column: 3, line: 7 },
   });
 
-  const absent = page(".atlas/insights/absent.md", "# Page").content.replace(
-    "  type: insight\n",
+  const absent = page(".atlas/concepts/absent.md", "# Page").content.replace(
+    "  type: concept\n",
     "",
   );
   const [schemaFinding] = validateRealmStructure([
     validFiles[2] as RealmTextFile,
-    { content: absent, path: ".atlas/insights/absent.md" },
+    { content: absent, path: ".atlas/concepts/absent.md" },
   ]);
   assert.equal(schemaFinding?.code, "ATLAS_PAGE_INVALID_ENVELOPE");
   assert.equal(
     validateRealmStructure([
       validFiles[2] as RealmTextFile,
-      { content: absent, path: ".atlas/insights/absent.md" },
+      { content: absent, path: ".atlas/concepts/absent.md" },
     ]).some(({ code }) => code === "ATLAS_PAGE_TYPE_PATH_MISMATCH"),
     false,
   );
@@ -251,7 +251,7 @@ test("uses YAML AST locations and never confuses realm.id with atlas.id", () => 
   const flow = {
     content: [
       "---",
-      'atlas: { atlas-schema: 1.0.0, realm-schema: 1.0.0, id: wrong:root, type: insight, title: Root, created-at: "2026-08-17T00:00:00Z", updated-at: "2026-08-17T00:00:00Z", created-by: { kind: human, name: Author }, updated-by: { kind: human, name: Author }, tags: [] }',
+      'atlas: { atlas-schema: 1.0.0, realm-schema: 1.0.0, id: wrong:root, type: concept, title: Root, created-at: "2026-08-17T00:00:00Z", updated-at: "2026-08-17T00:00:00Z", created-by: { kind: human, name: Author }, updated-by: { kind: human, name: Author }, tags: [] }',
       "realm: {}",
       "---",
       "# Root",
@@ -260,7 +260,7 @@ test("uses YAML AST locations and never confuses realm.id with atlas.id", () => 
   };
   const flowLocations = validateRealmStructure([flow])
     .filter(({ code }) =>
-      ["ATLAS_PAGE_TYPE_PATH_MISMATCH", "ATLAS_ROOT_BONFIRE_ID_INVALID"].includes(code),
+      ["ATLAS_PAGE_TYPE_PATH_MISMATCH", "ATLAS_ROOT_ANCHOR_ID_INVALID"].includes(code),
     )
     .map(({ location }) => location?.start.column);
   assert.equal(flowLocations.length, 2);
@@ -272,7 +272,7 @@ test("sanitizes hostile captured records without accepting stale parse results",
     get content(): string {
       throw new Error("secret hostile content");
     },
-    path: ".atlas/insights/hostile.md",
+    path: ".atlas/concepts/hostile.md",
   });
   const hostilePath = Object.freeze({
     content: "# ignored",
@@ -282,7 +282,7 @@ test("sanitizes hostile captured records without accepting stale parse results",
   });
   const hostileTypes = [
     { content: "# ignored", path: 42 },
-    { content: 42, path: ".atlas/insights/non-text.md" },
+    { content: 42, path: ".atlas/concepts/non-text.md" },
   ] as unknown as readonly RealmTextFile[];
   const findings = validateRealmStructure([
     validFiles[2] as RealmTextFile,
@@ -293,8 +293,8 @@ test("sanitizes hostile captured records without accepting stale parse results",
   assert.deepEqual(
     findings.map(({ code, path }) => ({ code, path })),
     [
-      { code: "ATLAS_PAGE_PARSE_FAILED", path: ".atlas/insights/hostile.md" },
-      { code: "ATLAS_PAGE_PARSE_FAILED", path: ".atlas/insights/non-text.md" },
+      { code: "ATLAS_PAGE_PARSE_FAILED", path: ".atlas/concepts/hostile.md" },
+      { code: "ATLAS_PAGE_PARSE_FAILED", path: ".atlas/concepts/non-text.md" },
       { code: "ATLAS_PAGE_PARSE_FAILED", path: ".atlas/unknown" },
       { code: "ATLAS_PAGE_PARSE_FAILED", path: ".atlas/unknown" },
     ],
@@ -377,10 +377,10 @@ test("orders independently of input and deeply freezes every Finding", () => {
   }, TypeError);
 });
 
-test("preserves opaque Markdown and reports a missing Root Bonfire", () => {
+test("preserves opaque Markdown and reports a missing Root Anchor", () => {
   const [finding] = validateRealmStructure([invalidFiles[0] as RealmTextFile]);
   assert.ok(finding);
-  assert.equal(finding.code, "ATLAS_ROOT_BONFIRE_REQUIRED");
+  assert.equal(finding.code, "ATLAS_ROOT_ANCHOR_REQUIRED");
   assert.deepEqual(finding.attribution, {
     checkId: "atlas-core.structural-validation",
     kind: "atlas-core",
@@ -388,31 +388,31 @@ test("preserves opaque Markdown and reports a missing Root Bonfire", () => {
   });
 });
 
-const loreSource = page(".atlas/lore/source.md", "# Source", {
-  id: "lore:source",
+const sourcePage = page(".atlas/sources/source.md", "# Source", {
+  id: "source:source",
   title: "Source",
-  type: "lore",
+  type: "source",
 });
 
 function citing(body: string): readonly RealmTextFile[] {
   return [
     validFiles[2] as RealmTextFile,
-    loreSource,
-    page(".atlas/insights/cited.md", body),
+    sourcePage,
+    page(".atlas/concepts/cited.md", body),
   ];
 }
 
 test("resolves Citations through canonical parser footnote identity", () => {
   assert.deepEqual(
     validateRealmStructure(
-      citing("# Page\n\nClaim.[^SS]\n\n[^ß]: [[.atlas/lore/source]] Note.\n"),
+      citing("# Page\n\nClaim.[^SS]\n\n[^ß]: [[.atlas/sources/source]] Note.\n"),
     ),
     [],
   );
   assert.deepEqual(
     validateRealmStructure(
       citing(
-        "# Page\n\nClaim.[^Parser  Source]\n\n[^parser source]: [[.atlas/lore/source]]\n",
+        "# Page\n\nClaim.[^Parser  Source]\n\n[^parser source]: [[.atlas/sources/source]]\n",
       ),
     ),
     [],
@@ -420,7 +420,7 @@ test("resolves Citations through canonical parser footnote identity", () => {
 });
 
 test("handles high-cardinality valid Citation references deterministically", () => {
-  const body = `# Page\n\n${"x[^a]".repeat(70_000)}\n\n[^a]: [[.atlas/lore/source]]\n`;
+  const body = `# Page\n\n${"x[^a]".repeat(70_000)}\n\n[^a]: [[.atlas/sources/source]]\n`;
   const files = citing(body);
   const first = validateRealmStructure(files);
   assert.deepEqual(first, []);
@@ -444,7 +444,7 @@ test("reports a visible literal Citation marker the parser left unresolved", () 
         location: { end: { column: 16, line: 17 }, start: { column: 7, line: 17 } },
         message:
           "Citation marker must resolve to a Citation definition in the same page.",
-        path: ".atlas/insights/cited.md",
+        path: ".atlas/concepts/cited.md",
       },
     ],
   );
@@ -500,7 +500,7 @@ test("lets the parser resolve formatting-split Citations and validates targets o
   assert.deepEqual(
     validateRealmStructure(
       citing(
-        "# Page\n\nOne [^a*b*c], two [^d**e**f], three [^g***h***i].\n\n[^a*b*c]: [[.atlas/lore/source]]\n[^d**e**f]: [[.atlas/lore/source]]\n[^g***h***i]: [[.atlas/lore/source]]\n",
+        "# Page\n\nOne [^a*b*c], two [^d**e**f], three [^g***h***i].\n\n[^a*b*c]: [[.atlas/sources/source]]\n[^d**e**f]: [[.atlas/sources/source]]\n[^g***h***i]: [[.atlas/sources/source]]\n",
       ),
     ),
     [],
@@ -549,13 +549,13 @@ test("keeps visible formatting before an excluded link in definition prose", () 
   assert.deepEqual(
     validateRealmStructure(
       citing(
-        "# Page\n\nClaim.[^outer]\n\n[^outer]: [[.atlas/lore/source]] *Claim [^a**b**c] then [link](https://example.test)*\n",
+        "# Page\n\nClaim.[^outer]\n\n[^outer]: [[.atlas/sources/source]] *Claim [^a**b**c] then [link](https://example.test)*\n",
       ),
     ).map(({ code, location }) => ({ code, location })),
     [
       {
         code: "ATLAS_CITATION_DEFINITION_MISSING",
-        location: { end: { column: 51, line: 19 }, start: { column: 41, line: 19 } },
+        location: { end: { column: 54, line: 19 }, start: { column: 44, line: 19 } },
       },
     ],
   );
@@ -581,7 +581,7 @@ test("validates parser-resolved Citations in partitioned formatting once", () =>
   assert.deepEqual(
     validateRealmStructure(
       citing(
-        "# Page\n\n**Claim [^a*b*c] then [link](https://example.test)**\n\n[^a*b*c]: [[.atlas/lore/source]]\n",
+        "# Page\n\n**Claim [^a*b*c] then [link](https://example.test)**\n\n[^a*b*c]: [[.atlas/sources/source]]\n",
       ),
     ),
     [],
@@ -602,7 +602,7 @@ test("validates parser-resolved Citations in partitioned formatting once", () =>
   assert.deepEqual(
     validateRealmStructure(
       citing(
-        "# Page\n\nClaim.[^outer]\n\n[^outer]: [[.atlas/lore/source]] *Claim [^a**b**c] then [link](https://example.test)*\n\n[^a**b**c]: [[not-canonical]]\n",
+        "# Page\n\nClaim.[^outer]\n\n[^outer]: [[.atlas/sources/source]] *Claim [^a**b**c] then [link](https://example.test)*\n\n[^a**b**c]: [[not-canonical]]\n",
       ),
     ).map(({ code, location }) => ({ code, location })),
     [
@@ -638,17 +638,17 @@ test("reports formatting-split link-label Citations in definition prose", () => 
   assert.deepEqual(
     validateRealmStructure(
       citing(
-        "# Page\n\nClaim.[^outer]\n\n[^outer]: [[.atlas/lore/source]] [pre [^a*b*c] post](https://example.test) and [pre [^d**e**f] post][label]\n\n[label]: https://example.test\n",
+        "# Page\n\nClaim.[^outer]\n\n[^outer]: [[.atlas/sources/source]] [pre [^a*b*c] post](https://example.test) and [pre [^d**e**f] post][label]\n\n[label]: https://example.test\n",
       ),
     ).map(({ code, location }) => ({ code, location })),
     [
       {
         code: "ATLAS_CITATION_DEFINITION_MISSING",
-        location: { end: { column: 47, line: 19 }, start: { column: 39, line: 19 } },
+        location: { end: { column: 50, line: 19 }, start: { column: 42, line: 19 } },
       },
       {
         code: "ATLAS_CITATION_DEFINITION_MISSING",
-        location: { end: { column: 95, line: 19 }, start: { column: 85, line: 19 } },
+        location: { end: { column: 98, line: 19 }, start: { column: 88, line: 19 } },
       },
     ],
   );
@@ -658,7 +658,7 @@ test("validates defined link-label Citations once through parser identity", () =
   assert.deepEqual(
     validateRealmStructure(
       citing(
-        "# Page\n\n[see [^a*b*c]](https://example.test) and [read [^d**e**f]][label].\n\n[label]: https://example.test\n\n[^a*b*c]: [[.atlas/lore/source]]\n[^d**e**f]: [[not-canonical]]\n",
+        "# Page\n\n[see [^a*b*c]](https://example.test) and [read [^d**e**f]][label].\n\n[label]: https://example.test\n\n[^a*b*c]: [[.atlas/sources/source]]\n[^d**e**f]: [[not-canonical]]\n",
       ),
     ).map(({ code, location }) => ({ code, location })),
     [
@@ -708,20 +708,20 @@ test("reports a formatting-split Citation in definition prose", () => {
   assert.deepEqual(
     validateRealmStructure(
       citing(
-        "# Page\n\nClaim.[^outer]\n\n[^outer]: [[.atlas/lore/source]] see [^a*b*c]\n",
+        "# Page\n\nClaim.[^outer]\n\n[^outer]: [[.atlas/sources/source]] see [^a*b*c]\n",
       ),
     ).map(({ code, location }) => ({ code, location })),
     [
       {
         code: "ATLAS_CITATION_DEFINITION_MISSING",
-        location: { end: { column: 46, line: 19 }, start: { column: 38, line: 19 } },
+        location: { end: { column: 49, line: 19 }, start: { column: 41, line: 19 } },
       },
     ],
   );
   assert.deepEqual(
     validateRealmStructure(
       citing(
-        "# Page\n\nClaim.[^outer]\n\n[^outer]: [[.atlas/lore/source]] see [^a*b*c]\n\n[^a*b*c]: [[.atlas/lore/source]]\n",
+        "# Page\n\nClaim.[^outer]\n\n[^outer]: [[.atlas/sources/source]] see [^a*b*c]\n\n[^a*b*c]: [[.atlas/sources/source]]\n",
       ),
     ),
     [],
@@ -731,7 +731,7 @@ test("reports a formatting-split Citation in definition prose", () => {
 test("uses parser Unicode identity for formatting-split Citations", () => {
   assert.deepEqual(
     validateRealmStructure(
-      citing("# Page\n\nClaim.[^ß*x]\n\n[^SS*x]: [[.atlas/lore/source]]\n"),
+      citing("# Page\n\nClaim.[^ß*x]\n\n[^SS*x]: [[.atlas/sources/source]]\n"),
     ),
     [],
   );
@@ -740,13 +740,13 @@ test("uses parser Unicode identity for formatting-split Citations", () => {
 test("does not double-report Citations the parser resolved to a reference", () => {
   assert.deepEqual(
     validateRealmStructure(
-      citing("# Page\n\nClaim.[^a] again.[^a]\n\n[^a]: [[.atlas/lore/source]]\n"),
+      citing("# Page\n\nClaim.[^a] again.[^a]\n\n[^a]: [[.atlas/sources/source]]\n"),
     ),
     [],
   );
   assert.deepEqual(
     validateRealmStructure(
-      citing("# Page\n\nClaim.[^a]\n\n[^a]: [[.atlas/lore/absent]]\n"),
+      citing("# Page\n\nClaim.[^a]\n\n[^a]: [[.atlas/sources/absent]]\n"),
     ).map(({ code }) => code),
     ["ATLAS_CITATION_TARGET_MISSING"],
   );
@@ -755,7 +755,7 @@ test("does not double-report Citations the parser resolved to a reference", () =
 test("resolves literal Citation markers through canonical parser identity", () => {
   assert.deepEqual(
     validateRealmStructure(
-      citing("# Page\n\nClaim.[^SS] and [^ß]\n\n[^ß]: [[.atlas/lore/source]]\n"),
+      citing("# Page\n\nClaim.[^SS] and [^ß]\n\n[^ß]: [[.atlas/sources/source]]\n"),
     ),
     [],
   );
@@ -764,13 +764,13 @@ test("resolves literal Citation markers through canonical parser identity", () =
 test("reports an unresolved Citation marker in Citation definition prose", () => {
   assert.deepEqual(
     validateRealmStructure(
-      citing("# Page\n\nClaim.[^b]\n\n[^b]: [[.atlas/lore/source]] see [^a]\n"),
+      citing("# Page\n\nClaim.[^b]\n\n[^b]: [[.atlas/sources/source]] see [^a]\n"),
     ).map(({ code, location, path }) => ({ code, location, path })),
     [
       {
         code: "ATLAS_CITATION_DEFINITION_MISSING",
-        location: { end: { column: 38, line: 19 }, start: { column: 34, line: 19 } },
-        path: ".atlas/insights/cited.md",
+        location: { end: { column: 41, line: 19 }, start: { column: 37, line: 19 } },
+        path: ".atlas/concepts/cited.md",
       },
     ],
   );
@@ -780,7 +780,7 @@ test("validates a resolved Citation call in Citation definition prose once", () 
   assert.deepEqual(
     validateRealmStructure(
       citing(
-        "# Page\n\nClaim.[^b]\n\n[^b]: [[.atlas/lore/source]] see [^a]\n\n[^a]: [[.atlas/lore/source]]\n",
+        "# Page\n\nClaim.[^b]\n\n[^b]: [[.atlas/sources/source]] see [^a]\n\n[^a]: [[.atlas/sources/source]]\n",
       ),
     ),
     [],
@@ -788,14 +788,14 @@ test("validates a resolved Citation call in Citation definition prose once", () 
   assert.deepEqual(
     validateRealmStructure(
       citing(
-        "# Page\n\nClaim.[^b]\n\n[^b]: [[.atlas/lore/source]] see [^a]\n\n[^a]: [[.atlas/lore/absent]]\n",
+        "# Page\n\nClaim.[^b]\n\n[^b]: [[.atlas/sources/source]] see [^a]\n\n[^a]: [[.atlas/sources/absent]]\n",
       ),
     ).map(({ code, location, path }) => ({ code, location, path })),
     [
       {
         code: "ATLAS_CITATION_TARGET_MISSING",
-        location: { end: { column: 29, line: 21 }, start: { column: 7, line: 21 } },
-        path: ".atlas/insights/cited.md",
+        location: { end: { column: 32, line: 21 }, start: { column: 7, line: 21 } },
+        path: ".atlas/concepts/cited.md",
       },
     ],
   );
@@ -810,7 +810,7 @@ test("reports an unresolved Citation marker beside whitespace-shaped Markdown", 
       {
         code: "ATLAS_CITATION_DEFINITION_MISSING",
         location: { end: { column: 14, line: 17 }, start: { column: 7, line: 17 } },
-        path: ".atlas/insights/cited.md",
+        path: ".atlas/concepts/cited.md",
       },
     ],
   );
@@ -916,7 +916,7 @@ test("reports high-cardinality formatting-split Citations deterministically", ()
 test("reports duplicate Citation definitions at each definition", () => {
   const findings = validateRealmStructure(
     citing(
-      "# Page\n\nClaim.[^dup]\n\n[^dup]: [[.atlas/lore/source]]\n\n[^dup]: [[.atlas/lore/absent]]\n",
+      "# Page\n\nClaim.[^dup]\n\n[^dup]: [[.atlas/sources/source]]\n\n[^dup]: [[.atlas/sources/absent]]\n",
     ),
   );
   assert.deepEqual(
@@ -924,24 +924,24 @@ test("reports duplicate Citation definitions at each definition", () => {
     [
       {
         code: "ATLAS_CITATION_DEFINITION_DUPLICATE",
-        location: { end: { column: 31, line: 19 }, start: { column: 1, line: 19 } },
-        path: ".atlas/insights/cited.md",
+        location: { end: { column: 34, line: 19 }, start: { column: 1, line: 19 } },
+        path: ".atlas/concepts/cited.md",
       },
       {
         code: "ATLAS_CITATION_DEFINITION_DUPLICATE",
-        location: { end: { column: 31, line: 21 }, start: { column: 1, line: 21 } },
-        path: ".atlas/insights/cited.md",
+        location: { end: { column: 34, line: 21 }, start: { column: 1, line: 21 } },
+        path: ".atlas/concepts/cited.md",
       },
     ],
   );
 });
 
-test("requires exactly one direct Lore target in a Citation definition", () => {
+test("requires exactly one direct Source target in a Citation definition", () => {
   for (const definition of [
     "[^a]:",
     "[^a]: Prose without any target.",
-    "[^a]: [[.atlas/lore/source]] and [[.atlas/lore/source]]",
-    "[^a]: [[.atlas/lore/source",
+    "[^a]: [[.atlas/sources/source]] and [[.atlas/sources/source]]",
+    "[^a]: [[.atlas/sources/source",
   ]) {
     const findings = validateRealmStructure(
       citing(`# Page\n\nClaim.[^a]\n\n${definition}\n`),
@@ -951,7 +951,7 @@ test("requires exactly one direct Lore target in a Citation definition", () => {
       [
         {
           code: "ATLAS_CITATION_DEFINITION_MALFORMED",
-          path: ".atlas/insights/cited.md",
+          path: ".atlas/concepts/cited.md",
         },
       ],
       definition,
@@ -962,8 +962,8 @@ test("requires exactly one direct Lore target in a Citation definition", () => {
 
 test("does not accept Citation targets owned by nested definitions", () => {
   for (const [definition, endColumn] of [
-    ["[^outer]:\n    [^inner]: [[.atlas/lore/source]]", 37],
-    ["[^outer]:\n    [inner]: [[.atlas/lore/source]]", 36],
+    ["[^outer]:\n    [^inner]: [[.atlas/sources/source]]", 40],
+    ["[^outer]:\n    [inner]: [[.atlas/sources/source]]", 39],
   ] as const) {
     const findings = validateRealmStructure(
       citing(`# Page\n\nClaim.[^outer]\n\n${definition}\n`),
@@ -977,7 +977,7 @@ test("does not accept Citation targets owned by nested definitions", () => {
             end: { column: endColumn, line: 20 },
             start: { column: 1, line: 19 },
           },
-          path: ".atlas/insights/cited.md",
+          path: ".atlas/concepts/cited.md",
         },
       ],
       definition,
@@ -988,16 +988,16 @@ test("does not accept Citation targets owned by nested definitions", () => {
 for (const [context, definition] of [
   [
     "an external link destination",
-    "[^a]: [external](https://example.test/[[.atlas/lore/source]])",
+    "[^a]: [external](https://example.test/[[.atlas/sources/source]])",
   ],
-  ["inline code", "[^a]: `[[.atlas/lore/source]]`"],
-  ["a fenced code block", "[^a]:\n    ```text\n    [[.atlas/lore/source]]\n    ```"],
+  ["inline code", "[^a]: `[[.atlas/sources/source]]`"],
+  ["a fenced code block", "[^a]:\n    ```text\n    [[.atlas/sources/source]]\n    ```"],
   [
     "an image destination",
-    "[^a]: ![image](https://example.test/[[.atlas/lore/source]])",
+    "[^a]: ![image](https://example.test/[[.atlas/sources/source]])",
   ],
-  ["an autolink", "[^a]: <https://example.test/[[.atlas/lore/source]]>"],
-  ["raw HTML", '[^a]: <span data-source="[[.atlas/lore/source]]">external</span>'],
+  ["an autolink", "[^a]: <https://example.test/[[.atlas/sources/source]]>"],
+  ["raw HTML", '[^a]: <span data-source="[[.atlas/sources/source]]">external</span>'],
 ] as const) {
   test(`does not accept a Citation target from ${context}`, () => {
     const findings = validateRealmStructure(
@@ -1008,7 +1008,7 @@ for (const [context, definition] of [
       [
         {
           code: "ATLAS_CITATION_DEFINITION_MALFORMED",
-          path: ".atlas/insights/cited.md",
+          path: ".atlas/concepts/cited.md",
         },
       ],
     );
@@ -1019,7 +1019,7 @@ test("accepts a direct visible Citation target in ordinary definition prose", ()
   assert.deepEqual(
     validateRealmStructure(
       citing(
-        "# Page\n\nClaim.[^a]\n\n[^a]: Evidence [[.atlas/lore/source]] [external](https://example.test/[[.atlas/lore/source]]) and `[[.atlas/lore/source]]`.\n",
+        "# Page\n\nClaim.[^a]\n\n[^a]: Evidence [[.atlas/sources/source]] [external](https://example.test/[[.atlas/sources/source]]) and `[[.atlas/sources/source]]`.\n",
       ),
     ),
     [],
@@ -1028,8 +1028,8 @@ test("accepts a direct visible Citation target in ordinary definition prose", ()
 
 test("rejects malformed or unterminated wiki markers in Citation definitions", () => {
   for (const definition of [
-    "[^a]: [[.atlas/lore/source]] [[unterminated",
-    "[^a]: [[unterminated [[.atlas/lore/source]]",
+    "[^a]: [[.atlas/sources/source]] [[unterminated",
+    "[^a]: [[unterminated [[.atlas/sources/source]]",
   ]) {
     const findings = validateRealmStructure(
       citing(`# Page\n\nClaim.[^a]\n\n${definition}\n`),
@@ -1040,10 +1040,10 @@ test("rejects malformed or unterminated wiki markers in Citation definitions", (
         {
           code: "ATLAS_CITATION_DEFINITION_MALFORMED",
           location: {
-            end: { column: 44, line: 19 },
+            end: { column: 47, line: 19 },
             start: { column: 1, line: 19 },
           },
-          path: ".atlas/insights/cited.md",
+          path: ".atlas/concepts/cited.md",
         },
       ],
       definition,
@@ -1051,20 +1051,20 @@ test("rejects malformed or unterminated wiki markers in Citation definitions", (
   }
 });
 
-test("requires an exact canonical Realm-local Lore Citation target", () => {
+test("requires an exact canonical Realm-local Source Citation target", () => {
   for (const [target, code] of [
-    ["[[.atlas/lore/source#api]]", "ATLAS_CITATION_TARGET_INVALID"],
-    ["[[.atlas/lore/source|Source]]", "ATLAS_CITATION_TARGET_INVALID"],
-    ["[[.atlas/lore/source.md]]", "ATLAS_CITATION_TARGET_INVALID"],
-    ["[[.atlas/lore/../lore/source]]", "ATLAS_CITATION_TARGET_INVALID"],
-    ["[[.atlas/./lore/source]]", "ATLAS_CITATION_TARGET_INVALID"],
-    ["[[.atlas/lore/source/]]", "ATLAS_CITATION_TARGET_INVALID"],
-    ["[[/.atlas/lore/source]]", "ATLAS_CITATION_TARGET_INVALID"],
-    ["[[.atlas\\lore\\source]]", "ATLAS_CITATION_TARGET_INVALID"],
-    ["[[.atlas/lore/so urce]]", "ATLAS_CITATION_TARGET_INVALID"],
+    ["[[.atlas/sources/source#api]]", "ATLAS_CITATION_TARGET_INVALID"],
+    ["[[.atlas/sources/source|Source]]", "ATLAS_CITATION_TARGET_INVALID"],
+    ["[[.atlas/sources/source.md]]", "ATLAS_CITATION_TARGET_INVALID"],
+    ["[[.atlas/sources/../source/source]]", "ATLAS_CITATION_TARGET_INVALID"],
+    ["[[.atlas/./source/source]]", "ATLAS_CITATION_TARGET_INVALID"],
+    ["[[.atlas/sources/source/]]", "ATLAS_CITATION_TARGET_INVALID"],
+    ["[[/.atlas/sources/source]]", "ATLAS_CITATION_TARGET_INVALID"],
+    ["[[.atlas\\source\\source]]", "ATLAS_CITATION_TARGET_INVALID"],
+    ["[[.atlas/sources/so urce]]", "ATLAS_CITATION_TARGET_INVALID"],
     ["[[.atlas]]", "ATLAS_CITATION_TARGET_INVALID"],
-    ["[[.atlas/insights/other]]", "ATLAS_CITATION_TARGET_NOT_LORE"],
-    ["[[.atlas/lore/absent]]", "ATLAS_CITATION_TARGET_MISSING"],
+    ["[[.atlas/concepts/other]]", "ATLAS_CITATION_TARGET_NOT_SOURCE"],
+    ["[[.atlas/sources/absent]]", "ATLAS_CITATION_TARGET_MISSING"],
   ] as const) {
     const findings = validateRealmStructure(
       citing(`# Page\n\nClaim.[^a]\n\n[^a]: ${target}\n`),
@@ -1078,7 +1078,7 @@ test("requires an exact canonical Realm-local Lore Citation target", () => {
             end: { column: 7 + target.length, line: 19 },
             start: { column: 7, line: 19 },
           },
-          path: ".atlas/insights/cited.md",
+          path: ".atlas/concepts/cited.md",
         },
       ],
       target,
@@ -1094,11 +1094,11 @@ test("orders Citation Findings deterministically with exact locations", () => {
       "First.[^one] Second.[^two] Third.[^three]",
       "",
       "[^one]: prose",
-      "    [[.atlas/lore/absent]]",
+      "    [[.atlas/sources/absent]]",
       "",
-      "[^two]: [[.atlas/insights/other]]",
+      "[^two]: [[.atlas/concepts/other]]",
       "",
-      "[^three]: [[.atlas/lore/source]]",
+      "[^three]: [[.atlas/sources/source]]",
       "",
     ].join("\n"),
   );
@@ -1108,13 +1108,13 @@ test("orders Citation Findings deterministically with exact locations", () => {
     [
       {
         code: "ATLAS_CITATION_TARGET_MISSING",
-        location: { end: { column: 27, line: 20 }, start: { column: 5, line: 20 } },
-        path: ".atlas/insights/cited.md",
+        location: { end: { column: 30, line: 20 }, start: { column: 5, line: 20 } },
+        path: ".atlas/concepts/cited.md",
       },
       {
-        code: "ATLAS_CITATION_TARGET_NOT_LORE",
+        code: "ATLAS_CITATION_TARGET_NOT_SOURCE",
         location: { end: { column: 34, line: 22 }, start: { column: 9, line: 22 } },
-        path: ".atlas/insights/cited.md",
+        path: ".atlas/concepts/cited.md",
       },
     ],
   );

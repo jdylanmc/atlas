@@ -63,6 +63,6 @@ trusted base.
 
 All Directives are authoritative. They apply in listed order, and a later
 Directive wins a direct conflict with an earlier one. Persona presentation
-never changes semantic meaning or instructions and does not apply to Insights,
-Pillars, diagnostics, evidence, schemas, code, machine-consumed output, or
+never changes semantic meaning or instructions and does not apply to Concepts,
+Principles, diagnostics, evidence, schemas, code, machine-consumed output, or
 other authoritative artifacts.

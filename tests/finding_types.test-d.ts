@@ -1,6 +1,6 @@
 import type { Finding } from "../src/domain/finding.ts";
 import type { RealmTextFile } from "../src/realm/load_realm_text.ts";
-import { validateRealmStructure } from "../src/weave/validate_realm_structure.ts";
+import { validateRealmStructure } from "../src/lint/validate_realm_structure.ts";
 
 declare const finding: Finding;
 // @ts-expect-error Finding fields are readonly.

@@ -11,8 +11,8 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
   - `chore(scope)` for repository maintenance, infrastructure, and planning maps
   - `docs(scope)` for documentation-only work
   - `research(scope)` for fact-finding that resolves an external unknown
-- Choose a short Atlas area for the scope, such as `realm`, `explore`, `gather`,
-  `weave`, `runtime`, `governance`, `agent`, `site`, `ci`, or `map`.
+- Choose a short Atlas area for the scope, such as `realm`, `explore`, `ingest`,
+  `lint`, `runtime`, `governance`, `agent`, `site`, `ci`, or `map`.
 - Workflow labels such as `wayfinder:grilling` remain separate from the title:
   the title describes the outcome category; the label describes how the issue
   is worked.
