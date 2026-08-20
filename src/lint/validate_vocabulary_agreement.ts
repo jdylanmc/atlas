@@ -48,6 +48,7 @@ interface GlossaryEntry {
 
 interface Glossary {
   readonly avoided: ReadonlyMap<string, GlossaryEntry>;
+  readonly malformed: readonly number[];
   readonly terms: ReadonlyMap<string, number>;
 }
 
@@ -60,6 +61,11 @@ function normalize(text: string): string {
   return text.toLowerCase().replaceAll(/[^a-z0-9]/gu, "");
 }
 
+/** Whether an avoidance entry names a term rather than opening a qualifier. */
+function isAvoidedName(entry: string): boolean {
+  return avoidedTermPattern.test(entry);
+}
+
 /** The plural Atlas SDK spells a lower-case term with. */
 function pluralOf(word: string): string {
   return /[^aeiou]y$/u.test(word) ? `${word.slice(0, -1)}ies` : `${word}s`;
@@ -68,12 +74,23 @@ function pluralOf(word: string): string {
 /**
  * Reads CONTEXT.md as the authoritative glossary: every defined term, and every
  * unconditionally avoided term in singular and plural form. An avoidance entry
- * that begins in lower case is a human qualifier, and it scopes the entry before
- * it to a condition validation cannot judge, so that entry stays advisory.
+ * that begins in lower case opens a human qualifier, which scopes the one entry
+ * before it to a condition validation cannot judge, so that entry stays
+ * advisory. A qualifier that scopes no entry, or that hides an entry behind it,
+ * leaves an avoidance no reader can rely on, and its line is reported malformed.
  */
 export function parseGlossary(content: string): Glossary {
   const avoided = new Map<string, GlossaryEntry>();
+  const malformed: number[] = [];
   const terms = new Map<string, number>();
+  const register = (names: readonly string[], line: number): void => {
+    for (const name of names) {
+      const singular = normalize(name);
+      for (const key of [singular, pluralOf(singular)]) {
+        if (!avoided.has(key)) avoided.set(key, { line, name });
+      }
+    }
+  };
   content.split(/\r?\n/u).forEach((text, index) => {
     const line = index + 1;
     const definition = definitionPattern.exec(text);
@@ -84,23 +101,18 @@ export function parseGlossary(content: string): Glossary {
     }
     const avoidance = avoidancePattern.exec(text);
     if (avoidance === null) return;
-    const named: string[] = [];
-    for (const entry of (avoidance[1] as string).split(",")) {
-      const name = entry.trim();
-      if (!avoidedTermPattern.test(name)) {
-        named.pop();
-        break;
-      }
-      named.push(name);
+    const entries = (avoidance[1] as string).split(",").map((entry) => entry.trim());
+    const qualifier = entries.findIndex((entry) => !isAvoidedName(entry));
+    if (qualifier < 0) {
+      register(entries, line);
+      return;
     }
-    for (const name of named) {
-      const singular = normalize(name);
-      for (const key of [singular, pluralOf(singular)]) {
-        if (!avoided.has(key)) avoided.set(key, { line, name });
-      }
+    if (qualifier === 0 || entries.slice(qualifier + 1).some(isAvoidedName)) {
+      malformed.push(line);
     }
+    register(entries.slice(0, Math.max(qualifier - 1, 0)), line);
   });
-  return { avoided, terms };
+  return { avoided, malformed, terms };
 }
 
 interface BindingDisagreement {
@@ -136,6 +148,32 @@ function disagreements(
     { actual: identifiers.pageType, expected: base, surface: "page type" },
   ];
   return expectations.filter(({ actual, expected }) => actual !== expected);
+}
+
+/**
+ * Reports every avoidance line whose qualifier leaves an entry unenforced
+ * without saying so, which would let a rule the glossary states silently bind
+ * nothing.
+ */
+function validateAvoidance(
+  glossary: Glossary,
+  file: VocabularyTextFile,
+  findings: Finding[],
+): void {
+  const lines = file.content.split(/\r?\n/u);
+  for (const line of glossary.malformed) {
+    findings.push(
+      finding(
+        "ATLAS_VOCABULARY_AVOIDANCE_MALFORMED",
+        `Atlas SDK requires an avoidance qualifier in ${file.path} to follow the one term it scopes and to end its line.`,
+        file.path,
+        {
+          end: { column: (lines[line - 1] as string).length + 1, line },
+          start: { column: 1, line },
+        },
+      ),
+    );
+  }
 }
 
 function validateBindings(
@@ -411,6 +449,7 @@ export function validateVocabularyAgreement(
     return Object.freeze(findings);
   }
 
+  validateAvoidance(parsed, glossary, findings);
   validateBindings(bindings, parsed, glossary.path, glossary.content, findings);
 
   const identifiers = Object.values(bindings);

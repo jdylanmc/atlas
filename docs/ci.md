@@ -111,7 +111,10 @@ directory Atlas SDK reserves without one, and a term listed under an `_Avoid_`
 line may never appear in any of those surfaces — including as the opening word
 of a Finding message. An `_Avoid_` entry followed by a lower-case qualifier, such
 as `_Avoid_: Query, when naming the user-facing skill`, states a condition
-validation cannot judge, so it stays advisory. Atlas page types are checked
+validation cannot judge, so it stays advisory. The qualifier scopes the one entry
+before it and runs to the end of its line; an avoidance line that opens with a
+qualifier, or that hides a further term behind one, is reported rather than
+silently obeyed. Atlas page types are checked
 against the avoided terms only, because the set of ordinary lower-case words a
 source may legitimately quote is not closed. Ordinary English usage of a word
 that happens to match a domain term raises nothing, because prose carries none

@@ -347,6 +347,30 @@ test("a conditional avoidance stays advice, and an unconditional one binds", () 
   );
 });
 
+test("an avoidance qualifier that hides a term is reported, not obeyed", () => {
+  const leading = [
+    "# Atlas SDK",
+    "",
+    "**Anchor**:",
+    "A page through which an agent enters a region of knowledge.",
+    "_Avoid_: when naming the skill, Bonfire",
+    "",
+  ];
+  const buried = [...leading];
+  buried[4] = "_Avoid_: Bonfire, when naming the skill, Landmark";
+
+  for (const lines of [leading, buried]) {
+    const findings = validate(anchorBinding, [contract('const t = "bonfire";')], lines);
+    assert.deepEqual(summarize(findings).slice(0, 1), [
+      "ATLAS_VOCABULARY_AVOIDANCE_MALFORMED Atlas SDK requires an avoidance qualifier in CONTEXT.md to follow the one term it scopes and to end its line.",
+    ]);
+    assert.deepEqual(findings[0]?.location, {
+      end: { column: (lines[4] as string).length + 1, line: 5 },
+      start: { column: 1, line: 5 },
+    });
+  }
+});
+
 test("a page-ID prefix is read even when a substitution supplies its value", () => {
   assert.deepEqual(
     summarize(validate(anchorBinding, [contract("const id = `bonfire:${slug}`;")])),
