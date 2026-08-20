@@ -4,6 +4,7 @@
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { contractVocabularyBindings } from "../src/domain/contract_vocabulary.ts";
 import { coreArchetypes } from "../src/domain/core_archetype.ts";
 import type { Finding } from "../src/domain/finding.ts";
 import {
@@ -63,6 +64,7 @@ export function collectContracts(root: string, relativePath: string): string[] {
 export function validateRepository(root: string): readonly Finding[] {
   return validateVocabularyAgreement(
     coreArchetypes,
+    contractVocabularyBindings,
     readText(root, GLOSSARY_PATH),
     collectContracts(root, CONTRACT_ROOT).map((path) => readText(root, path)),
   );

@@ -3,6 +3,7 @@ import {
   reservedPageDirectories,
   type CoreArchetypeBindings,
 } from "../domain/core_archetype.ts";
+import type { ContractVocabularyBinding } from "../domain/contract_vocabulary.ts";
 import type { Finding, FindingLocation } from "../domain/finding.ts";
 import { sdkFindings } from "./sdk_finding.ts";
 import { positionIndex, type PositionIndex } from "./source_position.ts";
@@ -20,10 +21,15 @@ const definitionPattern = /^\*\*(.+)\*\*:$/u;
 const avoidancePattern = /^_Avoid_: (.+)$/u;
 /** A term Atlas SDK can bind: one capitalized word. */
 const termPattern = /^\p{Lu}[\p{Ll}\p{N}]*$/u;
+/** A contract vocabulary term Atlas SDK can require in the glossary. */
+const contractTermPattern = /^\p{Lu}[\p{L}\p{N}]*(?: \p{Lu}[\p{L}\p{N}]*)*$/u;
 /** A word an avoidance entry names, rather than a human qualifier. */
 const avoidedTermPattern = /^\p{Lu}/u;
 /** An Atlas SDK diagnostic code, a shape ordinary prose does not spell. */
 const diagnosticPattern = /ATLAS_[A-Z0-9_]+/gu;
+/** An exported contract declaration identifier. */
+const exportedIdentifierPattern =
+  /(?:^|\n)\s*export\s+(?:declare\s+)?(?:abstract\s+)?(?:interface|type|class|function|const|let|var)\s+([A-Za-z_$][\w$]*)/gu;
 /** An `.atlas/` directory reference, in plain or regular-expression form. */
 const directoryPattern = /\\?\.atlas\\?\/([A-Za-z0-9_.-]+)\\?\//dgu;
 /** A module specifier, which names a file or a runtime scheme, not an Atlas page.
@@ -193,6 +199,8 @@ function validateAvoidance(
 
 function validateBindings(
   bindings: CoreArchetypeBindings,
+  contractTerms: readonly ContractVocabularyBinding[],
+  exportedIdentifiers: ReadonlySet<string>,
   glossary: Glossary,
   glossaryPath: string,
   content: string,
@@ -244,6 +252,51 @@ function validateBindings(
           `Atlas SDK binds ${surface} ${JSON.stringify(actual)} to the term ${JSON.stringify(term)}, which requires ${JSON.stringify(expected)}.`,
           glossaryPath,
           lineLocation(definitionLine),
+        ),
+      );
+    }
+  }
+  for (const { exportedIdentifiers: exports, term } of contractTerms) {
+    if (!contractTermPattern.test(term)) {
+      findings.push(
+        finding(
+          "ATLAS_VOCABULARY_CONTRACT_TERM_UNSUPPORTED",
+          `Atlas SDK contracts require the term ${JSON.stringify(term)}, which is not a capitalized term or phrase.`,
+          glossaryPath,
+        ),
+      );
+      continue;
+    }
+    const avoided = glossary.avoided.get(normalize(term));
+    if (avoided !== undefined) {
+      findings.push(
+        finding(
+          "ATLAS_VOCABULARY_CONTRACT_TERM_AVOIDED",
+          `Atlas SDK contracts require the term ${JSON.stringify(term)}, which ${glossaryPath} lists as an avoided term.`,
+          glossaryPath,
+          lineLocation(avoided.line),
+        ),
+      );
+      continue;
+    }
+    const definitionLine = glossary.terms.get(term);
+    if (definitionLine === undefined) {
+      findings.push(
+        finding(
+          "ATLAS_VOCABULARY_CONTRACT_TERM_UNDEFINED",
+          `Atlas SDK contracts require the term ${JSON.stringify(term)}, which ${glossaryPath} does not define.`,
+          glossaryPath,
+        ),
+      );
+      continue;
+    }
+    for (const exportedIdentifier of exports) {
+      if (exportedIdentifiers.has(exportedIdentifier)) continue;
+      findings.push(
+        finding(
+          "ATLAS_VOCABULARY_CONTRACT_EXPORT_MISSING",
+          `Atlas SDK contracts require the term ${JSON.stringify(term)} to be exported as ${JSON.stringify(exportedIdentifier)}, but no scanned contract exports that identifier.`,
+          glossaryPath,
         ),
       );
     }
@@ -498,6 +551,19 @@ function compareFindings(left: Finding, right: Finding): number {
   return code === 0 ? compareCodePoints(left.message, right.message) : code;
 }
 
+function exportedIdentifiersOf(
+  contracts: readonly VocabularyTextFile[],
+): ReadonlySet<string> {
+  const exportedIdentifiers = new Set<string>();
+  for (const file of contracts) {
+    if (file.content.length > CONTRACT_LIMIT) continue;
+    for (const exported of file.content.matchAll(exportedIdentifierPattern)) {
+      exportedIdentifiers.add(exported[1] as string);
+    }
+  }
+  return exportedIdentifiers;
+}
+
 /**
  * Validates that the CONTEXT.md glossary and the vocabulary bound into Atlas
  * SDK-owned contracts agree in both directions. Disagreement is reported as a
@@ -513,6 +579,7 @@ function compareFindings(left: Finding, right: Finding): number {
  */
 export function validateVocabularyAgreement(
   bindings: CoreArchetypeBindings,
+  contractTerms: readonly ContractVocabularyBinding[],
   glossary: VocabularyTextFile,
   contracts: readonly VocabularyTextFile[],
 ): readonly Finding[] {
@@ -530,7 +597,15 @@ export function validateVocabularyAgreement(
   }
 
   validateAvoidance(parsed, glossary, findings);
-  validateBindings(bindings, parsed, glossary.path, glossary.content, findings);
+  validateBindings(
+    bindings,
+    contractTerms,
+    exportedIdentifiersOf(contracts),
+    parsed,
+    glossary.path,
+    glossary.content,
+    findings,
+  );
 
   const identifiers = Object.values(bindings);
   const vocabulary: ContractVocabulary = {

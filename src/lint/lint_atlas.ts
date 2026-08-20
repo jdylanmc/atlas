@@ -8,7 +8,7 @@ import { classifyAtlasTextPath, parseAtlasPages } from "../atlas/parse_atlas_pag
 import { serializeAtlasPages } from "../atlas/serialize_atlas_pages.ts";
 import { loadAndValidateAtlasInput } from "./validate_atlas_input.ts";
 
-export interface ValidAtlasLint {
+export interface ValidAtlasLintResult {
   /**
    * Findings that report on the Atlas without denying its validity: warnings,
    * suggestions, inconclusive verdicts, and skipped checks.
@@ -26,7 +26,7 @@ export interface ValidAtlasLint {
   readonly pages: readonly AtlasTextFile[];
 }
 
-export interface InvalidAtlasLint {
+export interface InvalidAtlasLintResult {
   readonly findings: readonly Finding[];
   readonly outcome: "invalid";
 }
@@ -36,7 +36,7 @@ export interface InvalidAtlasLint {
  * invalid Atlas can present neither canonical pages nor the records beside
  * them: a caller reading `pages` has already proven the Atlas valid.
  */
-export type AtlasLintResult = ValidAtlasLint | InvalidAtlasLint;
+export type AtlasLintResult = ValidAtlasLintResult | InvalidAtlasLintResult;
 
 // The Lint boundary answers every caller with a verdict, so a failure no stage
 // described - a defect in Atlas SDK itself, or a limit of the process running

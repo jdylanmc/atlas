@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import type { CoreArchetypeBindings } from "../src/domain/core_archetype.ts";
 import { coreArchetypes } from "../src/domain/core_archetype.ts";
+import type { ContractVocabularyBinding } from "../src/domain/contract_vocabulary.ts";
 import { checkFinding, type Finding } from "../src/domain/finding.ts";
 import {
   validateVocabularyAgreement,
@@ -64,8 +65,14 @@ function validate(
   bindings: CoreArchetypeBindings,
   contracts: readonly VocabularyTextFile[],
   lines?: readonly string[],
+  contractTerms: readonly ContractVocabularyBinding[] = [],
 ): readonly Finding[] {
-  const findings = validateVocabularyAgreement(bindings, glossary(lines), contracts);
+  const findings = validateVocabularyAgreement(
+    bindings,
+    contractTerms,
+    glossary(lines),
+    contracts,
+  );
   for (const finding of findings) assert.equal(checkFinding(finding), true);
   return findings;
 }
@@ -149,6 +156,71 @@ test("a glossary rename that leaves the contracts behind names both sides", () =
     'ATLAS_VOCABULARY_TERM_UNDEFINED Atlas SDK contracts bind the term "Beacon", which CONTEXT.md does not define.',
     'ATLAS_VOCABULARY_TERM_UNDEFINED Atlas SDK contracts bind the term "Waypoint", which CONTEXT.md does not define.',
   ]);
+});
+
+test("contract vocabulary terms must be glossary-defined capitalized phrases", () => {
+  assert.deepEqual(
+    validate(
+      anchorBinding,
+      [contract("export interface AtlasSdk {}\nexport interface Anchor {}")],
+      glossaryLines,
+      [
+        { exportedIdentifiers: ["AtlasSdk"], term: "Atlas SDK" },
+        { exportedIdentifiers: ["Anchor"], term: "Anchor" },
+      ],
+    ),
+    [],
+  );
+
+  assert.deepEqual(
+    summarize(
+      validate(anchorBinding, [], glossaryLines, [
+        { exportedIdentifiers: ["MissingTerm"], term: "missing Term" },
+      ]),
+    ),
+    [
+      'ATLAS_VOCABULARY_CONTRACT_TERM_UNSUPPORTED Atlas SDK contracts require the term "missing Term", which is not a capitalized term or phrase.',
+    ],
+  );
+  assert.deepEqual(
+    summarize(
+      validate(anchorBinding, [], glossaryLines, [
+        { exportedIdentifiers: ["MissingTerm"], term: "Missing Term" },
+      ]),
+    ),
+    [
+      'ATLAS_VOCABULARY_CONTRACT_TERM_UNDEFINED Atlas SDK contracts require the term "Missing Term", which CONTEXT.md does not define.',
+    ],
+  );
+  assert.deepEqual(
+    summarize(
+      validate(anchorBinding, [], glossaryLines, [
+        { exportedIdentifiers: ["Bonfire"], term: "Bonfire" },
+      ]),
+    ),
+    [
+      'ATLAS_VOCABULARY_CONTRACT_TERM_AVOIDED Atlas SDK contracts require the term "Bonfire", which CONTEXT.md lists as an avoided term.',
+    ],
+  );
+});
+
+test("contract vocabulary terms must be exported by the contracts they name", () => {
+  const valid = contract("export interface ValidAtlasLintResult {}");
+  const renamed = contract("export interface ValidLintOutcome {}");
+  const binding = Object.freeze([
+    {
+      exportedIdentifiers: Object.freeze(["ValidAtlasLintResult"]),
+      term: "Anchor",
+    },
+  ]);
+
+  assert.deepEqual(validate(anchorBinding, [valid], glossaryLines, binding), []);
+  assert.deepEqual(
+    summarize(validate(anchorBinding, [renamed], glossaryLines, binding)),
+    [
+      'ATLAS_VOCABULARY_CONTRACT_EXPORT_MISSING Atlas SDK contracts require the term "Anchor" to be exported as "ValidAtlasLintResult", but no scanned contract exports that identifier.',
+    ],
+  );
 });
 
 test("a contract rename that leaves the glossary behind names both sides", () => {

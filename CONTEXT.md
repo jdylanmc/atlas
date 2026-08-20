@@ -214,8 +214,20 @@ A deterministic machine-readable attestation that one exact Atlas commit complet
 **Finding**:
 One result reported by a Lint, attributed to the check that raised it and to whether that check is trusted Atlas SDK validation or Atlas-owned. A finding is an error, a warning, a suggestion, an inconclusive semantic verdict, or a check skipped because one it depended on failed. An Atlas-owned check may add findings; it may never suppress or downgrade a trusted one.
 
+**Atlas Lint Result**:
+The deterministic Lint verdict for one complete Atlas input. It is either a Valid Atlas Lint Result or an Invalid Atlas Lint Result.
+
+**Valid Atlas Lint Result**:
+An Atlas Lint Result that confirms no error Finding denies Atlas validity and carries the validated Atlas records a caller may use after Lint.
+
+**Invalid Atlas Lint Result**:
+An Atlas Lint Result that carries the stable Findings explaining why the Atlas did not pass Lint and does not present validated Atlas records as usable output.
+
 **Challenge**:
 The adversarial review a semantic verdict must survive before it counts. A challenger receives the verdict and its cited evidence and argues against it; disagreement makes the verdict inconclusive and escalates both arguments to a human.
+
+**Operation Result**:
+The versioned, machine-readable outcome of one Atlas SDK operation. It carries the operation's completion state, success or non-success disposition, stable operation data, and the Operation Handoff derived from that same outcome.
 
 **Operation Handoff**:
 The stable completion summary returned by every Atlas SDK skill. It identifies the operation, Home Atlas and base snapshot, result or proposed changes, unresolved human decisions, validation or degradation state, review link when applicable, and recommended next action.
