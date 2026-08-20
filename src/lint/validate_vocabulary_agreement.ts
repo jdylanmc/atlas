@@ -31,7 +31,8 @@ const specifierPattern =
   /(?:\bfrom|\bimport(?:\.meta\.resolve)?|\brequire)\s*(?:\(\s*)?(["'])((?:[^"'\n\\]|\\.)*)\1/gu;
 /** A single-line string or template literal. */
 const literalPattern = /"((?:[^"\\\n]|\\.)*)"|`([^`\n]*)`/gu;
-/** A template-literal substitution, whose value is not literal text. */
+/** A template-literal substitution, whose value is not literal text. Blanking it
+ * keeps its opening `$`, so a page-ID prefix spelled before it stays readable. */
 const substitutionPattern = /\$\{[^}]*\}/gu;
 /** A page-ID prefix, which requires an identifier or a substitution after its colon. */
 const idPrefixPattern = /(?<![\p{L}\p{N}_-])([a-z][a-z0-9-]*):(?=[a-z0-9$])/gu;
@@ -86,11 +87,11 @@ export function parseGlossary(content: string): Glossary {
     const named: string[] = [];
     for (const entry of (avoidance[1] as string).split(",")) {
       const name = entry.trim();
-      if (avoidedTermPattern.test(name)) {
-        named.push(name);
-        continue;
+      if (!avoidedTermPattern.test(name)) {
+        named.pop();
+        break;
       }
-      named.pop();
+      named.push(name);
     }
     for (const name of named) {
       const singular = normalize(name);
@@ -312,10 +313,9 @@ function scanDirectories(
  * Scans the single-line literals a contract declares, where a page-ID prefix, a
  * page type, and a Finding message are spelled. A Finding message is a literal of
  * several words ending in a full stop, which is the shape every Atlas SDK message
- * carries and which a Markdown code span in a comment does not. A page-ID prefix is read from the
- * literal as written, so a substituted value still shows its prefix; every other
- * surface reads the literal with each substitution blanked at its own length, so
- * locations stay exact.
+ * carries and which a Markdown code span in a comment does not. Every surface
+ * reads the literal with each substitution blanked at its own length, so
+ * locations stay exact and a substituted value is never read as literal text.
  */
 function scanLiterals(
   vocabulary: ContractVocabulary,
@@ -326,12 +326,13 @@ function scanLiterals(
   for (const match of file.content.matchAll(literalPattern)) {
     const raw = (match[1] ?? match[2]) as string;
     const start = match.index + match[0].indexOf(raw);
-    const text = raw.replaceAll(substitutionPattern, (value) =>
-      " ".repeat(value.length),
+    const text = raw.replaceAll(
+      substitutionPattern,
+      (value) => `$${" ".repeat(value.length - 1)}`,
     );
     const at = (offset: number, length: number): FindingLocation =>
       positions.rangeAt(start + offset, start + offset + length);
-    for (const prefix of raw.matchAll(idPrefixPattern)) {
+    for (const prefix of text.matchAll(idPrefixPattern)) {
       const token = prefix[1] as string;
       const result = declaredFinding(
         vocabulary,

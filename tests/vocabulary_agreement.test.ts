@@ -329,7 +329,7 @@ test("a conditional avoidance stays advice, and an unconditional one binds", () 
     "",
     "**Anchor**:",
     "A page through which an agent enters a region of knowledge.",
-    "_Avoid_: Bonfire, Query, when naming the user-facing skill",
+    "_Avoid_: Bonfire, Query, when naming the user-facing skill, which humans read",
     "",
   ];
 
@@ -353,6 +353,12 @@ test("a page-ID prefix is read even when a substitution supplies its value", () 
     [
       'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "bonfire" in an Atlas page-ID prefix, which CONTEXT.md lists as the avoided term "Bonfire".',
     ],
+  );
+  assert.deepEqual(
+    validate(anchorBinding, [
+      contract("const x = `${cond ? active:inactive}`;\nconst y = `${ {foo:1} }`;"),
+    ]),
+    [],
   );
 });
 
