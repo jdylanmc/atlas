@@ -46,18 +46,44 @@ function loadOrFinding(
   budgets: AtlasTextBudgets,
 ): readonly AtlasTextFile[] | Finding {
   try {
-    return loadAtlasText(capturedFiles, budgets);
+    // Loading consults a captured file's `bytes` and each budget more than
+    // once, so every caller-owned value is read once here and answered from a
+    // frozen snapshot from then on. The bytes themselves stay the caller's own
+    // objects, since only loading may decide whether they use shared memory and
+    // copying them first would answer that question for it.
+    const captured = Array.from(capturedFiles, (file) =>
+      Object.freeze({ bytes: file.bytes, path: file.path }),
+    );
+    return loadAtlasText(
+      captured,
+      Object.freeze({
+        maxFileBytes: budgets.maxFileBytes,
+        maxTotalBytes: budgets.maxTotalBytes,
+      }),
+    );
   } catch (error: unknown) {
     if (error instanceof AtlasLoadError) {
       return loadFinding(loadCodes[error.code], error.message);
     }
-    /* c8 ignore next 5 -- loadAtlasText surfaces failures only as AtlasLoadError */
+    // Reading a captured file may fail outright, so a failure loading refuses
+    // to describe still becomes a Finding rather than an escaping exception.
     return loadFinding(
       "ATLAS_LOAD_FAILED",
       "Captured Atlas files could not be loaded.",
     );
   }
 }
+
+export interface AtlasInputValidation {
+  /**
+   * The loaded Atlas text, empty when loading itself failed and otherwise the
+   * text these Findings were decided from, whether or not the Atlas is valid.
+   */
+  readonly files: readonly AtlasTextFile[];
+  readonly findings: readonly Finding[];
+}
+
+const noFiles: readonly AtlasTextFile[] = Object.freeze([]);
 
 /**
  * Loads and structurally validates a complete captured Atlas, converting every
@@ -68,14 +94,35 @@ function loadOrFinding(
  * structural validation, whose deterministic ordering, sanitization, and source
  * evidence contracts are preserved. Identical input bytes yield identical
  * ordered Findings.
+ *
+ * The loaded text is returned alongside its Findings so a caller composing
+ * further stages can carry exactly the immutable text that was validated
+ * instead of loading the same captured bytes a second time and risking a
+ * different answer. Every value the caller owns is read once, so accessors that
+ * answer differently on a later read can neither make loading disagree with
+ * itself nor escape as an uncaught exception.
+ */
+export function loadAndValidateAtlasInput(
+  capturedFiles: readonly CapturedAtlasFile[],
+  budgets: AtlasTextBudgets,
+): AtlasInputValidation {
+  const loaded = loadOrFinding(capturedFiles, budgets);
+  if ("code" in loaded) {
+    return Object.freeze({ files: noFiles, findings: Object.freeze([loaded]) });
+  }
+  return Object.freeze({
+    files: loaded,
+    findings: validateAtlasStructure(loaded),
+  });
+}
+
+/**
+ * Reports the Findings of {@link loadAndValidateAtlasInput} for callers that
+ * judge a captured Atlas without carrying its loaded text onward.
  */
 export function validateAtlasInput(
   capturedFiles: readonly CapturedAtlasFile[],
   budgets: AtlasTextBudgets,
 ): readonly Finding[] {
-  const loaded = loadOrFinding(capturedFiles, budgets);
-  if ("code" in loaded) {
-    return Object.freeze([loaded]);
-  }
-  return validateAtlasStructure(loaded);
+  return loadAndValidateAtlasInput(capturedFiles, budgets).findings;
 }
