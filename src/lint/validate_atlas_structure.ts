@@ -762,24 +762,39 @@ function parseOne(file: AtlasTextFile): ParsedAtlasPage | Finding {
 // both declared, and both are measured from the text before any reader runs
 // over it. Every nested block costs at least one quote marker, one list marker,
 // or two columns of indentation, and every nested inline span costs one
-// bracket, so the scan can only overstate the nesting it measures. Prose costs
-// only what its bytes cost, so a page carrying no markup is read whole however
-// much prose it holds.
+// bracket, so the scan can only overstate the nesting it measures. Every line
+// is one more place a block can begin, and reading each costs more the more
+// lines stand beside it, so how many lines a body holds is declared too. Prose
+// costs only what its bytes cost, so a page of it is read whole.
 const maxBodyNestingDepth = 64;
-const maxBodyMarkupMarks = 4096;
+const maxBodyMarkupMarks = 8192;
+const maxBodyLines = 16 * 1024;
 
 const listMarkerAt = /(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)/uy;
-const markupMarks: ReadonlySet<string> = new Set(["*", "_", "~", "`", "[", "]"]);
+const markupMarks: ReadonlySet<string> = new Set([
+  "*",
+  "_",
+  "~",
+  "`",
+  "[",
+  "]",
+  "&",
+  "<",
+  ">",
+]);
 
 interface BodyMarkdownBound {
+  readonly lines: number;
   readonly marks: number;
   readonly nesting: number;
 }
 
 function bodyMarkdownBound(body: string): BodyMarkdownBound {
+  let lines = 0;
   let marks = 0;
   let nesting = 0;
   for (const line of body.split("\n")) {
+    lines += 1;
     let blocks = 1;
     let columns = 0;
     let index = 0;
@@ -816,7 +831,7 @@ function bodyMarkdownBound(body: string): BodyMarkdownBound {
       }
     }
   }
-  return { marks, nesting };
+  return { lines, marks, nesting };
 }
 
 function compareFindings(left: Finding, right: Finding): number {
@@ -889,6 +904,16 @@ export function validateAtlasStructure(
           finding(
             "ATLAS_PAGE_BODY_TOO_MARKED",
             "Atlas page body carries more Markdown markup than Atlas SDK reads.",
+            file.path,
+          ),
+        );
+        continue;
+      }
+      if (bound.lines > maxBodyLines) {
+        findings.push(
+          finding(
+            "ATLAS_PAGE_BODY_TOO_LONG",
+            "Atlas page body holds more lines than Atlas SDK reads.",
             file.path,
           ),
         );

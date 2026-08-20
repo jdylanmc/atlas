@@ -422,8 +422,22 @@ test("refuses every shape of Markdown that costs more than its bytes", () => {
     "many list items": "- x\n".repeat(megabyte / 4),
     "deep indentation": `${"  ".repeat(megabyte / 2)}x`,
     "many footnotes": "[^a]: x\n".repeat(megabyte / 8),
+    "setext headings": "x\n===\n".repeat(megabyte / 6),
+    "table pipes": "|x|\n".repeat(megabyte / 4),
+    "carriage returns": "x\r\n".repeat(megabyte / 3),
+    "many headings": "# x\n".repeat(megabyte / 4),
+    "raw markup lines": "<a>\n".repeat(megabyte / 4),
+    "blank lines": "\n".repeat(megabyte),
+    "character references": "&amp;".repeat(megabyte / 5),
+    autolinks: "<http://a.b>".repeat(megabyte / 12),
+    "raw markup": '<a b="c">'.repeat(megabyte / 9),
+    escapes: "\\[".repeat(megabyte / 2),
   };
-  const refused = new Set(["ATLAS_PAGE_BODY_TOO_DEEP", "ATLAS_PAGE_BODY_TOO_MARKED"]);
+  const refused = new Set([
+    "ATLAS_PAGE_BODY_TOO_DEEP",
+    "ATLAS_PAGE_BODY_TOO_LONG",
+    "ATLAS_PAGE_BODY_TOO_MARKED",
+  ]);
 
   for (const [shape, body] of Object.entries(shapes)) {
     const atlas = completeAtlas("valid").map((file) =>
