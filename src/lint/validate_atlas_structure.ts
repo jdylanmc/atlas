@@ -766,6 +766,9 @@ function parseOne(file: AtlasTextFile): ParsedAtlasPage | Finding {
 // is one more place a block can begin, and reading each costs more the more
 // lines stand beside it, so how many lines a body holds is declared too. Prose
 // costs only what its bytes cost, so a page of it is read whole.
+// Markdown begins a line after a line feed, a carriage return, or both, so the
+// scan reads the same lines the reader will.
+const markdownLineBreak = /\r\n|[\n\r]/u;
 const maxBodyNestingDepth = 64;
 const maxBodyMarkupMarks = 8192;
 const maxBodyLines = 16 * 1024;
@@ -793,7 +796,7 @@ function bodyMarkdownBound(body: string): BodyMarkdownBound {
   let lines = 0;
   let marks = 0;
   let nesting = 0;
-  for (const line of body.split("\n")) {
+  for (const line of body.split(markdownLineBreak)) {
     lines += 1;
     let blocks = 1;
     let columns = 0;

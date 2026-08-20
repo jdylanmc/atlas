@@ -492,8 +492,9 @@ test("refuses frontmatter larger than it reads, and reads plain prose whole", ()
   );
   assert.ok(elapsed < 2000, `linting took ${String(elapsed)}ms`);
 
-  // Prose carries no markup, so a page holding a megabyte of it is still read.
-  const prose = `${"word ".repeat(16)}\n`.repeat(megabyte / 80);
+  // Prose carries no markup, so a page holding a megabyte of it is still read,
+  // however its lines end.
+  const prose = `${"word ".repeat(16)}\r\n`.repeat(megabyte / 81);
   const large = completeAtlas("valid").map((file) =>
     file.path === ".atlas/anchors/lint.md"
       ? {

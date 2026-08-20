@@ -64,6 +64,10 @@ export class AtlasPageParseError extends Error {
 // and a page it refuses is refused on every run.
 export const maxFrontmatterDepth = 64;
 
+// YAML begins a line after a line feed, a carriage return, or both, so the scan
+// reads the same lines the parser will.
+const yamlLineBreak = /\r\n|[\n\r]/u;
+
 // Reading YAML costs more than the characters it holds, because every mapping
 // key is checked against the keys beside it, so the frontmatter Atlas SDK reads
 // is declared as well. Frontmatter carries what a page is, not what it says, so
@@ -73,7 +77,7 @@ export const maxFrontmatterCharacters = 32 * 1024;
 function frontmatterDepthBound(frontmatter: string): number {
   let bound = 0;
   let flowDepth = 0;
-  for (const line of frontmatter.split("\n")) {
+  for (const line of frontmatter.split(yamlLineBreak)) {
     let indent = 0;
     while (line[indent] === " ") indent += 1;
     bound = Math.max(bound, indent + flowDepth + 1);
