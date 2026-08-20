@@ -79,7 +79,8 @@ function pluralOf(word: string): string {
  * advisory. A qualifier that scopes no entry, or that hides an entry behind it,
  * leaves an avoidance no reader can rely on, and its line is reported malformed.
  * An empty entry, which a stray comma leaves behind, is neither a term nor a
- * qualifier: every term on the line keeps binding and the line is reported.
+ * qualifier: the line binds what it would bind without the comma, and is
+ * reported.
  */
 export function parseGlossary(content: string): Glossary {
   const avoided = new Map<string, GlossaryEntry>();
