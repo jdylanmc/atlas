@@ -13,7 +13,7 @@ import {
   lintAtlas,
   type AtlasLintResult,
 } from "../src/lint/lint_atlas.ts";
-import { assertGrowthRatio } from "./growth.ts";
+import { assertGrowthRatio, assertWallClockUnder } from "./growth.ts";
 
 const encoder = new TextEncoder();
 const fixturesRoot = resolve(import.meta.dirname, "fixtures", "complete-atlas");
@@ -391,11 +391,15 @@ test("reads every large pathological body in bounded time", () => {
         : file,
     );
 
-    const result = lintAtlas(atlas, {
-      maxFileBytes: 4 * megabyte,
-      maxTotalBytes: 8 * megabyte,
+    let result: AtlasLintResult | undefined;
+    assertWallClockUnder(`linting ${code}`, 2000, () => {
+      result = lintAtlas(atlas, {
+        maxFileBytes: 4 * megabyte,
+        maxTotalBytes: 8 * megabyte,
+      });
     });
 
+    assert.ok(result !== undefined);
     assert.ok(result.outcome === "invalid", JSON.stringify(result));
     assert.deepEqual(
       result.findings.map((finding) => finding.code),
@@ -447,11 +451,15 @@ test("refuses every shape of Markdown that costs more than its bytes", () => {
         : file,
     );
 
-    const result = lintAtlas(atlas, {
-      maxFileBytes: 4 * megabyte,
-      maxTotalBytes: 8 * megabyte,
+    let result: AtlasLintResult | undefined;
+    assertWallClockUnder(`linting ${shape}`, 2000, () => {
+      result = lintAtlas(atlas, {
+        maxFileBytes: 4 * megabyte,
+        maxTotalBytes: 8 * megabyte,
+      });
     });
 
+    assert.ok(result !== undefined);
     assert.ok(result.outcome === "invalid", `${shape}: ${JSON.stringify(result)}`);
     const [reported] = result.findings.map((finding) => finding.code);
     assert.ok(
@@ -476,8 +484,12 @@ test("refuses frontmatter larger than it reads, and reads plain prose whole", ()
   );
   const budgets = { maxFileBytes: 4 * megabyte, maxTotalBytes: 8 * megabyte };
 
-  const result = lintAtlas(oversized, budgets);
+  let result: AtlasLintResult | undefined;
+  assertWallClockUnder("linting oversized frontmatter", 2000, () => {
+    result = lintAtlas(oversized, budgets);
+  });
 
+  assert.ok(result !== undefined);
   assert.ok(result.outcome === "invalid", JSON.stringify(result));
   assert.deepEqual(
     result.findings.map((finding) => finding.code),
@@ -529,10 +541,9 @@ test("costs no more than the bytes it is given as those bytes double", () => {
   };
 
   for (const [shape, make] of Object.entries(shapes)) {
-    const count = 128 * 1024;
+    const count = 64 * 1024;
     assertGrowthRatio({
       large: () => lintBody(make(count * 2), budgets),
-      maxRatio: 3,
       name: `refusing ${shape}`,
       small: () => lintBody(make(count), budgets),
     });
@@ -542,10 +553,9 @@ test("costs no more than the bytes it is given as those bytes double", () => {
   // below every declared bound at both sizes.
   const prose = (count: number): string => `${"word ".repeat(16)}\n`.repeat(count);
   assertGrowthRatio({
-    large: () => lintBody(prose(8192), budgets),
-    maxRatio: 3,
+    large: () => lintBody(prose(16384), budgets),
     name: "reading prose",
-    small: () => lintBody(prose(4096), budgets),
+    small: () => lintBody(prose(8192), budgets),
   });
 });
 

@@ -1,9 +1,10 @@
 # Adversarial corpus
 
-`vocabulary-agreement.json` is the permanent corpus for vocabulary-agreement
-review findings. A review finding is resolved only after this corpus has a
-reject or accept case that exercises it.
+This directory holds permanent gate corpora for review findings. A review
+finding is resolved only after this corpus has a reject or accept case that
+exercises it.
 
-Additions should be data-only edits when the gate behavior already exists. If a
-new gate is needed, add the gate code and then add the corpus case that proves
-the review finding stays covered.
+`vocabulary-agreement.json` currently exercises the `vocabulary-agreement`
+gate. Additions for an existing gate should be data-only edits. If a new gate is
+needed, register that gate in `tests/adversarial_corpus.test.ts`, add the gate
+code, and then add the corpus case that proves the review finding stays covered.

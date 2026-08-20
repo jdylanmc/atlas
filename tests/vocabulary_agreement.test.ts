@@ -18,7 +18,7 @@ import {
   main,
   validateRepository,
 } from "../scripts/vocabulary_agreement.ts";
-import { assertGrowthRatio } from "./growth.ts";
+import { assertGrowthRatio, assertWallClockUnder } from "./growth.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const SCRIPT = resolve(ROOT, "scripts", "vocabulary_agreement.ts");
@@ -633,17 +633,22 @@ test("the repository binds every declared Core Archetype", () => {
 test("vocabulary scanning cost follows input growth", () => {
   const nonSpecifierSmall = contract(`// from${" ".repeat(100_000)}`);
   const nonSpecifierLarge = contract(`// from${" ".repeat(200_000)}`);
+  assertWallClockUnder("masking a long non-specifier", 2000, () =>
+    assert.deepEqual(validate(anchorBinding, [nonSpecifierLarge]), []),
+  );
   assertGrowthRatio({
     large: () => assert.deepEqual(validate(anchorBinding, [nonSpecifierLarge]), []),
     name: "masking a long non-specifier",
     small: () => assert.deepEqual(validate(anchorBinding, [nonSpecifierSmall]), []),
-    maxRatio: 3,
   });
 
   const line =
     'const found = finding("ATLAS_CORE_EXAMPLE_INVALID", "Atlas SDK reports One Page Here Today.", ".atlas/anchors/page.md");';
   const denseSmall = contract(`${line}\n`.repeat(1500));
   const denseLarge = contract(`${line}\n`.repeat(3000));
+  assertWallClockUnder("scanning token-dense vocabulary contract", 2000, () =>
+    assert.deepEqual(validate(anchorBinding, [denseLarge]), []),
+  );
   assertGrowthRatio({
     large: () => assert.deepEqual(validate(anchorBinding, [denseLarge]), []),
     name: "token-dense vocabulary contract",
@@ -652,11 +657,13 @@ test("vocabulary scanning cost follows input growth", () => {
 
   const unterminatedSmall = contract(`// "${'\\"'.repeat(50_000)}`);
   const unterminatedLarge = contract(`// "${'\\"'.repeat(100_000)}`);
+  assertWallClockUnder("scanning unterminated literal", 2000, () =>
+    assert.deepEqual(validate(anchorBinding, [unterminatedLarge]), []),
+  );
   assertGrowthRatio({
     large: () => assert.deepEqual(validate(anchorBinding, [unterminatedLarge]), []),
     name: "unterminated literal scan",
     small: () => assert.deepEqual(validate(anchorBinding, [unterminatedSmall]), []),
-    maxRatio: 3,
   });
 });
 

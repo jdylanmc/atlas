@@ -5,101 +5,140 @@
     {
       "name": "reject retired page type literal",
       "expectation": "reject",
-      "avoidance": "_Avoid_: Bonfire",
-      "contract": "const type = \"bonfire\";",
-      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"]
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const type = \"bonfire\";"
+      }
     },
     {
       "name": "reject malformed avoidance trailing comma",
       "expectation": "reject",
-      "avoidance": "_Avoid_: Bonfire, Landmark, Hub,",
-      "contract": "const ok = \"anchor\";",
-      "codes": ["ATLAS_VOCABULARY_AVOIDANCE_MALFORMED"]
+      "codes": ["ATLAS_VOCABULARY_AVOIDANCE_MALFORMED"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire, Landmark, Hub,",
+        "source": "const ok = \"anchor\";"
+      }
     },
     {
       "name": "reject Realm Chronicle in finding message and diagnostic code",
       "expectation": "reject",
-      "avoidance": "_Avoid_: Realm Chronicle",
-      "contract": "const message = \"Atlas SDK rejects a Realm Chronicle here.\";\nconst code = \"ATLAS_REALM_CHRONICLE_MISSING\";",
       "messages": ["Realm Chronicle"],
       "codes": [
         "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
         "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"
-      ]
+      ],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Realm Chronicle",
+        "source": "const message = \"Atlas SDK rejects a Realm Chronicle here.\";\nconst code = \"ATLAS_REALM_CHRONICLE_MISSING\";"
+      }
     },
     {
       "name": "reject Realm Law in finding message and diagnostic code",
       "expectation": "reject",
-      "avoidance": "_Avoid_: Realm Law",
-      "contract": "const message = \"Atlas SDK rejects a Realm Law here.\";\nconst code = \"ATLAS_REALM_LAW_MISSING\";",
       "messages": ["Realm Law"],
       "codes": [
         "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
         "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"
-      ]
+      ],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Realm Law",
+        "source": "const message = \"Atlas SDK rejects a Realm Law here.\";\nconst code = \"ATLAS_REALM_LAW_MISSING\";"
+      }
     },
     {
       "name": "reject Realm Rule in finding message and diagnostic code",
       "expectation": "reject",
-      "avoidance": "_Avoid_: Realm Rule",
-      "contract": "const message = \"Atlas SDK rejects a Realm Rule here.\";\nconst code = \"ATLAS_REALM_RULE_MISSING\";",
       "messages": ["Realm Rule"],
       "codes": [
         "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
         "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"
-      ]
+      ],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Realm Rule",
+        "source": "const message = \"Atlas SDK rejects a Realm Rule here.\";\nconst code = \"ATLAS_REALM_RULE_MISSING\";"
+      }
     },
     {
       "name": "reject diagnostic literal passed through Buffer.from",
       "expectation": "reject",
-      "avoidance": "_Avoid_: Bonfire",
-      "contract": "const code = Buffer.from(\"ATLAS_BONFIRE_MISSING\");",
       "messages": ["BONFIRE"],
-      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"]
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const code = Buffer.from(\"ATLAS_BONFIRE_MISSING\");"
+      }
     },
     {
       "name": "reject retired term in finding message",
       "expectation": "reject",
-      "avoidance": "_Avoid_: Bonfire",
-      "contract": "const message = \"Bonfire pages are required.\";",
       "messages": ["Bonfire"],
-      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"]
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const message = \"Bonfire pages are required.\";"
+      }
     },
     {
       "name": "accept plural product name",
       "expectation": "accept",
-      "avoidance": "_Avoid_: Bonfire, Lore",
-      "contract": "const label = \"Atlases\";"
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire, Lore",
+        "source": "const label = \"Atlases\";"
+      }
     },
     {
       "name": "accept status label",
       "expectation": "accept",
-      "avoidance": "_Avoid_: Bonfire",
-      "contract": "const label = \"Status\";"
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const label = \"Status\";"
+      }
     },
     {
       "name": "accept diagnostic code outside retired vocabulary",
       "expectation": "accept",
-      "avoidance": "_Avoid_: Bonfire",
-      "contract": "const code = \"ATLAS_ENCODING_INVALID\";"
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const code = \"ATLAS_ENCODING_INVALID\";"
+      }
     },
     {
       "name": "accept ordinary prose substrings",
       "expectation": "accept",
-      "avoidance": "_Avoid_: Bonfire, Lore",
-      "contract": "// ordinary English prose may explore a topic without naming retired vocabulary\nconst sentence = \"Atlas SDK reads ordinary prose.\";"
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire, Lore",
+        "source": "// A Bonfire is prose here, and explore merely contains an avoided term as a substring.\nconst sentence = \"Atlas SDK reads ordinary prose.\";"
+      }
     },
     {
       "name": "accept URLs",
       "expectation": "accept",
-      "avoidance": "_Avoid_: Bonfire",
-      "contract": "const schema = \"https://atlas.dev/schema/finding.json\";"
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const schema = \"https://atlas.dev/schema/finding.json\";"
+      }
     },
     {
       "name": "accept node fs module specifier",
       "expectation": "accept",
-      "avoidance": "_Avoid_: Bonfire",
-      "contract": "import { readFileSync } from \"node:fs\";"
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "import { readFileSync } from \"node:fs\";"
+      }
     }
   ]
 }

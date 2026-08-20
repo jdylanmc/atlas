@@ -9,10 +9,13 @@ import {
 } from "../src/lint/validate_vocabulary_agreement.ts";
 
 interface CorpusCase {
-  readonly avoidance: string;
   readonly codes?: readonly string[];
-  readonly contract: string;
   readonly expectation: "accept" | "reject";
+  readonly gate: "vocabulary-agreement";
+  readonly input: {
+    readonly glossaryAvoidance: string;
+    readonly source: string;
+  };
   readonly messages?: readonly string[];
   readonly name: string;
 }
@@ -61,9 +64,12 @@ test("the adversarial vocabulary corpus states the review-resolution rule", () =
 
 for (const entry of corpus.cases) {
   test(`adversarial vocabulary corpus: ${entry.name}`, () => {
-    const findings = validateVocabularyAgreement(binding, glossary(entry.avoidance), [
-      { content: entry.contract, path: "src/lint/adversarial.ts" },
-    ]);
+    assert.equal(entry.gate, "vocabulary-agreement");
+    const findings = validateVocabularyAgreement(
+      binding,
+      glossary(entry.input.glossaryAvoidance),
+      [{ content: entry.input.source, path: "src/lint/adversarial.ts" }],
+    );
     const summary = findings.map((finding) => `${finding.code} ${finding.message}`);
 
     if (entry.expectation === "accept") {
