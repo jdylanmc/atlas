@@ -113,7 +113,9 @@ of a Finding message. A term of several words is read as one name: a diagnostic
 code and a Finding message are scanned in adjacent runs as well as single words,
 so `ATLAS_REALM_CHRONICLE_MISSING` and `"… a Realm Chronicle here."` both fail
 against `_Avoid_: Realm Chronicle`, and the words must be adjacent, joined by a
-single space or underscore. An `_Avoid_` entry followed by a lower-case
+single space or underscore. Spacing and punctuation do not distinguish a term, so
+a message that splits `Landmark` across two capitalized words is read as that
+term. An `_Avoid_` entry followed by a lower-case
 qualifier, such
 as `_Avoid_: Query, when naming the user-facing skill`, states a condition
 validation cannot judge, so it stays advisory. The qualifier scopes the one entry
