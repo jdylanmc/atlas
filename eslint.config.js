@@ -6,7 +6,7 @@ import tseslint from "typescript-eslint";
 
 const sourceLayers = [
   "domain",
-  "realm",
+  "atlas",
   "graph",
   "lint",
   "operations",

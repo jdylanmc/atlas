@@ -1,6 +1,6 @@
 # Cacophony Prompt Review
 
-Atlas separates every Cacophony reviewer into an Agent Persona and an Agent
+Atlas SDK separates every Cacophony reviewer into an Agent Persona and an Agent
 Directive. Persona files contain identity, voice, tone, demeanor, and
 presentation only and declare no authority. Intention-named Directive files
 contain the literal review lens, evidence and severity rules, constraints,
@@ -37,16 +37,16 @@ it to the proposed merge revision. Structurally valid changes then receive
 Fletcher's semantic separation and prompt-quality review on the
 `gpt-5.6-luna` deployment with a 40-turn budget.
 
-The same path gate requests Fletcher review for the inactive Atlas SDK Realm
+The same path gate requests Fletcher review for the inactive SDK Atlas
 Guide sources under `docs/agents/atlas-sdk/`. Those sources define presentation
-and reference metadata only; they do not initialize or activate a Realm. The
+and reference metadata only; they do not initialize or activate an Atlas. The
 standalone `node scripts/atlas_sdk_agents.ts validate` command is a local
 repository check, not a trusted runtime or Continuous Integration schema
 loader; canonical Framework validation remains deferred with activation.
 
 ## Node.js and repository quality contract
 
-Atlas repository tooling uses directly executable, erasable TypeScript on
+Atlas SDK repository tooling uses directly executable, erasable TypeScript on
 Node.js 24. The root package contract pins:
 
 - Node.js `>=24.0.0 <25`, with workflows using Node.js `24.13.0`;
@@ -83,19 +83,19 @@ ESLint mechanically enforces the settled inward source dependency order from
 `domain` through `interfaces`, including keeping Node.js built-ins out of the
 application core.
 
-Coverage uses `--all` over every Atlas-owned tooling source under
+Coverage uses `--all` over every SDK-owned tooling source under
 `scripts/**/*.ts`, so an unimported tool remains visible instead of disappearing
 from the report. The current tooling floors are 78% statements and lines, 68%
 branches, and 93% functions. A separate `src/**/*.ts` product gate is part of
 `npm run ci` with a 100% threshold. It is empty before the first product slice,
-then automatically enforces issue #76's requirement for every Atlas-authored
+then automatically enforces issue #76's requirement for every Atlas SDK-authored
 TypeScript product file introduced under `src/`.
 
 The TypeScript validator imports only Node.js built-ins. A trusted workflow
 copies that one file from the pull request base commit and executes it with
 Node.js 24; it never installs dependencies from the pull request revision.
 Static analysis likewise loads the Actionlint launcher from the trusted base
-instead of executing the pull request's copy. Atlas-owned repository tooling no
+instead of executing the pull request's copy. SDK-owned repository tooling no
 longer requires Python.
 
 The reusable worker checks authorization before checkout, inspects the pull
@@ -117,7 +117,7 @@ validation. The historical Python generator path remains embedded in generated
 prompt provenance solely to preserve their established bytes.
 
 Fork pull requests fail closed; council execution is limited to branches in the
-Atlas repository.
+Atlas SDK repository.
 
 ## Required repository configuration
 

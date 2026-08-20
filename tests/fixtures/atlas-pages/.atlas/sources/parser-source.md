@@ -1,7 +1,7 @@
 ---
-atlas:
-  atlas-schema: 1.0.0
-  realm-schema: 1.0.0
+sdk:
+  atlas-sdk-schema: 1.0.0
+  local-atlas-schema: 1.0.0
   id: source:parser-source
   type: source
   title: Parser Source
@@ -10,7 +10,7 @@ atlas:
   created-by: { kind: human, name: Fixture Author }
   updated-by: { kind: human, name: Fixture Author }
   tags: [parsing]
-realm: {}
+atlas: {}
 ---
 
 # Parser Source

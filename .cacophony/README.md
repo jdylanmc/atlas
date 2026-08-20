@@ -1,6 +1,6 @@
 # Cacophony agent prompt contract
 
-Each Atlas reviewer composition has four tracked artifacts:
+Each Atlas SDK reviewer composition has four tracked artifacts:
 
 - `.cacophony/personas/<persona>.md` is an **Agent Persona**. Its frontmatter
   declares `atlas.agent-persona/v2`, a `persona` identifier, and
@@ -54,7 +54,7 @@ agent/report identifiers. Every trusted base must contain the TypeScript
 validator; review workflows fail closed rather than falling back to prompt-only
 validation. Historical `scripts/cacophony_agents.py` generator identifiers
 remain in generated prompts as byte-level compatibility metadata even though
-Atlas no longer ships or executes the Python implementation.
+Atlas SDK no longer ships or executes the Python implementation.
 
 Because the worker stages the active reviewer's base prompt over its workspace
 path, reviewers inspect proposed `.cacophony/agents/*.md` content with

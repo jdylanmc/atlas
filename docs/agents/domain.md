@@ -11,7 +11,7 @@ If either location doesn't exist, proceed silently. The `/domain-modeling` skill
 
 ## File structure
 
-Atlas uses a single-context layout:
+Atlas SDK uses a single-context layout:
 
 ```text
 /

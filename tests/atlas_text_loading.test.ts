@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import {
-  loadRealmText,
-  RealmLoadError,
-  type CapturedRealmFile,
-} from "../src/realm/load_realm_text.ts";
+  loadAtlasText,
+  AtlasLoadError,
+  type CapturedAtlasFile,
+} from "../src/atlas/load_atlas_text.ts";
 
 const encoder = new TextEncoder();
 const BUDGETS = Object.freeze({
@@ -13,19 +13,19 @@ const BUDGETS = Object.freeze({
   maxTotalBytes: 64,
 });
 
-function captured(path: string, content: string): CapturedRealmFile {
+function captured(path: string, content: string): CapturedAtlasFile {
   return { bytes: encoder.encode(content), path };
 }
 
-function errorCode(action: () => unknown): RealmLoadError["code"] {
+function errorCode(action: () => unknown): AtlasLoadError["code"] {
   try {
     action();
   } catch (error: unknown) {
-    assert.ok(error instanceof RealmLoadError);
+    assert.ok(error instanceof AtlasLoadError);
     assert.equal(error.message.includes("/Users/"), false);
     return error.code;
   }
-  assert.fail("Expected RealmLoadError.");
+  assert.fail("Expected AtlasLoadError.");
 }
 
 test("loads exact text in fixed code-point path order", () => {
@@ -37,7 +37,7 @@ test("loads exact text in fixed code-point path order", () => {
     captured(".atlas/a.md", "short"),
   ];
 
-  assert.deepEqual(loadRealmText(input, BUDGETS), [
+  assert.deepEqual(loadAtlasText(input, BUDGETS), [
     { content: "short", path: ".atlas/a.md" },
     { content: "long", path: ".atlas/a/long.md" },
     { content: "z\r\n", path: ".atlas/z.md" },
@@ -49,8 +49,8 @@ test("loads exact text in fixed code-point path order", () => {
 test("reversed input produces identical success and error results", () => {
   const valid = [captured(".atlas/z.md", "z"), captured(".atlas/a.md", "a")];
   assert.deepEqual(
-    loadRealmText(valid, BUDGETS),
-    loadRealmText([...valid].reverse(), BUDGETS),
+    loadAtlasText(valid, BUDGETS),
+    loadAtlasText([...valid].reverse(), BUDGETS),
   );
 
   const invalid = [
@@ -61,21 +61,21 @@ test("reversed input produces identical success and error results", () => {
     captured(".atlas/a.md", "oversized"),
   ];
   const budgets = { maxFileBytes: 4, maxTotalBytes: 100 };
-  const forwardError = errorCode(() => loadRealmText(invalid, budgets));
+  const forwardError = errorCode(() => loadAtlasText(invalid, budgets));
   assert.equal(
     forwardError,
-    errorCode(() => loadRealmText([...invalid].reverse(), budgets)),
+    errorCode(() => loadAtlasText([...invalid].reverse(), budgets)),
   );
   assert.equal(forwardError, "FILE_TOO_LARGE");
 });
 
 test("normalizes paths and rejects duplicate normalized paths", () => {
-  assert.deepEqual(loadRealmText([captured(".atlas//a/./page.md", "text")], BUDGETS), [
+  assert.deepEqual(loadAtlasText([captured(".atlas//a/./page.md", "text")], BUDGETS), [
     { content: "text", path: ".atlas/a/page.md" },
   ]);
   assert.equal(
     errorCode(() =>
-      loadRealmText(
+      loadAtlasText(
         [captured(".atlas/a/page.md", "one"), captured(".atlas//a/./page.md", "two")],
         BUDGETS,
       ),
@@ -84,7 +84,7 @@ test("normalizes paths and rejects duplicate normalized paths", () => {
   );
 });
 
-test("rejects absolute, traversal, backslash, and non-Realm paths", () => {
+test("rejects absolute, traversal, backslash, and non-Atlas paths", () => {
   for (const path of [
     "/.atlas/page.md",
     ".atlas/../outside.md",
@@ -95,7 +95,7 @@ test("rejects absolute, traversal, backslash, and non-Realm paths", () => {
     ".atlas/\0page.md",
   ]) {
     assert.equal(
-      errorCode(() => loadRealmText([captured(path, "text")], BUDGETS)),
+      errorCode(() => loadAtlasText([captured(path, "text")], BUDGETS)),
       "INVALID_PATH",
     );
   }
@@ -103,8 +103,8 @@ test("rejects absolute, traversal, backslash, and non-Realm paths", () => {
 
 test("returned text has no caller mutation aliases", () => {
   const bytes = encoder.encode("original");
-  const input: CapturedRealmFile[] = [{ bytes, path: ".atlas/index.md" }];
-  const loaded = loadRealmText(input, BUDGETS);
+  const input: CapturedAtlasFile[] = [{ bytes, path: ".atlas/index.md" }];
+  const loaded = loadAtlasText(input, BUDGETS);
 
   bytes.fill(0);
   input[0] = captured(".atlas/changed.md", "changed");
@@ -114,7 +114,7 @@ test("returned text has no caller mutation aliases", () => {
 test("rejects bytes backed by shared memory", () => {
   const bytes = new Uint8Array(new SharedArrayBuffer(4));
   assert.equal(
-    errorCode(() => loadRealmText([{ bytes, path: ".atlas/shared.md" }], BUDGETS)),
+    errorCode(() => loadAtlasText([{ bytes, path: ".atlas/shared.md" }], BUDGETS)),
     "SHARED_BYTES_NOT_ALLOWED",
   );
 });
@@ -130,7 +130,7 @@ test("rejects species-poisoned shared memory", () => {
   });
   const bytes = new Uint8Array(buffer);
   assert.equal(
-    errorCode(() => loadRealmText([{ bytes, path: ".atlas/shared.md" }], BUDGETS)),
+    errorCode(() => loadAtlasText([{ bytes, path: ".atlas/shared.md" }], BUDGETS)),
     "SHARED_BYTES_NOT_ALLOWED",
   );
 });
@@ -146,7 +146,7 @@ test("rejects shared memory hidden by an overridden buffer getter", () => {
   Object.setPrototypeOf(bytes, MisleadingBytes.prototype);
   assert.ok(bytes.buffer instanceof ArrayBuffer);
   assert.equal(
-    errorCode(() => loadRealmText([{ bytes, path: ".atlas/shared.md" }], BUDGETS)),
+    errorCode(() => loadAtlasText([{ bytes, path: ".atlas/shared.md" }], BUDGETS)),
     "SHARED_BYTES_NOT_ALLOWED",
   );
 });
@@ -156,7 +156,7 @@ test("rejects cross-context shared memory", () => {
     "new Uint8Array(new SharedArrayBuffer(4))",
   ) as Uint8Array;
   assert.equal(
-    errorCode(() => loadRealmText([{ bytes, path: ".atlas/shared.md" }], BUDGETS)),
+    errorCode(() => loadAtlasText([{ bytes, path: ".atlas/shared.md" }], BUDGETS)),
     "SHARED_BYTES_NOT_ALLOWED",
   );
 });
@@ -164,7 +164,7 @@ test("rejects cross-context shared memory", () => {
 test("strictly rejects invalid UTF-8", () => {
   assert.equal(
     errorCode(() =>
-      loadRealmText(
+      loadAtlasText(
         [{ bytes: new Uint8Array([0xc3, 0x28]), path: ".atlas/bad.txt" }],
         BUDGETS,
       ),
@@ -176,11 +176,11 @@ test("strictly rejects invalid UTF-8", () => {
 test("enforces per-file and total byte budgets in path order", () => {
   const input = [captured(".atlas/b.txt", "5678"), captured(".atlas/a.txt", "1234")];
   assert.equal(
-    errorCode(() => loadRealmText(input, { maxFileBytes: 3, maxTotalBytes: 100 })),
+    errorCode(() => loadAtlasText(input, { maxFileBytes: 3, maxTotalBytes: 100 })),
     "FILE_TOO_LARGE",
   );
   assert.equal(
-    errorCode(() => loadRealmText(input, { maxFileBytes: 4, maxTotalBytes: 7 })),
+    errorCode(() => loadAtlasText(input, { maxFileBytes: 4, maxTotalBytes: 7 })),
     "TOTAL_TOO_LARGE",
   );
 });
@@ -193,14 +193,14 @@ test("rejects every invalid budget shape", () => {
     { maxFileBytes: 0, maxTotalBytes: 0.5 },
   ]) {
     assert.equal(
-      errorCode(() => loadRealmText([], budgets)),
+      errorCode(() => loadAtlasText([], budgets)),
       "INVALID_BUDGET",
     );
   }
 });
 
 test("returns deeply immutable records and collection", () => {
-  const loaded = loadRealmText([captured(".atlas/index.md", "text")], BUDGETS);
+  const loaded = loadAtlasText([captured(".atlas/index.md", "text")], BUDGETS);
   assert.equal(Object.isFrozen(loaded), true);
   assert.equal(Object.isFrozen(loaded[0]), true);
   assert.throws(() => {

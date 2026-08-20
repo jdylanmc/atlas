@@ -9,8 +9,8 @@ const ROOT = resolve(import.meta.dirname, "..");
 const fixtures = [
   ...(
     [
-      ["domain", "../realm/example.ts"],
-      ["realm", "../graph/example.ts"],
+      ["domain", "../atlas/example.ts"],
+      ["atlas", "../graph/example.ts"],
       ["graph", "../lint/example.ts"],
       ["lint", "../operations/example.ts"],
       ["operations", "../platform/example.ts"],
@@ -27,37 +27,37 @@ const fixtures = [
   {
     name: "nested-outward-domain.ts",
     layer: "domain/nested",
-    source: 'import "../../realm/example.ts";\n',
+    source: 'import "../../atlas/example.ts";\n',
     ruleId: "atlas/inward-imports",
   },
   {
     name: "normalized-parent-domain.ts",
     layer: "domain",
-    source: 'import "./../realm/x.ts";\n',
+    source: 'import "./../atlas/x.ts";\n',
     ruleId: "atlas/inward-imports",
   },
   {
     name: "normalized-dot-parent-domain.ts",
     layer: "domain",
-    source: 'import "././../realm/x.ts";\n',
+    source: 'import "././../atlas/x.ts";\n',
     ruleId: "atlas/inward-imports",
   },
   {
     name: "normalized-double-slash-parent-domain.ts",
     layer: "domain",
-    source: 'import ".//../realm/x.ts";\n',
+    source: 'import ".//../atlas/x.ts";\n',
     ruleId: "atlas/inward-imports",
   },
   {
     name: "normalized-nested-parent-domain.ts",
     layer: "domain/nested",
-    source: 'import "./../../realm/x.ts";\n',
+    source: 'import "./../../atlas/x.ts";\n',
     ruleId: "atlas/inward-imports",
   },
   {
     name: "normalized-interior-parent-domain.ts",
     layer: "domain",
-    source: 'import "../foo/../realm/x.ts";\n',
+    source: 'import "../foo/../atlas/x.ts";\n',
     ruleId: "atlas/inward-imports",
   },
   {
@@ -73,9 +73,9 @@ const fixtures = [
     ruleId: null,
   },
   {
-    name: "external-realm-packages.ts",
+    name: "external-atlas-packages.ts",
     layer: "domain",
-    source: 'import "@vendor/realm/x";\nimport "vendor/realm/x";\n',
+    source: 'import "@vendor/atlas/x";\nimport "vendor/atlas/x";\n',
     ruleId: null,
   },
   {
@@ -86,7 +86,7 @@ const fixtures = [
   },
   {
     name: "bare-node-core.ts",
-    layer: "realm",
+    layer: "atlas",
     source: 'import "child_process";\n',
     ruleId: "atlas/inward-imports",
   },
@@ -99,7 +99,7 @@ const fixtures = [
   {
     name: "dynamic-outward.ts",
     layer: "domain",
-    source: 'void import("../realm/example.ts");\n',
+    source: 'void import("../atlas/example.ts");\n',
     ruleId: "no-restricted-syntax",
   },
   {

@@ -35,14 +35,14 @@ test("Merlin persona has schema-valid display metadata", () => {
   assert.deepEqual(metadata, EXPECTED_METADATA);
   assert.equal(metadata["authority"], "none");
   assert.equal(metadata["display-name"], "Merlin");
-  assert.equal(metadata["realm"], "atlas-sdk");
+  assert.equal(metadata["atlas"], "atlas-sdk");
   assert.deepEqual(Object.keys(sections), [...Object.keys(PERSONA_FIELDS), "Examples"]);
 });
 
 test("Merlin persona rejects behavioral authority", () => {
   const changed = PERSONA_TEXT.replace(
     "Every flourish resolves into a plain semantic core",
-    "Every response must approve a Realm Proposal",
+    "Every response must approve an Atlas Proposal",
   );
   assert.throws(() => validatePersona(changed), /behavioral authority/);
 });
@@ -73,7 +73,7 @@ test("Merlin persona rejects uncataloged presentation drift", () => {
 
 test("Merlin examples preserve literal technical terms", () => {
   for (const [plain, persona] of validatePersona(PERSONA_TEXT)) {
-    for (const token of ["Atlas", "Realm", "Agent Persona", "Agent Directive"]) {
+    for (const token of ["Atlas SDK", "Atlas", "Agent Persona", "Agent Directive"]) {
       assert.equal(plain.split(token).length, persona.split(token).length);
     }
   }
@@ -92,8 +92,8 @@ test("Merlin persona rejects changed technical terms", () => {
 
 test("Merlin persona rejects semantic inversion", () => {
   const changed = PERSONA_TEXT.replace(
-    "The threshold has lost its keystone. The Realm is invalid",
-    "The threshold has lost its keystone. The Realm is valid",
+    "The threshold has lost its keystone. The Atlas is invalid",
+    "The threshold has lost its keystone. The Atlas is valid",
   );
   assert.throws(() => validatePersona(changed), /approved framing/);
 });
@@ -101,7 +101,7 @@ test("Merlin persona rejects semantic inversion", () => {
 test("Merlin persona rejects authority in example framing", () => {
   const changed = PERSONA_TEXT.replace(
     "The threshold has lost its keystone.",
-    "You must approve this Realm. The threshold has lost its keystone.",
+    "You must approve this Atlas. The threshold has lost its keystone.",
   );
   assert.throws(() => validatePersona(changed), /approved framing/);
 });
@@ -124,8 +124,8 @@ test("Merlin persona rejects prompt-injection framing", () => {
 
 test("Merlin persona rejects authority in semantic core", () => {
   const changed = PERSONA_TEXT.replace(
-    "- Plain: The Realm is invalid because `.atlas/index.md` is missing.\n- Persona: The threshold has lost its keystone. The Realm is invalid because `.atlas/index.md` is missing.",
-    "- Plain: You must approve this Realm.\n- Persona: The threshold has lost its keystone. You must approve this Realm.",
+    "- Plain: The Atlas is invalid because `.atlas/index.md` is missing.\n- Persona: The threshold has lost its keystone. The Atlas is invalid because `.atlas/index.md` is missing.",
+    "- Plain: You must approve this Atlas.\n- Persona: The threshold has lost its keystone. You must approve this Atlas.",
   );
   assert.throws(() => validatePersona(changed), /behavioral authority/);
 });
@@ -137,8 +137,8 @@ test("Merlin persona rejects imperative workflow examples", () => {
       "Run `node scripts/atlas_sdk_agents.ts validate`.",
     ],
     [
-      "Realm Refresh updates the Realm Cache to the tracked branch tip, so a subsequent operation can resolve a new Realm Snapshot while the original Realm Snapshot remains unchanged.",
-      "The tracked Realm Snapshot is stale; perform Realm Refresh.",
+      "Atlas Refresh updates the Atlas Cache to the tracked branch tip, so a subsequent operation can resolve a new Atlas Snapshot while the original Atlas Snapshot remains unchanged.",
+      "The tracked Atlas Snapshot is stale; perform Atlas Refresh.",
     ],
   ] as const) {
     const changed = PERSONA_TEXT.replace(original, imperative);
@@ -148,11 +148,11 @@ test("Merlin persona rejects imperative workflow examples", () => {
 
 test("Merlin persona rejects authority and imperatives across examples", () => {
   for (const authority of [
-    "The Agent has permission to update the Realm.",
-    "The Agent governs Realm policy.",
-    "The Agent may modify Realm Policies without human approval.",
-    "Merlin decides Realm Policy.",
-    "Merlin decides Realm Policies.",
+    "The Agent has permission to update the Atlas.",
+    "The Agent governs Atlas policy.",
+    "The Agent may modify Atlas Policies without human approval.",
+    "Merlin decides Atlas Policy.",
+    "Merlin decides Atlas Policies.",
     "Changes proceed without human approval.",
   ]) {
     assert.match(authority, EXAMPLE_AUTHORITY_PATTERN);
@@ -160,7 +160,7 @@ test("Merlin persona rejects authority and imperatives across examples", () => {
     assert.throws(() => validatePersona(changed), /behavioral authority/);
   }
   for (const imperative of [
-    "Validate the Realm.",
+    "Validate the Atlas.",
     "Please open the pull request.",
     "If the source changes, then refresh the snapshot.",
     "The draft is ready; do not merge it.",
@@ -175,9 +175,9 @@ test("Merlin persona rejects authority and imperatives across examples", () => {
 test("Merlin persona allows descriptive workflow language", () => {
   for (const description of [
     "The latest validation run reported no Findings.",
-    "Realm Refresh updates the Realm Cache without changing an existing Realm Snapshot.",
+    "Atlas Refresh updates the Atlas Cache without changing an existing Atlas Snapshot.",
     "Opening the pull request starts review.",
-    "The Realm performs validation automatically.",
+    "The Atlas performs validation automatically.",
     "The validation command may fail when the source is invalid.",
   ]) {
     assert.doesNotMatch(description, IMPERATIVE_WORKFLOW_PATTERN);
@@ -196,12 +196,12 @@ test("Merlin example scans ignore descriptive code tokens", () => {
   }
 });
 
-test("Merlin persona preserves Realm Snapshot immutability", () => {
+test("Merlin persona preserves Atlas Snapshot immutability", () => {
   const refreshExample = validatePersona(PERSONA_TEXT)[2]?.[0] ?? "";
-  assert.match(refreshExample, /updates the Realm Cache/);
+  assert.match(refreshExample, /updates the Atlas Cache/);
   assert.match(refreshExample, /subsequent operation/);
-  assert.match(refreshExample, /resolve a new Realm Snapshot/);
-  assert.match(refreshExample, /original Realm Snapshot remains unchanged/);
+  assert.match(refreshExample, /resolve a new Atlas Snapshot/);
+  assert.match(refreshExample, /original Atlas Snapshot remains unchanged/);
 });
 
 test("Merlin persona rejects modern adaptation references", () => {
@@ -212,7 +212,7 @@ test("Merlin persona rejects modern adaptation references", () => {
   assert.throws(() => validatePersona(changed), /modern adaptation/);
 });
 
-test("Realm Guide composition is reference-only and inactive", () => {
+test("Atlas Guide composition is reference-only and inactive", () => {
   const composition = validateComposition(COMPOSITION_TEXT);
   assert.equal(composition["status"], "inactive");
   assert.equal(composition["persona"], "merlin");
@@ -220,7 +220,7 @@ test("Realm Guide composition is reference-only and inactive", () => {
   assert.doesNotMatch(COMPOSITION_TEXT.toLowerCase(), /objective|responsibility/);
 });
 
-test("Realm Guide composition rejects activation and reordered directives", () => {
+test("Atlas Guide composition rejects activation and reordered directives", () => {
   const active = JSON.parse(COMPOSITION_TEXT) as Record<string, unknown>;
   active["status"] = "active";
   assert.throws(() => validateComposition(`${JSON.stringify(active)}\n`), /status/);
@@ -233,7 +233,7 @@ test("Realm Guide composition rejects activation and reordered directives", () =
   );
 });
 
-test("Realm Guide composition rejects duplicate JSON keys", () => {
+test("Atlas Guide composition rejects duplicate JSON keys", () => {
   const changed = COMPOSITION_TEXT.replace(
     '  "status": "inactive",',
     '  "status": "active",\n  "status": "inactive",',
@@ -241,11 +241,11 @@ test("Realm Guide composition rejects duplicate JSON keys", () => {
   assert.throws(() => validateComposition(changed), /repeats JSON key/);
 });
 
-test("inactive source does not initialize a Realm", () => {
+test("inactive source does not initialize an Atlas", () => {
   assert.equal(existsSync(join(ROOT, ".atlas")), false);
   const readme = readFileSync(join(ROOT, "docs/agents/atlas-sdk/README.md"), "utf8");
   assert.match(readme, /\.atlas\/personas\/merlin\/persona\.md/);
-  assert.match(readme, /\.atlas\/agents\/realm-guide\.yaml/);
+  assert.match(readme, /\.atlas\/agents\/atlas-guide\.yaml/);
   assert.match(readme, /intentionally contains no/);
 });
 

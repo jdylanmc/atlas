@@ -12,16 +12,18 @@ const ActorSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const AtlasPageMetadataSchema = Type.Object(
+const SdkPageMetadataSchema = Type.Object(
   {
-    "atlas-schema": Type.Readonly(Type.String({ minLength: 1, pattern: nonBlank })),
+    "atlas-sdk-schema": Type.Readonly(Type.String({ minLength: 1, pattern: nonBlank })),
     "created-at": Type.Readonly(Type.String({ format: "date-time" })),
     "created-by": Type.Readonly(ActorSchema),
     id: Type.Readonly(Type.String({ minLength: 1, pattern: nonBlank })),
     "originating-operation": Type.Readonly(
       Type.Optional(Type.String({ minLength: 1, pattern: nonBlank })),
     ),
-    "realm-schema": Type.Readonly(Type.String({ minLength: 1, pattern: nonBlank })),
+    "local-atlas-schema": Type.Readonly(
+      Type.String({ minLength: 1, pattern: nonBlank }),
+    ),
     tags: Type.Readonly(
       Type.Unsafe<readonly string[]>(
         Type.Array(Type.String({ minLength: 1, pattern: nonBlank })),
@@ -56,30 +58,30 @@ const JsonValueSchema = Type.Recursive((value) =>
   ]),
 );
 
-export const RealmPageEnvelopeSchema = Type.Object(
+export const AtlasPageEnvelopeSchema = Type.Object(
   {
-    atlas: Type.Readonly(AtlasPageMetadataSchema),
+    sdk: Type.Readonly(SdkPageMetadataSchema),
     body: Type.Readonly(Type.String()),
-    realm: Type.Readonly(
+    atlas: Type.Readonly(
       Type.Unsafe<Readonly<Record<string, ReadonlyJsonValue>>>(
         Type.Record(Type.String(), JsonValueSchema),
       ),
     ),
   },
   {
-    $id: "https://atlas.dev/schema/realm-page-envelope.json",
+    $id: "https://atlas.dev/schema/atlas-page-envelope.json",
     $schema: "https://json-schema.org/draft/2020-12/schema",
     additionalProperties: false,
   },
 );
 
-export type RealmPageEnvelope = Static<typeof RealmPageEnvelopeSchema>;
+export type AtlasPageEnvelope = Static<typeof AtlasPageEnvelopeSchema>;
 
 const Ajv2020 = Ajv2020Module.default;
 const addFormats = addFormatsModule.default;
 const ajv = new Ajv2020({ strict: true });
 addFormats(ajv);
-const validateRealmPageEnvelope = ajv.compile(RealmPageEnvelopeSchema);
+const validateAtlasPageEnvelope = ajv.compile(AtlasPageEnvelopeSchema);
 
 function isJsonCompatible(value: unknown): boolean {
   if (
@@ -99,6 +101,6 @@ function isJsonCompatible(value: unknown): boolean {
   return Object.values(value as Record<string, unknown>).every(isJsonCompatible);
 }
 
-export function checkRealmPageEnvelope(value: unknown): value is RealmPageEnvelope {
-  return isJsonCompatible(value) && validateRealmPageEnvelope(value);
+export function checkAtlasPageEnvelope(value: unknown): value is AtlasPageEnvelope {
+  return isJsonCompatible(value) && validateAtlasPageEnvelope(value);
 }

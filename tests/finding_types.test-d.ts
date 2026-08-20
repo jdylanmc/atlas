@@ -1,6 +1,6 @@
 import type { Finding } from "../src/domain/finding.ts";
-import type { RealmTextFile } from "../src/realm/load_realm_text.ts";
-import { validateRealmStructure } from "../src/lint/validate_realm_structure.ts";
+import type { AtlasTextFile } from "../src/atlas/load_atlas_text.ts";
+import { validateAtlasStructure } from "../src/lint/validate_atlas_structure.ts";
 
 declare const finding: Finding;
 // @ts-expect-error Finding fields are readonly.
@@ -10,6 +10,6 @@ finding.location?.start.line = 2;
 const findingHasNoStatus: "status" extends keyof Finding ? false : true = true;
 void findingHasNoStatus;
 
-declare const files: readonly RealmTextFile[];
+declare const files: readonly AtlasTextFile[];
 // @ts-expect-error Parsed results cannot bypass parsing of captured text.
-validateRealmStructure(files, []);
+validateAtlasStructure(files, []);

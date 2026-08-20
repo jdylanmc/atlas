@@ -45,9 +45,9 @@ const EXPECTED_DIRECTIVE_SETS = {
   smaug: ["simplicity-and-code-truth-review"],
 } as const;
 const EXPECTED_PROMPT_HASHES = {
-  balerion: "021c850a15c4f96c2bfcdaf7ed64ede5402423b73998c74cc645c5a6f6d4ffd6",
-  bolas: "47d3bd112fa7cf8b78b16bac1526129dc3b93e880b38088e930e279532832610",
-  fletcher: "364f2a6d0d2c7247487f9cde216fb16f2446fe431d08dd8499e6b16c0d8e2cb3",
+  balerion: "493956e498f24f8057759062e486fbd103446cc80ae8dafdd370fe307b2f8ce8",
+  bolas: "0a5270746674e4b76a62c9802429b229433440c595849547f3f38a5f025ba0ce",
+  fletcher: "e1d03ce54fff764a40beaa33e6398e208ceef449fcb2e3f8b0e9d4aa3dce65e3",
   smaug: "73d00b7102b4b99a13f3fbf67e2fe93ea7995fe8cd0cd572363145560615b41a",
 } as const;
 
@@ -517,7 +517,7 @@ test("Git revision source validates revisions and regular file modes", () => {
   try {
     git(workspace, "init", "--quiet");
     git(workspace, "config", "user.email", "atlas-tests@example.invalid");
-    git(workspace, "config", "user.name", "Atlas Tests");
+    git(workspace, "config", "user.name", "Atlas SDK Tests");
     writeFileSync(join(workspace, "component.md"), "regular\n");
     git(workspace, "add", "component.md");
     git(workspace, "commit", "--quiet", "-m", "regular");

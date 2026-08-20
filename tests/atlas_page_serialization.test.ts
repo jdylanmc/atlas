@@ -2,37 +2,37 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
-import type { RealmTextFile } from "../src/realm/load_realm_text.ts";
-import { checkRealmPageEnvelope } from "../src/domain/realm_page.ts";
+import type { AtlasTextFile } from "../src/atlas/load_atlas_text.ts";
+import { checkAtlasPageEnvelope } from "../src/domain/atlas_page.ts";
 import {
-  parseRealmPages,
-  RealmPageParseError,
-  type ParsedRealmPage,
-} from "../src/realm/parse_realm_pages.ts";
+  parseAtlasPages,
+  AtlasPageParseError,
+  type ParsedAtlasPage,
+} from "../src/atlas/parse_atlas_pages.ts";
 import {
-  RealmPageSerializeError,
-  serializeRealmPages,
-} from "../src/realm/serialize_realm_pages.ts";
+  AtlasPageSerializeError,
+  serializeAtlasPages,
+} from "../src/atlas/serialize_atlas_pages.ts";
 
-const fixtureRoot = resolve(import.meta.dirname, "fixtures", "realm-pages");
+const fixtureRoot = resolve(import.meta.dirname, "fixtures", "atlas-pages");
 
-function text(path: string, content: string): RealmTextFile {
+function text(path: string, content: string): AtlasTextFile {
   return Object.freeze({ content, path });
 }
 
-function fixture(path: string): RealmTextFile {
+function fixture(path: string): AtlasTextFile {
   return text(path, readFileSync(resolve(fixtureRoot, path), "utf8"));
 }
 
 function pageSource(
   id: string,
-  options: { readonly body?: string; readonly realm?: readonly string[] } = {},
+  options: { readonly body?: string; readonly atlas?: readonly string[] } = {},
 ): string {
   return [
     "---",
-    "atlas:",
-    "  atlas-schema: '1'",
-    "  realm-schema: '2'",
+    "sdk:",
+    "  atlas-sdk-schema: '1'",
+    "  local-atlas-schema: '2'",
     `  id: ${id}`,
     "  type: custom",
     "  title: Page",
@@ -41,14 +41,14 @@ function pageSource(
     "  created-by: { kind: agent, name: Test Agent }",
     "  updated-by: { kind: human, name: Test Reviewer }",
     "  tags: []",
-    ...(options.realm === undefined ? ["realm: {}"] : ["realm:", ...options.realm]),
+    ...(options.atlas === undefined ? ["atlas: {}"] : ["atlas:", ...options.atlas]),
     "---",
     options.body ?? "",
   ].join("\n");
 }
 
 function serializeOne(path: string, source: string): string {
-  const [file] = serializeRealmPages(parseRealmPages([text(path, source)]));
+  const [file] = serializeAtlasPages(parseAtlasPages([text(path, source)]));
   assert.ok(file);
   return file.content;
 }
@@ -65,27 +65,27 @@ function deepFreeze(value: unknown): void {
 
 function fabricatedPage(
   path: string,
-  realm: unknown,
-  atlasOverrides: Readonly<Record<string, unknown>> = {},
+  atlas: unknown,
+  sdkOverrides: Readonly<Record<string, unknown>> = {},
   decorateEnvelope: (envelope: object) => void = () => undefined,
-): ParsedRealmPage {
+): ParsedAtlasPage {
   const page = {
     page: {
-      atlas: {
-        "atlas-schema": "1",
+      sdk: {
+        "atlas-sdk-schema": "1",
         "created-at": "2026-08-17T00:00:00Z",
         "created-by": { kind: "agent", name: "Test Agent" },
         id: "custom:fabricated",
-        "realm-schema": "2",
+        "local-atlas-schema": "2",
         tags: [],
         title: "Page",
         type: "custom",
         "updated-at": "2026-08-17T00:00:00Z",
         "updated-by": { kind: "human", name: "Test Reviewer" },
-        ...atlasOverrides,
+        ...sdkOverrides,
       },
       body: "",
-      realm,
+      atlas,
     },
     source: {
       body: { endLine: 15, startLine: 15 },
@@ -95,22 +95,22 @@ function fabricatedPage(
   };
   decorateEnvelope(page.page);
   deepFreeze(page);
-  return page as unknown as ParsedRealmPage;
+  return page as unknown as ParsedAtlasPage;
 }
 
-function serializeError(page: ParsedRealmPage): RealmPageSerializeError {
+function serializeError(page: ParsedAtlasPage): AtlasPageSerializeError {
   try {
-    serializeRealmPages([page]);
+    serializeAtlasPages([page]);
   } catch (error: unknown) {
-    assert.ok(error instanceof RealmPageSerializeError);
+    assert.ok(error instanceof AtlasPageSerializeError);
     return error;
   }
-  assert.fail("Expected RealmPageSerializeError.");
+  assert.fail("Expected AtlasPageSerializeError.");
 }
 
 test("serializes fixture pages to canonical bytes in code point path order", () => {
-  const files = serializeRealmPages(
-    parseRealmPages([
+  const files = serializeAtlasPages(
+    parseAtlasPages([
       fixture(".atlas/sources/parser-source.md"),
       fixture(".atlas/concepts/parsing.md"),
       fixture(".atlas/CHANGELOG.md"),
@@ -130,25 +130,25 @@ test("serializes fixture pages to canonical bytes in code point path order", () 
     files[1]?.content,
     [
       "---",
-      "atlas:",
-      "  atlas-schema: 1.0.0",
+      "sdk:",
+      "  atlas-sdk-schema: 1.0.0",
       '  created-at: "2026-08-17T00:00:00Z"',
       "  created-by:",
       "    kind: human",
       "    name: Fixture Author",
       "  id: anchor:root",
-      "  realm-schema: 1.0.0",
+      "  local-atlas-schema: 1.0.0",
       "  tags: []",
-      "  title: Fixture Realm",
+      "  title: Fixture Atlas",
       "  type: anchor",
       '  updated-at: "2026-08-17T00:00:00Z"',
       "  updated-by:",
       "    kind: human",
       "    name: Fixture Author",
-      "realm: {}",
+      "atlas: {}",
       "---",
       "",
-      "# Fixture Realm",
+      "# Fixture Atlas",
       "",
       "Enter here.",
       "",
@@ -158,14 +158,14 @@ test("serializes fixture pages to canonical bytes in code point path order", () 
     files[0]?.content,
     [
       "---",
-      "atlas:",
-      "  atlas-schema: 1.0.0",
+      "sdk:",
+      "  atlas-sdk-schema: 1.0.0",
       '  created-at: "2026-08-17T00:00:00Z"',
       "  created-by:",
       "    kind: agent",
       "    name: Fixture Agent",
       "  id: concept:parsing",
-      "  realm-schema: 1.0.0",
+      "  local-atlas-schema: 1.0.0",
       "  tags:",
       "    - parsing",
       "  title: Parsing",
@@ -174,13 +174,13 @@ test("serializes fixture pages to canonical bytes in code point path order", () 
       "  updated-by:",
       "    kind: human",
       "    name: Fixture Reviewer",
-      "realm:",
+      "atlas:",
       "  confidence: reviewed",
       "---",
       "",
       "# Parsing",
       "",
-      "Atlas parses each page body once with maintained GFM footnote support.[^parser]",
+      "Atlas SDK parses each page body once with maintained GFM footnote support.[^parser]",
       "",
       "[^parser]: [[.atlas/sources/parser-source]] Maintained parser documentation.",
       "",
@@ -190,14 +190,14 @@ test("serializes fixture pages to canonical bytes in code point path order", () 
     files[2]?.content,
     [
       "---",
-      "atlas:",
-      "  atlas-schema: 1.0.0",
+      "sdk:",
+      "  atlas-sdk-schema: 1.0.0",
       '  created-at: "2026-08-17T00:00:00Z"',
       "  created-by:",
       "    kind: human",
       "    name: Fixture Author",
       "  id: source:parser-source",
-      "  realm-schema: 1.0.0",
+      "  local-atlas-schema: 1.0.0",
       "  tags:",
       "    - parsing",
       "  title: Parser Source",
@@ -206,7 +206,7 @@ test("serializes fixture pages to canonical bytes in code point path order", () 
       "  updated-by:",
       "    kind: human",
       "    name: Fixture Author",
-      "realm: {}",
+      "atlas: {}",
       "---",
       "",
       "# Parser Source",
@@ -222,7 +222,7 @@ test("canonical bytes ignore source key order, quoting, and collection style", (
     ".atlas/concepts/order.md",
     pageSource("concept:order", {
       body: "Body\n",
-      realm: [
+      atlas: [
         "  alpha:",
         "    beta: 1",
         "    gamma: 2",
@@ -236,7 +236,7 @@ test("canonical bytes ignore source key order, quoting, and collection style", (
     ".atlas/concepts/order.md",
     [
       "---",
-      "atlas:",
+      "sdk:",
       "  tags: []",
       "  updated-by: { kind: human, name: Test Reviewer }",
       "  created-by:",
@@ -247,9 +247,9 @@ test("canonical bytes ignore source key order, quoting, and collection style", (
       "  title: 'Page'",
       "  type: custom",
       "  id: concept:order",
-      "  realm-schema: '2'",
-      "  atlas-schema: '1'",
-      "realm: { delta: [first, second], alpha: { gamma: 2, beta: 1 } }",
+      "  local-atlas-schema: '2'",
+      "  atlas-sdk-schema: '1'",
+      "atlas: { delta: [first, second], alpha: { gamma: 2, beta: 1 } }",
       "---",
       "Body",
       "",
@@ -261,14 +261,14 @@ test("canonical bytes ignore source key order, quoting, and collection style", (
     ordered,
     [
       "---",
-      "atlas:",
-      '  atlas-schema: "1"',
+      "sdk:",
+      '  atlas-sdk-schema: "1"',
       '  created-at: "2026-08-17T00:00:00Z"',
       "  created-by:",
       "    kind: agent",
       "    name: Test Agent",
       "  id: concept:order",
-      '  realm-schema: "2"',
+      '  local-atlas-schema: "2"',
       "  tags: []",
       "  title: Page",
       "  type: custom",
@@ -276,7 +276,7 @@ test("canonical bytes ignore source key order, quoting, and collection style", (
       "  updated-by:",
       "    kind: human",
       "    name: Test Reviewer",
-      "realm:",
+      "atlas:",
       "  alpha:",
       "    beta: 1",
       "    gamma: 2",
@@ -293,7 +293,7 @@ test("canonical bytes ignore source key order, quoting, and collection style", (
 test("quotes ambiguous scalars and preserves Unicode and array order", () => {
   const source = pageSource("concept:scalars", {
     body: "Body\n",
-    realm: [
+    atlas: [
       '  zeta: "yes"',
       '  "\u00fcn\u00efcode": "\u{1f600} \u{1d518} e\u0301"',
       '  timestamp: "2026-08-17T00:00:00Z"',
@@ -312,9 +312,9 @@ test("quotes ambiguous scalars and preserves Unicode and array order", () => {
   const content = serializeOne(".atlas/concepts/scalars.md", source);
 
   assert.equal(
-    content.slice(content.indexOf("realm:")),
+    content.slice(content.indexOf("atlas:")),
     [
-      "realm:",
+      "atlas:",
       "  colon: 12:00",
       '  empty: ""',
       "  flag: true",
@@ -338,8 +338,8 @@ test("quotes ambiguous scalars and preserves Unicode and array order", () => {
     ].join("\n"),
   );
 
-  const [reparsed] = parseRealmPages([text(".atlas/concepts/scalars.md", content)]);
-  const [original] = parseRealmPages([text(".atlas/concepts/scalars.md", source)]);
+  const [reparsed] = parseAtlasPages([text(".atlas/concepts/scalars.md", content)]);
+  const [original] = parseAtlasPages([text(".atlas/concepts/scalars.md", source)]);
   assert.ok(reparsed);
   assert.ok(original);
   assert.deepEqual(reparsed.page, original.page);
@@ -348,7 +348,7 @@ test("quotes ambiguous scalars and preserves Unicode and array order", () => {
 test("keeps own __proto__ entries, siblings, and numeric keys literal", () => {
   const source = pageSource("concept:proto", {
     body: "Body\n",
-    realm: [
+    atlas: [
       "  __proto__: [1, 2]",
       "  alpha: first",
       "  nested:",
@@ -361,9 +361,9 @@ test("keeps own __proto__ entries, siblings, and numeric keys literal", () => {
   const content = serializeOne(".atlas/concepts/proto.md", source);
 
   assert.equal(
-    content.slice(content.indexOf("realm:")),
+    content.slice(content.indexOf("atlas:")),
     [
-      "realm:",
+      "atlas:",
       "  __proto__:",
       "    - 1",
       "    - 2",
@@ -380,18 +380,18 @@ test("keeps own __proto__ entries, siblings, and numeric keys literal", () => {
     ].join("\n"),
   );
 
-  const [reparsed] = parseRealmPages([text(".atlas/concepts/proto.md", content)]);
-  const [original] = parseRealmPages([text(".atlas/concepts/proto.md", source)]);
+  const [reparsed] = parseAtlasPages([text(".atlas/concepts/proto.md", content)]);
+  const [original] = parseAtlasPages([text(".atlas/concepts/proto.md", source)]);
   assert.ok(reparsed);
   assert.ok(original);
   assert.deepEqual(reparsed.page, original.page);
 
-  const realm = reparsed.page.realm as unknown as Readonly<Record<string, unknown>>;
-  assert.equal(Object.getPrototypeOf(realm), Object.prototype);
-  assert.deepEqual(Object.keys(realm), ["__proto__", "alpha", "nested"]);
-  assert.deepEqual(Object.getOwnPropertyDescriptor(realm, "__proto__")?.value, [1, 2]);
+  const atlas = reparsed.page.atlas as unknown as Readonly<Record<string, unknown>>;
+  assert.equal(Object.getPrototypeOf(atlas), Object.prototype);
+  assert.deepEqual(Object.keys(atlas), ["__proto__", "alpha", "nested"]);
+  assert.deepEqual(Object.getOwnPropertyDescriptor(atlas, "__proto__")?.value, [1, 2]);
 
-  const nested = realm["nested"] as Readonly<Record<string, unknown>>;
+  const nested = atlas["nested"] as Readonly<Record<string, unknown>>;
   assert.equal(Object.getPrototypeOf(nested), Object.prototype);
   assert.deepEqual(Object.keys(nested).toSorted(), ["10", "2", "__proto__", "alpha"]);
   assert.equal(nested["alpha"], "nested-first");
@@ -401,7 +401,7 @@ test("keeps own __proto__ entries, siblings, and numeric keys literal", () => {
 
   // Runtime objects list integer-like keys first, so canonical order must come from
   // the serializer rather than from the parsed object's own key order.
-  assert.deepEqual(serializeRealmPages([reparsed]).at(0)?.content, content);
+  assert.deepEqual(serializeAtlasPages([reparsed]).at(0)?.content, content);
 });
 
 test("emits and reparses negative zero exactly", () => {
@@ -409,24 +409,24 @@ test("emits and reparses negative zero exactly", () => {
     ".atlas/concepts/zero.md",
     pageSource("concept:zero", {
       body: "Body\n",
-      realm: ["  negative: -0.0", "  positive: 0"],
+      atlas: ["  negative: -0.0", "  positive: 0"],
     }),
   );
 
   assert.equal(
-    content.slice(content.indexOf("realm:")),
-    ["realm:", "  negative: -0", "  positive: 0", "---", "Body", ""].join("\n"),
+    content.slice(content.indexOf("atlas:")),
+    ["atlas:", "  negative: -0", "  positive: 0", "---", "Body", ""].join("\n"),
   );
 
-  const [reparsed] = parseRealmPages([text(".atlas/concepts/zero.md", content)]);
+  const [reparsed] = parseAtlasPages([text(".atlas/concepts/zero.md", content)]);
   assert.ok(reparsed);
-  const realm = reparsed.page.realm as unknown as Readonly<Record<string, unknown>>;
-  assert.equal(Object.is(realm["negative"], -0), true);
-  assert.equal(Object.is(realm["positive"], 0), true);
+  const atlas = reparsed.page.atlas as unknown as Readonly<Record<string, unknown>>;
+  assert.equal(Object.is(atlas["negative"], -0), true);
+  assert.equal(Object.is(atlas["positive"], 0), true);
 });
 
 test("sorts fabricated page inputs by code point rather than UTF-16 code unit", () => {
-  const files = serializeRealmPages([
+  const files = serializeAtlasPages([
     fabricatedPage(".atlas/concepts/\u{10000}.md", {}),
     fabricatedPage(".atlas/concepts/zulu.md", {}),
     fabricatedPage(".atlas/concepts/\uff00.md", {}),
@@ -445,25 +445,26 @@ test("sorts fabricated page inputs by code point rather than UTF-16 code unit", 
 });
 
 test("repeated serialization and reserialization stay byte identical", () => {
-  const pages = parseRealmPages([
+  const pages = parseAtlasPages([
     fixture(".atlas/index.md"),
     fixture(".atlas/concepts/parsing.md"),
   ]);
-  const first = serializeRealmPages(pages);
-  const second = serializeRealmPages(pages);
+  const first = serializeAtlasPages(pages);
+  const second = serializeAtlasPages(pages);
   assert.deepEqual(second, first);
 
-  const reparsed = parseRealmPages(first);
+  const reparsed = parseAtlasPages(first);
   assert.deepEqual(
     reparsed.map((parsed) => parsed.page),
     pages.map((parsed) => parsed.page),
   );
-  assert.deepEqual(serializeRealmPages(reparsed), first);
+  assert.deepEqual(serializeAtlasPages(reparsed), first);
 });
 
 test("emits an empty body and preserves body bytes verbatim", () => {
   const empty = serializeOne(".atlas/concepts/empty.md", pageSource("concept:empty"));
-  assert.equal(empty.endsWith("realm: {}\n---\n"), true);
+  assert.equal(empty.startsWith("---\nsdk:\n"), true);
+  assert.equal(empty.endsWith("\natlas: {}\n---\n"), true);
 
   const verbatim = serializeOne(
     ".atlas/concepts/verbatim.md",
@@ -480,13 +481,13 @@ test("sorts before detecting non-adjacent duplicate canonical paths", () => {
   ];
 
   assert.throws(
-    () => serializeRealmPages(duplicated),
+    () => serializeAtlasPages(duplicated),
     (error: unknown) => {
-      assert.ok(error instanceof RealmPageSerializeError);
+      assert.ok(error instanceof AtlasPageSerializeError);
       assert.equal(error.code, "DUPLICATE_PAGE_PATH");
       assert.equal(error.path, ".atlas/concepts/alpha.md");
-      assert.equal(error.name, "RealmPageSerializeError");
-      assert.equal(error.message, "Realm pages share one canonical path.");
+      assert.equal(error.name, "AtlasPageSerializeError");
+      assert.equal(error.message, "Atlas pages share one canonical path.");
       return true;
     },
   );
@@ -505,14 +506,14 @@ test("rejects pages the parser's envelope contract would reject", () => {
     ["nested big integer", { nested: [{ deep: 9n }] }],
   ];
 
-  for (const [label, realm] of invalid) {
-    const error = serializeError(fabricatedPage(".atlas/concepts/bad.md", realm));
+  for (const [label, atlas] of invalid) {
+    const error = serializeError(fabricatedPage(".atlas/concepts/bad.md", atlas));
     assert.equal(error.code, "INVALID_PAGE_ENVELOPE", label);
     assert.equal(error.path, ".atlas/concepts/bad.md", label);
-    assert.equal(error.name, "RealmPageSerializeError", label);
+    assert.equal(error.name, "AtlasPageSerializeError", label);
     assert.equal(
       error.message,
-      "Realm page does not satisfy the page envelope.",
+      "Atlas page does not satisfy the page envelope.",
       label,
     );
   }
@@ -524,7 +525,7 @@ test("rejects a shape compatible page holding an invalid metadata date", () => {
   );
 
   assert.equal(error.code, "INVALID_PAGE_ENVELOPE");
-  assert.equal(error.message, "Realm page does not satisfy the page envelope.");
+  assert.equal(error.message, "Atlas page does not satisfy the page envelope.");
 
   // The same metadata written as Markdown never survives parsing, so serializing it
   // would have produced bytes the parser rejects.
@@ -533,9 +534,9 @@ test("rejects a shape compatible page holding an invalid metadata date", () => {
     '"not-a-date"',
   );
   assert.throws(
-    () => parseRealmPages([text(".atlas/concepts/bad.md", source)]),
+    () => parseAtlasPages([text(".atlas/concepts/bad.md", source)]),
     (parseError: unknown) => {
-      assert.ok(parseError instanceof RealmPageParseError);
+      assert.ok(parseError instanceof AtlasPageParseError);
       assert.equal(parseError.code, "INVALID_PAGE_ENVELOPE");
       return true;
     },
@@ -544,7 +545,7 @@ test("rejects a shape compatible page holding an invalid metadata date", () => {
 
 test("emits nothing when any page in the batch is invalid", () => {
   const badDate = { "created-at": "not-a-date" };
-  const batches: readonly (readonly [string, readonly ParsedRealmPage[]])[] = [
+  const batches: readonly (readonly [string, readonly ParsedAtlasPage[]])[] = [
     [
       "invalid sorts first",
       [
@@ -563,9 +564,9 @@ test("emits nothing when any page in the batch is invalid", () => {
 
   for (const [label, pages] of batches) {
     assert.throws(
-      () => serializeRealmPages(pages),
+      () => serializeAtlasPages(pages),
       (error: unknown) => {
-        assert.ok(error instanceof RealmPageSerializeError);
+        assert.ok(error instanceof AtlasPageSerializeError);
         assert.equal(error.code, "INVALID_PAGE_ENVELOPE", label);
         return true;
       },
@@ -612,14 +613,14 @@ test("rejects frontmatter values canonical YAML cannot represent", () => {
     ],
   ];
 
-  for (const [label, realm] of unsupported) {
-    const error = serializeError(fabricatedPage(".atlas/concepts/bad.md", realm));
+  for (const [label, atlas] of unsupported) {
+    const error = serializeError(fabricatedPage(".atlas/concepts/bad.md", atlas));
     assert.equal(error.code, "UNREPRESENTABLE_VALUE", label);
     assert.equal(error.path, ".atlas/concepts/bad.md", label);
-    assert.equal(error.name, "RealmPageSerializeError", label);
+    assert.equal(error.name, "AtlasPageSerializeError", label);
     assert.equal(
       error.message,
-      "Realm page frontmatter holds an unrepresentable value.",
+      "Atlas page frontmatter holds an unrepresentable value.",
       label,
     );
   }
@@ -656,14 +657,14 @@ test("rejects own properties canonical serialization would omit at the page root
     );
 
     // The envelope contract cannot see either property, so only the serializer refuses.
-    assert.equal(checkRealmPageEnvelope(rooted.page), true, label);
+    assert.equal(checkAtlasPageEnvelope(rooted.page), true, label);
 
     const error = serializeError(rooted);
     assert.equal(error.code, "UNREPRESENTABLE_VALUE", label);
     assert.equal(error.path, ".atlas/concepts/bad.md", label);
     assert.equal(
       error.message,
-      "Realm page frontmatter holds an unrepresentable value.",
+      "Atlas page frontmatter holds an unrepresentable value.",
       label,
     );
   }
@@ -705,7 +706,7 @@ test("emits nothing when one page holds an unrepresentable value", () => {
   ];
 
   for (const [label, dropped] of losses) {
-    const batches: readonly (readonly [string, readonly ParsedRealmPage[]])[] = [
+    const batches: readonly (readonly [string, readonly ParsedAtlasPage[]])[] = [
       [
         "sorts first",
         [
@@ -724,9 +725,9 @@ test("emits nothing when one page holds an unrepresentable value", () => {
 
     for (const [position, pages] of batches) {
       assert.throws(
-        () => serializeRealmPages(pages),
+        () => serializeAtlasPages(pages),
         (error: unknown) => {
-          assert.ok(error instanceof RealmPageSerializeError);
+          assert.ok(error instanceof AtlasPageSerializeError);
           assert.equal(error.code, "UNREPRESENTABLE_VALUE", `${label} ${position}`);
           return true;
         },
@@ -740,14 +741,14 @@ test("serializes ordinary arrays that carry no own symbol keys", () => {
   const content = serializeOne(
     ".atlas/concepts/arrays.md",
     pageSource("concept:arrays", {
-      realm: ["  list: [3, 1, 2]", "  nested:", "    - [b, a]", "    - {}"],
+      atlas: ["  list: [3, 1, 2]", "  nested:", "    - [b, a]", "    - {}"],
     }),
   );
 
   assert.equal(
-    content.slice(content.indexOf("realm:")),
+    content.slice(content.indexOf("atlas:")),
     [
-      "realm:",
+      "atlas:",
       "  list:",
       "    - 3",
       "    - 1",
@@ -777,11 +778,11 @@ test("keeps owned array indices and refuses keys past the index bound", () => {
   const dense = Array.from({ length: 1001 }, (_entry, index) => index);
   assert.equal(Object.hasOwn(dense, "1000"), true);
 
-  const [file] = serializeRealmPages([fabricatedPage(path, { dense, list: extended })]);
+  const [file] = serializeAtlasPages([fabricatedPage(path, { dense, list: extended })]);
   assert.ok(file);
-  const [reparsed] = parseRealmPages([text(path, file.content)]);
+  const [reparsed] = parseAtlasPages([text(path, file.content)]);
   assert.ok(reparsed);
-  assert.deepEqual(reparsed.page.realm, { dense, list: [1, 2, "kept"] });
+  assert.deepEqual(reparsed.page.atlas, { dense, list: [1, 2, "kept"] });
 
   // A key at or above 2 ** 32 - 1 is a named property instead: the length is
   // untouched and array canonicalization drops it. The bound can only be pinned from
@@ -797,15 +798,15 @@ test("keeps owned array indices and refuses keys past the index bound", () => {
   const error = serializeError(fabricatedPage(path, { list: named }));
   assert.equal(error.code, "UNREPRESENTABLE_VALUE");
   assert.equal(error.path, path);
-  assert.equal(error.message, "Realm page frontmatter holds an unrepresentable value.");
+  assert.equal(error.message, "Atlas page frontmatter holds an unrepresentable value.");
 });
 
 test("serializes mapping keys longer than the YAML simple key limit", () => {
   const longKey = "k".repeat(1100);
-  const realm = { [longKey]: "direct", nested: { [longKey]: ["one", "two"] } };
+  const atlas = { [longKey]: "direct", nested: { [longKey]: ["one", "two"] } };
   const path = ".atlas/concepts/long-keys.md";
 
-  const [file] = serializeRealmPages([fabricatedPage(path, realm)]);
+  const [file] = serializeAtlasPages([fabricatedPage(path, atlas)]);
   assert.ok(file);
   assert.equal(file.content.includes(`  ? ${longKey}\n  : direct\n`), true);
   assert.equal(
@@ -813,10 +814,10 @@ test("serializes mapping keys longer than the YAML simple key limit", () => {
     true,
   );
 
-  const [reparsed] = parseRealmPages([text(path, file.content)]);
+  const [reparsed] = parseAtlasPages([text(path, file.content)]);
   assert.ok(reparsed);
-  assert.deepEqual(reparsed.page.realm, realm);
-  const [again] = serializeRealmPages([reparsed]);
+  assert.deepEqual(reparsed.page.atlas, atlas);
+  const [again] = serializeAtlasPages([reparsed]);
   assert.ok(again);
   assert.equal(again.content, file.content);
 });
@@ -827,23 +828,23 @@ test("emits fold prone multiline strings as single line scalars", () => {
   const note = `${head}\n \n${tail}`;
   const path = ".atlas/concepts/multiline.md";
   const source = pageSource("concept:multiline", {
-    realm: [
+    atlas: [
       `  note: "${head}\\n \\n${tail}"`,
       "  nested:",
       `    - "${head}\\n \\n${tail}"`,
     ],
   });
 
-  const [parsed] = parseRealmPages([text(path, source)]);
+  const [parsed] = parseAtlasPages([text(path, source)]);
   assert.ok(parsed);
-  assert.deepEqual(parsed.page.realm, { nested: [note], note });
+  assert.deepEqual(parsed.page.atlas, { nested: [note], note });
 
-  const [file] = serializeRealmPages([parsed]);
+  const [file] = serializeAtlasPages([parsed]);
   assert.ok(file);
   assert.equal(
-    file.content.slice(file.content.indexOf("realm:")),
+    file.content.slice(file.content.indexOf("atlas:")),
     [
-      "realm:",
+      "atlas:",
       `  nested:`,
       `    - "${head}\\n \\n${tail}"`,
       `  note: "${head}\\n \\n${tail}"`,
@@ -852,10 +853,10 @@ test("emits fold prone multiline strings as single line scalars", () => {
     ].join("\n"),
   );
 
-  const [roundTripped] = parseRealmPages([text(path, file.content)]);
+  const [roundTripped] = parseAtlasPages([text(path, file.content)]);
   assert.ok(roundTripped);
-  assert.deepEqual(roundTripped.page.realm, { nested: [note], note });
-  const [again] = serializeRealmPages([roundTripped]);
+  assert.deepEqual(roundTripped.page.atlas, { nested: [note], note });
+  const [again] = serializeAtlasPages([roundTripped]);
   assert.ok(again);
   assert.equal(again.content, file.content);
 });
@@ -863,32 +864,32 @@ test("emits fold prone multiline strings as single line scalars", () => {
 test("round trips line and paragraph separators inside values and keys", () => {
   for (const separator of ["\u2028", "\u2029"]) {
     const longKey = `${"k".repeat(1100)}${separator}---`;
-    const realm = {
+    const atlas = {
       [longKey]: `a${separator}---${separator}b`,
       note: `a${separator}---${separator}b`,
       zebra: "last",
     };
     const path = ".atlas/concepts/separators.md";
 
-    const [file] = serializeRealmPages([fabricatedPage(path, realm)]);
+    const [file] = serializeAtlasPages([fabricatedPage(path, atlas)]);
     assert.ok(file);
 
-    const [reparsed] = parseRealmPages([text(path, file.content)]);
+    const [reparsed] = parseAtlasPages([text(path, file.content)]);
     assert.ok(reparsed);
-    assert.deepEqual(reparsed.page.realm, realm);
+    assert.deepEqual(reparsed.page.atlas, atlas);
     assert.equal(reparsed.page.body, "");
 
-    const [again] = serializeRealmPages([reparsed]);
+    const [again] = serializeAtlasPages([reparsed]);
     assert.ok(again);
     assert.equal(again.content, file.content);
   }
 });
 
 test("preserves inputs and returns deeply frozen text files", () => {
-  const pages = parseRealmPages([fixture(".atlas/concepts/parsing.md")]);
+  const pages = parseAtlasPages([fixture(".atlas/concepts/parsing.md")]);
   const before: unknown = structuredClone(pages);
 
-  const files = serializeRealmPages(pages);
+  const files = serializeAtlasPages(pages);
 
   assert.deepEqual(structuredClone(pages), before);
   assert.equal(Object.isFrozen(files), true);
@@ -900,6 +901,6 @@ test("preserves inputs and returns deeply frozen text files", () => {
     (file as { content: string }).content = "changed";
   }, TypeError);
   assert.throws(() => {
-    (files as RealmTextFile[]).push(file);
+    (files as AtlasTextFile[]).push(file);
   }, TypeError);
 });

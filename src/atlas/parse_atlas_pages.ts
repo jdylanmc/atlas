@@ -1,10 +1,10 @@
 import { parseDocument } from "yaml";
 import {
-  checkRealmPageEnvelope,
-  type RealmPageEnvelope,
-} from "../domain/realm_page.ts";
+  checkAtlasPageEnvelope,
+  type AtlasPageEnvelope,
+} from "../domain/atlas_page.ts";
 import { compareCodePoints } from "./compare_code_points.ts";
-import type { RealmTextFile } from "./load_realm_text.ts";
+import type { AtlasTextFile } from "./load_atlas_text.ts";
 
 const pageDirectories = new Set([
   "anchors",
@@ -14,41 +14,41 @@ const pageDirectories = new Set([
   "edges",
 ]);
 
-export type RealmTextClassification = "page" | "opaque";
+export type AtlasTextClassification = "page" | "opaque";
 
 export interface SourceLines {
   readonly endLine: number;
   readonly startLine: number;
 }
 
-export interface RealmPageSource {
+export interface AtlasPageSource {
   readonly body: SourceLines;
   readonly frontmatter: SourceLines;
   readonly path: string;
 }
 
-export interface ParsedRealmPage {
-  readonly page: RealmPageEnvelope;
-  readonly source: RealmPageSource;
+export interface ParsedAtlasPage {
+  readonly page: AtlasPageEnvelope;
+  readonly source: AtlasPageSource;
 }
 
-export type RealmPageParseErrorCode =
+export type AtlasPageParseErrorCode =
   "INVALID_PAGE_ENVELOPE" | "MALFORMED_FRONTMATTER" | "MISSING_FRONTMATTER";
 
-const errorMessages: Readonly<Record<RealmPageParseErrorCode, string>> = Object.freeze({
-  INVALID_PAGE_ENVELOPE: "Realm page frontmatter does not satisfy the page envelope.",
-  MALFORMED_FRONTMATTER: "Realm page frontmatter is malformed.",
-  MISSING_FRONTMATTER: "Realm page frontmatter is missing.",
+const errorMessages: Readonly<Record<AtlasPageParseErrorCode, string>> = Object.freeze({
+  INVALID_PAGE_ENVELOPE: "Atlas page frontmatter does not satisfy the page envelope.",
+  MALFORMED_FRONTMATTER: "Atlas page frontmatter is malformed.",
+  MISSING_FRONTMATTER: "Atlas page frontmatter is missing.",
 });
 
-export class RealmPageParseError extends Error {
-  readonly code: RealmPageParseErrorCode;
+export class AtlasPageParseError extends Error {
+  readonly code: AtlasPageParseErrorCode;
   readonly path: string;
   readonly sourceLine: number;
 
-  constructor(code: RealmPageParseErrorCode, path: string, sourceLine: number) {
+  constructor(code: AtlasPageParseErrorCode, path: string, sourceLine: number) {
     super(errorMessages[code]);
-    this.name = "RealmPageParseError";
+    this.name = "AtlasPageParseError";
     this.code = code;
     this.path = path;
     this.sourceLine = sourceLine;
@@ -109,7 +109,7 @@ function bodyEndLine(body: string, startLine: number): number {
   return startLine + newlines - (body.endsWith("\n") ? 1 : 0);
 }
 
-export function classifyRealmTextPath(path: string): RealmTextClassification {
+export function classifyAtlasTextPath(path: string): AtlasTextClassification {
   if (path === ".atlas/index.md") {
     return "page";
   }
@@ -151,19 +151,19 @@ function findClosingDelimiter(
   return undefined;
 }
 
-function parsePage(file: RealmTextFile): ParsedRealmPage {
+function parsePage(file: AtlasTextFile): ParsedAtlasPage {
   const openingLength = file.content.startsWith("---\r\n")
     ? 5
     : file.content.startsWith("---\n")
       ? 4
       : 0;
   if (openingLength === 0) {
-    throw new RealmPageParseError("MISSING_FRONTMATTER", file.path, 1);
+    throw new AtlasPageParseError("MISSING_FRONTMATTER", file.path, 1);
   }
 
   const closing = findClosingDelimiter(file.content, openingLength);
   if (closing === undefined) {
-    throw new RealmPageParseError("MALFORMED_FRONTMATTER", file.path, 1);
+    throw new AtlasPageParseError("MALFORMED_FRONTMATTER", file.path, 1);
   }
 
   const closingLine = lineAt(file.content, closing.index);
@@ -175,7 +175,7 @@ function parsePage(file: RealmTextFile): ParsedRealmPage {
     uniqueKeys: true,
   });
   if (document.errors.length > 0 || document.warnings.length > 0) {
-    throw new RealmPageParseError("MALFORMED_FRONTMATTER", file.path, 2);
+    throw new AtlasPageParseError("MALFORMED_FRONTMATTER", file.path, 2);
   }
 
   let frontmatter: unknown;
@@ -184,13 +184,13 @@ function parsePage(file: RealmTextFile): ParsedRealmPage {
       document.toJS({ mapAsMap: true, maxAliasCount: 0 }),
     );
   } catch {
-    throw new RealmPageParseError("MALFORMED_FRONTMATTER", file.path, 2);
+    throw new AtlasPageParseError("MALFORMED_FRONTMATTER", file.path, 2);
   }
   const page = isRecord(frontmatter) ? { ...frontmatter, body } : undefined;
-  if (page === undefined || !checkRealmPageEnvelope(page)) {
-    throw new RealmPageParseError("INVALID_PAGE_ENVELOPE", file.path, 2);
+  if (page === undefined || !checkAtlasPageEnvelope(page)) {
+    throw new AtlasPageParseError("INVALID_PAGE_ENVELOPE", file.path, 2);
   }
-  const frozenPage = cloneAndFreezeJson(page) as RealmPageEnvelope;
+  const frozenPage = cloneAndFreezeJson(page) as AtlasPageEnvelope;
 
   const bodyStartLine = closingLine + 1;
   return Object.freeze({
@@ -209,11 +209,11 @@ function parsePage(file: RealmTextFile): ParsedRealmPage {
   });
 }
 
-export function parseRealmPages(
-  files: readonly RealmTextFile[],
-): readonly ParsedRealmPage[] {
+export function parseAtlasPages(
+  files: readonly AtlasTextFile[],
+): readonly ParsedAtlasPage[] {
   const pageFiles = files
-    .filter((file) => classifyRealmTextPath(file.path) === "page")
+    .filter((file) => classifyAtlasTextPath(file.path) === "page")
     .toSorted((left, right) => compareCodePoints(left.path, right.path));
   return Object.freeze(pageFiles.map(parsePage));
 }

@@ -1,7 +1,7 @@
 ---
-atlas:
-  atlas-schema: 1.0.0
-  realm-schema: 1.0.0
+sdk:
+  atlas-sdk-schema: 1.0.0
+  local-atlas-schema: 1.0.0
   id: concept:parsing
   type: concept
   title: Parsing
@@ -10,12 +10,12 @@ atlas:
   created-by: { kind: agent, name: Fixture Agent }
   updated-by: { kind: human, name: Fixture Reviewer }
   tags: [parsing]
-realm:
+atlas:
   confidence: reviewed
 ---
 
 # Parsing
 
-Atlas parses each page body once with maintained GFM footnote support.[^parser]
+Atlas SDK parses each page body once with maintained GFM footnote support.[^parser]
 
 [^parser]: [[.atlas/sources/parser-source]] Maintained parser documentation.

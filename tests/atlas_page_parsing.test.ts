@@ -4,41 +4,41 @@ import { resolve } from "node:path";
 import test from "node:test";
 import { FormatRegistry } from "@sinclair/typebox";
 import {
-  checkRealmPageEnvelope,
-  RealmPageEnvelopeSchema,
-} from "../src/domain/realm_page.ts";
+  checkAtlasPageEnvelope,
+  AtlasPageEnvelopeSchema,
+} from "../src/domain/atlas_page.ts";
 import {
-  classifyRealmTextPath,
-  parseRealmPages,
-  RealmPageParseError,
-} from "../src/realm/parse_realm_pages.ts";
-import type { RealmTextFile } from "../src/realm/load_realm_text.ts";
+  classifyAtlasTextPath,
+  parseAtlasPages,
+  AtlasPageParseError,
+} from "../src/atlas/parse_atlas_pages.ts";
+import type { AtlasTextFile } from "../src/atlas/load_atlas_text.ts";
 
-const fixtureRoot = resolve(import.meta.dirname, "fixtures", "realm-pages");
+const fixtureRoot = resolve(import.meta.dirname, "fixtures", "atlas-pages");
 
-function text(path: string, content: string): RealmTextFile {
+function text(path: string, content: string): AtlasTextFile {
   return Object.freeze({ content, path });
 }
 
-function fixture(path: string): RealmTextFile {
+function fixture(path: string): AtlasTextFile {
   return text(path, readFileSync(resolve(fixtureRoot, path), "utf8"));
 }
 
 function validPage(id: string): string {
-  return `---\natlas:\n  atlas-schema: '1'\n  realm-schema: '2'\n  id: ${id}\n  type: custom\n  title: Page\n  created-at: "2026-08-17T00:00:00Z"\n  updated-at: "2026-08-17T00:00:00Z"\n  created-by: { kind: agent, name: Test Agent }\n  updated-by: { kind: human, name: Test Reviewer }\n  tags: []\nrealm: {}\n---`;
+  return `---\nsdk:\n  atlas-sdk-schema: '1'\n  local-atlas-schema: '2'\n  id: ${id}\n  type: custom\n  title: Page\n  created-at: "2026-08-17T00:00:00Z"\n  updated-at: "2026-08-17T00:00:00Z"\n  created-by: { kind: agent, name: Test Agent }\n  updated-by: { kind: human, name: Test Reviewer }\n  tags: []\natlas: {}\n---`;
 }
 
-function parseError(file: RealmTextFile): RealmPageParseError {
+function parseError(file: AtlasTextFile): AtlasPageParseError {
   try {
-    parseRealmPages([file]);
+    parseAtlasPages([file]);
   } catch (error: unknown) {
-    assert.ok(error instanceof RealmPageParseError);
+    assert.ok(error instanceof AtlasPageParseError);
     return error;
   }
-  assert.fail("Expected RealmPageParseError.");
+  assert.fail("Expected AtlasPageParseError.");
 }
 
-test("classifies only settled core Realm page locations", () => {
+test("classifies only settled core Atlas page locations", () => {
   for (const path of [
     ".atlas/index.md",
     ".atlas/anchors/entry.md",
@@ -49,7 +49,7 @@ test("classifies only settled core Realm page locations", () => {
     ".atlas/types/field-guide/page.md",
     ".atlas/types/field-guide/nested/page.md",
   ]) {
-    assert.equal(classifyRealmTextPath(path), "page", path);
+    assert.equal(classifyAtlasTextPath(path), "page", path);
   }
 
   for (const path of [
@@ -58,12 +58,12 @@ test("classifies only settled core Realm page locations", () => {
     ".atlas/framework/concepts/not-a-page.md",
     ".atlas/skills/ingest.md",
     ".atlas/directives/guide.md",
-    ".atlas/realm/schemas/page.md",
+    ".atlas/atlas/schemas/page.md",
     ".atlas/types/page.md",
     ".atlas/notes.md",
     ".atlas/concepts/not-markdown.txt",
   ]) {
-    assert.equal(classifyRealmTextPath(path), "opaque", path);
+    assert.equal(classifyAtlasTextPath(path), "opaque", path);
   }
 });
 
@@ -75,12 +75,12 @@ test("parses the canonical fixture and ignores opaque Markdown", () => {
     fixture(".atlas/index.md"),
   ];
 
-  const pages = parseRealmPages(records);
+  const pages = parseAtlasPages(records);
   assert.deepEqual(
     pages.map(({ page, source }) => ({
-      id: page.atlas.id,
+      id: page.sdk.id,
       path: source.path,
-      type: page.atlas.type,
+      type: page.sdk.type,
     })),
     [
       {
@@ -97,20 +97,20 @@ test("parses the canonical fixture and ignores opaque Markdown", () => {
   );
   assert.ok(pages[0]);
   const page = pages[0].page as unknown as {
-    readonly realm: Readonly<Record<string, unknown>>;
+    readonly atlas: Readonly<Record<string, unknown>>;
   };
-  assert.equal(page.realm["confidence"], "reviewed");
+  assert.equal(page.atlas["confidence"], "reviewed");
 });
 
-test("preserves canonical Atlas and Realm mappings for a custom type", () => {
-  const [parsed] = parseRealmPages([
+test("preserves canonical Atlas SDK and Atlas mappings for a custom type", () => {
+  const [parsed] = parseAtlasPages([
     text(
       ".atlas/types/field-guide/custom.md",
       [
         "---",
-        "atlas:",
-        "  atlas-schema: atlas-next",
-        "  realm-schema: realm-next",
+        "sdk:",
+        "  atlas-sdk-schema: atlas-next",
+        "  local-atlas-schema: atlas-next",
         "  id: field-guide:custom",
         "  type: field-guide",
         "  title: Custom Guide",
@@ -120,7 +120,7 @@ test("preserves canonical Atlas and Realm mappings for a custom type", () => {
         "  updated-by: { kind: human, name: Test Reviewer }",
         "  originating-operation: operation:custom",
         "  tags: [custom]",
-        "realm:",
+        "atlas:",
         "  rank: 2",
         "  nested:",
         "    labels: [one, two]",
@@ -132,13 +132,13 @@ test("preserves canonical Atlas and Realm mappings for a custom type", () => {
 
   assert.ok(parsed);
   assert.deepEqual(parsed.page, {
-    atlas: {
-      "atlas-schema": "atlas-next",
+    sdk: {
+      "atlas-sdk-schema": "atlas-next",
       "created-at": "2026-08-17T00:00:00Z",
       "created-by": { kind: "agent", name: "Test Agent" },
       id: "field-guide:custom",
       "originating-operation": "operation:custom",
-      "realm-schema": "realm-next",
+      "local-atlas-schema": "atlas-next",
       tags: ["custom"],
       title: "Custom Guide",
       type: "field-guide",
@@ -146,34 +146,34 @@ test("preserves canonical Atlas and Realm mappings for a custom type", () => {
       "updated-by": { kind: "human", name: "Test Reviewer" },
     },
     body: "Custom body",
-    realm: { nested: { labels: ["one", "two"] }, rank: 2 },
+    atlas: { nested: { labels: ["one", "two"] }, rank: 2 },
   });
 });
 
 test("returns a deeply immutable page tree", () => {
-  const [parsed] = parseRealmPages([
+  const [parsed] = parseAtlasPages([
     text(
       ".atlas/types/field-guide/custom.md",
       validPage("field-guide:custom").replace(
-        "realm: {}",
-        "realm:\n  nested:\n    labels: [one, two]",
+        "atlas: {}",
+        "atlas:\n  nested:\n    labels: [one, two]",
       ),
     ),
   ]);
   assert.ok(parsed);
-  const realm = (parsed.page as unknown as { readonly realm: unknown }).realm as {
+  const atlas = (parsed.page as unknown as { readonly atlas: unknown }).atlas as {
     readonly nested: { readonly labels: readonly string[] };
   };
 
   assert.equal(Object.isFrozen(parsed.page), true);
-  assert.equal(Object.isFrozen(parsed.page.atlas), true);
-  assert.equal(Object.isFrozen(realm.nested), true);
-  assert.equal(Object.isFrozen(realm.nested.labels), true);
+  assert.equal(Object.isFrozen(parsed.page.sdk), true);
+  assert.equal(Object.isFrozen(atlas.nested), true);
+  assert.equal(Object.isFrozen(atlas.nested.labels), true);
   assert.throws(() => {
-    (parsed.page.atlas as { title: string }).title = "Changed";
+    (parsed.page.sdk as { title: string }).title = "Changed";
   }, TypeError);
   assert.throws(() => {
-    (realm.nested.labels as string[]).push("changed");
+    (atlas.nested.labels as string[]).push("changed");
   }, TypeError);
 });
 
@@ -185,7 +185,7 @@ test("rejects missing, malformed, and invalid frontmatter", () => {
   );
 
   const malformed = parseError(
-    text(".atlas/index.md", "---\natlas:\n  schema: [broken\n---\nbody\n"),
+    text(".atlas/index.md", "---\nsdk:\n  schema: [broken\n---\nbody\n"),
   );
   assert.equal(malformed.code, "MALFORMED_FRONTMATTER");
   assert.equal(malformed.sourceLine, 2);
@@ -197,14 +197,14 @@ test("rejects missing, malformed, and invalid frontmatter", () => {
   assert.equal(invalid.sourceLine, 2);
 
   assert.equal(
-    parseError(text(".atlas/index.md", "---\natlas:\n  schema: 1\n")).code,
+    parseError(text(".atlas/index.md", "---\nsdk:\n  schema: 1\n")).code,
     "MALFORMED_FRONTMATTER",
   );
   assert.equal(
-    parseError(text(".atlas/index.md", "---\natlas:\n  schema: 1")).code,
+    parseError(text(".atlas/index.md", "---\nsdk:\n  schema: 1")).code,
     "MALFORMED_FRONTMATTER",
   );
-  for (const frontmatter of ["[]", "atlas: []\nrealm: {}", "atlas: null\nrealm: {}"]) {
+  for (const frontmatter of ["[]", "sdk: []\natlas: {}", "sdk: null\natlas: {}"]) {
     assert.equal(
       parseError(text(".atlas/index.md", `---\n${frontmatter}\n---\n`)).code,
       "INVALID_PAGE_ENVELOPE",
@@ -214,18 +214,18 @@ test("rejects missing, malformed, and invalid frontmatter", () => {
     parseError(
       text(
         ".atlas/index.md",
-        validPage("root").replace("realm: {}", "realm: &copy {}\ncopy: *copy"),
+        validPage("root").replace("atlas: {}", "atlas: &copy {}\ncopy: *copy"),
       ),
     ).code,
     "MALFORMED_FRONTMATTER",
   );
 
-  const atlasExtension = validPage("custom:page").replace(
+  const sdkExtension = validPage("custom:page").replace(
     "  title: Page",
     "  title: Page\n  extension: misplaced",
   );
   assert.equal(
-    parseError(text(".atlas/index.md", atlasExtension)).code,
+    parseError(text(".atlas/index.md", sdkExtension)).code,
     "INVALID_PAGE_ENVELOPE",
   );
 });
@@ -239,8 +239,8 @@ test("rejects non-JSON and unresolved YAML tags", () => {
     "!custom value",
   ]) {
     const content = validPage("custom:tagged").replace(
-      "realm: {}",
-      `realm:\n  value: ${taggedValue}`,
+      "atlas: {}",
+      `atlas:\n  value: ${taggedValue}`,
     );
     assert.equal(
       parseError(text(".atlas/types/custom/tagged.md", content)).code,
@@ -252,15 +252,15 @@ test("rejects non-JSON and unresolved YAML tags", () => {
 
 test("rejects non-string YAML mapping keys", () => {
   for (const mapping of [
-    "realm:\n  true: value",
-    "realm:\n  null: value",
-    "realm:\n  ? [one, two]\n  : value",
+    "atlas:\n  true: value",
+    "atlas:\n  null: value",
+    "atlas:\n  ? [one, two]\n  : value",
   ]) {
     assert.equal(
       parseError(
         text(
           ".atlas/types/custom/key.md",
-          validPage("custom:key").replace("realm: {}", mapping),
+          validPage("custom:key").replace("atlas: {}", mapping),
         ),
       ).code,
       "MALFORMED_FRONTMATTER",
@@ -269,7 +269,7 @@ test("rejects non-string YAML mapping keys", () => {
 });
 
 test("preserves body bytes and stable source lines", () => {
-  const [parsed] = parseRealmPages([
+  const [parsed] = parseAtlasPages([
     text(
       ".atlas/index.md",
       `${validPage("root").replaceAll("\n", "\r\n")}\r\nfirst\r\nsecond\r\n`,
@@ -288,15 +288,15 @@ test("preserves body bytes and stable source lines", () => {
 test("only an LF starts a closing delimiter line", () => {
   for (const separator of ["\u2028", "\u2029"]) {
     const frontmatter = validPage("concept:separators").replace(
-      "realm: {}",
-      `realm:\n  note: "a${separator}---${separator}b"\n  zebra: last`,
+      "atlas: {}",
+      `atlas:\n  note: "a${separator}---${separator}b"\n  zebra: last`,
     );
-    const [parsed] = parseRealmPages([
+    const [parsed] = parseAtlasPages([
       text(".atlas/concepts/separators.md", `${frontmatter}\nbody\n`),
     ]);
 
     assert.ok(parsed);
-    assert.deepEqual(parsed.page.realm, {
+    assert.deepEqual(parsed.page.atlas, {
       note: `a${separator}---${separator}b`,
       zebra: "last",
     });
@@ -306,21 +306,21 @@ test("only an LF starts a closing delimiter line", () => {
 
 test("reversed record input produces identical ordered pages and errors", () => {
   const valid = [fixture(".atlas/concepts/parsing.md"), fixture(".atlas/index.md")];
-  assert.deepEqual(parseRealmPages(valid), parseRealmPages([...valid].reverse()));
+  assert.deepEqual(parseAtlasPages(valid), parseAtlasPages([...valid].reverse()));
 
   const invalid = [
     text(".atlas/edges/z.md", "missing"),
     text(".atlas/anchors/a.md", "also missing"),
   ];
   assert.throws(
-    () => parseRealmPages(invalid),
+    () => parseAtlasPages(invalid),
     (error: unknown) =>
-      error instanceof RealmPageParseError && error.path === ".atlas/anchors/a.md",
+      error instanceof AtlasPageParseError && error.path === ".atlas/anchors/a.md",
   );
   assert.throws(
-    () => parseRealmPages([...invalid].reverse()),
+    () => parseAtlasPages([...invalid].reverse()),
     (error: unknown) =>
-      error instanceof RealmPageParseError && error.path === ".atlas/anchors/a.md",
+      error instanceof AtlasPageParseError && error.path === ".atlas/anchors/a.md",
   );
 
   const prefixPaths = [
@@ -328,19 +328,19 @@ test("reversed record input produces identical ordered pages and errors", () => 
     text(".atlas/concepts/a.md", validPage("custom:parent")),
   ];
   assert.deepEqual(
-    parseRealmPages(prefixPaths).map(({ source }) => source.path),
+    parseAtlasPages(prefixPaths).map(({ source }) => source.path),
     [".atlas/concepts/a.md", ".atlas/concepts/a.md/b.md"],
   );
 });
 
 test("schema and inferred TypeScript type describe the same envelope", () => {
   const page = {
-    atlas: {
-      "atlas-schema": "1.0.0",
+    sdk: {
+      "atlas-sdk-schema": "1.0.0",
       "created-at": "2026-08-17T00:00:00Z",
       "created-by": { kind: "agent", name: "Test Agent" },
       id: "custom:page",
-      "realm-schema": "2.0.0",
+      "local-atlas-schema": "2.0.0",
       tags: [],
       title: "Page",
       type: "custom",
@@ -348,26 +348,26 @@ test("schema and inferred TypeScript type describe the same envelope", () => {
       "updated-by": { kind: "human", name: "Test Reviewer" },
     },
     body: "Body",
-    realm: { nested: { enabled: true } },
+    atlas: { nested: { enabled: true } },
   };
 
-  assert.equal(checkRealmPageEnvelope(page), true);
+  assert.equal(checkAtlasPageEnvelope(page), true);
   assert.equal(
-    RealmPageEnvelopeSchema.$schema,
+    AtlasPageEnvelopeSchema.$schema,
     "https://json-schema.org/draft/2020-12/schema",
   );
-  assert.equal(RealmPageEnvelopeSchema.additionalProperties, false);
-  assert.equal(RealmPageEnvelopeSchema.properties.atlas.additionalProperties, false);
+  assert.equal(AtlasPageEnvelopeSchema.additionalProperties, false);
+  assert.equal(AtlasPageEnvelopeSchema.properties.sdk.additionalProperties, false);
 });
 
 test("JSON value schema accepts only nested JSON-compatible values", () => {
   const valid = {
-    atlas: {
-      "atlas-schema": "1",
+    sdk: {
+      "atlas-sdk-schema": "1",
       "created-at": "2026-08-17T00:00:00Z",
       "created-by": { kind: "agent", name: "Agent" },
       id: "custom:json",
-      "realm-schema": "2",
+      "local-atlas-schema": "2",
       tags: ["json"],
       title: "JSON",
       type: "custom",
@@ -375,9 +375,9 @@ test("JSON value schema accepts only nested JSON-compatible values", () => {
       "updated-by": { kind: "human", name: "Reviewer" },
     },
     body: "",
-    realm: { nested: [null, true, 3, "text", { value: false }] },
+    atlas: { nested: [null, true, 3, "text", { value: false }] },
   };
-  assert.equal(checkRealmPageEnvelope(valid), true);
+  assert.equal(checkAtlasPageEnvelope(valid), true);
 
   for (const value of [
     undefined,
@@ -388,9 +388,9 @@ test("JSON value schema accepts only nested JSON-compatible values", () => {
     Buffer.from("binary"),
   ]) {
     assert.equal(
-      checkRealmPageEnvelope({
+      checkAtlasPageEnvelope({
         ...valid,
-        realm: { value },
+        atlas: { value },
       }),
       false,
     );
@@ -398,7 +398,7 @@ test("JSON value schema accepts only nested JSON-compatible values", () => {
 });
 
 test("validates canonical date-time calendar and clock values", () => {
-  const withCreatedAt = (timestamp: string): RealmTextFile =>
+  const withCreatedAt = (timestamp: string): AtlasTextFile =>
     text(
       ".atlas/index.md",
       validPage("anchor:root").replace("2026-08-17T00:00:00Z", timestamp),
@@ -410,7 +410,7 @@ test("validates canonical date-time calendar and clock values", () => {
     "2026-08-17t12:34:56z",
     "2026-08-17T12:34:56+05:30",
   ]) {
-    assert.equal(parseRealmPages([withCreatedAt(timestamp)]).length, 1);
+    assert.equal(parseAtlasPages([withCreatedAt(timestamp)]).length, 1);
   }
   for (const timestamp of [
     "not-a-date",
@@ -429,7 +429,7 @@ test("does not mutate TypeBox date-time format registration", async () => {
   const sentinel = (): boolean => false;
   FormatRegistry.Set("date-time", sentinel);
   try {
-    const modulePath = "../src/domain/realm_page.ts?format-registry-isolation";
+    const modulePath = "../src/domain/atlas_page.ts?format-registry-isolation";
     await import(modulePath);
     assert.equal(FormatRegistry.Get("date-time"), sentinel);
   } finally {
@@ -442,7 +442,7 @@ test("does not mutate TypeBox date-time format registration", async () => {
 });
 
 test("accepts an empty body after an end-of-file delimiter", () => {
-  const [parsed] = parseRealmPages([text(".atlas/index.md", validPage("anchor:root"))]);
+  const [parsed] = parseAtlasPages([text(".atlas/index.md", validPage("anchor:root"))]);
   assert.ok(parsed);
   assert.equal(parsed.page.body, "");
   assert.deepEqual(parsed.source.body, { endLine: 15, startLine: 15 });

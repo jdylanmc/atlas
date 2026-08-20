@@ -2,4 +2,4 @@
 
 ---
 
-not: a Realm page
+not: an Atlas page

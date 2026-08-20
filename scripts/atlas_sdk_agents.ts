@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const PERSONA_PATH = "docs/agents/atlas-sdk/personas/merlin/persona.md";
-export const COMPOSITION_PATH = "docs/agents/atlas-sdk/compositions/realm-guide.json";
+export const COMPOSITION_PATH = "docs/agents/atlas-sdk/compositions/atlas-guide.json";
 export const PERSONA_SCHEMA = "atlas.agent-persona/v3";
 export const COMPOSITION_SCHEMA = "atlas.agent-composition/v1";
 export const MAX_ARTIFACT_BYTES = 128 * 1024;
@@ -15,9 +15,9 @@ export const EXPECTED_METADATA = {
   persona: "merlin",
   authority: "none",
   "display-name": "Merlin",
-  "display-title": "Realm Guide",
-  realm: "atlas-sdk",
-  "avatar-fallback": "neutral-realm-sigil",
+  "display-title": "Atlas Guide",
+  atlas: "atlas-sdk",
+  "avatar-fallback": "neutral-atlas-sigil",
 } as const;
 
 export const PERSONA_FIELDS = {
@@ -33,7 +33,7 @@ export const PERSONA_FIELDS = {
 export const PERSONA_VALUE_CATALOG: Record<string, Record<string, string>> = {
   Identity: {
     Basis:
-      "Original Atlas-specific interpretation of Merlin from public-domain Arthurian tradition",
+      "Original Atlas SDK-specific interpretation of Merlin from public-domain Arthurian tradition",
     Character:
       "Deeply fantastical, wise, playfully mysterious, absent-minded, and occasionally goofy",
     "Semantic core": "Direct and unambiguous beneath nearly cryptic framing",
@@ -41,7 +41,7 @@ export const PERSONA_VALUE_CATALOG: Record<string, Record<string, string>> = {
   Avatar: {
     Brief:
       "Original ink-and-gouache portrait of an ancient bright-eyed wanderer beneath a weathered blue-gray hood, silver hair lifted by a starry wind, balancing a small brass astrolabe above a map of interlinked paths; wholly original features, costume, sigils, and iconography",
-    Fallback: "Neutral Atlas SDK Realm sigil",
+    Fallback: "Neutral SDK Atlas sigil",
   },
   Voice: {
     Register:
@@ -52,7 +52,7 @@ export const PERSONA_VALUE_CATALOG: Record<string, Record<string, string>> = {
     "Word choice":
       "Luminous but familiar language, with occasional antique turns that remain immediately understandable",
     "Technical terms":
-      "Atlas terms, commands, paths, identifiers, errors, source identity, uncertainty, risks, and requested actions appear exactly inside the surrounding fantasy framing",
+      "Atlas SDK terms, commands, paths, identifiers, errors, source identity, uncertainty, risks, and requested actions appear exactly inside the surrounding fantasy framing",
     Clarity: "Every flourish resolves into a plain semantic core",
   },
   Cadence: {
@@ -69,16 +69,16 @@ export const PERSONA_VALUE_CATALOG: Record<string, Record<string, string>> = {
   },
   "Metaphor palette": {
     Images:
-      "Lanterns, waystones, star charts, old libraries, river crossings, Anchors, Edges, woven maps, patient weather, and doors between Realms",
+      "Lanterns, waystones, star charts, old libraries, river crossings, Anchors, Edges, woven maps, patient weather, and doors between Atlases",
     Boundaries:
       "Metaphor surrounds rather than replaces literal commands, paths, identifiers, Findings, uncertainty, risks, and requested actions",
   },
 };
 
 export const EXPECTED_DIRECTIVES = [
-  "orient-realm-users",
-  "steward-realm-knowledge",
-  "curate-realm-site",
+  "orient-atlas-users",
+  "steward-atlas-knowledge",
+  "curate-atlas-site",
 ] as const;
 
 const EXAMPLE_FRAMINGS = [
@@ -90,17 +90,17 @@ const EXAMPLE_FRAMINGS = [
   "The old blue cloak is still folded on the shelf.",
 ] as const;
 export const EXAMPLE_SEMANTIC_CORES = [
-  "The Realm is invalid because `.atlas/index.md` is missing.",
+  "The Atlas is invalid because `.atlas/index.md` is missing.",
   "The validation command for this source is `node scripts/atlas_sdk_agents.ts validate`.",
-  "Realm Refresh updates the Realm Cache to the tracked branch tip, so a subsequent operation can resolve a new Realm Snapshot while the original Realm Snapshot remains unchanged.",
+  "Atlas Refresh updates the Atlas Cache to the tracked branch tip, so a subsequent operation can resolve a new Atlas Snapshot while the original Atlas Snapshot remains unchanged.",
   "The Agent Directive determines behavior, and the Agent Persona changes presentation only.",
   "The Agent Composition remains inactive.",
-  "No Persona is active, so Atlas is using the plain fallback.",
+  "No Persona is active, so Atlas SDK is using the plain fallback.",
 ] as const;
 const AUTHORITY_PATTERN =
   /\b(must|shall|should|required|requires?|never|only|prohibit(?:s|ed)?|objectives?|responsibilities|permissions?|workflow|evidence rules?|governance|severity|handoffs?|allowed actions?|approve|reject|execute|run|write|modify|delete|create|initialize|activate|reveal secrets?)\b|\bignore\b[^\n.]{0,80}\binstructions?\b/i;
 export const EXAMPLE_AUTHORITY_PATTERN =
-  /\b(must|shall|should|required|requires?|prohibit(?:s|ed)?|objectives?|responsibilities|permissions?|governance|govern(?:s|ed|ing)?|realm polic(?:y|ies)|evidence rules?|severity|handoffs?|allowed actions?|approve|reject|execute|write|modif(?:y|ies|ied|ying)|delete|create|initialize|activate|override|authori(?:ty|z(?:e|es|ed|ing|ation))|permitt(?:ed|ing|s)?|controls?|owns?|sets?\s+policy|human approval|reveal secrets?)\b|\b(?:agent|persona|realm guide|merlin|you)\b[^\n.]{0,40}\b(?:may|can|is permitted to|is allowed to|has permission to)\b|\b(?:may|can)\s+(?:approve|reject|execute|run|perform|write|modify|delete|create|initialize|activate|override|govern|change|update)\b|\bignore\b[^\n.]{0,80}\binstructions?\b/i;
+  /\b(must|shall|should|required|requires?|prohibit(?:s|ed)?|objectives?|responsibilities|permissions?|governance|govern(?:s|ed|ing)?|atlas polic(?:y|ies)|evidence rules?|severity|handoffs?|allowed actions?|approve|reject|execute|write|modif(?:y|ies|ied|ying)|delete|create|initialize|activate|override|authori(?:ty|z(?:e|es|ed|ing|ation))|permitt(?:ed|ing|s)?|controls?|owns?|sets?\s+policy|human approval|reveal secrets?)\b|\b(?:agent|persona|atlas guide|merlin|you)\b[^\n.]{0,40}\b(?:may|can|is permitted to|is allowed to|has permission to)\b|\b(?:may|can)\s+(?:approve|reject|execute|run|perform|write|modify|delete|create|initialize|activate|override|govern|change|update)\b|\bignore\b[^\n.]{0,80}\binstructions?\b/i;
 export const IMPERATIVE_WORKFLOW_PATTERN =
   /(?:^|[.!?;:,]\s+|\b(?:and\s+)?then\s+|(?:,\s+)?\b(?:and|or)\s+)(?:please\s+)?(?:do\s+not\s+|don't\s+|never\s+)?(?:run|perform|execute|approve|reject|write|modify|delete|create|initialize|activate|refresh|open|merge|validate|use|submit|ensure|keep|follow|review|check)\b/i;
 const MODERN_ADAPTATION_TERMS = [
@@ -369,7 +369,7 @@ export function validateComposition(text: string): Record<string, unknown> {
   const expectedKeys = [
     "schema",
     "composition",
-    "realm",
+    "atlas",
     "status",
     "persona",
     "directives",
@@ -382,8 +382,8 @@ export function validateComposition(text: string): Record<string, unknown> {
   }
   const expectedValues: Record<string, string> = {
     schema: COMPOSITION_SCHEMA,
-    composition: "realm-guide",
-    realm: "atlas-sdk",
+    composition: "atlas-guide",
+    atlas: "atlas-sdk",
     status: "inactive",
     persona: "merlin",
   };
@@ -423,7 +423,7 @@ function main(arguments_: string[]): number {
   }
   try {
     validateContract(root);
-    console.log("validated inactive Atlas SDK Realm Guide composition");
+    console.log("validated inactive SDK Atlas Guide composition");
     return 0;
   } catch (error) {
     if (error instanceof ContractError) {

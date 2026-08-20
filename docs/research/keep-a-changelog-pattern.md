@@ -39,11 +39,11 @@ Keep a Changelog 2.0.0 specification released 2026-06-07.
 - Unrelated projects sharing a repository each keep their own changelog. Only
   one product split into components also keeps a central summary.
 
-## Atlas adaptation
+## Atlas SDK adaptation
 
-### Realm Changelog
+### Atlas Changelog
 
-Each Realm keeps `.atlas/CHANGELOG.md`. The Realm is versioned by dated
+Each Atlas keeps `.atlas/CHANGELOG.md`. The Atlas is versioned by dated
 knowledge revisions rather than software versions, and its preamble says so.
 One entry records one merged knowledge-changing operation, headed by its date
 and a short operation slug. There is no permanent `Unreleased` section,
@@ -55,16 +55,16 @@ runs — produce no entry at all, which also prevents an operation from
 modifying the pull request that verifies it.
 
 The operation drafts its entry inside its pull request and a human curates it
-during the same review that approves the knowledge change. Realms are
-sovereign, so a repository holding several Realms keeps one Changelog per
-Realm and no central roll-up. Knowledge later adjudicated false is marked
+during the same review that approves the knowledge change. Atlases are
+sovereign, so a repository holding several Atlases keeps one Changelog per
+Atlas and no central roll-up. Knowledge later adjudicated false is marked
 `[RETRACTED]` rather than deleted.
 
 ### Page amendment histories
 
 Principles, Policies, and Sources keep their own in-file amendment histories, which
 answer a different question than the Changelog: the provenance of one
-governed truth rather than the notable history of the Realm. Amendments use
+governed truth rather than the notable history of the Atlas. Amendments use
 monotonically increasing amendment numbers and ISO dates rather than software
 versions, and Source uses refresh numbers. Each amendment records the directing
 or approving human, the rationale, and a change reference.

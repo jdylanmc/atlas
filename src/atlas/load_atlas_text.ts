@@ -1,21 +1,21 @@
 import { compareCodePoints } from "./compare_code_points.ts";
 
-export interface CapturedRealmFile {
+export interface CapturedAtlasFile {
   readonly bytes: Uint8Array;
   readonly path: string;
 }
 
-export interface RealmTextFile {
+export interface AtlasTextFile {
   readonly content: string;
   readonly path: string;
 }
 
-export interface RealmTextBudgets {
+export interface AtlasTextBudgets {
   readonly maxFileBytes: number;
   readonly maxTotalBytes: number;
 }
 
-export type RealmLoadErrorCode =
+export type AtlasLoadErrorCode =
   | "DUPLICATE_PATH"
   | "FILE_TOO_LARGE"
   | "INVALID_BUDGET"
@@ -24,49 +24,49 @@ export type RealmLoadErrorCode =
   | "SHARED_BYTES_NOT_ALLOWED"
   | "TOTAL_TOO_LARGE";
 
-const messages: Readonly<Record<RealmLoadErrorCode, string>> = Object.freeze({
-  DUPLICATE_PATH: "Captured Realm files contain a duplicate normalized path.",
-  FILE_TOO_LARGE: "A captured Realm file exceeds the byte budget.",
-  INVALID_BUDGET: "Realm byte budgets must be non-negative safe integers.",
-  INVALID_PATH: "A captured Realm file has an invalid path.",
-  INVALID_UTF8: "A captured Realm file is not valid UTF-8.",
-  SHARED_BYTES_NOT_ALLOWED: "Captured Realm file bytes must not use shared memory.",
-  TOTAL_TOO_LARGE: "Captured Realm files exceed the total byte budget.",
+const messages: Readonly<Record<AtlasLoadErrorCode, string>> = Object.freeze({
+  DUPLICATE_PATH: "Captured Atlas files contain a duplicate normalized path.",
+  FILE_TOO_LARGE: "A captured Atlas file exceeds the byte budget.",
+  INVALID_BUDGET: "Atlas byte budgets must be non-negative safe integers.",
+  INVALID_PATH: "A captured Atlas file has an invalid path.",
+  INVALID_UTF8: "A captured Atlas file is not valid UTF-8.",
+  SHARED_BYTES_NOT_ALLOWED: "Captured Atlas file bytes must not use shared memory.",
+  TOTAL_TOO_LARGE: "Captured Atlas files exceed the total byte budget.",
 });
 
-export class RealmLoadError extends Error {
-  readonly code: RealmLoadErrorCode;
+export class AtlasLoadError extends Error {
+  readonly code: AtlasLoadErrorCode;
 
-  constructor(code: RealmLoadErrorCode) {
+  constructor(code: AtlasLoadErrorCode) {
     super(messages[code]);
-    this.name = "RealmLoadError";
+    this.name = "AtlasLoadError";
     this.code = code;
   }
 }
 
 function normalizePath(path: string): string {
   if (path.startsWith("/") || path.includes("\\") || path.includes("\0")) {
-    throw new RealmLoadError("INVALID_PATH");
+    throw new AtlasLoadError("INVALID_PATH");
   }
   const segments = path.split("/");
   if (segments.includes("..")) {
-    throw new RealmLoadError("INVALID_PATH");
+    throw new AtlasLoadError("INVALID_PATH");
   }
   const normalized = segments.filter((segment) => segment !== "" && segment !== ".");
   if (normalized.length < 2 || normalized[0] !== ".atlas") {
-    throw new RealmLoadError("INVALID_PATH");
+    throw new AtlasLoadError("INVALID_PATH");
   }
   return normalized.join("/");
 }
 
-function assertBudgets(budgets: RealmTextBudgets): void {
+function assertBudgets(budgets: AtlasTextBudgets): void {
   if (
     !Number.isSafeInteger(budgets.maxFileBytes) ||
     budgets.maxFileBytes < 0 ||
     !Number.isSafeInteger(budgets.maxTotalBytes) ||
     budgets.maxTotalBytes < 0
   ) {
-    throw new RealmLoadError("INVALID_BUDGET");
+    throw new AtlasLoadError("INVALID_BUDGET");
   }
 }
 
@@ -92,12 +92,12 @@ function hasSharedBackingBuffer(bytes: Uint8Array): boolean {
   }
 }
 
-export function loadRealmText(
-  capturedFiles: readonly CapturedRealmFile[],
-  budgets: RealmTextBudgets,
-): readonly RealmTextFile[] {
+export function loadAtlasText(
+  capturedFiles: readonly CapturedAtlasFile[],
+  budgets: AtlasTextBudgets,
+): readonly AtlasTextFile[] {
   if (capturedFiles.some((file) => hasSharedBackingBuffer(file.bytes))) {
-    throw new RealmLoadError("SHARED_BYTES_NOT_ALLOWED");
+    throw new AtlasLoadError("SHARED_BYTES_NOT_ALLOWED");
   }
   assertBudgets(budgets);
 
@@ -111,26 +111,26 @@ export function loadRealmText(
   let totalBytes = 0;
   for (const file of normalized) {
     if (file.path === previousPath) {
-      throw new RealmLoadError("DUPLICATE_PATH");
+      throw new AtlasLoadError("DUPLICATE_PATH");
     }
     previousPath = file.path;
     if (file.bytes.byteLength > budgets.maxFileBytes) {
-      throw new RealmLoadError("FILE_TOO_LARGE");
+      throw new AtlasLoadError("FILE_TOO_LARGE");
     }
     totalBytes += file.bytes.byteLength;
     if (totalBytes > budgets.maxTotalBytes) {
-      throw new RealmLoadError("TOTAL_TOO_LARGE");
+      throw new AtlasLoadError("TOTAL_TOO_LARGE");
     }
   }
 
   const decoder = new TextDecoder("utf-8", { fatal: true });
-  const files: RealmTextFile[] = [];
+  const files: AtlasTextFile[] = [];
   for (const file of normalized) {
     let content: string;
     try {
       content = decoder.decode(file.bytes);
     } catch {
-      throw new RealmLoadError("INVALID_UTF8");
+      throw new AtlasLoadError("INVALID_UTF8");
     }
     files.push(Object.freeze({ content, path: file.path }));
   }

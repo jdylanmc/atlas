@@ -1,7 +1,7 @@
 ---
-atlas:
-  atlas-schema: 1.0.0
-  realm-schema: 1.0.0
+sdk:
+  atlas-sdk-schema: 1.0.0
+  local-atlas-schema: 1.0.0
   id: duplicate:page
   type: concept
   title: Root
@@ -10,7 +10,7 @@ atlas:
   created-by: { kind: human, name: Fixture Author }
   updated-by: { kind: human, name: Fixture Author }
   tags: []
-realm: {}
+atlas: {}
 ---
 
 # Wrong

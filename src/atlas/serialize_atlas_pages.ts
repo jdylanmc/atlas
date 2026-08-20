@@ -7,30 +7,30 @@ import {
   type ToStringOptions,
 } from "yaml";
 import {
-  checkRealmPageEnvelope,
-  type RealmPageEnvelope,
-} from "../domain/realm_page.ts";
+  checkAtlasPageEnvelope,
+  type AtlasPageEnvelope,
+} from "../domain/atlas_page.ts";
 import { compareCodePoints } from "./compare_code_points.ts";
-import type { RealmTextFile } from "./load_realm_text.ts";
-import type { ParsedRealmPage } from "./parse_realm_pages.ts";
+import type { AtlasTextFile } from "./load_atlas_text.ts";
+import type { ParsedAtlasPage } from "./parse_atlas_pages.ts";
 
-export type RealmPageSerializeErrorCode =
+export type AtlasPageSerializeErrorCode =
   "DUPLICATE_PAGE_PATH" | "INVALID_PAGE_ENVELOPE" | "UNREPRESENTABLE_VALUE";
 
-const errorMessages: Readonly<Record<RealmPageSerializeErrorCode, string>> =
+const errorMessages: Readonly<Record<AtlasPageSerializeErrorCode, string>> =
   Object.freeze({
-    DUPLICATE_PAGE_PATH: "Realm pages share one canonical path.",
-    INVALID_PAGE_ENVELOPE: "Realm page does not satisfy the page envelope.",
-    UNREPRESENTABLE_VALUE: "Realm page frontmatter holds an unrepresentable value.",
+    DUPLICATE_PAGE_PATH: "Atlas pages share one canonical path.",
+    INVALID_PAGE_ENVELOPE: "Atlas page does not satisfy the page envelope.",
+    UNREPRESENTABLE_VALUE: "Atlas page frontmatter holds an unrepresentable value.",
   });
 
-export class RealmPageSerializeError extends Error {
-  readonly code: RealmPageSerializeErrorCode;
+export class AtlasPageSerializeError extends Error {
+  readonly code: AtlasPageSerializeErrorCode;
   readonly path: string;
 
-  constructor(code: RealmPageSerializeErrorCode, path: string) {
+  constructor(code: AtlasPageSerializeErrorCode, path: string) {
     super(errorMessages[code]);
-    this.name = "RealmPageSerializeError";
+    this.name = "AtlasPageSerializeError";
     this.code = code;
     this.path = path;
   }
@@ -101,7 +101,7 @@ function assertRepresentable(value: unknown, path: string): void {
         ? key === "length" || isArrayIndexKey(key)
         : Object.prototype.propertyIsEnumerable.call(value, key));
     if (!kept) {
-      throw new RealmPageSerializeError("UNREPRESENTABLE_VALUE", path);
+      throw new AtlasPageSerializeError("UNREPRESENTABLE_VALUE", path);
     }
   }
   const entries = isArray
@@ -131,14 +131,20 @@ function canonicalizeValue(value: unknown): unknown {
   return canonical;
 }
 
-function serializePage(page: RealmPageEnvelope): string {
-  const frontmatter = canonicalizeValue({ atlas: page.atlas, realm: page.realm });
+// The envelope's two blocks use a pinned order rather than sorted keys, so a page
+// opens with its identity instead of a usually-empty extension. Nested keys stay
+// sorted, and a fixed order is equally canonical: one input still yields one output.
+function serializePage(page: AtlasPageEnvelope): string {
+  const frontmatter = new Map<string, unknown>([
+    ["sdk", canonicalizeValue(page.sdk)],
+    ["atlas", canonicalizeValue(page.atlas)],
+  ]);
   return `---\n${stringify(frontmatter, canonicalYamlOptions)}---\n${page.body}`;
 }
 
-export function serializeRealmPages(
-  pages: readonly ParsedRealmPage[],
-): readonly RealmTextFile[] {
+export function serializeAtlasPages(
+  pages: readonly ParsedAtlasPage[],
+): readonly AtlasTextFile[] {
   const ordered = pages.toSorted((left, right) =>
     compareCodePoints(left.source.path, right.source.path),
   );
@@ -150,10 +156,10 @@ export function serializeRealmPages(
   for (const parsed of ordered) {
     const path = parsed.source.path;
     if (path === previousPath) {
-      throw new RealmPageSerializeError("DUPLICATE_PAGE_PATH", path);
+      throw new AtlasPageSerializeError("DUPLICATE_PAGE_PATH", path);
     }
-    if (!checkRealmPageEnvelope(parsed.page)) {
-      throw new RealmPageSerializeError("INVALID_PAGE_ENVELOPE", path);
+    if (!checkAtlasPageEnvelope(parsed.page)) {
+      throw new AtlasPageSerializeError("INVALID_PAGE_ENVELOPE", path);
     }
     assertRepresentable(parsed.page, path);
     previousPath = path;

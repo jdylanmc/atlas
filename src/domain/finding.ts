@@ -21,7 +21,7 @@ const FindingAttributionSchema = Type.Union([
   Type.Object(
     {
       checkId: Type.Readonly(Type.String({ minLength: 1, pattern: ".*\\S.*" })),
-      kind: Type.Readonly(Type.Literal("atlas-core")),
+      kind: Type.Readonly(Type.Literal("sdk-core")),
       trusted: Type.Readonly(Type.Literal(true)),
     },
     { additionalProperties: false },
@@ -29,7 +29,7 @@ const FindingAttributionSchema = Type.Union([
   Type.Object(
     {
       checkId: Type.Readonly(Type.String({ minLength: 1, pattern: ".*\\S.*" })),
-      kind: Type.Readonly(Type.Literal("realm-owned")),
+      kind: Type.Readonly(Type.Literal("atlas-owned")),
       trusted: Type.Readonly(Type.Literal(false)),
     },
     { additionalProperties: false },

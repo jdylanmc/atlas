@@ -11,7 +11,7 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
   - `chore(scope)` for repository maintenance, infrastructure, and planning maps
   - `docs(scope)` for documentation-only work
   - `research(scope)` for fact-finding that resolves an external unknown
-- Choose a short Atlas area for the scope, such as `realm`, `explore`, `ingest`,
+- Choose a short Atlas SDK area for the scope, such as `atlas`, `explore`, `ingest`,
   `lint`, `runtime`, `governance`, `agent`, `site`, `ci`, or `map`.
 - Workflow labels such as `wayfinder:grilling` remain separate from the title:
   the title describes the outcome category; the label describes how the issue
@@ -47,7 +47,7 @@ Run `gh issue view <number> --comments`.
 
 ## Planning issue lifecycle
 
-Atlas owns its `/spec` to `/tickets` planning chain directly; it does not depend
+Atlas SDK owns its `/spec` to `/tickets` planning chain directly; it does not depend
 on an external skill setup or triage-label vocabulary.
 
 - A **specification** is one unlabeled parent issue that preserves the complete
@@ -55,10 +55,10 @@ on an external skill setup or triage-label vocabulary.
   item and must not receive `ready-for-agent`.
 - An **implementation ticket** is a reviewed tracer-bullet child that fits one
   fresh agent context and is independently verifiable. These issues receive the
-  Atlas-owned `ready-for-agent` label.
+  SDK-owned `ready-for-agent` label.
 - `/tickets` owns that label and may create it idempotently when absent with
   color `0E8A16` and description
-  `Implementation-ready Atlas tracer-bullet ticket`.
+  `Implementation-ready Atlas SDK tracer-bullet ticket`.
 - `/spec` and `/tickets` search for exact-title duplicates before publication.
   They never require or invoke `/setup-matt-pocock-skills`.
 - `/tickets` verifies every created issue, native sub-issue relationship, and

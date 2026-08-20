@@ -1,0 +1,12 @@
+{
+  "schema": "atlas.agent-composition/v1",
+  "composition": "atlas-guide",
+  "atlas": "atlas-sdk",
+  "status": "inactive",
+  "persona": "merlin",
+  "directives": [
+    "orient-atlas-users",
+    "steward-atlas-knowledge",
+    "curate-atlas-site"
+  ]
+}

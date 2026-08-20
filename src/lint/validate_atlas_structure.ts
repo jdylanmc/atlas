@@ -15,20 +15,20 @@ import { toString } from "mdast-util-to-string";
 import { gfmFootnote } from "micromark-extension-gfm-footnote";
 import { isScalar, parseDocument, type Node, type Pair, type YAMLMap } from "yaml";
 import type { Finding } from "../domain/finding.ts";
-import type { RealmTextFile } from "../realm/load_realm_text.ts";
+import type { AtlasTextFile } from "../atlas/load_atlas_text.ts";
 import {
-  classifyRealmTextPath,
-  parseRealmPages,
-  RealmPageParseError,
-  type ParsedRealmPage,
-} from "../realm/parse_realm_pages.ts";
+  classifyAtlasTextPath,
+  parseAtlasPages,
+  AtlasPageParseError,
+  type ParsedAtlasPage,
+} from "../atlas/parse_atlas_pages.ts";
 
 type FindingLocation = NonNullable<Finding["location"]>;
 type MarkdownPosition = NonNullable<Nodes["position"]>;
 
 const attribution = Object.freeze({
-  checkId: "atlas-core.structural-validation",
-  kind: "atlas-core" as const,
+  checkId: "sdk-core.structural-validation",
+  kind: "sdk-core" as const,
   trusted: true as const,
 });
 
@@ -39,9 +39,9 @@ const parseCodes = Object.freeze({
 });
 
 const parseMessages = Object.freeze({
-  INVALID_PAGE_ENVELOPE: "Realm page frontmatter does not satisfy the page envelope.",
-  MALFORMED_FRONTMATTER: "Realm page frontmatter is malformed.",
-  MISSING_FRONTMATTER: "Realm page frontmatter is missing.",
+  INVALID_PAGE_ENVELOPE: "Atlas page frontmatter does not satisfy the page envelope.",
+  MALFORMED_FRONTMATTER: "Atlas page frontmatter is malformed.",
+  MISSING_FRONTMATTER: "Atlas page frontmatter is missing.",
 });
 
 const corePathTypes = Object.freeze({
@@ -128,7 +128,7 @@ function pairFor(map: unknown, key: string): Pair<Node, Node> {
   ) as Pair<Node, Node>;
 }
 
-function atlasKeyLocation(
+function sdkKeyLocation(
   content: string,
   key: "created-at" | "id" | "type" | "updated-at",
 ): FindingLocation {
@@ -141,8 +141,8 @@ function atlasKeyLocation(
     strict: true,
     uniqueKeys: true,
   });
-  const atlas = pairFor(document.contents, "atlas");
-  const target = pairFor(atlas.value, key);
+  const sdk = pairFor(document.contents, "sdk");
+  const target = pairFor(sdk.value, key);
   const range = target.key.range as [number, number, number];
   return rangeAt(content, openingLength + range[0], openingLength + range[1]);
 }
@@ -161,7 +161,7 @@ function customTypeName(path: string): string | undefined {
 }
 
 function markdownLocation(
-  parsed: ParsedRealmPage,
+  parsed: ParsedAtlasPage,
   position: MarkdownPosition,
 ): FindingLocation {
   return {
@@ -177,7 +177,7 @@ function markdownLocation(
 }
 
 function markdownHeadingFinding(
-  parsed: ParsedRealmPage,
+  parsed: ParsedAtlasPage,
   content: string,
   tree: Nodes,
 ): Finding | undefined {
@@ -190,15 +190,15 @@ function markdownHeadingFinding(
         : markdownLocation(parsed, position);
     return finding(
       "ATLAS_PAGE_TITLE_H1_REQUIRED",
-      "The first substantive Markdown block must be an H1 matching the Atlas title.",
+      "The first substantive Markdown block must be an H1 matching the page title.",
       parsed.source.path,
       location,
     );
   }
-  if (toString(first) === parsed.page.atlas.title) return undefined;
+  if (toString(first) === parsed.page.sdk.title) return undefined;
   return finding(
     "ATLAS_PAGE_TITLE_H1_MISMATCH",
-    "The first Markdown H1 must exactly match the Atlas title.",
+    "The first Markdown H1 must exactly match the page title.",
     parsed.source.path,
     markdownLocation(parsed, first.position as MarkdownPosition),
   );
@@ -255,7 +255,7 @@ function citationTargets(
 }
 
 /**
- * Normalizes one Citation target to its canonical Realm-relative Source page path.
+ * Normalizes one Citation target to its canonical Atlas-relative Source page path.
  * Fragments, aliases, extensions, traversal, and non-canonical segments are
  * rejected outright rather than repaired.
  */
@@ -289,13 +289,13 @@ const targetCodes = Object.freeze({
 
 const targetMessages = Object.freeze({
   invalid:
-    "Citation target must be a canonical Realm-relative path without fragment, alias, extension, or traversal.",
+    "Citation target must be a canonical Atlas-relative path without fragment, alias, extension, or traversal.",
   missing: "Citation target must resolve to an existing local Source page.",
-  "not-source": "Citation target must address a Realm Source page.",
+  "not-source": "Citation target must address an Atlas Source page.",
 });
 
 function offsetLocation(
-  parsed: ParsedRealmPage,
+  parsed: ParsedAtlasPage,
   origin: MarkdownPosition,
   target: CitationTarget,
 ): FindingLocation {
@@ -643,8 +643,8 @@ function citationSourceRanges(
  * canonical footnote identifier; source labels and positions stay separate.
  */
 function validateCitations(
-  file: RealmTextFile,
-  parsed: ParsedRealmPage,
+  file: AtlasTextFile,
+  parsed: ParsedAtlasPage,
   tree: Nodes,
   pagePaths: ReadonlySet<string>,
   findings: Finding[],
@@ -680,7 +680,7 @@ function validateCitations(
       findings.push(
         finding(
           "ATLAS_CITATION_DEFINITION_MALFORMED",
-          "Citation definition must contain exactly one Realm-local Source target.",
+          "Citation definition must contain exactly one Atlas-local Source target.",
           file.path,
           markdownLocation(parsed, position),
         ),
@@ -731,19 +731,19 @@ function validateCitations(
 }
 
 function validatePage(
-  file: RealmTextFile,
-  parsed: ParsedRealmPage,
+  file: AtlasTextFile,
+  parsed: ParsedAtlasPage,
   tree: Nodes,
   findings: Finding[],
 ): void {
   const expected = expectedType(file.path);
-  if (parsed.page.atlas.type !== expected) {
+  if (parsed.page.sdk.type !== expected) {
     findings.push(
       finding(
         "ATLAS_PAGE_TYPE_PATH_MISMATCH",
-        "Realm page type does not match its registered path.",
+        "Atlas page type does not match its registered path.",
         file.path,
-        atlasKeyLocation(file.content, "type"),
+        sdkKeyLocation(file.content, "type"),
       ),
     );
   }
@@ -753,19 +753,19 @@ function validatePage(
     findings.push(
       finding(
         "ATLAS_CUSTOM_TYPE_NAME_RESERVED",
-        "Realm-owned custom type paths cannot use an Atlas core archetype name.",
+        "Atlas-owned custom type paths cannot use an Atlas SDK core archetype name.",
         file.path,
       ),
     );
   }
 
-  if (file.path === ".atlas/index.md" && parsed.page.atlas.id !== "anchor:root") {
+  if (file.path === ".atlas/index.md" && parsed.page.sdk.id !== "anchor:root") {
     findings.push(
       finding(
         "ATLAS_ROOT_ANCHOR_ID_INVALID",
         "The Root Anchor must use the stable ID anchor:root.",
         file.path,
-        atlasKeyLocation(file.content, "id"),
+        sdkKeyLocation(file.content, "id"),
       ),
     );
   }
@@ -774,26 +774,26 @@ function validatePage(
   if (heading !== undefined) findings.push(heading);
 
   if (
-    Date.parse(parsed.page.atlas["created-at"]) >
-    Date.parse(parsed.page.atlas["updated-at"])
+    Date.parse(parsed.page.sdk["created-at"]) >
+    Date.parse(parsed.page.sdk["updated-at"])
   ) {
     findings.push(
       finding(
         "ATLAS_PAGE_UPDATED_BEFORE_CREATED",
-        "Realm page updated-at must not precede created-at.",
+        "Atlas page updated-at must not precede created-at.",
         file.path,
-        atlasKeyLocation(file.content, "updated-at"),
+        sdkKeyLocation(file.content, "updated-at"),
       ),
     );
   }
 }
 
-function parseOne(file: RealmTextFile): ParsedRealmPage | Finding {
+function parseOne(file: AtlasTextFile): ParsedAtlasPage | Finding {
   try {
-    const [parsed] = parseRealmPages([file]);
-    return parsed as ParsedRealmPage;
+    const [parsed] = parseAtlasPages([file]);
+    return parsed as ParsedAtlasPage;
   } catch (error: unknown) {
-    if (error instanceof RealmPageParseError) {
+    if (error instanceof AtlasPageParseError) {
       return finding(
         parseCodes[error.code],
         parseMessages[error.code],
@@ -804,7 +804,7 @@ function parseOne(file: RealmTextFile): ParsedRealmPage | Finding {
     /* c8 ignore next 6 -- parser internals may fail without exposing details */
     return finding(
       "ATLAS_PAGE_PARSE_FAILED",
-      "Realm page could not be parsed.",
+      "Atlas page could not be parsed.",
       file.path,
     );
   }
@@ -822,31 +822,31 @@ function compareFindings(left: Finding, right: Finding): number {
   return code === 0 ? compareCodePoints(left.message, right.message) : code;
 }
 
-function capturePageRecord(input: RealmTextFile): RealmTextFile | Finding | undefined {
+function capturePageRecord(input: AtlasTextFile): AtlasTextFile | Finding | undefined {
   let path = ".atlas/unknown";
   try {
     const candidatePath = (input as { readonly path?: unknown }).path;
     if (typeof candidatePath !== "string") throw new TypeError();
     path = candidatePath;
-    if (classifyRealmTextPath(path) !== "page") return undefined;
+    if (classifyAtlasTextPath(path) !== "page") return undefined;
     const content = (input as { readonly content?: unknown }).content;
     if (typeof content !== "string") throw new TypeError();
     return Object.freeze({ content, path });
   } catch {
-    return finding("ATLAS_PAGE_PARSE_FAILED", "Realm page could not be parsed.", path);
+    return finding("ATLAS_PAGE_PARSE_FAILED", "Atlas page could not be parsed.", path);
   }
 }
 
 /**
- * Parses and validates captured Realm text, returning deeply immutable Findings
+ * Parses and validates captured Atlas text, returning deeply immutable Findings
  * ordered by path, source position, code, then message using Unicode code points.
  * Opaque Framework, Changelog, and non-page Markdown records produce no Findings.
  */
-export function validateRealmStructure(
-  files: readonly RealmTextFile[],
+export function validateAtlasStructure(
+  files: readonly AtlasTextFile[],
 ): readonly Finding[] {
   const findings: Finding[] = [];
-  const pageRecords: RealmTextFile[] = [];
+  const pageRecords: AtlasTextFile[] = [];
   for (const input of files) {
     const captured = capturePageRecord(input);
     if (captured === undefined) continue;
@@ -856,7 +856,7 @@ export function validateRealmStructure(
   pageRecords.sort((left, right) => compareCodePoints(left.path, right.path));
 
   const pagePaths: ReadonlySet<string> = new Set(pageRecords.map((file) => file.path));
-  const parsed: { readonly file: RealmTextFile; readonly page: ParsedRealmPage }[] = [];
+  const parsed: { readonly file: AtlasTextFile; readonly page: ParsedAtlasPage }[] = [];
   for (const file of pageRecords) {
     const result = parseOne(file);
     if ("code" in result) findings.push(result);
@@ -872,7 +872,7 @@ export function validateRealmStructure(
     findings.push(
       finding(
         "ATLAS_ROOT_ANCHOR_REQUIRED",
-        "Realm must contain the Root Anchor at .atlas/index.md.",
+        "Atlas must contain the Root Anchor at .atlas/index.md.",
         ".atlas/index.md",
       ),
     );
@@ -880,8 +880,8 @@ export function validateRealmStructure(
 
   const ids = new Map<string, typeof parsed>();
   for (const entry of parsed) {
-    const matches = ids.get(entry.page.page.atlas.id);
-    if (matches === undefined) ids.set(entry.page.page.atlas.id, [entry]);
+    const matches = ids.get(entry.page.page.sdk.id);
+    if (matches === undefined) ids.set(entry.page.page.sdk.id, [entry]);
     else matches.push(entry);
   }
   for (const entries of ids.values()) {
@@ -890,9 +890,9 @@ export function validateRealmStructure(
       findings.push(
         finding(
           "ATLAS_PAGE_ID_DUPLICATE",
-          "Realm page stable ID must be unique within the Realm.",
+          "Atlas page stable ID must be unique within the Atlas.",
           file.path,
-          atlasKeyLocation(file.content, "id"),
+          sdkKeyLocation(file.content, "id"),
         ),
       );
     }

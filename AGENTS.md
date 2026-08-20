@@ -6,4 +6,4 @@ Issues and specifications are tracked in GitHub Issues. See `docs/agents/issue-t
 
 ### Domain docs
 
-Atlas uses a single-context domain-documentation layout. See `docs/agents/domain.md`.
+Atlas SDK uses a single-context domain-documentation layout. See `docs/agents/domain.md`.
