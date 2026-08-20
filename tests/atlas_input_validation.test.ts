@@ -2,18 +2,22 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
-import { checkFinding } from "../src/domain/finding.ts";
+import { checkFinding, type Finding } from "../src/domain/finding.ts";
 import type {
   CapturedAtlasFile,
   AtlasTextBudgets,
 } from "../src/atlas/load_atlas_text.ts";
-import {
-  loadAndValidateAtlasInput,
-  validateAtlasInput,
-} from "../src/lint/validate_atlas_input.ts";
+import { loadAndValidateAtlasInput } from "../src/lint/validate_atlas_input.ts";
 
 const encoder = new TextEncoder();
 const fixturesRoot = resolve(import.meta.dirname, "fixtures", "atlas-pages");
+
+function findingsOf(
+  files: readonly CapturedAtlasFile[],
+  budgets: AtlasTextBudgets,
+): readonly Finding[] {
+  return loadAndValidateAtlasInput(files, budgets).findings;
+}
 
 const generousBudgets: AtlasTextBudgets = Object.freeze({
   maxFileBytes: 4096,
@@ -45,12 +49,12 @@ const inputAttribution = Object.freeze({
 });
 
 test("accepts a valid complete captured Atlas with no Findings", () => {
-  assert.deepEqual(validateAtlasInput(completeAtlas(), generousBudgets), []);
+  assert.deepEqual(findingsOf(completeAtlas(), generousBudgets), []);
 });
 
 test("reports a loading failure as one stable attributed Finding", () => {
   const budgets: AtlasTextBudgets = { maxFileBytes: 4096, maxTotalBytes: 200 };
-  const findings = validateAtlasInput(completeAtlas(), budgets);
+  const findings = findingsOf(completeAtlas(), budgets);
 
   assert.deepEqual(findings, [
     {
@@ -66,8 +70,8 @@ test("reports a loading failure as one stable attributed Finding", () => {
   for (const finding of findings) assert.equal(checkFinding(finding), true);
 
   // Identical bytes, and reversed input order, produce identical ordered Findings.
-  assert.deepEqual(validateAtlasInput(completeAtlas(), budgets), findings);
-  assert.deepEqual(validateAtlasInput(completeAtlas().toReversed(), budgets), findings);
+  assert.deepEqual(findingsOf(completeAtlas(), budgets), findings);
+  assert.deepEqual(findingsOf(completeAtlas().toReversed(), budgets), findings);
 });
 
 test("maps distinct loading failures to distinct diagnostic codes", () => {
@@ -76,22 +80,19 @@ test("maps distinct loading failures to distinct diagnostic codes", () => {
     { bytes: new Uint8Array([0xc3, 0x28]), path: ".atlas/concepts/bad.md" },
   ];
   assert.equal(
-    validateAtlasInput(invalidUtf8, generousBudgets)[0]?.code,
+    findingsOf(invalidUtf8, generousBudgets)[0]?.code,
     "ATLAS_LOAD_INVALID_UTF8",
   );
 
-  const oversizedFile = validateAtlasInput(
-    [captured(".atlas/index.md", "0123456789")],
-    {
-      maxFileBytes: 4,
-      maxTotalBytes: 64,
-    },
-  );
+  const oversizedFile = findingsOf([captured(".atlas/index.md", "0123456789")], {
+    maxFileBytes: 4,
+    maxTotalBytes: 64,
+  });
   assert.equal(oversizedFile[0]?.code, "ATLAS_LOAD_FILE_TOO_LARGE");
 });
 
 test("sanitizes loading failures and never leaks the offending raw path", () => {
-  const findings = validateAtlasInput(
+  const findings = findingsOf(
     [
       captured(".atlas/index.md", "ok"),
       { bytes: encoder.encode("x"), path: "/.atlas/secret-evil.md" },
@@ -112,7 +113,7 @@ test("reports a parsing failure with a diagnostic code and source location", () 
       ? captured(file.path, "# Missing frontmatter\n")
       : file,
   );
-  const findings = validateAtlasInput(atlas, generousBudgets);
+  const findings = findingsOf(atlas, generousBudgets);
 
   assert.deepEqual(
     findings.map(({ attribution, code, location, path }) => ({
@@ -137,11 +138,11 @@ test("reports a parsing failure with a diagnostic code and source location", () 
   for (const finding of findings) assert.equal(checkFinding(finding), true);
 
   // Identical invalid bytes produce identical ordered Findings across runs.
-  assert.deepEqual(validateAtlasInput(atlas, generousBudgets), findings);
+  assert.deepEqual(findingsOf(atlas, generousBudgets), findings);
 });
 
 test("returns a deeply frozen Finding collection", () => {
-  const findings = validateAtlasInput(completeAtlas(), {
+  const findings = findingsOf(completeAtlas(), {
     maxFileBytes: 4096,
     maxTotalBytes: 200,
   });
@@ -178,7 +179,7 @@ test("carries no text when loading itself failed", () => {
   assert.equal(validated.findings[0]?.code, "ATLAS_LOAD_TOTAL_TOO_LARGE");
 });
 
-test("reports a captured file that cannot be read at all", () => {
+test("reports captured bytes the running program cannot hand over", () => {
   const atlas = completeAtlas().map((file, index) =>
     index === 0
       ? {
@@ -190,7 +191,30 @@ test("reports a captured file that cannot be read at all", () => {
       : file,
   );
 
-  const findings = validateAtlasInput(atlas, generousBudgets);
+  const findings = findingsOf(atlas, generousBudgets);
+
+  assert.deepEqual(findings, [
+    {
+      attribution: inputAttribution,
+      code: "ATLAS_CAPTURE_UNREADABLE",
+      "finding-schema": "1.0.0",
+      message:
+        "Captured Atlas files could not be read from the program running the Lint.",
+      path: ".atlas",
+      severity: "error",
+    },
+  ]);
+  for (const finding of findings) assert.equal(checkFinding(finding), true);
+});
+
+test("reports captured bytes loading refuses without describing why", () => {
+  const atlas = completeAtlas().map((file, index) =>
+    index === 0
+      ? ({ bytes: "not bytes at all", path: file.path } as unknown as CapturedAtlasFile)
+      : file,
+  );
+
+  const findings = findingsOf(atlas, generousBudgets);
 
   assert.deepEqual(findings, [
     {

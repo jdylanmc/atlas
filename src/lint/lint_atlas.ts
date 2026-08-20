@@ -4,12 +4,25 @@ import type {
   AtlasTextFile,
   CapturedAtlasFile,
 } from "../atlas/load_atlas_text.ts";
-import { parseAtlasPages } from "../atlas/parse_atlas_pages.ts";
+import { classifyAtlasTextPath, parseAtlasPages } from "../atlas/parse_atlas_pages.ts";
 import { serializeAtlasPages } from "../atlas/serialize_atlas_pages.ts";
 import { loadAndValidateAtlasInput } from "./validate_atlas_input.ts";
 
 export interface ValidAtlasLint {
+  /**
+   * Findings that report on the Atlas without denying its validity: warnings,
+   * suggestions, inconclusive verdicts, and skipped checks.
+   */
+  readonly findings: readonly Finding[];
+  /**
+   * The records Lint reads as text rather than as pages - the Changelog, the
+   * Framework Bundle, and any other non-page Markdown - carried exactly as they
+   * were loaded. They have no page envelope to normalize, so normalizing them
+   * would rewrite bytes Lint has no contract over.
+   */
+  readonly opaque: readonly AtlasTextFile[];
   readonly outcome: "valid";
+  /** Every Atlas page, normalized and reserialized to its canonical bytes. */
   readonly pages: readonly AtlasTextFile[];
 }
 
@@ -19,42 +32,98 @@ export interface InvalidAtlasLint {
 }
 
 /**
- * One Lint result over one whole Atlas. The two outcomes carry disjoint
- * evidence, so an invalid Atlas cannot present canonical pages and a valid one
- * cannot present Findings: a caller reading `pages` has already proven the
- * Atlas valid.
+ * One Lint result over one whole Atlas. Only a valid Atlas carries text, so an
+ * invalid Atlas can present neither canonical pages nor the records beside
+ * them: a caller reading `pages` has already proven the Atlas valid.
  */
 export type AtlasLintResult = ValidAtlasLint | InvalidAtlasLint;
+
+// The Lint boundary answers every caller with a verdict, so a failure no stage
+// described - a defect in Atlas SDK itself, or a limit of the process running
+// it - is reported rather than raised. The Finding says the Lint did not
+// complete instead of describing knowledge it never read, and it names the
+// Atlas alone, so nothing about the failure can leak through it. Building it
+// once means reporting it needs no memory the failure may have exhausted.
+const lintFailedResult: AtlasLintResult = Object.freeze({
+  findings: Object.freeze([
+    Object.freeze({
+      attribution: Object.freeze({
+        checkId: "sdk-core.atlas-lint",
+        kind: "sdk-core" as const,
+        trusted: true as const,
+      }),
+      code: "ATLAS_LINT_FAILED",
+      "finding-schema": "1.0.0",
+      message: "Atlas could not be linted.",
+      path: ".atlas",
+      severity: "error",
+    }),
+  ]),
+  outcome: "invalid" as const,
+});
+
+/**
+ * Decides whether a set of Findings denies an Atlas its validity. A Finding is
+ * an error, a warning, a suggestion, an inconclusive verdict, or a skipped
+ * check, and only an error says the Atlas is invalid; every other Finding
+ * reports on an Atlas that still holds together.
+ */
+export function deniesAtlasValidity(findings: readonly Finding[]): boolean {
+  return findings.some((finding) => finding.severity === "error");
+}
+
+function decideAtlasLint(
+  capturedFiles: readonly CapturedAtlasFile[],
+  budgets: AtlasTextBudgets,
+): AtlasLintResult {
+  const { files, findings } = loadAndValidateAtlasInput(capturedFiles, budgets);
+  if (deniesAtlasValidity(findings)) {
+    return Object.freeze({ findings, outcome: "invalid" as const });
+  }
+
+  // Structural validation parsed exactly this text and denied it nothing, so
+  // parsing it again reaches the same pages, and serialization asks only for
+  // what the parser's envelope contract already guarantees over paths loading
+  // has already proven unique. Anything those stages still refuse is answered
+  // at the boundary rather than raised.
+  const pages = serializeAtlasPages(parseAtlasPages(files));
+  return Object.freeze({
+    findings,
+    opaque: Object.freeze(
+      files.filter((file) => classifyAtlasTextPath(file.path) === "opaque"),
+    ),
+    outcome: "valid" as const,
+    pages,
+  });
+}
 
 /**
  * Lints one complete captured Atlas: immutable loading, canonical page parsing,
  * and trusted structural validation decide the outcome, and a valid Atlas is
- * normalized and reserialized to its canonical bytes.
+ * normalized and reserialized, its pages to their canonical bytes and its
+ * opaque records unchanged.
  *
- * An Atlas that produces any Finding returns those Findings alone. No page is
+ * An Atlas any check finds an error in returns those Findings alone. No page is
  * serialized in that case, so a partially normalized or success-shaped result
- * can never be mistaken for a completed Lint.
+ * can never be mistaken for a completed Lint. Lint is a boundary over untrusted
+ * content, so it always answers with a verdict: content it cannot read becomes
+ * a Finding rather than an exception its caller must survive.
  *
  * The captured bytes are loaded exactly once and every later stage reads that
- * one immutable text, so serialization can only ever normalize the same content
+ * one immutable text, so serialization can only ever normalize the content
  * structural validation accepted, and nothing a caller does to its own bytes
- * afterwards can change what was judged. All stages are pure functions of that
- * text, so identical input yields identical ordered Findings and identical
- * canonical pages.
+ * afterwards can change what was judged. Every stage decides from the text
+ * alone, and declared bounds keep nesting from ever reaching the limits of the
+ * process, so identical input yields identical ordered Findings and identical
+ * canonical pages on every run.
  */
 export function lintAtlas(
   capturedFiles: readonly CapturedAtlasFile[],
   budgets: AtlasTextBudgets,
 ): AtlasLintResult {
-  const { files, findings } = loadAndValidateAtlasInput(capturedFiles, budgets);
-  if (findings.length > 0) {
-    return Object.freeze({ findings, outcome: "invalid" as const });
+  try {
+    return decideAtlasLint(capturedFiles, budgets);
+  } catch {
+    return lintFailedResult;
   }
-
-  // Structural validation parsed exactly this text and reported nothing, so
-  // parsing it again cannot fail, and serialization asks only for what the
-  // parser's envelope contract already guarantees over paths loading has
-  // already proven unique.
-  const pages = serializeAtlasPages(parseAtlasPages(files));
-  return Object.freeze({ outcome: "valid" as const, pages });
 }

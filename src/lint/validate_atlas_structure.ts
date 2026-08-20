@@ -23,11 +23,12 @@ import {
 import type { Finding, FindingLocation } from "../domain/finding.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import type { AtlasTextFile } from "../atlas/load_atlas_text.ts";
+import { rethrowProcessLimit } from "../atlas/process_limit.ts";
 import { positionIndex } from "./source_position.ts";
 import { sdkFindings } from "./sdk_finding.ts";
 import {
   classifyAtlasTextPath,
-  parseAtlasPages,
+  parseAtlasPage,
   AtlasPageParseError,
   type ParsedAtlasPage,
 } from "../atlas/parse_atlas_pages.ts";
@@ -37,12 +38,14 @@ type MarkdownPosition = NonNullable<Nodes["position"]>;
 const finding = sdkFindings("sdk-core.structural-validation");
 
 const parseCodes = Object.freeze({
+  FRONTMATTER_TOO_DEEP: "ATLAS_PAGE_FRONTMATTER_TOO_DEEP",
   INVALID_PAGE_ENVELOPE: "ATLAS_PAGE_INVALID_ENVELOPE",
   MALFORMED_FRONTMATTER: "ATLAS_PAGE_MALFORMED_FRONTMATTER",
   MISSING_FRONTMATTER: "ATLAS_PAGE_MISSING_FRONTMATTER",
 });
 
 const parseMessages = Object.freeze({
+  FRONTMATTER_TOO_DEEP: "Atlas page frontmatter nests deeper than Atlas SDK reads.",
   INVALID_PAGE_ENVELOPE: "Atlas page frontmatter does not satisfy the page envelope.",
   MALFORMED_FRONTMATTER: "Atlas page frontmatter is malformed.",
   MISSING_FRONTMATTER: "Atlas page frontmatter is missing.",
@@ -741,25 +744,33 @@ function validatePage(
 }
 
 function parseOne(file: AtlasTextFile): ParsedAtlasPage | Finding {
-  try {
-    const [parsed] = parseAtlasPages([file]);
-    return parsed as ParsedAtlasPage;
-  } catch (error: unknown) {
-    if (error instanceof AtlasPageParseError) {
-      return finding(
-        parseCodes[error.code],
-        parseMessages[error.code],
-        file.path,
-        lineLocation(file.content, error.sourceLine),
-      );
+  const parsed = parseAtlasPage(file);
+  if (!(parsed instanceof AtlasPageParseError)) return parsed;
+  return finding(
+    parseCodes[parsed.code],
+    parseMessages[parsed.code],
+    file.path,
+    lineLocation(file.content, parsed.sourceLine),
+  );
+}
+
+// Every nested Markdown block costs at least one quote marker or two columns of
+// indentation, so this scan can only overstate the nesting it measures.
+const maxBodyNestingDepth = 64;
+
+function bodyNestingBound(body: string): number {
+  let bound = 0;
+  for (const line of body.split("\n")) {
+    let quotes = 0;
+    let spaces = 0;
+    for (const character of line) {
+      if (character === ">") quotes += 1;
+      else if (character === " ") spaces += 1;
+      else break;
     }
-    /* c8 ignore next 6 -- parser internals may fail without exposing details */
-    return finding(
-      "ATLAS_PAGE_PARSE_FAILED",
-      "Atlas page could not be parsed.",
-      file.path,
-    );
+    bound = Math.max(bound, quotes + Math.floor(spaces / 2) + 1);
   }
+  return bound;
 }
 
 function compareFindings(left: Finding, right: Finding): number {
@@ -784,7 +795,8 @@ function capturePageRecord(input: AtlasTextFile): AtlasTextFile | Finding | unde
     const content = (input as { readonly content?: unknown }).content;
     if (typeof content !== "string") throw new TypeError();
     return Object.freeze({ content, path });
-  } catch {
+  } catch (error: unknown) {
+    rethrowProcessLimit(error);
     return finding("ATLAS_PAGE_PARSE_FAILED", "Atlas page could not be parsed.", path);
   }
 }
@@ -813,6 +825,19 @@ export function validateAtlasStructure(
     const result = parseOne(file);
     if ("code" in result) findings.push(result);
     else {
+      // Reading Markdown costs more than the bytes it holds, because nesting
+      // multiplies the work each block costs, so a body nesting deeper than
+      // Atlas SDK reads is reported from a scan of the text rather than parsed.
+      if (bodyNestingBound(result.page.body) > maxBodyNestingDepth) {
+        findings.push(
+          finding(
+            "ATLAS_PAGE_BODY_TOO_DEEP",
+            "Atlas page body nests deeper than Atlas SDK reads.",
+            file.path,
+          ),
+        );
+        continue;
+      }
       const tree = fromMarkdown(result.page.body, markdownOptions);
       parsed.push({ file, page: result });
       validatePage(file, result, tree, findings);

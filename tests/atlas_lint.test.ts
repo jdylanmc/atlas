@@ -2,15 +2,21 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
-import { checkFinding } from "../src/domain/finding.ts";
+import { checkFinding, type Finding } from "../src/domain/finding.ts";
 import type {
   AtlasTextBudgets,
   CapturedAtlasFile,
 } from "../src/atlas/load_atlas_text.ts";
-import { lintAtlas, type AtlasLintResult } from "../src/lint/lint_atlas.ts";
+import { maxFrontmatterDepth } from "../src/atlas/parse_atlas_pages.ts";
+import {
+  deniesAtlasValidity,
+  lintAtlas,
+  type AtlasLintResult,
+} from "../src/lint/lint_atlas.ts";
 
 const encoder = new TextEncoder();
 const fixturesRoot = resolve(import.meta.dirname, "fixtures", "complete-atlas");
+const opaquePaths = [".atlas/CHANGELOG.md", ".atlas/framework/README.md"] as const;
 
 const generousBudgets: AtlasTextBudgets = Object.freeze({
   maxFileBytes: 4096,
@@ -45,12 +51,55 @@ const structuralAttribution = Object.freeze({
   trusted: true,
 });
 
-function fixtureBytes(variant: string, path: string): Uint8Array {
-  return new Uint8Array(readFileSync(resolve(fixturesRoot, variant, path)));
+// Each defect is one named substitution into the valid Atlas, so the two
+// variants cannot drift apart: the invalid Atlas is the valid one plus exactly
+// these three structural defects, and nothing else can differ.
+const defects: Readonly<Record<string, readonly [string, string]>> = Object.freeze({
+  ".atlas/concepts/canonical-serialization.md": [
+    "# Canonical Serialization",
+    "# Canonical Bytes",
+  ],
+  ".atlas/edges/lint-covers-canonical-serialization.md": [
+    "[[.atlas/sources/atlas-sdk-lint]]",
+    "[[.atlas/concepts/canonical-serialization]]",
+  ],
+  ".atlas/principles/determinism.md": ["  type: principle", "  type: concept"],
+});
+
+function fixtureText(path: string): string {
+  return readFileSync(resolve(fixturesRoot, path), "utf8");
+}
+
+function fixtureBytes(variant: "invalid" | "valid", path: string): Uint8Array {
+  const text = fixtureText(path);
+  const defect = variant === "invalid" ? defects[path] : undefined;
+  if (defect === undefined) return encoder.encode(text);
+  const [before, after] = defect;
+  assert.equal(text.includes(before), true, `${path} no longer holds ${before}`);
+  return encoder.encode(text.replace(before, after));
 }
 
 function completeAtlas(variant: "invalid" | "valid"): CapturedAtlasFile[] {
   return atlasPaths.map((path) => ({ bytes: fixtureBytes(variant, path), path }));
+}
+
+// The nested key sits two columns in and its own line counts as one level, so
+// the deepest nesting the bound still reads is three levels below the bound.
+const insideBoundDepth = maxFrontmatterDepth - 3;
+
+// One Atlas-owned key nests as deeply as asked, in flow style so the nesting
+// costs bytes rather than columns: byte budgets alone cannot bound it.
+function deepAtlas(depth: number): CapturedAtlasFile[] {
+  const nested = `${"[".repeat(depth)}${"]".repeat(depth)}`;
+  const page = fixtureText(".atlas/concepts/canonical-serialization.md").replace(
+    "  confidence: reviewed",
+    `  confidence: reviewed\n  deep: ${nested}`,
+  );
+  return completeAtlas("valid").map((file) =>
+    file.path === ".atlas/concepts/canonical-serialization.md"
+      ? { bytes: encoder.encode(page), path: file.path }
+      : file,
+  );
 }
 
 function lintedPages(result: AtlasLintResult): readonly CapturedAtlasFile[] {
@@ -65,7 +114,7 @@ test("lints the complete valid Atlas to canonical byte-identical pages", () => {
   const result = lintAtlas(completeAtlas("valid"), generousBudgets);
 
   assert.ok(result.outcome === "valid", JSON.stringify(result));
-  assert.equal("findings" in result, false);
+  assert.deepEqual(result.findings, []);
   assert.deepEqual(
     result.pages.map((page) => page.path),
     canonicalPagePaths,
@@ -77,6 +126,21 @@ test("lints the complete valid Atlas to canonical byte-identical pages", () => {
       page.path,
     );
   }
+
+  // Records Lint reads as text rather than as pages are carried, not dropped:
+  // they have no page envelope to normalize, and a caller writing back only
+  // `pages` would otherwise delete the Changelog and the Framework Bundle.
+  assert.deepEqual(
+    result.opaque.map((record) => record.path),
+    opaquePaths,
+  );
+  for (const record of result.opaque) {
+    assert.equal(record.content, fixtureText(record.path), record.path);
+  }
+  assert.deepEqual(
+    result.pages.filter((page) => opaquePaths.some((path) => path === page.path)),
+    [],
+  );
 });
 
 test("returns stable Findings without partial or success-shaped output", () => {
@@ -236,4 +300,183 @@ test("returns a deeply frozen result", () => {
   assert.equal(Object.isFrozen(invalid), true);
   assert.equal(Object.isFrozen(invalid.findings), true);
   assert.equal(Object.isFrozen(invalid.findings[0]), true);
+});
+
+test("refuses frontmatter nesting deeper than it reads, on every run", () => {
+  const first = lintAtlas(deepAtlas(maxFrontmatterDepth + 1), generousBudgets);
+
+  assert.ok(first.outcome === "invalid", JSON.stringify(first));
+  assert.equal("pages" in first, false);
+  assert.deepEqual(first.findings, [
+    {
+      attribution: structuralAttribution,
+      code: "ATLAS_PAGE_FRONTMATTER_TOO_DEEP",
+      "finding-schema": "1.0.0",
+      location: { end: { column: 5, line: 2 }, start: { column: 1, line: 2 } },
+      message: "Atlas page frontmatter nests deeper than Atlas SDK reads.",
+      path: ".atlas/concepts/canonical-serialization.md",
+      severity: "error",
+    },
+  ]);
+  for (const finding of first.findings) assert.equal(checkFinding(finding), true);
+
+  // Nesting just inside the bound is read, and both answers hold across runs.
+  const inside = lintAtlas(deepAtlas(insideBoundDepth), generousBudgets);
+  assert.ok(inside.outcome === "valid", JSON.stringify(inside));
+  for (let run = 0; run < 10; run += 1) {
+    assert.deepEqual(
+      lintAtlas(deepAtlas(maxFrontmatterDepth + 1), generousBudgets),
+      first,
+    );
+    assert.deepEqual(lintAtlas(deepAtlas(insideBoundDepth), generousBudgets), inside);
+  }
+});
+
+test("answers every nesting depth with a verdict rather than an exception", () => {
+  // Nesting deep enough to exhaust the stack of the process must still earn a
+  // Finding: an escaping exception is a crashed caller rather than a verdict.
+  const depths = [1, 2, 8, insideBoundDepth, maxFrontmatterDepth, 500, 5000];
+  for (let run = 0; run < 10; run += 1) {
+    for (const depth of depths) {
+      const result = lintAtlas(deepAtlas(depth), generousBudgets);
+      assert.equal(
+        result.outcome,
+        depth <= insideBoundDepth ? "valid" : "invalid",
+        `depth ${String(depth)}`,
+      );
+    }
+  }
+});
+
+test("refuses a body nesting deeper than it reads, without reading it", () => {
+  const body = `${"> ".repeat(200)}quoted`;
+  const atlas = completeAtlas("valid").map((file) =>
+    file.path === ".atlas/anchors/lint.md"
+      ? {
+          bytes: encoder.encode(`${fixtureText(file.path)}\n${body}\n`),
+          path: file.path,
+        }
+      : file,
+  );
+
+  const result = lintAtlas(atlas, generousBudgets);
+
+  assert.ok(result.outcome === "invalid", JSON.stringify(result));
+  assert.deepEqual(
+    result.findings.map(({ code, path }) => ({ code, path })),
+    [{ code: "ATLAS_PAGE_BODY_TOO_DEEP", path: ".atlas/anchors/lint.md" }],
+  );
+  for (const finding of result.findings) assert.equal(checkFinding(finding), true);
+});
+
+test("reads a large pathological body in bounded time", () => {
+  // Nesting multiplies what each Markdown block costs, so a body this size
+  // could otherwise take hours rather than the bytes it holds.
+  const line = `${"> ".repeat(2000)}quoted\n`;
+  const body = line.repeat(Math.ceil((1024 * 1024) / line.length));
+  const atlas = completeAtlas("valid").map((file) =>
+    file.path === ".atlas/anchors/lint.md"
+      ? {
+          bytes: encoder.encode(`${fixtureText(file.path)}\n${body}`),
+          path: file.path,
+        }
+      : file,
+  );
+
+  const started = performance.now();
+  const result = lintAtlas(atlas, {
+    maxFileBytes: 4 * 1024 * 1024,
+    maxTotalBytes: 8 * 1024 * 1024,
+  });
+  const elapsed = performance.now() - started;
+
+  assert.ok(result.outcome === "invalid", JSON.stringify(result));
+  assert.deepEqual(
+    result.findings.map(({ code }) => code),
+    ["ATLAS_PAGE_BODY_TOO_DEEP"],
+  );
+  assert.ok(elapsed < 2000, `linting took ${String(elapsed)}ms`);
+});
+
+test("reports a Lint it could not complete as one whole-Atlas Finding", () => {
+  // The only failure no stage describes is running out of room to work in, so
+  // the boundary is exercised by calling it from a stack already nearly spent.
+  function atStackDepth(depth: number, run: () => AtlasLintResult): AtlasLintResult {
+    return depth <= 0 ? run() : atStackDepth(depth - 1, run);
+  }
+
+  const atlas = completeAtlas("valid");
+  let ceiling = 1000;
+  for (; ceiling < 1e7; ceiling *= 2) {
+    try {
+      atStackDepth(ceiling, () => lintAtlas(atlas, generousBudgets));
+    } catch {
+      break;
+    }
+  }
+
+  let reported: AtlasLintResult | undefined;
+  for (
+    let depth = ceiling / 2;
+    depth <= ceiling && reported === undefined;
+    depth += 2
+  ) {
+    try {
+      const result = atStackDepth(depth, () => lintAtlas(atlas, generousBudgets));
+      if (
+        result.outcome === "invalid" &&
+        result.findings[0]?.code === "ATLAS_LINT_FAILED"
+      ) {
+        reported = result;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  assert.ok(reported !== undefined, "no Lint ran out of room to complete");
+  assert.deepEqual(reported.findings, [
+    {
+      attribution: {
+        checkId: "sdk-core.atlas-lint",
+        kind: "sdk-core",
+        trusted: true,
+      },
+      code: "ATLAS_LINT_FAILED",
+      "finding-schema": "1.0.0",
+      message: "Atlas could not be linted.",
+      path: ".atlas",
+      severity: "error",
+    },
+  ]);
+  assert.equal("pages" in reported, false);
+  for (const finding of reported.findings) assert.equal(checkFinding(finding), true);
+});
+
+test("denies validity for errors alone, not for every Finding", () => {
+  const report = (severity: Finding["severity"]): Finding =>
+    Object.freeze({
+      attribution: structuralAttribution,
+      code: "ATLAS_PAGE_TITLE_H1_MISMATCH",
+      "finding-schema": "1.0.0",
+      message: "The first Markdown H1 must exactly match the page title.",
+      path: ".atlas/index.md",
+      severity,
+    });
+
+  assert.equal(deniesAtlasValidity([]), false);
+  assert.equal(deniesAtlasValidity([report("error")]), true);
+  for (const severity of [
+    "warning",
+    "suggestion",
+    "inconclusive",
+    "skipped",
+  ] as const) {
+    assert.equal(deniesAtlasValidity([report(severity)]), false, severity);
+    assert.equal(
+      deniesAtlasValidity([report(severity), report("error")]),
+      true,
+      severity,
+    );
+  }
 });
