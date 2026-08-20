@@ -30,7 +30,7 @@ const directoryPattern = /\\?\.atlas\\?\/([A-Za-z0-9_.-]+)\\?\//dgu;
  * Each keyword opens a statement rather than continuing an expression, so a
  * method named `from` or `require` does not mask the literal it reads. */
 const specifierPattern =
-  /(?<![.?\]\w$])(?:from|import(?:\.meta\.resolve)?|require)\s{0,64}(?:\(\s{0,64})?(["'])((?:[^"'\n\\]|\\.)*)\1/gu;
+  /(?<![.\w$])(?:from|import(?:\.meta\.resolve)?|require)\s{0,64}(?:\(\s{0,64})?(["'])((?:[^"'\n\\]|\\.)*)\1/gu;
 /** A single-line string or template literal. The opening quote follows no
  * backslash and the body cannot backtrack, so each literal is read once and a
  * line of escaped quotes costs one pass rather than one pass for each quote. */
@@ -47,9 +47,9 @@ const capitalizedPattern = /\p{Lu}[\p{L}\p{N}]*/gu;
 /** Words a single space or underscore joins, the shape a run of tokens spells
  * when it names one multi-word term. */
 const phrasePattern = /^[\p{L}\p{N}]+(?:[ _][\p{L}\p{N}]+)*$/u;
-/** The longest contract Atlas SDK reads, five times its own largest source. A
- * longer file is reported rather than scanned, so no contract can spend the
- * whole of a continuous integration run. */
+/** The longest contract Atlas SDK reads, far beyond the length of any source it
+ * owns. A longer file is reported rather than scanned, so no one contract can
+ * spend a whole continuous integration run. */
 const CONTRACT_LIMIT = 1_048_576;
 
 interface GlossaryEntry {

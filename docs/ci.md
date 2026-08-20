@@ -107,9 +107,8 @@ read where that surface can actually occur:
   than continue an expression, so `Buffer.from("…")` masks nothing. A `node:`
   specifier reached any other way is not masked and would raise a false
   positive.
-- A source longer than 1 MiB is reported rather than scanned, so no single
-  contract can spend a continuous integration run. The largest file under `src/`
-  is a fifth of that.
+- A source longer than 1 MiB is reported rather than scanned, so no one
+  contract can spend a whole continuous integration run.
 
 A directory name or page-ID prefix must resolve to a glossary term or to a
 directory Atlas SDK reserves without one, and a term listed under an `_Avoid_`

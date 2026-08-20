@@ -615,6 +615,8 @@ test("a method named for module syntax does not hide the literal it reads", () =
             'const e = require("node:fs");',
             'const f = import.meta.resolve("node:fs");',
             'export { g } from "node:fs";',
+            'const h = cond?require("node:fs"):null;',
+            'const i = cond ? import("node:fs") : null;',
           ].join("\n"),
         ),
       ]),
