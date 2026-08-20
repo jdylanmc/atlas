@@ -182,6 +182,7 @@ for (const entry of corpus.cases) {
     assert.equal(entry.gate, "vocabulary-agreement");
     const findings = validateVocabularyAgreement(
       binding,
+      [],
       glossary(entry.input.glossaryAvoidance),
       [{ content: entry.input.source, path: "src/lint/adversarial.ts" }],
     );

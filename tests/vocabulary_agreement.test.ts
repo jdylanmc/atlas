@@ -665,6 +665,38 @@ test("vocabulary scanning cost follows input growth", () => {
     name: "unterminated literal scan",
     small: () => assert.deepEqual(validate(anchorBinding, [unterminatedSmall]), []),
   });
+
+  const exported = (count: number): VocabularyTextFile =>
+    contract(
+      Array.from(
+        { length: count },
+        (_, index) => `export interface Exported${String(index)} {}`,
+      ).join("\n"),
+    );
+  const exportedSmall = exported(1500);
+  const exportedLarge = exported(3000);
+  const exportedTerm: readonly ContractVocabularyBinding[] = [
+    { exportedIdentifiers: ["Exported0"], term: "Anchor" },
+  ];
+  assertWallClockUnder("scanning exported contract identifiers", 2000, () =>
+    assert.deepEqual(
+      validate(anchorBinding, [exportedLarge], glossaryLines, exportedTerm),
+      [],
+    ),
+  );
+  assertGrowthRatio({
+    large: () =>
+      assert.deepEqual(
+        validate(anchorBinding, [exportedLarge], glossaryLines, exportedTerm),
+        [],
+      ),
+    name: "exported contract identifier scan",
+    small: () =>
+      assert.deepEqual(
+        validate(anchorBinding, [exportedSmall], glossaryLines, exportedTerm),
+        [],
+      ),
+  });
 });
 
 test("a contract longer than Atlas SDK reads is reported, not scanned", () => {
