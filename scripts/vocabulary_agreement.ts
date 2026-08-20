@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** Validate that CONTEXT.md and Atlas SDK-owned contracts bind one vocabulary. */
 
-import { readdirSync, readFileSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { coreArchetypes } from "../src/domain/core_archetype.ts";
@@ -14,14 +14,23 @@ import {
 export const GLOSSARY_PATH = "CONTEXT.md";
 export const CONTRACT_ROOT = "src";
 
+/** A contract the validator refuses to read, named by its repository path alone. */
+export class ContractError extends Error {}
+
 function readText(root: string, relativePath: string): VocabularyTextFile {
-  return {
-    content: readFileSync(resolve(root, relativePath), "utf8"),
-    path: relativePath,
-  };
+  const path = resolve(root, relativePath);
+  const stat = lstatSync(path, { throwIfNoEntry: false });
+  if (stat === undefined || !stat.isFile()) {
+    throw new ContractError(`${relativePath} must be a regular file`);
+  }
+  return { content: readFileSync(path, "utf8"), path: relativePath };
 }
 
-/** Collects every Atlas SDK-authored contract source in stable path order. */
+/**
+ * Collects every Atlas SDK-authored contract source in stable path order. A
+ * symbolic link is neither a directory nor a regular file entry here, so the
+ * walk never leaves the repository.
+ */
 export function collectContracts(root: string, relativePath: string): string[] {
   const entries = readdirSync(resolve(root, relativePath), { withFileTypes: true });
   const paths: string[] = [];
@@ -65,7 +74,19 @@ export function main(arguments_: readonly string[]): number {
     }
     root = options[1];
   }
-  const findings = validateRepository(root);
+  let findings: readonly Finding[];
+  try {
+    findings = validateRepository(root);
+  } catch (error) {
+    console.error(
+      `error: ${
+        error instanceof ContractError
+          ? error.message
+          : `${CONTRACT_ROOT} must be a readable directory`
+      }`,
+    );
+    return 1;
+  }
   for (const finding of findings) console.error(`error: ${formatFinding(finding)}`);
   if (findings.length > 0) return 1;
   console.log("validated glossary and contract vocabulary agreement");

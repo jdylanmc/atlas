@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import type { CoreArchetypeBindings } from "../src/domain/core_archetype.ts";
@@ -374,4 +374,39 @@ test("the validator is directly executable", () => {
     }),
     "CONTEXT.md: ATLAS_VOCABULARY_TERM_UNDEFINED Undefined.",
   );
+});
+
+test("the validator refuses unreadable contracts instead of following them", () => {
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (value: string) => errors.push(value);
+  const workspace = scratchRepository();
+  try {
+    assert.equal(main(["validate", "--root", workspace]), 1);
+    assert.deepEqual(errors, ["error: CONTEXT.md must be a regular file"]);
+
+    symlinkSync(join(workspace, "src", "lint"), join(workspace, "CONTEXT.md"));
+    assert.equal(main(["validate", "--root", workspace]), 1);
+    assert.equal(errors.at(-1), "error: CONTEXT.md must be a regular file");
+
+    const linked = scratchRepository();
+    writeFileSync(join(linked, "CONTEXT.md"), glossaryLines.join("\n"));
+    writeFileSync(join(linked, "src", "lint", "outside.ts"), "const a = 1;\n");
+    symlinkSync(
+      join(linked, "src", "lint", "outside.ts"),
+      join(linked, "src", "lint", "link.ts"),
+    );
+    assert.deepEqual(collectContracts(linked, "src"), ["src/lint/outside.ts"]);
+    rmSync(linked, { recursive: true, force: true });
+
+    const missing = scratchRepository();
+    writeFileSync(join(missing, "CONTEXT.md"), glossaryLines.join("\n"));
+    rmSync(join(missing, "src"), { recursive: true, force: true });
+    assert.equal(main(["validate", "--root", missing]), 1);
+    assert.equal(errors.at(-1), "error: src must be a readable directory");
+    rmSync(missing, { recursive: true, force: true });
+  } finally {
+    console.error = originalError;
+    rmSync(workspace, { recursive: true, force: true });
+  }
 });
