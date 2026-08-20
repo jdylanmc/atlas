@@ -23,7 +23,11 @@ function readText(root: string, relativePath: string): VocabularyTextFile {
   if (stat === undefined || !stat.isFile()) {
     throw new ContractError(`${relativePath} must be a regular file`);
   }
-  return { content: readFileSync(path, "utf8"), path: relativePath };
+  try {
+    return { content: readFileSync(path, "utf8"), path: relativePath };
+  } catch {
+    throw new ContractError(`${relativePath} must be readable text`);
+  }
 }
 
 /**
@@ -32,7 +36,12 @@ function readText(root: string, relativePath: string): VocabularyTextFile {
  * walk never leaves the repository.
  */
 export function collectContracts(root: string, relativePath: string): string[] {
-  const entries = readdirSync(resolve(root, relativePath), { withFileTypes: true });
+  let entries;
+  try {
+    entries = readdirSync(resolve(root, relativePath), { withFileTypes: true });
+  } catch {
+    throw new ContractError(`${relativePath} must be a readable directory`);
+  }
   const paths: string[] = [];
   for (const entry of entries.toSorted((left, right) =>
     left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
@@ -78,13 +87,8 @@ export function main(arguments_: readonly string[]): number {
   try {
     findings = validateRepository(root);
   } catch (error) {
-    console.error(
-      `error: ${
-        error instanceof ContractError
-          ? error.message
-          : `${CONTRACT_ROOT} must be a readable directory`
-      }`,
-    );
+    if (!(error instanceof ContractError)) throw error;
+    console.error(`error: ${error.message}`);
     return 1;
   }
   for (const finding of findings) console.error(`error: ${formatFinding(finding)}`);
