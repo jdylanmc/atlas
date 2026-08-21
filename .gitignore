@@ -1,3 +1,4 @@
 .test-workspaces/
 coverage/
+dist/
 node_modules/

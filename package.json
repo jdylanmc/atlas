@@ -14,6 +14,7 @@
     "cacophony:validate": "node scripts/cacophony_agents.ts validate",
     "ci": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage && npm run test:coverage:product && npm run atlas-sdk:validate && npm run vocabulary:validate && npm run cacophony:validate && npm run workflow:lint",
     "format": "prettier --write --no-error-on-unmatched-pattern \"src/**/*.ts\" scripts tests .github/workflows docs/ci.md .cacophony/README.md package.json package-lock.json tsconfig.json eslint.config.js prettier.config.js",
+    "framework:assemble": "node scripts/framework_bundle.ts assemble --output dist/framework-bundle",
     "format:check": "prettier --check --no-error-on-unmatched-pattern \"src/**/*.ts\" scripts tests .github/workflows docs/ci.md .cacophony/README.md package.json package-lock.json tsconfig.json eslint.config.js prettier.config.js",
     "lint": "eslint --no-error-on-unmatched-pattern \"src/**/*.ts\" scripts tests",
     "test:coverage": "c8 --all --include \"scripts/**/*.ts\" --check-coverage --lines 78 --functions 93 --branches 68 --statements 78 node --test tests/*.test.ts",
