@@ -34,6 +34,7 @@ interface ParsedLintCommand {
 interface ParsedInitializeCommand {
   readonly atlasHostDirectory: string;
   readonly machine: true;
+  readonly resumeProposalBranch?: string;
 }
 
 class UsageError extends Error {}
@@ -222,8 +223,10 @@ function parseInitializeCommand(
 ): ParsedInitializeCommand {
   let machine = false;
   let atlasHostDirectory = ".";
+  let resumeProposalBranch: string | undefined;
   let machineSeen = false;
   let atlasHostDirectorySeen = false;
+  let resumeProposalBranchSeen = false;
   for (let index = 1; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     if (argument === "--machine") {
@@ -243,10 +246,25 @@ function parseInitializeCommand(
       index += 1;
       continue;
     }
+    if (argument === "--resume-proposal-branch") {
+      if (resumeProposalBranchSeen) throw new UsageError(initializeCommandUsage);
+      const value = arguments_[index + 1];
+      if (value === undefined || value.startsWith("--")) {
+        throw new UsageError(initializeCommandUsage);
+      }
+      resumeProposalBranch = value;
+      resumeProposalBranchSeen = true;
+      index += 1;
+      continue;
+    }
     throw new UsageError(initializeCommandUsage);
   }
   if (!machine) throw new UsageError(initializeCommandUsage);
-  return { atlasHostDirectory, machine: true };
+  return {
+    atlasHostDirectory,
+    machine: true,
+    ...(resumeProposalBranch === undefined ? {} : { resumeProposalBranch }),
+  };
 }
 
 function mainLint(arguments_: readonly string[]): number {
@@ -294,7 +312,10 @@ function mainInitialize(arguments_: readonly string[]): number {
     console.error(error.message);
     return initializeCommandExitCodes.usage;
   }
-  const result = runInitializeCommandOperation(command.atlasHostDirectory);
+  const result = runInitializeCommandOperation(
+    command.atlasHostDirectory,
+    command.resumeProposalBranch,
+  );
   process.stdout.write(serializeInitializeMachineResult(result));
   return exitCodeForInitializeOperationResult(result);
 }

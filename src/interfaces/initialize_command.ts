@@ -1,4 +1,7 @@
-import { runLocalAtlasInitialization } from "../platform/local_atlas_initialization.ts";
+import {
+  resumeLocalAtlasInitialization,
+  runLocalAtlasInitialization,
+} from "../platform/local_atlas_initialization.ts";
 import {
   initialAtlasInitializationWorkflowState,
   type AtlasInitializationResult,
@@ -9,7 +12,7 @@ import {
 } from "../operations/operation_result.ts";
 
 export const initializeCommandUsage =
-  "usage: atlas initialize --machine [--atlas-host-directory PATH]";
+  "usage: atlas initialize --machine [--atlas-host-directory PATH] [--resume-proposal-branch NAME]";
 
 export const initializeCommandExitCodes = Object.freeze({
   operationNotCompleted: 2,
@@ -19,7 +22,11 @@ export const initializeCommandExitCodes = Object.freeze({
 
 export function runInitializeCommandOperation(
   atlasHostDirectory: string,
+  resumeProposalBranch?: string,
 ): AtlasInitializationResult {
+  if (resumeProposalBranch !== undefined) {
+    return resumeLocalAtlasInitialization(atlasHostDirectory, resumeProposalBranch);
+  }
   return runLocalAtlasInitialization(atlasHostDirectory);
 }
 
@@ -43,7 +50,7 @@ export function usageInitializeOperationResult(
     severity: "error" as const,
   });
   const workflowState = initialAtlasInitializationWorkflowState({
-    atlasViewDigest: "unknown",
+    baseSnapshotDigest: "unknown",
     proposalBranch: "unknown",
     targetBranch: "unknown",
     targetHead: "unknown",

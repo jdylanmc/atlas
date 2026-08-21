@@ -18,7 +18,7 @@ export interface AtlasInitializationOperationIdentity extends OperationIdentity 
 
 export interface AtlasInitializationWorkflowState {
   readonly "operation-workflow-schema": "1.0.0";
-  readonly atlasViewDigest: string;
+  readonly baseSnapshotDigest: string;
   readonly effectReceipts: readonly AtlasInitializationEffectReceipt[];
   readonly proposalBranch: string;
   readonly targetBranch: string;
@@ -40,7 +40,7 @@ export interface AtlasInitializationChange {
 }
 
 export interface AtlasInitializationChangeSet {
-  readonly atlasViewDigest: string;
+  readonly baseSnapshotDigest: string;
   readonly changes: readonly AtlasInitializationChange[];
   readonly targetHead: string;
 }
@@ -48,22 +48,25 @@ export interface AtlasInitializationChangeSet {
 export interface LintStamp {
   readonly "lint-stamp-schema": "1.0.0";
   readonly atlasCommit: string;
-  readonly check: "sdk-core.atlas-lint";
-  readonly evidence: "local-proposal-snapshot";
-  readonly framework: "source-worktree";
-  readonly policy: "trusted-sdk-core";
-  readonly schema: "1.0.0";
+  readonly checkRevision: string;
+  readonly evidenceRevision: string;
+  readonly frameworkRevision: string;
+  readonly policyRevision: string;
+  readonly schemaRevision: string;
 }
 
 export interface AtlasReadinessReport {
   readonly boundary: string;
   readonly degradation: string;
   readonly evidence: string;
+  readonly foundingGraph: string;
   readonly governance: string;
+  readonly guide: string;
   readonly integration: string;
   readonly lintStamp: LintStamp;
   readonly nextAction: string;
   readonly publicationHandoff: string;
+  readonly uninspectedAreas: string;
 }
 
 export interface AtlasInitializationPayload {
@@ -90,11 +93,12 @@ export interface AtlasInitializationRuntime {
   readonly commitProposal: () => { readonly commit: string; readonly receipt: string };
   readonly createProposalWorktree: () => { readonly receipt: string };
   readonly currentTargetHead: () => string;
-  readonly currentViewDigest: () => string;
+  readonly currentBaseSnapshotDigest: () => string;
   readonly lintProposal: () => {
     readonly lint: LintOperationResult;
     readonly receipt: string;
   };
+  readonly persistState?: (state: AtlasInitializationWorkflowState) => void;
   readonly writeChangeSet: (changeSet: AtlasInitializationChangeSet) => {
     readonly receipt: string;
   };
@@ -182,7 +186,7 @@ function handoff(
     recommendedNextAction:
       completion === "completed"
         ? "Review the local Atlas Proposal and publish it to the forge when ready."
-        : "Refresh the Atlas View, then resume Initialization from the typed workflow state.",
+        : "Refresh the base snapshot, then resume Initialization from the typed workflow state.",
     result: Object.freeze({ disposition, summary }),
     reviewLink: noReviewLink,
     unresolvedHumanDecisions: Object.freeze({
@@ -222,16 +226,11 @@ function minimalAtlasChangeSet(
 ): AtlasInitializationChangeSet {
   const rootAnchor = `---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  created-at: "2026-01-01T00:00:00Z"\n  created-by:\n    kind: agent\n    name: Atlas SDK\n  id: anchor:root\n  local-atlas-schema: 1.0.0\n  originating-operation: atlas-initialization\n  tags: []\n  title: Home Atlas\n  type: anchor\n  updated-at: "2026-01-01T00:00:00Z"\n  updated-by:\n    kind: agent\n    name: Atlas SDK\natlas: {}\n---\n\n# Home Atlas\n\nThis Root Anchor starts a minimal Home Atlas with no Guide Persona, founding knowledge, or Atlas Site.\n`;
   return Object.freeze({
-    atlasViewDigest: state.atlasViewDigest,
+    baseSnapshotDigest: state.baseSnapshotDigest,
     changes: Object.freeze([
       Object.freeze({
         content: "# Changelog\n\n- Initialized minimal Home Atlas.\n",
         path: ".atlas/CHANGELOG.md",
-      }),
-      Object.freeze({
-        content:
-          '{\n  "atlas-manifest-schema": "1.0.0",\n  "boundary": "repository-root",\n  "guide": null,\n  "site": null\n}\n',
-        path: ".atlas/atlas-manifest.json",
       }),
       Object.freeze({
         content:
@@ -245,14 +244,14 @@ function minimalAtlasChangeSet(
 }
 
 export function initialAtlasInitializationWorkflowState(input: {
-  readonly atlasViewDigest: string;
+  readonly baseSnapshotDigest: string;
   readonly proposalBranch: string;
   readonly targetBranch: string;
   readonly targetHead: string;
 }): AtlasInitializationWorkflowState {
   return Object.freeze({
     "operation-workflow-schema": "1.0.0" as const,
-    atlasViewDigest: input.atlasViewDigest,
+    baseSnapshotDigest: input.baseSnapshotDigest,
     effectReceipts: Object.freeze([]),
     proposalBranch: input.proposalBranch,
     targetBranch: input.targetBranch,
@@ -267,12 +266,12 @@ export function validateAtlasInitializationChangeSet(
   const findings: Finding[] = [];
   if (
     changeSet.targetHead !== state.targetHead ||
-    changeSet.atlasViewDigest !== state.atlasViewDigest
+    changeSet.baseSnapshotDigest !== state.baseSnapshotDigest
   ) {
     findings.push(
       finding(
         "ATLAS_INITIALIZATION_CHANGE_SET_STALE",
-        "Atlas Change Set base does not match the current Atlas View.",
+        "Atlas Change Set base does not match the current base snapshot.",
       ),
     );
   }
@@ -294,15 +293,34 @@ export function validateAtlasInitializationChangeSet(
   return Object.freeze(findings);
 }
 
-function completedReport(commit: string): AtlasReadinessReport {
+const stampRevisions = Object.freeze({
+  checkRevision: [
+    "sha256",
+    "6d8b13d8a9cb7716c703ec1f5f872b3250b64eb07828f955d411c418085b8461",
+  ].join(":"),
+  frameworkRevision: [
+    "sha256",
+    "99bb15b450f1fde1b276501ff0f3f7a22ef13ed16ec83006a34430908a2e2b73",
+  ].join(":"),
+  policyRevision: [
+    "sha256",
+    "b3696129c37e683df5887c5d5f44a485e82e7915564ff6ee1894045c7c29d9ff",
+  ].join(":"),
+  schemaRevision: [
+    "sha256",
+    "47b8c00d25e5f7f77d85239e2804effff628705ebc215a85947ca1084c530184",
+  ].join(":"),
+});
+
+function completedReport(commit: string, lintReceipt: string): AtlasReadinessReport {
   const lintStamp: LintStamp = Object.freeze({
     "lint-stamp-schema": "1.0.0",
     atlasCommit: commit,
-    check: "sdk-core.atlas-lint",
-    evidence: "local-proposal-snapshot",
-    framework: "source-worktree",
-    policy: "trusted-sdk-core",
-    schema: "1.0.0",
+    checkRevision: stampRevisions.checkRevision,
+    evidenceRevision: lintReceipt,
+    frameworkRevision: stampRevisions.frameworkRevision,
+    policyRevision: stampRevisions.policyRevision,
+    schemaRevision: stampRevisions.schemaRevision,
   });
   return Object.freeze({
     boundary: "The Home Atlas boundary is the repository root Atlas Host Directory.",
@@ -310,8 +328,10 @@ function completedReport(commit: string): AtlasReadinessReport {
       "No degraded dependency was needed for local, non-forge Initialization.",
     evidence:
       "No founding knowledge was imported; Lint evidence is the proposal commit snapshot.",
+    foundingGraph: "None: minimal Initialization imports no founding knowledge.",
     governance:
-      "The minimal Atlas records no Guide Persona and defers governance policy adoption.",
+      "The minimal Atlas proposes no Atlas Manifest; human-authored declaration is pending review.",
+    guide: "None: minimal Initialization records no Guide Persona.",
     integration:
       "The Operation Workspace produced a local proposal branch and no forge publication.",
     lintStamp,
@@ -319,6 +339,8 @@ function completedReport(commit: string): AtlasReadinessReport {
       "Review and publish the local proposal branch, then merge through Git governance.",
     publicationHandoff:
       "Forge publication was not requested; push the proposal branch and open a pull request with the readiness report.",
+    uninspectedAreas:
+      "No external sources, tracked Atlases, forge remotes, Atlas Site, or governance policies were inspected.",
   });
 }
 
@@ -346,6 +368,7 @@ export function runAtlasInitializationWorkflow(
   state: AtlasInitializationWorkflowState,
   runtime: AtlasInitializationRuntime,
 ): AtlasInitializationResult {
+  let latestState = state;
   try {
     if (
       !isSafeGitBranchName(state.proposalBranch) ||
@@ -358,7 +381,7 @@ export function runAtlasInitializationWorkflow(
         ),
       ]);
       return result(
-        state,
+        latestState,
         "not-completed",
         "failed",
         {},
@@ -369,21 +392,21 @@ export function runAtlasInitializationWorkflow(
 
     if (
       runtime.currentTargetHead() !== state.targetHead ||
-      runtime.currentViewDigest() !== state.atlasViewDigest
+      runtime.currentBaseSnapshotDigest() !== state.baseSnapshotDigest
     ) {
       const findings = Object.freeze([
         finding(
-          "ATLAS_INITIALIZATION_VIEW_STALE",
-          "Atlas Initialization refused stale mutation because the target branch or Atlas View digest changed.",
+          "ATLAS_INITIALIZATION_BASE_SNAPSHOT_STALE",
+          "Atlas Initialization refused stale mutation because the target branch or base snapshot digest changed.",
         ),
       ]);
       return result(
-        state,
+        latestState,
         "not-completed",
         "failed",
         {},
         findings,
-        "Initialization requires a refreshed Atlas View before mutating.",
+        "Initialization requires a refreshed base snapshot before mutating.",
       );
     }
 
@@ -394,6 +417,8 @@ export function runAtlasInitializationWorkflow(
         effect: "create-proposal-worktree",
         receipt: created.receipt,
       });
+      latestState = nextState;
+      runtime.persistState?.(nextState);
     }
 
     const changeSet =
@@ -419,6 +444,8 @@ export function runAtlasInitializationWorkflow(
         effect: "write-change-set",
         receipt: written.receipt,
       });
+      latestState = nextState;
+      runtime.persistState?.(nextState);
     }
     let commit = receiptFor(nextState, "commit-proposal")?.receipt;
     if (commit === undefined) {
@@ -428,19 +455,26 @@ export function runAtlasInitializationWorkflow(
         effect: "commit-proposal",
         receipt: committed.receipt,
       });
+      latestState = nextState;
+      runtime.persistState?.(nextState);
     }
 
     let lint: LintOperationResult | undefined;
+    let lintReceipt = receiptFor(nextState, "lint-proposal")?.receipt;
     if (receiptFor(nextState, "lint-proposal") === undefined) {
       const linted = runtime.lintProposal();
       lint = linted.lint;
+      lintReceipt = linted.receipt;
       nextState = addReceipt(nextState, {
         effect: "lint-proposal",
         receipt: linted.receipt,
       });
+      latestState = nextState;
+      runtime.persistState?.(nextState);
     } else {
       const linted = runtime.lintProposal();
       lint = linted.lint;
+      lintReceipt = linted.receipt;
     }
 
     if (lint.completion !== "completed" || lint.disposition !== "success") {
@@ -453,12 +487,28 @@ export function runAtlasInitializationWorkflow(
         "Initialization proposal did not pass trusted Lint.",
       );
     }
+    if (lintReceipt !== commit) {
+      const findings = Object.freeze([
+        finding(
+          "ATLAS_INITIALIZATION_LINT_STAMP_STALE",
+          "Atlas Initialization refused to stamp a proposal commit different from the Lint evidence commit.",
+        ),
+      ]);
+      return result(
+        nextState,
+        "not-completed",
+        "failed",
+        { changeSet, lint },
+        findings,
+        "Initialization refused a stale Lint Stamp.",
+      );
+    }
 
     return result(
       nextState,
       "completed",
       "success",
-      { atlasReadinessReport: completedReport(commit), changeSet, lint },
+      { atlasReadinessReport: completedReport(commit, lintReceipt), changeSet, lint },
       Object.freeze([]),
       "Initialization produced a Linted local Atlas Proposal.",
     );
@@ -470,7 +520,7 @@ export function runAtlasInitializationWorkflow(
       ),
     ]);
     return result(
-      state,
+      latestState,
       "not-completed",
       "failed",
       {},

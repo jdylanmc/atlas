@@ -14,6 +14,8 @@ import {
 import { runLintOperation } from "../src/operations/lint_operation.ts";
 import {
   createLocalAtlasInitializationState,
+  readLocalAtlasInitializationState,
+  resumeLocalAtlasInitialization,
   runLocalAtlasInitialization,
 } from "../src/platform/local_atlas_initialization.ts";
 import { exitCodeForInitializeOperationResult } from "../src/interfaces/initialize_command.ts";
@@ -31,7 +33,7 @@ function state(
   receipts: readonly AtlasInitializationEffectReceipt[] = Object.freeze([]),
 ): AtlasInitializationWorkflowState {
   const initial = initialAtlasInitializationWorkflowState({
-    atlasViewDigest: "view-digest",
+    baseSnapshotDigest: "base-digest",
     proposalBranch: "atlas-initialization-test",
     targetBranch: "main",
     targetHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -110,8 +112,8 @@ test("atlas initialize --machine emits the proposal Operation Result", () => {
   >;
   assert.equal(parsed.completion, "completed");
   assert.equal(
-    parsed.payload.atlasReadinessReport?.lintStamp.check,
-    "sdk-core.atlas-lint",
+    parsed.payload.atlasReadinessReport?.lintStamp.checkRevision.startsWith("sha256:"),
+    true,
   );
 });
 
@@ -158,13 +160,13 @@ test("Atlas Initialization resumes from effect receipts without replaying comple
       return { receipt: "created-again" };
     },
     currentTargetHead: () => interrupted.targetHead,
-    currentViewDigest: () => interrupted.atlasViewDigest,
+    currentBaseSnapshotDigest: () => interrupted.baseSnapshotDigest,
     lintProposal: () => ({
       lint: runLintOperation(atlasInitializationFiles(interrupted), {
         maxFileBytes: 4096,
         maxTotalBytes: 65536,
       }),
-      receipt: "linted",
+      receipt: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     }),
     writeChangeSet: () => {
       written += 1;
@@ -200,7 +202,7 @@ test("Atlas Initialization blocks stale target or digest drift before mutation",
       return { receipt: "created" };
     },
     currentTargetHead: () => "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    currentViewDigest: () => initial.atlasViewDigest,
+    currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
     lintProposal: () => {
       effects += 1;
       throw new Error("must not lint stale view");
@@ -215,9 +217,9 @@ test("Atlas Initialization blocks stale target or digest drift before mutation",
   assert.equal(effects, 0);
   assert.equal(
     result.handoff.validationState.findings[0]?.code,
-    "ATLAS_INITIALIZATION_VIEW_STALE",
+    "ATLAS_INITIALIZATION_BASE_SNAPSHOT_STALE",
   );
-  assert.match(result.handoff.recommendedNextAction, /Refresh the Atlas View/u);
+  assert.match(result.handoff.recommendedNextAction, /Refresh the base snapshot/u);
 });
 
 test("Atlas Initialization rejects unsafe workflow branch names before effects", () => {
@@ -236,7 +238,7 @@ test("Atlas Initialization rejects unsafe workflow branch names before effects",
       return { receipt: "created" };
     },
     currentTargetHead: () => unsafe.targetHead,
-    currentViewDigest: () => unsafe.atlasViewDigest,
+    currentBaseSnapshotDigest: () => unsafe.baseSnapshotDigest,
     lintProposal: () => {
       effects += 1;
       throw new Error("must not lint unsafe state");
@@ -258,7 +260,7 @@ test("Atlas Initialization rejects unsafe workflow branch names before effects",
 test("Atlas Initialization reports invalid Change Sets and failed Lint as values", () => {
   const initial = state();
   const invalidChangeSet = {
-    atlasViewDigest: "stale",
+    baseSnapshotDigest: "stale",
     changes: Object.freeze([Object.freeze({ content: "bad", path: "../outside.md" })]),
     targetHead: initial.targetHead,
   };
@@ -279,7 +281,7 @@ test("Atlas Initialization reports invalid Change Sets and failed Lint as values
     },
     createProposalWorktree: () => ({ receipt: "created" }),
     currentTargetHead: () => initial.targetHead,
-    currentViewDigest: () => initial.atlasViewDigest,
+    currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
     lintProposal: () => {
       throw new Error("invalid change set must not lint");
     },
@@ -300,10 +302,10 @@ test("Atlas Initialization reports invalid Change Sets and failed Lint as values
     },
     createProposalWorktree: () => ({ receipt: "created" }),
     currentTargetHead: () => initial.targetHead,
-    currentViewDigest: () => initial.atlasViewDigest,
+    currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
     lintProposal: () => ({
       lint: runLintOperation([], { maxFileBytes: 4096, maxTotalBytes: 65536 }),
-      receipt: "linted",
+      receipt: "cccccccccccccccccccccccccccccccccccccccc",
     }),
     writeChangeSet: () => ({ receipt: "written" }),
   });
@@ -312,6 +314,81 @@ test("Atlas Initialization reports invalid Change Sets and failed Lint as values
   assert.equal(
     result.handoff.result.summary,
     "Initialization proposal did not pass trusted Lint.",
+  );
+});
+
+test("Atlas Initialization preserves produced receipts when an effect after them fails", () => {
+  for (const [failAt, expectedReceipts] of [
+    ["write", ["create-proposal-worktree"]],
+    ["commit", ["create-proposal-worktree", "write-change-set"]],
+    ["lint", ["create-proposal-worktree", "write-change-set", "commit-proposal"]],
+  ] as const) {
+    const persisted: AtlasInitializationWorkflowState[] = [];
+    const initial = state();
+    const result = runAtlasInitializationWorkflow(initial, {
+      commitProposal: () => {
+        if (failAt === "commit") throw new Error("commit failed");
+        const commit = "ffffffffffffffffffffffffffffffffffffffff";
+        return { commit, receipt: commit };
+      },
+      createProposalWorktree: () => ({ receipt: "created" }),
+      currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
+      currentTargetHead: () => initial.targetHead,
+      lintProposal: () => {
+        if (failAt === "lint") throw new Error("lint failed");
+        return {
+          lint: runLintOperation(atlasInitializationFiles(initial), {
+            maxFileBytes: 4096,
+            maxTotalBytes: 65536,
+          }),
+          receipt: "ffffffffffffffffffffffffffffffffffffffff",
+        };
+      },
+      persistState: (nextState) => {
+        persisted.push(nextState);
+      },
+      writeChangeSet: () => {
+        if (failAt === "write") throw new Error("write failed");
+        return { receipt: "written" };
+      },
+    });
+
+    assert.equal(result.completion, "not-completed");
+    assert.deepEqual(
+      result.payload.workflowState.effectReceipts.map((receipt) => receipt.effect),
+      expectedReceipts,
+    );
+    assert.deepEqual(
+      persisted.at(-1)?.effectReceipts.map((receipt) => receipt.effect),
+      expectedReceipts,
+    );
+  }
+});
+
+test("Atlas Initialization refuses a Lint Stamp when Lint evidence names another commit", () => {
+  const initial = state();
+  const result = runAtlasInitializationWorkflow(initial, {
+    commitProposal: () => {
+      const commit = "1111111111111111111111111111111111111111";
+      return { commit, receipt: commit };
+    },
+    createProposalWorktree: () => ({ receipt: "created" }),
+    currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
+    currentTargetHead: () => initial.targetHead,
+    lintProposal: () => ({
+      lint: runLintOperation(atlasInitializationFiles(initial), {
+        maxFileBytes: 4096,
+        maxTotalBytes: 65536,
+      }),
+      receipt: "2222222222222222222222222222222222222222",
+    }),
+    writeChangeSet: () => ({ receipt: "written" }),
+  });
+
+  assert.equal(result.completion, "not-completed");
+  assert.equal(
+    result.handoff.validationState.findings[0]?.code,
+    "ATLAS_INITIALIZATION_LINT_STAMP_STALE",
   );
 });
 
@@ -327,7 +404,10 @@ test("Atlas Initialization can resume after an already recorded Lint receipt", (
         effect: "commit-proposal" as const,
         receipt: "dddddddddddddddddddddddddddddddddddddddd",
       }),
-      Object.freeze({ effect: "lint-proposal" as const, receipt: "linted" }),
+      Object.freeze({
+        effect: "lint-proposal" as const,
+        receipt: "dddddddddddddddddddddddddddddddddddddddd",
+      }),
     ]),
   );
   let linted = 0;
@@ -339,7 +419,7 @@ test("Atlas Initialization can resume after an already recorded Lint receipt", (
       throw new Error("create must not replay");
     },
     currentTargetHead: () => resumed.targetHead,
-    currentViewDigest: () => resumed.atlasViewDigest,
+    currentBaseSnapshotDigest: () => resumed.baseSnapshotDigest,
     lintProposal: () => {
       linted += 1;
       return {
@@ -347,7 +427,7 @@ test("Atlas Initialization can resume after an already recorded Lint receipt", (
           maxFileBytes: 4096,
           maxTotalBytes: 65536,
         }),
-        receipt: "linted-again",
+        receipt: "dddddddddddddddddddddddddddddddddddddddd",
       };
     },
     writeChangeSet: () => {
@@ -373,7 +453,7 @@ test("Atlas Initialization reports runtime failure without throwing across the o
       throw new Error("workspace failed");
     },
     currentTargetHead: () => initial.targetHead,
-    currentViewDigest: () => initial.atlasViewDigest,
+    currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
     lintProposal: () => {
       throw new Error("not reached");
     },
@@ -408,10 +488,31 @@ test("Local Atlas Initialization state captures Atlas Snapshot content and git f
 
   const captured = createLocalAtlasInitializationState(repository);
   assert.equal(captured.targetHead, git(repository, ["rev-parse", "HEAD"]));
-  assert.notEqual(captured.atlasViewDigest.length, 0);
+  assert.notEqual(captured.baseSnapshotDigest.length, 0);
   assert.throws(() =>
     createLocalAtlasInitializationState(resolve(WORKSPACE, "missing-repository")),
   );
+});
+
+test("Local Atlas Initialization persists resumable state and excludes Operation Workspaces", () => {
+  const repository = resolve(WORKSPACE, "persisted-resume");
+  initRepository(repository);
+
+  const result = runLocalAtlasInitialization(repository);
+  const branch = result.payload.workflowState.proposalBranch;
+  const persisted = readLocalAtlasInitializationState(repository, branch);
+  const resumed = resumeLocalAtlasInitialization(repository, branch);
+  const status = spawnSync("git", ["-C", repository, "status", "--short"], {
+    encoding: "utf8",
+  });
+
+  assert.equal(result.completion, "completed");
+  assert.equal(resumed.completion, "completed");
+  assert.deepEqual(
+    persisted.effectReceipts,
+    result.payload.workflowState.effectReceipts,
+  );
+  assert.doesNotMatch(status.stdout, /\.atlas-operation-workspaces/u);
 });
 
 test("Local Atlas Initialization reports a missing proposal workspace as non-completion", () => {
