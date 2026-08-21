@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
 import {
@@ -626,6 +633,85 @@ test("Local Atlas Initialization does not execute repository-local hooks or filt
   }
 });
 
+test("Local Atlas Initialization does not execute repo-local fsmonitor commands", () => {
+  const repository = resolve(WORKSPACE, "hostile-fsmonitor");
+  initRepository(repository);
+  const marker = resolve(repository, "PWN_fsmonitor");
+  const fsmonitor = resolve(repository, "fsmonitor.sh");
+  writeFileSync(fsmonitor, `#!/bin/sh\ntouch "${marker}"\nexit 0\n`, {
+    encoding: "utf8",
+    mode: 0o755,
+  });
+  const include = resolve(repository, "included-config");
+  writeFileSync(include, `[core]\n\tfsmonitor = ${fsmonitor}\n`, "utf8");
+  git(repository, ["config", "include.path", include]);
+
+  const result = runLocalAtlasInitialization(repository);
+
+  assert.equal(result.completion, "completed");
+  assert.equal(existsSync(marker), false);
+});
+
+test("Local Atlas Initialization refuses symlinked Operation Workspace paths", () => {
+  for (const [name, branchOf, setup] of [
+    [
+      "container",
+      (branch: string) => branch,
+      (repository: string, outside: string, branch: string) => {
+        void branch;
+        symlinkSync(outside, resolve(repository, ".atlas-operation-workspaces"));
+      },
+    ],
+    [
+      "intermediate",
+      (branch: string) => `${branch}/child`,
+      (repository: string, outside: string, branch: string) => {
+        const first = branch.split("/")[0] ?? branch;
+        mkdirSync(resolve(repository, ".atlas-operation-workspaces"), {
+          recursive: true,
+        });
+        symlinkSync(outside, resolve(repository, ".atlas-operation-workspaces", first));
+      },
+    ],
+    [
+      "leaf",
+      (branch: string) => branch,
+      (repository: string, outside: string, branch: string) => {
+        mkdirSync(resolve(repository, ".atlas-operation-workspaces"), {
+          recursive: true,
+        });
+        symlinkSync(
+          outside,
+          resolve(repository, ".atlas-operation-workspaces", branch),
+        );
+      },
+    ],
+  ] as const) {
+    const repository = resolve(WORKSPACE, `workspace-symlink-${name}`);
+    const outside = resolve(WORKSPACE, `workspace-symlink-${name}-outside`);
+    initRepository(repository);
+    rmSync(outside, { force: true, recursive: true });
+    mkdirSync(outside, { recursive: true });
+    const initial = createLocalAtlasInitializationState(repository);
+    const branch = branchOf(initial.proposalBranch);
+    setup(repository, outside, branch);
+
+    const result = runLocalAtlasInitialization(repository, {
+      ...initial,
+      proposalBranch: branch,
+    });
+
+    assert.equal(result.completion, "not-completed", name);
+    assert.equal(
+      result.handoff.validationState.findings[0]?.code,
+      name === "leaf"
+        ? "ATLAS_INITIALIZATION_WORKSPACE_EXISTS"
+        : "ATLAS_INITIALIZATION_WORKSPACE_PATH_INVALID",
+    );
+    assert.equal(existsSync(resolve(outside, branch, ".atlas", "index.md")), false);
+  }
+});
+
 test("atlas initialize --machine reports ordinary bad inputs as machine JSON", () => {
   const missingRepository = resolve(WORKSPACE, "missing-for-cli");
   rmSync(missingRepository, { force: true, recursive: true });
@@ -751,6 +837,7 @@ test("Local Atlas Initialization rejects malformed persisted workflow receipts",
     '{"operation-workflow-schema":"1.0.0","baseSnapshotDigest":"d","effectReceipts":[{}],"proposalBranch":"atlas-initialization-malformed","targetBranch":"main","targetHead":"h"}',
     '{"operation-workflow-schema":"1.0.0","baseSnapshotDigest":"d","effectReceipts":[{"effect":"bad","receipt":"r"}],"proposalBranch":"atlas-initialization-malformed","targetBranch":"main","targetHead":"h"}',
     '{"operation-workflow-schema":"1.0.0","baseSnapshotDigest":"d","effectReceipts":[{"effect":"lint-proposal","receipt":1}],"proposalBranch":"atlas-initialization-malformed","targetBranch":"main","targetHead":"h"}',
+    '{"operation-workflow-schema":"1.0.0","baseSnapshotDigest":"d","effectReceipts":[],"proposalBranch":"main","targetBranch":"main","targetHead":"h"}',
   ]) {
     writeFileSync(stateFile, stateText, "utf8");
     assert.throws(() => readLocalAtlasInitializationState(repository, branch));

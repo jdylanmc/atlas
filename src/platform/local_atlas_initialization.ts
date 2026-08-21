@@ -2,8 +2,10 @@ import { createHash } from "node:crypto";
 import {
   appendFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   writeFileSync,
 } from "node:fs";
@@ -72,6 +74,21 @@ function workspaceExists(repository: string, proposalBranch: string): boolean {
       `refs/heads/${proposalBranch}`,
     ])
   );
+}
+
+function workspacePathIsContained(repository: string, proposalBranch: string): boolean {
+  const repositoryRoot = realpathSync(repository);
+  let current = repositoryRoot;
+  for (const component of [
+    ".atlas-operation-workspaces",
+    ...proposalBranch.split("/"),
+  ]) {
+    current = join(current, component);
+    const stat = lstatSync(current, { throwIfNoEntry: false });
+    if (stat === undefined) continue;
+    if (stat.isSymbolicLink()) return false;
+  }
+  return true;
 }
 
 function statePath(repository: string, proposalBranch: string): string {
@@ -175,9 +192,16 @@ export function readLocalAtlasInitializationState(
   repository: string,
   proposalBranch: string,
 ): AtlasInitializationWorkflowState {
-  return parseWorkflowState(
+  const state = parseWorkflowState(
     JSON.parse(readFileSync(statePath(repository, proposalBranch), "utf8")),
   );
+  if (
+    state.proposalBranch !== proposalBranch ||
+    !/^atlas-initialization-[0-9a-f]{12}$/u.test(state.proposalBranch)
+  ) {
+    throw new Error("operation state proposal branch is malformed");
+  }
+  return state;
 }
 
 export function resumeLocalAtlasInitialization(
@@ -268,11 +292,6 @@ export function runLocalAtlasInitialization(
       const gitDirectory = git(workspace, ["rev-parse", "--git-dir"]);
       const gitDirectoryPath = resolve(workspace, gitDirectory);
       mkdirSync(join(gitDirectoryPath, "info"), { recursive: true });
-      writeFileSync(
-        join(gitDirectoryPath, "info", "attributes"),
-        "* -filter -text\n",
-        "utf8",
-      );
       gitWrite(workspace, ["read-tree", workflowState.targetHead]);
       return { receipt: workflowState.proposalBranch };
     },
@@ -296,6 +315,8 @@ export function runLocalAtlasInitialization(
       writeStateAtomically(repository, nextState);
     },
     workspaceExists: () => workspaceExists(repository, workflowState.proposalBranch),
+    workspacePathValid: () =>
+      workspacePathIsContained(repository, workflowState.proposalBranch),
     writeChangeSet: (changeSet: AtlasInitializationChangeSet) => {
       for (const change of changeSet.changes) {
         const path = join(workspace, change.path);

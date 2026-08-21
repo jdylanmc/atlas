@@ -100,6 +100,7 @@ export interface AtlasInitializationRuntime {
   };
   readonly persistState?: (state: AtlasInitializationWorkflowState) => void;
   readonly workspaceExists?: () => boolean;
+  readonly workspacePathValid?: () => boolean;
   readonly writeChangeSet: (changeSet: AtlasInitializationChangeSet) => {
     readonly receipt: string;
   };
@@ -462,6 +463,21 @@ export function runAtlasInitializationWorkflow(
         recommendedNextAction:
           "Resume with --resume-proposal-branch for the existing proposal, or explicitly discard it after saving any review work.",
         summary: "Initialization refused to overwrite an existing Operation Workspace.",
+        workflowState: nextState,
+      });
+    }
+    if (
+      receiptFor(nextState, "create-proposal-worktree") === undefined &&
+      runtime.workspacePathValid?.() === false
+    ) {
+      return notCompletedAtlasInitializationResult({
+        code: "ATLAS_INITIALIZATION_WORKSPACE_PATH_INVALID",
+        message:
+          "Atlas Initialization refused an Operation Workspace path that escapes the Atlas Host Directory.",
+        recommendedNextAction:
+          "Remove symlinks from the Operation Workspace path, then retry Initialization from a clean Git worktree.",
+        summary:
+          "Initialization refused to create an Operation Workspace outside the Atlas Host Directory.",
         workflowState: nextState,
       });
     }
