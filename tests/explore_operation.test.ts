@@ -21,7 +21,10 @@ import {
   lexicalSearchProvider,
 } from "../src/graph/lexical_search_provider.ts";
 import { loadAndValidateAtlasInput } from "../src/lint/validate_atlas_input.ts";
-import { runExploreOperation } from "../src/operations/explore_operation.ts";
+import {
+  runExploreOperation,
+  runExploreOperationFromSnapshotCapture,
+} from "../src/operations/explore_operation.ts";
 import { captureLocalAtlasSnapshot } from "../src/platform/local_atlas_snapshot.ts";
 import { assertGrowthRatio } from "./growth.ts";
 
@@ -66,6 +69,16 @@ function fixture(path: string): CapturedAtlasFile {
 
 function completeAtlas(): CapturedAtlasFile[] {
   return paths.map(fixture);
+}
+
+function requireSnapshot(
+  capture: ReturnType<typeof captureLocalAtlasSnapshot>,
+): Extract<
+  ReturnType<typeof captureLocalAtlasSnapshot>,
+  { readonly state: "captured" }
+>["snapshot"] {
+  assert.equal(capture.state, "captured");
+  return capture.snapshot;
 }
 
 function exploreCaptured(
@@ -569,6 +582,47 @@ test("structurally invalid Atlases cannot report valid structured Explore", () =
   );
 });
 
+test("structurally invalid Atlases cannot yield a successful Explore operation", () => {
+  const duplicateIds = runExploreOperation({
+    baseSnapshot: { reference: "duplicate-fixture", state: "known" },
+    capturedFiles: [
+      page(".atlas/index.md", "anchor:root", "anchor", "Root", "# Root"),
+      page(".atlas/concepts/a.md", "concept:dup", "concept", "A", "# A\n\nneedle"),
+      page(".atlas/concepts/b.md", "concept:dup", "concept", "B", "# B\n\nneedle"),
+    ],
+    homeAtlas: { reference: "fixture", state: "known" },
+    query: "needle",
+    budgets,
+  });
+  assert.equal(duplicateIds.completion, "completed");
+  assert.equal(duplicateIds.disposition, "failed");
+  assert.equal(duplicateIds.handoff.validationState.state, "failed");
+  assert.ok(
+    duplicateIds.handoff.validationState.findings.some(
+      (finding) => finding.code === "ATLAS_PAGE_ID_DUPLICATE",
+    ),
+  );
+
+  const invalidTypePath = runExploreOperation({
+    baseSnapshot: { reference: "type-path-fixture", state: "known" },
+    capturedFiles: [
+      page(".atlas/index.md", "anchor:root", "anchor", "Root", "# Root"),
+      page(".atlas/concepts/wrong.md", "concept:wrong", "anchor", "Wrong", "# Wrong"),
+    ],
+    homeAtlas: { reference: "fixture", state: "known" },
+    query: "wrong",
+    budgets,
+  });
+  assert.equal(invalidTypePath.completion, "completed");
+  assert.equal(invalidTypePath.disposition, "failed");
+  assert.equal(invalidTypePath.handoff.validationState.state, "failed");
+  assert.ok(
+    invalidTypePath.handoff.validationState.findings.some(
+      (finding) => finding.code === "ATLAS_PAGE_TYPE_PATH_MISMATCH",
+    ),
+  );
+});
+
 test("Explore budgets cap object loading and context citation scans", () => {
   const capped = exploreCaptured(graphAtlas(), "needle", lexicalSearchProvider, {
     ...budgets,
@@ -848,13 +902,23 @@ test("one Home Atlas commit remains fixed when the worktree changes", () => {
   exec(repo, ["config", "user.name", "Fixture"]);
   exec(repo, ["add", "."]);
   exec(repo, ["commit", "-m", "initial"]);
-  const snapshot = captureLocalAtlasSnapshot(repo);
+  const snapshot = requireSnapshot(captureLocalAtlasSnapshot(repo));
   writeFileSync(resolve(repo, ".atlas/concepts/canonical-serialization.md"), "changed");
-  const result = runExploreOperation({
-    ...snapshot,
-    query: "canonical bytes",
-    budgets,
-  });
+  const result = runExploreOperationFromSnapshotCapture(
+    {
+      snapshot,
+      state: "captured",
+    },
+    {
+      query: "canonical bytes",
+      budgets,
+      provider: lexicalSearchProvider,
+    },
+  );
+  const defaultBudgetResult = runExploreOperationFromSnapshotCapture(
+    { snapshot, state: "captured" },
+    { query: "canonical bytes" },
+  );
 
   test("local Atlas snapshot ignores hostile Git executable resolution and environment", () => {
     const repo = resolve(workspaceRoot, "explore-snapshot-hostile");
@@ -906,7 +970,7 @@ test("one Home Atlas commit remains fixed when the worktree changes", () => {
       process.env["PATH"] = `${hostileBin}:${originalPath ?? ""}`;
       process.env["GIT_DIR"] = resolve(redirected, ".git");
       process.env["GIT_WORK_TREE"] = redirected;
-      const snapshot = captureLocalAtlasSnapshot(repo);
+      const snapshot = requireSnapshot(captureLocalAtlasSnapshot(repo));
       assert.deepEqual(snapshot.baseSnapshot, { reference: realHead, state: "known" });
       const result = runExploreOperation({ ...snapshot, query: "canonical", budgets });
       assert.equal(result.payload.results[0]?.result.title, "Canonical Serialization");
@@ -925,14 +989,45 @@ test("one Home Atlas commit remains fixed when the worktree changes", () => {
   assert.equal(snapshot.baseSnapshot.state, "known");
   assert.match(snapshot.baseSnapshot.reference, /^[0-9a-f]{40}$/u);
   assert.equal(result.payload.results[0]?.result.title, "Canonical Serialization");
+  assert.equal(
+    defaultBudgetResult.payload.results[0]?.result.title,
+    "Canonical Serialization",
+  );
   rmSync(repo, { force: true, recursive: true });
 });
 
 test("local Atlas snapshot reports Git failures", () => {
-  assert.throws(
-    () => captureLocalAtlasSnapshot(resolve(workspaceRoot, "missing-repo")),
-    /Git failed while capturing/u,
+  const missing = captureLocalAtlasSnapshot(resolve(workspaceRoot, "missing-repo"));
+  assert.equal(missing.state, "failed");
+  assert.match(missing.reason, /Git failed while capturing/u);
+  const missingResult = runExploreOperationFromSnapshotCapture(missing, {
+    query: "needle",
+    budgets,
+  });
+  assert.equal(missingResult.completion, "not-completed");
+  assert.equal(missingResult.disposition, "failed");
+  assert.equal(
+    missingResult.payload.degradation.diagnostics[0]?.code,
+    "ATLAS_EXPLORE_SNAPSHOT_CAPTURE_FAILED",
   );
+
+  const corruptTree = resolve(workspaceRoot, "explore-snapshot-corrupt-tree");
+  rmSync(corruptTree, { force: true, recursive: true });
+  mkdirSync(corruptTree, { recursive: true });
+  cpSync(resolve(fixturesRoot, ".atlas"), resolve(corruptTree, ".atlas"), {
+    recursive: true,
+  });
+  exec(corruptTree, ["init"]);
+  exec(corruptTree, ["config", "user.email", "fixture@example.invalid"]);
+  exec(corruptTree, ["config", "user.name", "Fixture"]);
+  exec(corruptTree, ["add", "."]);
+  exec(corruptTree, ["commit", "-m", "initial"]);
+  const tree = execOutput(corruptTree, ["rev-parse", "HEAD^{tree}"]).trim();
+  rmSync(resolve(corruptTree, ".git", "objects", tree.slice(0, 2), tree.slice(2)));
+  const corruptTreeResult = captureLocalAtlasSnapshot(corruptTree);
+  assert.equal(corruptTreeResult.state, "failed");
+  assert.match(corruptTreeResult.reason, /Git failed while capturing/u);
+  rmSync(corruptTree, { force: true, recursive: true });
 
   const repo = resolve(workspaceRoot, "explore-snapshot-corrupt");
   rmSync(repo, { force: true, recursive: true });
@@ -949,7 +1044,9 @@ test("local Atlas snapshot reports Git failures", () => {
     .trim()
     .split(/\s+/u)[2] as string;
   rmSync(resolve(repo, ".git", "objects", object.slice(0, 2), object.slice(2)));
-  assert.throws(() => captureLocalAtlasSnapshot(repo), /Git failed while reading/u);
+  const corrupt = captureLocalAtlasSnapshot(repo);
+  assert.equal(corrupt.state, "failed");
+  assert.match(corrupt.reason, /Git failed while reading/u);
   rmSync(repo, { force: true, recursive: true });
 });
 

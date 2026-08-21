@@ -7,6 +7,7 @@ import {
 } from "../graph/explore_atlas.ts";
 import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
 import { loadAndValidateAtlasInput } from "../lint/validate_atlas_input.ts";
+import type { Finding } from "../domain/finding.ts";
 import {
   operationHandoffSchemaVersion,
   operationResultSchemaVersion,
@@ -31,6 +32,22 @@ export interface ExploreOperationRequest {
   readonly provider?: SearchProvider;
   readonly query: string;
 }
+
+export interface ExploreCapturedSnapshot {
+  readonly baseSnapshot: OperationReference;
+  readonly capturedFiles: readonly CapturedAtlasFile[];
+  readonly homeAtlas: OperationReference;
+}
+
+export type ExploreSnapshotCaptureResult =
+  | {
+      readonly snapshot: ExploreCapturedSnapshot;
+      readonly state: "captured";
+    }
+  | {
+      readonly reason: string;
+      readonly state: "failed";
+    };
 
 export type ExploreOperationHandoff = OperationHandoff<ExploreOperationIdentity>;
 export type ExploreOperationResult = OperationResult<
@@ -79,7 +96,10 @@ function handoff(
 ): ExploreOperationHandoff {
   const blocked = payload.degradation.level === "blocked";
   const degraded = payload.degradation.level !== "valid-structured";
-  const succeeded = !blocked && payload.results.length > 0;
+  const validationFailed = payload.degradation.diagnostics.some(
+    (finding) => finding.severity === "error",
+  );
+  const succeeded = !blocked && !validationFailed && payload.results.length > 0;
   return Object.freeze({
     "operation-handoff-schema": operationHandoffSchemaVersion,
     baseSnapshot: request.baseSnapshot,
@@ -124,6 +144,34 @@ function handoff(
   });
 }
 
+function captureFailureFinding(reason: string): Finding {
+  return Object.freeze({
+    attribution: Object.freeze({
+      checkId: "sdk-core.explore-snapshot-capture",
+      kind: "sdk-core" as const,
+      trusted: true as const,
+    }),
+    code: "ATLAS_EXPLORE_SNAPSHOT_CAPTURE_FAILED",
+    "finding-schema": "1.0.0",
+    message: reason,
+    path: ".atlas",
+    severity: "error" as const,
+  });
+}
+
+function blockedCapturePayload(reason: string): ExplorePayload {
+  return Object.freeze({
+    degradation: Object.freeze({
+      diagnostics: Object.freeze([captureFailureFinding(reason)]),
+      level: "blocked" as const,
+      remediation:
+        "Capture a readable Git-backed Home Atlas Snapshot, then run Explore again.",
+    }),
+    reanchors: Object.freeze([]),
+    results: Object.freeze([]),
+  });
+}
+
 export function runExploreOperation(
   request: ExploreOperationRequest,
 ): ExploreOperationResult {
@@ -147,5 +195,47 @@ export function runExploreOperation(
     handoff: operationHandoff,
     operation: exploreOperation,
     payload,
+  });
+}
+
+export function runExploreOperationFromSnapshotCapture(
+  capture: ExploreSnapshotCaptureResult,
+  options: {
+    readonly budgets?: Partial<ExploreBudgets>;
+    readonly provider?: SearchProvider;
+    readonly query: string;
+  },
+): ExploreOperationResult {
+  if (capture.state === "failed") {
+    const payload = blockedCapturePayload(capture.reason);
+    const operationHandoff = handoff(
+      {
+        baseSnapshot: Object.freeze({
+          reason: "Explore could not capture an Atlas Snapshot.",
+          state: "unknown" as const,
+        }),
+        capturedFiles: Object.freeze([]),
+        homeAtlas: Object.freeze({
+          reason: "Explore could not capture the Home Atlas.",
+          state: "unknown" as const,
+        }),
+        query: options.query,
+      },
+      payload,
+    );
+    return Object.freeze({
+      "operation-result-schema": operationResultSchemaVersion,
+      completion: "not-completed" as const,
+      disposition: operationHandoff.result.disposition,
+      handoff: operationHandoff,
+      operation: exploreOperation,
+      payload,
+    });
+  }
+  return runExploreOperation({
+    ...capture.snapshot,
+    ...(options.budgets === undefined ? {} : { budgets: options.budgets }),
+    ...(options.provider === undefined ? {} : { provider: options.provider }),
+    query: options.query,
   });
 }
