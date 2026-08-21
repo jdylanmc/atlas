@@ -42,5 +42,8 @@
     "mdast-util-to-string": "4.0.0",
     "micromark-extension-gfm-footnote": "2.1.0",
     "yaml": "2.9.0"
+  },
+  "bin": {
+    "atlas": "./scripts/atlas.ts"
   }
 }

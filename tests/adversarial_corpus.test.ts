@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test, { after } from "node:test";
@@ -27,6 +28,11 @@ interface Corpus {
 }
 
 const ROOT = resolve(import.meta.dirname, "..");
+const atlasCliCorpus = parseAtlasCliCorpus(
+  JSON.parse(
+    readFileSync(resolve(ROOT, "tests", "adversarial", "atlas-cli.json"), "utf8"),
+  ),
+);
 const corpus = parseCorpus(
   JSON.parse(
     readFileSync(
@@ -35,6 +41,35 @@ const corpus = parseCorpus(
     ),
   ),
 );
+
+interface AtlasCliCommandCase {
+  readonly arguments: readonly string[];
+  readonly expectedCode: string;
+  readonly expectedDegradationState?: "degraded" | "not-degraded";
+  readonly expectedExit: number;
+  readonly forbidPayloadLint?: true;
+  readonly gate: "atlas-cli";
+  readonly kind: "command";
+  readonly name: string;
+  readonly recommendedNextActionExcludes?: string;
+  readonly stderrIncludes?: string;
+}
+
+interface AtlasCliSourceBoundaryCase {
+  readonly forbiddenImports: readonly string[];
+  readonly gate: "atlas-cli";
+  readonly kind: "source-boundary";
+  readonly name: string;
+  readonly path: string;
+}
+
+type AtlasCliCase = AtlasCliCommandCase | AtlasCliSourceBoundaryCase;
+
+interface AtlasCliCorpus {
+  readonly cases: readonly AtlasCliCase[];
+  readonly reviewResolutionRule: string;
+  readonly schema: 1;
+}
 
 const binding: CoreArchetypeBindings = Object.freeze({
   Anchor: Object.freeze({
@@ -77,6 +112,92 @@ function assertStringArray(value: unknown, path: string): readonly string[] {
   return (value as readonly unknown[]).map((entry, index) =>
     assertString(entry, `${path}[${String(index)}]`),
   );
+}
+
+function assertBoolean(value: unknown, path: string): true | undefined {
+  if (value === undefined) return undefined;
+  assert.equal(value, true, `${path} must be true when present`);
+  return true;
+}
+
+function assertNumber(value: unknown, path: string): number {
+  if (typeof value !== "number") {
+    assert.fail(`${path} must be a number`);
+  }
+  return value;
+}
+
+function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
+  assert.ok(isRecord(value), "atlas-cli corpus must be an object");
+  assert.equal(value["schema"], 1, "atlas-cli corpus schema must be 1");
+  const reviewResolutionRule = assertString(
+    value["reviewResolutionRule"],
+    "atlas-cli.reviewResolutionRule",
+  );
+  assert.ok(Array.isArray(value["cases"]), "atlas-cli cases must be an array");
+  assert.notEqual(value["cases"].length, 0, "atlas-cli cases must not be empty");
+  const names = new Set<string>();
+  const cases = (value["cases"] as readonly unknown[]).map(
+    (entry, index): AtlasCliCase => {
+      const path = `atlas-cli.cases[${String(index)}]`;
+      assert.ok(isRecord(entry), `${path} must be an object`);
+      const name = assertString(entry["name"], `${path}.name`);
+      assert.equal(names.has(name), false, `${path}.name must be unique`);
+      names.add(name);
+      assert.equal(entry["gate"], "atlas-cli", `${path}.gate is unsupported`);
+      if (entry["kind"] === "command") {
+        const parsed: AtlasCliCommandCase = {
+          arguments: assertStringArray(entry["arguments"], `${path}.arguments`),
+          expectedCode: assertString(entry["expectedCode"], `${path}.expectedCode`),
+          expectedExit: assertNumber(entry["expectedExit"], `${path}.expectedExit`),
+          gate: "atlas-cli",
+          kind: "command",
+          name,
+        };
+        const optional: {
+          expectedDegradationState?: "degraded" | "not-degraded";
+          forbidPayloadLint?: true;
+          recommendedNextActionExcludes?: string;
+          stderrIncludes?: string;
+        } = {};
+        if (entry["expectedDegradationState"] !== undefined) {
+          optional.expectedDegradationState = assertString(
+            entry["expectedDegradationState"],
+            `${path}.expectedDegradationState`,
+          ) as "degraded" | "not-degraded";
+        }
+        if (entry["forbidPayloadLint"] !== undefined) {
+          assertBoolean(entry["forbidPayloadLint"], `${path}.forbidPayloadLint`);
+          optional.forbidPayloadLint = true;
+        }
+        if (entry["recommendedNextActionExcludes"] !== undefined) {
+          optional.recommendedNextActionExcludes = assertString(
+            entry["recommendedNextActionExcludes"],
+            `${path}.recommendedNextActionExcludes`,
+          );
+        }
+        if (entry["stderrIncludes"] !== undefined) {
+          optional.stderrIncludes = assertString(
+            entry["stderrIncludes"],
+            `${path}.stderrIncludes`,
+          );
+        }
+        return { ...parsed, ...optional };
+      }
+      assert.equal(entry["kind"], "source-boundary", `${path}.kind is unsupported`);
+      return {
+        forbiddenImports: assertStringArray(
+          entry["forbiddenImports"],
+          `${path}.forbiddenImports`,
+        ),
+        gate: "atlas-cli",
+        kind: "source-boundary",
+        name,
+        path: assertString(entry["path"], `${path}.path`),
+      };
+    },
+  );
+  return { cases, reviewResolutionRule, schema: 1 };
 }
 
 function parseCorpus(value: unknown): Corpus {
@@ -149,7 +270,7 @@ function parseCorpus(value: unknown): Corpus {
 let executedCases = 0;
 
 after(() => {
-  assert.equal(executedCases, corpus.cases.length);
+  assert.equal(executedCases, corpus.cases.length + atlasCliCorpus.cases.length);
 });
 
 test("the adversarial vocabulary corpus is structurally valid", () => {
@@ -162,6 +283,74 @@ test("the adversarial vocabulary corpus is structurally valid", () => {
   assert.ok(corpus.cases.some((entry) => entry.expectation === "accept"));
   assert.ok(corpus.cases.some((entry) => entry.expectation === "reject"));
 });
+
+test("the adversarial atlas-cli corpus is structurally valid", () => {
+  assert.match(atlasCliCorpus.reviewResolutionRule, /review finding/u);
+  assert.equal(atlasCliCorpus.schema, 1);
+  assert.equal(
+    new Set(atlasCliCorpus.cases.map((entry) => entry.name)).size,
+    atlasCliCorpus.cases.length,
+  );
+  assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "command"));
+  assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "source-boundary"));
+});
+
+for (const entry of atlasCliCorpus.cases) {
+  test(`adversarial atlas-cli corpus: ${entry.name}`, () => {
+    executedCases += 1;
+    if (entry.kind === "source-boundary") {
+      const source = readFileSync(resolve(ROOT, entry.path), "utf8");
+      for (const forbidden of entry.forbiddenImports) {
+        assert.equal(source.includes(forbidden), false, forbidden);
+      }
+      return;
+    }
+
+    const command = spawnSync(
+      process.execPath,
+      [resolve(ROOT, "scripts", "atlas.ts"), ...entry.arguments],
+      { cwd: ROOT, encoding: "buffer" },
+    );
+    assert.equal(command.error, undefined);
+    assert.equal(command.status, entry.expectedExit);
+    const result = JSON.parse(command.stdout.toString("utf8")) as Readonly<
+      Record<string, unknown>
+    >;
+    const handoff = result["handoff"] as Readonly<Record<string, unknown>>;
+    const validationState = handoff["validationState"] as Readonly<
+      Record<string, unknown>
+    >;
+    const findings = validationState["findings"] as readonly Readonly<
+      Record<string, unknown>
+    >[];
+    assert.equal(findings[0]?.["code"], entry.expectedCode);
+    if (entry.forbidPayloadLint === true) {
+      const payload = result["payload"] as Readonly<Record<string, unknown>>;
+      assert.equal(payload["state"], "not-completed");
+      assert.equal("lint" in payload, false);
+    }
+    if (entry.expectedDegradationState !== undefined) {
+      const degradationState = handoff["degradationState"] as Readonly<
+        Record<string, unknown>
+      >;
+      assert.equal(degradationState["state"], entry.expectedDegradationState);
+    }
+    if (entry.recommendedNextActionExcludes !== undefined) {
+      assert.equal(
+        String(handoff["recommendedNextAction"]).includes(
+          entry.recommendedNextActionExcludes,
+        ),
+        false,
+      );
+    }
+    if (entry.stderrIncludes !== undefined) {
+      assert.ok(
+        command.stderr.toString("utf8").includes(entry.stderrIncludes),
+        command.stderr.toString("utf8"),
+      );
+    }
+  });
+}
 
 test("an empty adversarial corpus fails validation", () => {
   assert.throws(

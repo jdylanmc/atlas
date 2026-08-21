@@ -67,6 +67,7 @@ test("Operation Workflow returns a versioned completed Lint result and handoff f
   assert.equal(result["operation-result-schema"], "1.0.0");
   assert.equal(result.completion, "completed");
   assert.equal(result.disposition, "success");
+  assert.equal(result.payload.state, "completed");
   assert.equal(result.payload.lint.outcome, "valid");
   assert.deepEqual(result.payload.lint.findings, []);
   assert.equal(result.handoff["operation-handoff-schema"], "1.0.0");
@@ -107,6 +108,7 @@ test("Operation Workflow returns a non-success Lint result and handoff for an in
   assert.equal(result["operation-result-schema"], "1.0.0");
   assert.equal(result.completion, "completed");
   assert.equal(result.disposition, "failed");
+  assert.equal(result.payload.state, "completed");
   assert.equal(result.payload.lint.outcome, "invalid");
   assert.equal("pages" in result.payload.lint, false);
   assert.deepEqual(
@@ -149,9 +151,10 @@ test("Operation Workflow reports captured-file runtime failure as degraded non-c
 
   assert.equal(result.completion, "not-completed");
   assert.equal(result.disposition, "failed");
-  assert.equal(result.payload.lint.outcome, "invalid");
+  assert.equal(result.payload.state, "not-completed");
+  assert.equal("lint" in result.payload, false);
   assert.deepEqual(
-    result.payload.lint.findings.map((finding) => finding.code),
+    result.payload.findings.map((finding) => finding.code),
     ["ATLAS_CAPTURE_UNREADABLE"],
   );
   assert.deepEqual(result.handoff.degradationState, {
@@ -159,7 +162,7 @@ test("Operation Workflow reports captured-file runtime failure as degraded non-c
     state: "degraded",
   });
   assert.deepEqual(result.handoff.validationState, {
-    findings: result.payload.lint.findings,
+    findings: result.payload.findings,
     state: "not-completed",
   });
   assert.equal(
@@ -193,7 +196,10 @@ test("Operation Workflow reports stack exhaustion as degraded non-completion", (
       const result = atStackDepth(depth, () =>
         runLintOperation(atlas, generousBudgets),
       );
-      if (result.payload.lint.findings[0]?.code === "ATLAS_LINT_FAILED") {
+      if (
+        result.payload.state === "not-completed" &&
+        result.payload.findings[0]?.code === "ATLAS_LINT_FAILED"
+      ) {
         reported = result;
       }
     } catch {
