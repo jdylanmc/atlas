@@ -74,9 +74,19 @@ execution.
 Focused commands are `npm run format:check`, `npm run lint`,
 `npm run typecheck`, `npm run test:coverage`, `npm run test:unit`,
 `npm run atlas-sdk:validate`, `npm run vocabulary:validate`,
-`npm run cacophony:validate`, and `npm run workflow:lint`. Use
+`npm run cacophony:validate`, `npm run workflow:lint`, and
+`npm run framework:assemble`. Use
 `npm run cacophony:sync` only after editing a Persona, Directive, or composition
 reference.
+
+`npm run framework:assemble` writes `dist/framework-bundle/` with the portable
+Framework Bundle, its `framework-release-manifest.json`, and a sidecar manifest
+digest. The bundle vendors production dependencies and dependency license
+evidence so its verified `scripts/framework_bootstrap.ts` Lint entry point runs
+without installing or reading a host application's package graph. The sidecar
+digest is a corruption check, not a signature or external trust anchor; the
+trust root for an installed bundle is the host repository's Git history and
+code review of the committed bundle bytes.
 
 Review findings that describe a gate miss are resolved only after
 `tests/adversarial/` has a permanent reject or accept case that exercises the
