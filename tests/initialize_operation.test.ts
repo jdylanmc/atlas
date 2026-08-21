@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
 import {
@@ -18,6 +18,7 @@ import {
   resumeLocalAtlasInitialization,
   runLocalAtlasInitialization,
 } from "../src/platform/local_atlas_initialization.ts";
+import { captureLocalAtlasSnapshot as captureSnapshot } from "../src/platform/local_atlas_snapshot.ts";
 import { exitCodeForInitializeOperationResult } from "../src/interfaces/initialize_command.ts";
 
 const WORKSPACE = resolve(
@@ -77,6 +78,14 @@ test("Atlas Initialization writes a valid proposal while the target branch commi
   assert.equal(result.completion, "completed");
   assert.equal(result.disposition, "success");
   assert.equal(after, before);
+  assert.deepEqual(
+    git(repository, [
+      "ls-tree",
+      "--name-only",
+      result.payload.workflowState.proposalBranch,
+    ]).split("\n"),
+    [".atlas", "README.md"],
+  );
   assert.ok(result.payload.lint !== undefined);
   assert.equal(result.payload.lint.payload.state, "completed");
   assert.equal(result.payload.lint.payload.lint.outcome, "valid");
@@ -528,6 +537,200 @@ test("Local Atlas Initialization persists resumable state and excludes Operation
     result.payload.workflowState.effectReceipts,
   );
   assert.doesNotMatch(status.stdout, /\.atlas-operation-workspaces/u);
+});
+
+test("Local Atlas Initialization refuses to overwrite an existing Operation Workspace", () => {
+  const repository = resolve(WORKSPACE, "existing-workspace");
+  initRepository(repository);
+  const first = runLocalAtlasInitialization(repository);
+  const branch = first.payload.workflowState.proposalBranch;
+  const sentinel = resolve(
+    repository,
+    ".atlas-operation-workspaces",
+    branch,
+    ".atlas",
+    "REVIEW-NOTES.md",
+  );
+  writeFileSync(sentinel, "SENTINEL: uncommitted human review notes\n", "utf8");
+
+  const second = runLocalAtlasInitialization(repository);
+  const resumed = resumeLocalAtlasInitialization(repository, branch);
+
+  assert.equal(second.completion, "not-completed");
+  assert.equal(
+    second.handoff.validationState.findings[0]?.code,
+    "ATLAS_INITIALIZATION_WORKSPACE_EXISTS",
+  );
+  assert.match(second.handoff.recommendedNextAction, /--resume-proposal-branch/u);
+  assert.equal(
+    readFileSync(sentinel, "utf8"),
+    "SENTINEL: uncommitted human review notes\n",
+  );
+  assert.equal(resumed.completion, "completed");
+  assert.equal(
+    readFileSync(sentinel, "utf8"),
+    "SENTINEL: uncommitted human review notes\n",
+  );
+});
+
+test("Local Atlas Initialization does not execute repository-local hooks or filters", () => {
+  const repository = resolve(WORKSPACE, "hostile-git-config");
+  initRepository(repository);
+  writeFileSync(
+    resolve(repository, ".gitattributes"),
+    ".atlas/** filter=evil\n",
+    "utf8",
+  );
+  git(repository, ["add", ".gitattributes"]);
+  git(repository, [
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    "commit",
+    "-m",
+    "Configure evil attributes",
+  ]);
+  git(repository, [
+    "config",
+    "filter.evil.smudge",
+    `sh -c 'touch "$1"; cat' sh ${resolve(repository, "PWN_smudge")}`,
+  ]);
+  git(repository, [
+    "config",
+    "filter.evil.clean",
+    `sh -c 'touch "$1"; cat' sh ${resolve(repository, "PWN_clean")}`,
+  ]);
+  const hooks = resolve(repository, ".git", "hooks");
+  writeFileSync(
+    resolve(hooks, "post-checkout"),
+    `#!/bin/sh\ntouch "${resolve(repository, "PWN_postcheckout")}"\n`,
+    { encoding: "utf8", mode: 0o755 },
+  );
+  writeFileSync(
+    resolve(hooks, "pre-commit"),
+    `#!/bin/sh\ntouch "${resolve(repository, "PWN_precommit")}"\n`,
+    { encoding: "utf8", mode: 0o755 },
+  );
+
+  const result = runLocalAtlasInitialization(repository);
+
+  assert.equal(result.completion, "completed");
+  for (const marker of [
+    "PWN_smudge",
+    "PWN_clean",
+    "PWN_postcheckout",
+    "PWN_precommit",
+  ]) {
+    assert.equal(existsSync(resolve(repository, marker)), false, marker);
+  }
+});
+
+test("atlas initialize --machine reports ordinary bad inputs as machine JSON", () => {
+  const missingRepository = resolve(WORKSPACE, "missing-for-cli");
+  rmSync(missingRepository, { force: true, recursive: true });
+
+  const command = spawnSync(
+    process.execPath,
+    [COMMAND, "initialize", "--machine", "--atlas-host-directory", missingRepository],
+    { encoding: "utf8" },
+  );
+
+  assert.equal(command.status, 2);
+  assert.equal(command.stderr, "");
+  const parsed = JSON.parse(command.stdout) as ReturnType<
+    typeof runLocalAtlasInitialization
+  >;
+  assert.equal(parsed.completion, "not-completed");
+  assert.equal(
+    parsed.handoff.validationState.findings[0]?.code,
+    "ATLAS_INITIALIZATION_CAPTURE_FAILED",
+  );
+});
+
+test("Local Atlas Initialization reports snapshot budget failures as values", () => {
+  const repository = resolve(WORKSPACE, "large-atlas");
+  initRepository(repository);
+  mkdirSync(resolve(repository, ".atlas"), { recursive: true });
+  writeFileSync(resolve(repository, ".atlas", "large.md"), "x".repeat(1024 * 1024 + 1));
+  git(repository, ["add", ".atlas/large.md"]);
+  git(repository, [
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    "commit",
+    "-m",
+    "Add large atlas file",
+  ]);
+
+  const result = runLocalAtlasInitialization(repository);
+
+  assert.equal(result.completion, "not-completed");
+  assert.equal(
+    result.handoff.validationState.findings[0]?.code,
+    "ATLAS_INITIALIZATION_CAPTURE_FAILED",
+  );
+});
+
+test("Local Atlas Snapshot enforces file count and total byte budgets", () => {
+  const repository = resolve(WORKSPACE, "snapshot-budget");
+  initRepository(repository);
+  mkdirSync(resolve(repository, ".atlas"), { recursive: true });
+  writeFileSync(resolve(repository, ".atlas", "one.md"), "one", "utf8");
+  writeFileSync(resolve(repository, ".atlas", "two.md"), "two", "utf8");
+  git(repository, ["add", ".atlas"]);
+  git(repository, [
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    "commit",
+    "-m",
+    "Add atlas files",
+  ]);
+
+  assert.equal(
+    captureSnapshot(repository, {
+      maxFileBytes: 1024,
+      maxFiles: 1,
+      maxTotalBytes: 1024,
+    }).state,
+    "failed",
+  );
+  assert.equal(
+    captureSnapshot(repository, {
+      maxFileBytes: 1024,
+      maxFiles: 2,
+      maxTotalBytes: 5,
+    }).state,
+    "failed",
+  );
+});
+
+test("Local Atlas Initialization reports write adapter failures as values", () => {
+  const repository = resolve(WORKSPACE, "write-adapter-failure");
+  initRepository(repository);
+  const initial = createLocalAtlasInitializationState(repository);
+  const result = runLocalAtlasInitialization(repository, {
+    ...initial,
+    effectReceipts: Object.freeze([
+      Object.freeze({
+        effect: "create-proposal-worktree" as const,
+        receipt: "created",
+      }),
+    ]),
+  });
+
+  assert.equal(result.completion, "not-completed");
+  assert.equal(
+    result.handoff.validationState.findings[0]?.code,
+    "ATLAS_INITIALIZATION_RUNTIME_FAILED",
+  );
+  assert.deepEqual(
+    result.payload.workflowState.effectReceipts.map((receipt) => receipt.effect),
+    ["create-proposal-worktree"],
+  );
 });
 
 test("Local Atlas Initialization rejects malformed persisted workflow receipts", () => {

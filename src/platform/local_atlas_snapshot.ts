@@ -9,6 +9,18 @@ export interface AtlasSnapshot {
   readonly homeAtlas: OperationReference;
 }
 
+export interface LocalAtlasSnapshotBudgets {
+  readonly maxFileBytes: number;
+  readonly maxFiles: number;
+  readonly maxTotalBytes: number;
+}
+
+export const localAtlasSnapshotBudgets: LocalAtlasSnapshotBudgets = Object.freeze({
+  maxFileBytes: 1024 * 1024,
+  maxFiles: 4096,
+  maxTotalBytes: 16 * 1024 * 1024,
+});
+
 export type AtlasSnapshotCaptureResult =
   | {
       readonly snapshot: AtlasSnapshot;
@@ -21,6 +33,7 @@ export type AtlasSnapshotCaptureResult =
 
 export function captureLocalAtlasSnapshot(
   repository: string,
+  budgets: LocalAtlasSnapshotBudgets = localAtlasSnapshotBudgets,
 ): AtlasSnapshotCaptureResult {
   const revisionResult = runTrustedGit(repository, ["rev-parse", "HEAD"]);
   if (revisionResult.state === "failed") {
@@ -47,12 +60,32 @@ export function captureLocalAtlasSnapshot(
     .split("\0")
     .filter((path) => path !== "")
     .toSorted(compareCodePoints);
+  if (paths.length > budgets.maxFiles) {
+    return Object.freeze({
+      reason: "The local Atlas Snapshot exceeded the declared file budget.",
+      state: "failed" as const,
+    });
+  }
   const capturedFiles: CapturedAtlasFile[] = [];
+  let totalBytes = 0;
   for (const path of paths) {
     const result = runTrustedGitBytes(repository, ["show", `${revision}:${path}`]);
     if (result.state === "failed") {
       return Object.freeze({
         reason: "Git failed while reading the local Atlas Snapshot.",
+        state: "failed" as const,
+      });
+    }
+    if (result.stdout.byteLength > budgets.maxFileBytes) {
+      return Object.freeze({
+        reason: "The local Atlas Snapshot exceeded the declared per-file budget.",
+        state: "failed" as const,
+      });
+    }
+    totalBytes += result.stdout.byteLength;
+    if (totalBytes > budgets.maxTotalBytes) {
+      return Object.freeze({
+        reason: "The local Atlas Snapshot exceeded the declared total byte budget.",
         state: "failed" as const,
       });
     }

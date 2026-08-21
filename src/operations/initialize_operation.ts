@@ -99,6 +99,7 @@ export interface AtlasInitializationRuntime {
     readonly receipt: string;
   };
   readonly persistState?: (state: AtlasInitializationWorkflowState) => void;
+  readonly workspaceExists?: () => boolean;
   readonly writeChangeSet: (changeSet: AtlasInitializationChangeSet) => {
     readonly receipt: string;
   };
@@ -259,6 +260,45 @@ export function initialAtlasInitializationWorkflowState(input: {
   });
 }
 
+export function notCompletedAtlasInitializationResult(input: {
+  readonly code: string;
+  readonly message: string;
+  readonly recommendedNextAction: string;
+  readonly summary: string;
+  readonly workflowState?: AtlasInitializationWorkflowState;
+}): AtlasInitializationResult {
+  const workflowState =
+    input.workflowState ??
+    initialAtlasInitializationWorkflowState({
+      baseSnapshotDigest: "unknown",
+      proposalBranch: "unknown",
+      targetBranch: "unknown",
+      targetHead: "unknown",
+    });
+  const findings = Object.freeze([finding(input.code, input.message)]);
+  const operationHandoff = handoff(
+    workflowState,
+    "failed",
+    "not-completed",
+    findings,
+    input.summary,
+  );
+  return Object.freeze({
+    "operation-result-schema": operationResultSchemaVersion,
+    completion: "not-completed" as const,
+    disposition: "failed" as const,
+    handoff: Object.freeze({
+      ...operationHandoff,
+      recommendedNextAction: input.recommendedNextAction,
+    }),
+    operation: initializationOperation,
+    payload: Object.freeze({
+      state: "not-completed" as const,
+      workflowState,
+    }),
+  });
+}
+
 export function validateAtlasInitializationChangeSet(
   state: AtlasInitializationWorkflowState,
   changeSet: AtlasInitializationChangeSet,
@@ -411,6 +451,21 @@ export function runAtlasInitializationWorkflow(
     }
 
     let nextState = state;
+    if (
+      receiptFor(nextState, "create-proposal-worktree") === undefined &&
+      runtime.workspaceExists?.() === true
+    ) {
+      return notCompletedAtlasInitializationResult({
+        code: "ATLAS_INITIALIZATION_WORKSPACE_EXISTS",
+        message:
+          "Atlas Initialization found an existing proposal branch or Operation Workspace before creating a new proposal.",
+        recommendedNextAction:
+          "Resume with --resume-proposal-branch for the existing proposal, or explicitly discard it after saving any review work.",
+        summary: "Initialization refused to overwrite an existing Operation Workspace.",
+        workflowState: nextState,
+      });
+    }
+
     if (receiptFor(nextState, "create-proposal-worktree") === undefined) {
       const created = runtime.createProposalWorktree();
       nextState = addReceipt(nextState, {

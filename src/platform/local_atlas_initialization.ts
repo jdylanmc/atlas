@@ -1,22 +1,23 @@
 import { createHash } from "node:crypto";
 import {
   appendFileSync,
+  existsSync,
   mkdirSync,
   readFileSync,
   renameSync,
-  rmSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
   initialAtlasInitializationWorkflowState,
+  notCompletedAtlasInitializationResult,
   runAtlasInitializationWorkflow,
   type AtlasInitializationChangeSet,
   type AtlasInitializationWorkflowState,
 } from "../operations/initialize_operation.ts";
 import { runLintOperation } from "../operations/lint_operation.ts";
 import { captureLocalAtlasSnapshot } from "./local_atlas_snapshot.ts";
-import { runTrustedGit } from "./trusted_git.ts";
+import { runTrustedGit, runTrustedGitForWrite } from "./trusted_git.ts";
 
 function git(repository: string, args: readonly string[]): string {
   const result = runTrustedGit(repository, args);
@@ -26,9 +27,20 @@ function git(repository: string, args: readonly string[]): string {
   return result.stdout.trim();
 }
 
+function gitWrite(repository: string, args: readonly string[]): string {
+  const result = runTrustedGitForWrite(repository, args);
+  if (result.state === "failed") {
+    throw new Error("trusted git write command failed");
+  }
+  return result.stdout.trim();
+}
+
+function gitSucceeds(repository: string, args: readonly string[]): boolean {
+  return runTrustedGit(repository, args).state === "succeeded";
+}
+
 function digestSnapshot(repository: string, targetHead: string): string {
   const capture = captureLocalAtlasSnapshot(repository);
-  /* c8 ignore next -- createLocalAtlasInitializationState proves Git before digesting. */
   if (capture.state === "failed") throw new Error(capture.reason);
   const hash = createHash("sha256");
   hash.update(`target\0${targetHead}\0`);
@@ -47,6 +59,18 @@ function proposalBranchName(targetHead: string): string {
 
 function workspacePath(repository: string, proposalBranch: string): string {
   return join(repository, ".atlas-operation-workspaces", proposalBranch);
+}
+
+function workspaceExists(repository: string, proposalBranch: string): boolean {
+  return (
+    existsSync(workspacePath(repository, proposalBranch)) ||
+    gitSucceeds(repository, [
+      "show-ref",
+      "--verify",
+      "--quiet",
+      `refs/heads/${proposalBranch}`,
+    ])
+  );
 }
 
 function statePath(repository: string, proposalBranch: string): string {
@@ -167,43 +191,75 @@ export function resumeLocalAtlasInitialization(
 
 export function runLocalAtlasInitialization(
   repository: string,
-  state = createLocalAtlasInitializationState(repository),
+  state?: AtlasInitializationWorkflowState,
 ): ReturnType<typeof runAtlasInitializationWorkflow> {
-  const workspace = workspacePath(repository, state.proposalBranch);
-  excludeOperationWorkspaces(repository);
-  if (state.effectReceipts.length === 0) {
-    rmSync(workspace, { force: true, recursive: true });
+  let workflowState: AtlasInitializationWorkflowState;
+  try {
+    workflowState = state ?? createLocalAtlasInitializationState(repository);
+    excludeOperationWorkspaces(repository);
+  } catch {
+    return notCompletedAtlasInitializationResult({
+      code: "ATLAS_INITIALIZATION_CAPTURE_FAILED",
+      message:
+        "Atlas Initialization could not capture a Git-backed base snapshot for the Atlas Host Directory.",
+      recommendedNextAction:
+        "Run Initialization from a Git worktree with an existing commit, then retry.",
+      summary: "Initialization could not start from the selected Atlas Host Directory.",
+    });
   }
-  return runAtlasInitializationWorkflow(state, {
+
+  const workspace = workspacePath(repository, workflowState.proposalBranch);
+  return runAtlasInitializationWorkflow(workflowState, {
     commitProposal: () => {
-      git(workspace, ["add", ".atlas"]);
-      git(workspace, [
+      const tree = gitWrite(workspace, ["write-tree"]);
+      const parent = git(workspace, ["rev-parse", "HEAD"]);
+      const commit = gitWrite(workspace, [
         "-c",
         "user.name=Atlas SDK",
         "-c",
         "user.email=atlas-sdk@example.invalid",
-        "commit",
+        "commit-tree",
+        tree,
+        "-p",
+        parent,
         "-m",
         "Initialize minimal Atlas",
       ]);
-      const commit = git(workspace, ["rev-parse", "HEAD"]);
+      gitWrite(workspace, [
+        "update-ref",
+        `refs/heads/${workflowState.proposalBranch}`,
+        commit,
+      ]);
       return { commit, receipt: commit };
     },
     createProposalWorktree: () => {
       mkdirSync(dirname(workspace), { recursive: true });
-      git(repository, [
+      gitWrite(repository, [
         "worktree",
         "add",
+        "--no-checkout",
         "-b",
-        state.proposalBranch,
+        workflowState.proposalBranch,
         workspace,
-        state.targetBranch,
+        workflowState.targetBranch,
       ]);
-      return { receipt: state.proposalBranch };
+      const gitDirectory = git(workspace, ["rev-parse", "--git-dir"]);
+      const gitDirectoryPath = resolve(workspace, gitDirectory);
+      mkdirSync(join(gitDirectoryPath, "info"), { recursive: true });
+      writeFileSync(
+        join(gitDirectoryPath, "info", "attributes"),
+        "* -filter -text\n",
+        "utf8",
+      );
+      gitWrite(workspace, ["read-tree", workflowState.targetHead]);
+      return { receipt: workflowState.proposalBranch };
     },
-    currentTargetHead: () => git(repository, ["rev-parse", state.targetBranch]),
+    currentTargetHead: () => git(repository, ["rev-parse", workflowState.targetBranch]),
     currentBaseSnapshotDigest: () =>
-      digestSnapshot(repository, git(repository, ["rev-parse", state.targetBranch])),
+      digestSnapshot(
+        repository,
+        git(repository, ["rev-parse", workflowState.targetBranch]),
+      ),
     lintProposal: () => {
       const capture = captureLocalAtlasSnapshot(workspace);
       if (capture.state === "failed") throw new Error(capture.reason);
@@ -217,14 +273,31 @@ export function runLocalAtlasInitialization(
     persistState: (nextState: AtlasInitializationWorkflowState) => {
       writeStateAtomically(repository, nextState);
     },
+    workspaceExists: () => workspaceExists(repository, workflowState.proposalBranch),
     writeChangeSet: (changeSet: AtlasInitializationChangeSet) => {
       for (const change of changeSet.changes) {
         const path = join(workspace, change.path);
         mkdirSync(dirname(path), { recursive: true });
         writeFileSync(path, change.content, "utf8");
+        const object = gitWrite(workspace, [
+          "hash-object",
+          "-w",
+          "--no-filters",
+          change.path,
+        ]);
+        gitWrite(workspace, [
+          "update-index",
+          "--add",
+          "--cacheinfo",
+          "100644",
+          object,
+          change.path,
+        ]);
       }
       return {
-        receipt: createHash("sha256").update(state.baseSnapshotDigest).digest("hex"),
+        receipt: createHash("sha256")
+          .update(workflowState.baseSnapshotDigest)
+          .digest("hex"),
       };
     },
   });
