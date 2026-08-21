@@ -1,0 +1,95 @@
+{
+  "schema": 1,
+  "reviewResolutionRule": "A review finding is resolved only after this corpus has a reject or accept case that exercises it.",
+  "cases": [
+    {
+      "name": "reject non-completed payload carrying an Atlas verdict",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["lint", "--machine", "--bogus"],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_LINT_USAGE",
+      "forbidPayloadLint": true
+    },
+    {
+      "name": "reject retired repository flag",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "lint",
+        "--machine",
+        "--repository",
+        "tests/fixtures/complete-atlas"
+      ],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_LINT_USAGE",
+      "stderrIncludes": "--atlas-host-directory"
+    },
+    {
+      "name": "reject duplicate Atlas Host Directory flags before linting the last Atlas",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "lint",
+        "--machine",
+        "--atlas-host-directory",
+        "tests/fixtures/invalid-complete-atlas",
+        "--atlas-host-directory",
+        "tests/fixtures/complete-atlas"
+      ],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_LINT_USAGE",
+      "forbidPayloadLint": true
+    },
+    {
+      "name": "reject missing Atlas as retryable runtime failure",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "lint",
+        "--machine",
+        "--atlas-host-directory",
+        "tests/fixtures/no-such-atlas"
+      ],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "expectedDegradationState": "not-degraded",
+      "recommendedNextActionExcludes": "Retry"
+    },
+    {
+      "name": "reject command script bypassing the interface layer",
+      "gate": "atlas-cli",
+      "kind": "source-boundary",
+      "path": "scripts/atlas.ts",
+      "forbiddenImports": [
+        "../src/atlas/",
+        "../src/operations/",
+        "../src/domain/",
+        "../src/lint/"
+      ]
+    },
+    {
+      "name": "reject total byte budget before reading the offending file",
+      "gate": "atlas-cli",
+      "kind": "capture-budget",
+      "files": [
+        {
+          "path": ".atlas/a.md",
+          "text": "aaaaaaaaaa"
+        },
+        {
+          "path": ".atlas/b.md",
+          "text": "bbbbbbbbbb"
+        }
+      ],
+      "budgets": {
+        "maxFileBytes": 10,
+        "maxFiles": 10,
+        "maxTotalBytes": 15,
+        "maxTraversalDepth": 4
+      },
+      "maxBytesRead": 10,
+      "expectedCode": "ATLAS_LOAD_TOTAL_TOO_LARGE"
+    }
+  ]
+}

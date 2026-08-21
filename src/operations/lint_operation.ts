@@ -1,3 +1,4 @@
+import type { Finding } from "../domain/finding.ts";
 import type { AtlasTextBudgets, CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
 import { lintAtlas, type AtlasLintResult } from "../lint/lint_atlas.ts";
 import {
@@ -11,14 +12,25 @@ import {
   type OperationReviewLink,
 } from "./operation_result.ts";
 
+export type LintOperationSubject = "atlas-host-directory" | "captured-home-atlas";
+
 export interface LintOperationIdentity extends OperationIdentity {
   readonly kind: "lint";
-  readonly subject: "captured-home-atlas";
+  readonly subject: LintOperationSubject;
 }
 
-export interface LintOperationPayload {
+export interface CompletedLintOperationPayload {
   readonly lint: AtlasLintResult;
+  readonly state: "completed";
 }
+
+export interface NotCompletedLintOperationPayload {
+  readonly findings: readonly Finding[];
+  readonly state: "not-completed";
+}
+
+export type LintOperationPayload =
+  CompletedLintOperationPayload | NotCompletedLintOperationPayload;
 
 export type LintOperationHandoff = OperationHandoff<LintOperationIdentity>;
 export type LintOperationResult = OperationResult<
@@ -27,19 +39,20 @@ export type LintOperationResult = OperationResult<
   LintOperationPayload
 >;
 
-const lintOperation: LintOperationIdentity = Object.freeze({
+export interface NotCompletedLintOperationInput {
+  readonly baseSnapshotReason: string;
+  readonly code: string;
+  readonly degradationReason?: string;
+  readonly homeAtlasReason: string;
+  readonly message: string;
+  readonly recommendedNextAction: string;
+  readonly subject: LintOperationSubject;
+  readonly summary: string;
+}
+
+const capturedHomeAtlasLintOperation: LintOperationIdentity = Object.freeze({
   kind: "lint",
   subject: "captured-home-atlas",
-});
-
-const unknownHomeAtlas: OperationReference = Object.freeze({
-  reason: "Lint received captured Atlas files without a resolved Atlas Locator.",
-  state: "unknown",
-});
-
-const unknownBaseSnapshot: OperationReference = Object.freeze({
-  reason: "Lint received captured Atlas files without a Git-backed Atlas Snapshot.",
-  state: "unknown",
 });
 
 const noProposedChanges: OperationChanges = Object.freeze({
@@ -52,6 +65,70 @@ const noReviewLink: OperationReviewLink = Object.freeze({
   state: "not-applicable",
 });
 
+const noHumanDecisions = Object.freeze({
+  state: "none" as const,
+  summary: "No human decision is required to interpret this Lint result.",
+});
+
+const commandAttribution = Object.freeze({
+  checkId: "sdk-core.atlas-lint-command",
+  kind: "sdk-core" as const,
+  trusted: true as const,
+});
+
+const unknownHomeAtlas: OperationReference = Object.freeze({
+  reason: "Lint received captured Atlas files without a resolved Atlas Locator.",
+  state: "unknown",
+});
+
+const unknownBaseSnapshot: OperationReference = Object.freeze({
+  reason: "Lint received captured Atlas files without a Git-backed Atlas Snapshot.",
+  state: "unknown",
+});
+
+function lintOperation(subject: LintOperationSubject): LintOperationIdentity {
+  return Object.freeze({ kind: "lint" as const, subject });
+}
+
+function commandFinding(code: string, message: string): Finding {
+  return Object.freeze({
+    attribution: commandAttribution,
+    code,
+    "finding-schema": "1.0.0",
+    message,
+    path: ".atlas",
+    severity: "error" as const,
+  });
+}
+
+function completedLintHandoff(lint: AtlasLintResult): LintOperationHandoff {
+  const success = lint.outcome === "valid";
+  return Object.freeze({
+    "operation-handoff-schema": operationHandoffSchemaVersion,
+    baseSnapshot: unknownBaseSnapshot,
+    degradationState: Object.freeze({
+      reason: "The operation completed through deterministic Lint.",
+      state: "not-degraded" as const,
+    }),
+    homeAtlas: unknownHomeAtlas,
+    operation: capturedHomeAtlasLintOperation,
+    proposedChanges: noProposedChanges,
+    recommendedNextAction: success
+      ? "Use the validated Atlas records returned by Lint."
+      : "Resolve the reported Findings, then run Lint again.",
+    result: Object.freeze({
+      disposition: success ? ("success" as const) : ("failed" as const),
+      summary: success ? "Lint passed." : "Lint reported error Findings.",
+    }),
+    reviewLink: noReviewLink,
+    unresolvedHumanDecisions: noHumanDecisions,
+    validationState: Object.freeze({
+      findings: lint.findings,
+      state: success ? ("passed" as const) : ("failed" as const),
+    }),
+  });
+}
+
 function didLintRuntimeFail(lint: AtlasLintResult): boolean {
   return lint.findings.some(
     (finding) =>
@@ -60,50 +137,64 @@ function didLintRuntimeFail(lint: AtlasLintResult): boolean {
   );
 }
 
-function lintHandoff(lint: AtlasLintResult): LintOperationHandoff {
-  const runtimeFailure = didLintRuntimeFail(lint);
-  const success = lint.outcome === "valid";
-  return Object.freeze({
+export function notCompletedLintOperationResult(
+  input: NotCompletedLintOperationInput,
+): LintOperationResult {
+  const findings = Object.freeze([commandFinding(input.code, input.message)]);
+  const operation = lintOperation(input.subject);
+  const handoff = Object.freeze({
     "operation-handoff-schema": operationHandoffSchemaVersion,
-    baseSnapshot: unknownBaseSnapshot,
-    degradationState: runtimeFailure
-      ? Object.freeze({
-          reason: "Lint could not complete because the program running it failed.",
-          state: "degraded" as const,
-        })
-      : Object.freeze({
-          reason: "The operation completed through deterministic Lint.",
-          state: "not-degraded" as const,
-        }),
-    homeAtlas: unknownHomeAtlas,
-    operation: lintOperation,
+    baseSnapshot: Object.freeze({
+      reason: input.baseSnapshotReason,
+      state: "unknown" as const,
+    }),
+    degradationState: Object.freeze({
+      reason: input.degradationReason ?? input.summary,
+      state:
+        input.code === "ATLAS_LINT_ATLAS_NOT_FOUND" || input.code === "ATLAS_LINT_USAGE"
+          ? ("not-degraded" as const)
+          : ("degraded" as const),
+    }),
+    homeAtlas: Object.freeze({
+      reason: input.homeAtlasReason,
+      state: "unknown" as const,
+    }),
+    operation,
     proposedChanges: noProposedChanges,
-    recommendedNextAction: runtimeFailure
-      ? "Retry Lint in a healthy runtime; if it repeats, escalate the operation failure."
-      : success
-        ? "Use the validated Atlas records returned by Lint."
-        : "Resolve the reported Findings, then run Lint again.",
+    recommendedNextAction: input.recommendedNextAction,
     result: Object.freeze({
-      disposition: success ? ("success" as const) : ("failed" as const),
-      summary: runtimeFailure
-        ? "Lint did not complete."
-        : success
-          ? "Lint passed."
-          : "Lint reported error Findings.",
+      disposition: "failed" as const,
+      summary: input.summary,
     }),
     reviewLink: noReviewLink,
-    unresolvedHumanDecisions: Object.freeze({
-      state: "none" as const,
-      summary: "No human decision is required to interpret this Lint result.",
-    }),
+    unresolvedHumanDecisions: noHumanDecisions,
     validationState: Object.freeze({
-      findings: lint.findings,
-      state: runtimeFailure
-        ? ("not-completed" as const)
-        : success
-          ? ("passed" as const)
-          : ("failed" as const),
+      findings,
+      state: "not-completed" as const,
     }),
+  });
+  return Object.freeze({
+    "operation-result-schema": operationResultSchemaVersion,
+    completion: "not-completed" as const,
+    disposition: "failed" as const,
+    handoff,
+    operation,
+    payload: Object.freeze({ findings, state: "not-completed" as const }),
+  });
+}
+
+function runtimeFailureResult(lint: AtlasLintResult): LintOperationResult {
+  const finding = lint.findings[0] as Finding;
+  return notCompletedLintOperationResult({
+    baseSnapshotReason: "Lint could not complete against the captured Atlas files.",
+    code: finding.code,
+    degradationReason: "Lint could not complete because the program running it failed.",
+    homeAtlasReason: "Lint could not complete against the captured Atlas files.",
+    message: finding.message,
+    recommendedNextAction:
+      "Retry Lint in a healthy runtime; if it repeats, escalate the operation failure.",
+    subject: "captured-home-atlas",
+    summary: "Lint did not complete.",
   });
 }
 
@@ -112,16 +203,14 @@ export function runLintOperation(
   budgets: AtlasTextBudgets,
 ): LintOperationResult {
   const lint = lintAtlas(capturedFiles, budgets);
-  const handoff = lintHandoff(lint);
+  if (didLintRuntimeFail(lint)) return runtimeFailureResult(lint);
+  const handoff = completedLintHandoff(lint);
   return Object.freeze({
     "operation-result-schema": operationResultSchemaVersion,
-    completion:
-      handoff.validationState.state === "not-completed"
-        ? ("not-completed" as const)
-        : ("completed" as const),
+    completion: "completed" as const,
     disposition: handoff.result.disposition,
     handoff,
-    operation: lintOperation,
-    payload: Object.freeze({ lint }),
+    operation: capturedHomeAtlasLintOperation,
+    payload: Object.freeze({ lint, state: "completed" as const }),
   });
 }

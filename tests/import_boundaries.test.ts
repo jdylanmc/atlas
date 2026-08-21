@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import test from "node:test";
 import { ESLint } from "eslint";
@@ -116,6 +116,19 @@ test("ESLint enforces product import boundaries in one batch", async () => {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, fixture.source);
     return path;
+  });
+
+  test("Atlas CLI script reaches product code only through the interface layer", () => {
+    const source = readFileSync(resolve(ROOT, "scripts", "atlas.ts"), "utf8");
+    for (const forbidden of [
+      "../src/atlas/",
+      "../src/domain/",
+      "../src/lint/",
+      "../src/operations/",
+    ]) {
+      assert.equal(source.includes(forbidden), false, forbidden);
+    }
+    assert.match(source, /\.\.\/src\/interfaces\/lint_command\.ts/u);
   });
 
   let results: Awaited<ReturnType<ESLint["lintFiles"]>>;
