@@ -49,4 +49,24 @@ export const contractVocabularyBindings = Object.freeze([
     exportedIdentifiers: Object.freeze(["FrameworkReleaseManifest"]),
     term: "Framework Release Manifest",
   }),
+  Object.freeze({
+    exportedIdentifiers: Object.freeze(["AtlasInitializationResult"]),
+    term: "Atlas Initialization",
+  }),
+  Object.freeze({
+    exportedIdentifiers: Object.freeze(["AtlasInitializationWorkflowState"]),
+    term: "Operation Workflow",
+  }),
+  Object.freeze({
+    exportedIdentifiers: Object.freeze(["AtlasInitializationChangeSet"]),
+    term: "Atlas Change Set",
+  }),
+  Object.freeze({
+    exportedIdentifiers: Object.freeze(["LintStamp"]),
+    term: "Lint Stamp",
+  }),
+  Object.freeze({
+    exportedIdentifiers: Object.freeze(["AtlasReadinessReport"]),
+    term: "Atlas Readiness Report",
+  }),
 ] as const) satisfies readonly ContractVocabularyBinding[];
