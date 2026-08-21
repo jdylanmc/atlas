@@ -7,7 +7,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   initialAtlasInitializationWorkflowState,
   runAtlasInitializationWorkflow,
@@ -65,7 +65,7 @@ function writeStateAtomically(
 
 function gitCommonDirectory(repository: string): string {
   const common = git(repository, ["rev-parse", "--git-common-dir"]);
-  return isAbsolute(common) ? common : resolve(repository, common);
+  return resolve(repository, common);
 }
 
 function excludeOperationWorkspaces(repository: string): void {
@@ -79,11 +79,7 @@ function excludeOperationWorkspaces(repository: string): void {
   }
   const entry = ".atlas-operation-workspaces/";
   if (content.split(/\r?\n/u).includes(entry)) return;
-  appendFileSync(
-    excludePath,
-    `${content.endsWith("\n") || content === "" ? "" : "\n"}${entry}\n`,
-    "utf8",
-  );
+  appendFileSync(excludePath, `\n${entry}\n`, "utf8");
 }
 
 function parseWorkflowState(value: unknown): AtlasInitializationWorkflowState {

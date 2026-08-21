@@ -497,22 +497,61 @@ test("Local Atlas Initialization state captures Atlas Snapshot content and git f
 test("Local Atlas Initialization persists resumable state and excludes Operation Workspaces", () => {
   const repository = resolve(WORKSPACE, "persisted-resume");
   initRepository(repository);
+  rmSync(resolve(repository, ".git", "info", "exclude"), { force: true });
 
   const result = runLocalAtlasInitialization(repository);
   const branch = result.payload.workflowState.proposalBranch;
   const persisted = readLocalAtlasInitializationState(repository, branch);
   const resumed = resumeLocalAtlasInitialization(repository, branch);
+  const command = spawnSync(
+    process.execPath,
+    [
+      COMMAND,
+      "initialize",
+      "--machine",
+      "--atlas-host-directory",
+      repository,
+      "--resume-proposal-branch",
+      branch,
+    ],
+    { encoding: "utf8" },
+  );
   const status = spawnSync("git", ["-C", repository, "status", "--short"], {
     encoding: "utf8",
   });
 
   assert.equal(result.completion, "completed");
   assert.equal(resumed.completion, "completed");
+  assert.equal(command.status, 0, command.stderr);
   assert.deepEqual(
     persisted.effectReceipts,
     result.payload.workflowState.effectReceipts,
   );
   assert.doesNotMatch(status.stdout, /\.atlas-operation-workspaces/u);
+});
+
+test("Local Atlas Initialization rejects malformed persisted workflow receipts", () => {
+  const repository = resolve(WORKSPACE, "malformed-state");
+  initRepository(repository);
+  const branch = "atlas-initialization-malformed";
+  const stateFile = resolve(
+    repository,
+    ".atlas-operation-workspaces",
+    branch,
+    ".atlas-operation-state.json",
+  );
+  mkdirSync(resolve(stateFile, ".."), { recursive: true });
+
+  for (const stateText of [
+    "null",
+    "{}",
+    '{"operation-workflow-schema":"1.0.0","baseSnapshotDigest":"d","effectReceipts":[{}],"proposalBranch":"atlas-initialization-malformed","targetBranch":"main","targetHead":"h"}',
+    '{"operation-workflow-schema":"1.0.0","baseSnapshotDigest":"d","effectReceipts":[{"effect":"bad","receipt":"r"}],"proposalBranch":"atlas-initialization-malformed","targetBranch":"main","targetHead":"h"}',
+    '{"operation-workflow-schema":"1.0.0","baseSnapshotDigest":"d","effectReceipts":[{"effect":"lint-proposal","receipt":1}],"proposalBranch":"atlas-initialization-malformed","targetBranch":"main","targetHead":"h"}',
+  ]) {
+    writeFileSync(stateFile, stateText, "utf8");
+    assert.throws(() => readLocalAtlasInitializationState(repository, branch));
+  }
 });
 
 test("Local Atlas Initialization reports a missing proposal workspace as non-completion", () => {
