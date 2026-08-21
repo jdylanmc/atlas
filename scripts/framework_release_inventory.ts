@@ -8,4 +8,5 @@ export const frameworkReleaseOwnedPathRoots = Object.freeze([
   "src/interfaces",
   "src/lint",
   "src/operations",
+  "src/platform",
 ] as const);

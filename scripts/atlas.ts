@@ -5,6 +5,14 @@ import { lstatSync, readdirSync, readFileSync, type Dirent } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  exitCodeForInitializeOperationResult,
+  initializeCommandExitCodes,
+  initializeCommandUsage,
+  runInitializeCommandOperation,
+  serializeInitializeMachineResult,
+  usageInitializeOperationResult,
+} from "../src/interfaces/initialize_command.ts";
+import {
   exitCodeForLintOperationResult,
   lintCommandCaptureBudgets,
   lintCommandExitCodes,
@@ -19,6 +27,11 @@ import {
 } from "../src/interfaces/lint_command.ts";
 
 interface ParsedLintCommand {
+  readonly atlasHostDirectory: string;
+  readonly machine: true;
+}
+
+interface ParsedInitializeCommand {
   readonly atlasHostDirectory: string;
   readonly machine: true;
 }
@@ -172,10 +185,6 @@ function resultForCaptureBudgetError(error: CaptureBudgetError): number {
 }
 
 function parseLintCommand(arguments_: readonly string[]): ParsedLintCommand {
-  if (arguments_[0] !== "lint") {
-    throw new UsageError(lintCommandUsage);
-  }
-
   let machine = false;
   let atlasHostDirectory = ".";
   let machineSeen = false;
@@ -208,7 +217,39 @@ function parseLintCommand(arguments_: readonly string[]): ParsedLintCommand {
   return { atlasHostDirectory, machine: true };
 }
 
-export function main(arguments_: readonly string[]): number {
+function parseInitializeCommand(
+  arguments_: readonly string[],
+): ParsedInitializeCommand {
+  let machine = false;
+  let atlasHostDirectory = ".";
+  let machineSeen = false;
+  let atlasHostDirectorySeen = false;
+  for (let index = 1; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === "--machine") {
+      if (machineSeen) throw new UsageError(initializeCommandUsage);
+      machine = true;
+      machineSeen = true;
+      continue;
+    }
+    if (argument === "--atlas-host-directory") {
+      if (atlasHostDirectorySeen) throw new UsageError(initializeCommandUsage);
+      const value = arguments_[index + 1];
+      if (value === undefined || value.startsWith("--")) {
+        throw new UsageError(initializeCommandUsage);
+      }
+      atlasHostDirectory = value;
+      atlasHostDirectorySeen = true;
+      index += 1;
+      continue;
+    }
+    throw new UsageError(initializeCommandUsage);
+  }
+  if (!machine) throw new UsageError(initializeCommandUsage);
+  return { atlasHostDirectory, machine: true };
+}
+
+function mainLint(arguments_: readonly string[]): number {
   let command: ParsedLintCommand;
   try {
     command = parseLintCommand(arguments_);
@@ -240,6 +281,29 @@ export function main(arguments_: readonly string[]): number {
     console.error(error.message);
     return lintCommandExitCodes.operationNotCompleted;
   }
+}
+
+function mainInitialize(arguments_: readonly string[]): number {
+  let command: ParsedInitializeCommand;
+  try {
+    command = parseInitializeCommand(arguments_);
+  } catch (error: unknown) {
+    if (!(error instanceof UsageError)) throw error;
+    const result = usageInitializeOperationResult(error.message);
+    process.stdout.write(serializeInitializeMachineResult(result));
+    console.error(error.message);
+    return initializeCommandExitCodes.usage;
+  }
+  const result = runInitializeCommandOperation(command.atlasHostDirectory);
+  process.stdout.write(serializeInitializeMachineResult(result));
+  return exitCodeForInitializeOperationResult(result);
+}
+
+export function main(arguments_: readonly string[]): number {
+  if (arguments_[0] === "lint") return mainLint(arguments_);
+  if (arguments_[0] === "initialize") return mainInitialize(arguments_);
+  console.error(lintCommandUsage);
+  return lintCommandExitCodes.usage;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
