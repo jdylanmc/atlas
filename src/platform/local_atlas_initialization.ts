@@ -10,6 +10,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import {
   initialAtlasInitializationWorkflowState,
+  isSafeGitBranchName,
   notCompletedAtlasInitializationResult,
   runAtlasInitializationWorkflow,
   type AtlasInitializationChangeSet,
@@ -183,10 +184,31 @@ export function resumeLocalAtlasInitialization(
   repository: string,
   proposalBranch: string,
 ): ReturnType<typeof runLocalAtlasInitialization> {
-  return runLocalAtlasInitialization(
-    repository,
-    readLocalAtlasInitializationState(repository, proposalBranch),
-  );
+  if (!isSafeGitBranchName(proposalBranch)) {
+    return notCompletedAtlasInitializationResult({
+      code: "ATLAS_INITIALIZATION_WORKFLOW_STATE_INVALID",
+      message: "Atlas Initialization resume named an unsafe proposal branch.",
+      recommendedNextAction:
+        "Resume with a safe proposal branch name emitted by a prior Initialization result.",
+      summary:
+        "Initialization refused unsafe resume state before reading workspace state.",
+    });
+  }
+  try {
+    return runLocalAtlasInitialization(
+      repository,
+      readLocalAtlasInitializationState(repository, proposalBranch),
+    );
+  } catch {
+    return notCompletedAtlasInitializationResult({
+      code: "ATLAS_INITIALIZATION_STATE_UNREADABLE",
+      message:
+        "Atlas Initialization could not read the persisted workflow state for the requested proposal branch.",
+      recommendedNextAction:
+        "Inspect the Operation Workspace state file before attempting resume again.",
+      summary: "Initialization could not resume from persisted workflow state.",
+    });
+  }
 }
 
 export function runLocalAtlasInitialization(

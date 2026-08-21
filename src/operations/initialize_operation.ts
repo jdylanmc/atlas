@@ -393,7 +393,7 @@ export function atlasInitializationFiles(
   );
 }
 
-function isSafeGitBranchName(name: string): boolean {
+export function isSafeGitBranchName(name: string): boolean {
   return (
     /^[A-Za-z0-9._/-]+$/u.test(name) &&
     !name.startsWith("-") &&

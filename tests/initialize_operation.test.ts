@@ -754,7 +754,18 @@ test("Local Atlas Initialization rejects malformed persisted workflow receipts",
   ]) {
     writeFileSync(stateFile, stateText, "utf8");
     assert.throws(() => readLocalAtlasInitializationState(repository, branch));
+    assert.equal(
+      resumeLocalAtlasInitialization(repository, branch).handoff.validationState
+        .findings[0]?.code,
+      "ATLAS_INITIALIZATION_STATE_UNREADABLE",
+    );
   }
+
+  assert.equal(
+    resumeLocalAtlasInitialization(repository, "../outside").handoff.validationState
+      .findings[0]?.code,
+    "ATLAS_INITIALIZATION_WORKFLOW_STATE_INVALID",
+  );
 });
 
 test("Local Atlas Initialization reports a missing proposal workspace as non-completion", () => {
