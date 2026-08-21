@@ -14,6 +14,10 @@ export const contractVocabularyBindings = Object.freeze([
     term: "Atlas Lint Result",
   }),
   Object.freeze({
+    exportedIdentifiers: Object.freeze(["AtlasView"]),
+    term: "Atlas View",
+  }),
+  Object.freeze({
     exportedIdentifiers: Object.freeze(["ValidAtlasLintResult"]),
     term: "Valid Atlas Lint Result",
   }),

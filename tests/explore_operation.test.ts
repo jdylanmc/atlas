@@ -11,6 +11,7 @@ import {
 import { resolve } from "node:path";
 import test from "node:test";
 import type { CapturedAtlasFile } from "../src/atlas/load_atlas_text.ts";
+import { buildAtlasView } from "../src/atlas/atlas_view.ts";
 import {
   exploreAtlas,
   type ExploreBudgets,
@@ -25,6 +26,7 @@ import {
   runExploreOperation,
   runExploreOperationFromSnapshotCapture,
 } from "../src/operations/explore_operation.ts";
+import { runLintOperation } from "../src/operations/lint_operation.ts";
 import { captureLocalAtlasSnapshot } from "../src/platform/local_atlas_snapshot.ts";
 import { assertGrowthRatio } from "./growth.ts";
 
@@ -88,13 +90,21 @@ function exploreCaptured(
   exploreBudgets: ExploreBudgets = budgets,
 ): ReturnType<typeof exploreAtlas> {
   const validated = loadAndValidateAtlasInput(files, exploreBudgets);
-  return exploreAtlas(
-    validated.files,
-    validated.findings,
-    query,
-    provider,
-    exploreBudgets,
-  );
+  const atlasView = buildAtlasView({
+    files: validated.files,
+    identity: {
+      atlas: { reference: "fixture", state: "known" },
+      role: "home",
+      slug: "fixture",
+      snapshot: { reference: "fixture-base", state: "known" },
+    },
+    pages: validated.pages,
+    validationState: {
+      findings: validated.findings,
+      state: validated.validationState,
+    },
+  });
+  return exploreAtlas(atlasView, query, provider, exploreBudgets);
 }
 
 function page(
@@ -104,6 +114,10 @@ function page(
   title: string,
   body: string,
   atlas = "{}",
+  dates: { readonly created: string; readonly updated: string } = Object.freeze({
+    created: "2026-08-17T00:00:00Z",
+    updated: "2026-08-17T00:00:00Z",
+  }),
 ): CapturedAtlasFile {
   return captured(
     path,
@@ -115,8 +129,8 @@ function page(
       `  id: ${id}`,
       `  type: ${type}`,
       `  title: ${title}`,
-      '  created-at: "2026-08-17T00:00:00Z"',
-      '  updated-at: "2026-08-17T00:00:00Z"',
+      `  created-at: "${dates.created}"`,
+      `  updated-at: "${dates.updated}"`,
       "  created-by: { kind: human, name: Fixture Author }",
       "  updated-by: { kind: human, name: Fixture Author }",
       "  tags: []",
@@ -621,6 +635,171 @@ test("structurally invalid Atlases cannot yield a successful Explore operation",
       (finding) => finding.code === "ATLAS_PAGE_TYPE_PATH_MISMATCH",
     ),
   );
+});
+
+test("all accepted invalid Atlas variants preserve Explore degradation levels", () => {
+  const root = (): CapturedAtlasFile =>
+    page(".atlas/index.md", "anchor:root", "anchor", "Root", "# Root\n\nneedle");
+  const cases = [
+    {
+      expectedCode: "ATLAS_PAGE_ID_DUPLICATE",
+      expectedDegradation: "partial-structure",
+      files: [
+        root(),
+        page(".atlas/concepts/a.md", "concept:dup", "concept", "A", "# A\n\nneedle"),
+        page(".atlas/concepts/b.md", "concept:dup", "concept", "B", "# B\n\nneedle"),
+      ],
+      name: "duplicate-id",
+    },
+    {
+      expectedCode: "ATLAS_PAGE_TYPE_PATH_MISMATCH",
+      expectedDegradation: "partial-structure",
+      files: [
+        root(),
+        page(".atlas/concepts/wrong.md", "concept:wrong", "anchor", "Wrong", "# Wrong"),
+      ],
+      name: "type-path-mismatch",
+    },
+    {
+      expectedCode: "ATLAS_PAGE_TITLE_H1_MISMATCH",
+      expectedDegradation: "partial-structure",
+      files: [
+        root(),
+        page(
+          ".atlas/concepts/title.md",
+          "concept:title",
+          "concept",
+          "Title",
+          "# Different\n\nneedle",
+        ),
+      ],
+      name: "title-h1-mismatch",
+    },
+    {
+      expectedCode: "ATLAS_PAGE_UPDATED_BEFORE_CREATED",
+      expectedDegradation: "partial-structure",
+      files: [
+        root(),
+        page(
+          ".atlas/concepts/dates.md",
+          "concept:dates",
+          "concept",
+          "Dates",
+          "# Dates\n\nneedle",
+          "{}",
+          {
+            created: "2026-08-18T00:00:00Z",
+            updated: "2026-08-17T00:00:00Z",
+          },
+        ),
+      ],
+      name: "updated-before-created",
+    },
+    {
+      expectedCode: "ATLAS_CITATION_TARGET_MISSING",
+      expectedDegradation: "partial-structure",
+      files: [
+        root(),
+        page(
+          ".atlas/concepts/cite.md",
+          "concept:cite",
+          "concept",
+          "Cite",
+          "# Cite\n\nneedle.[^s]\n\n[^s]: [[.atlas/sources/missing]]",
+        ),
+      ],
+      name: "citation-target-missing",
+    },
+    {
+      expectedCode: "ATLAS_CITATION_TARGET_NOT_SOURCE",
+      expectedDegradation: "partial-structure",
+      files: [
+        root(),
+        page(
+          ".atlas/concepts/cite.md",
+          "concept:cite",
+          "concept",
+          "Cite",
+          "# Cite\n\nneedle.[^s]\n\n[^s]: [[.atlas/concepts/target]]",
+        ),
+        page(
+          ".atlas/concepts/target.md",
+          "concept:target",
+          "concept",
+          "Target",
+          "# Target",
+        ),
+      ],
+      name: "citation-target-not-source",
+    },
+    {
+      expectedCode: "ATLAS_PAGE_MISSING_FRONTMATTER",
+      expectedDegradation: "partial-structure",
+      files: [
+        root(),
+        captured(".atlas/concepts/no-frontmatter.md", "# No Frontmatter\n\nneedle"),
+      ],
+      name: "missing-frontmatter",
+    },
+    {
+      expectedCode: "ATLAS_CUSTOM_TYPE_NAME_RESERVED",
+      expectedDegradation: "partial-structure",
+      files: [
+        root(),
+        page(
+          ".atlas/types/concept/custom.md",
+          "concept:custom",
+          "concept",
+          "Custom",
+          "# Custom\n\nneedle",
+        ),
+      ],
+      name: "reserved-custom-type",
+    },
+    {
+      expectedCode: "ATLAS_ROOT_ANCHOR_REQUIRED",
+      expectedDegradation: "blocked",
+      files: [
+        page(
+          ".atlas/concepts/only.md",
+          "concept:only",
+          "concept",
+          "Only",
+          "# Only\n\nneedle",
+        ),
+      ],
+      name: "root-anchor-missing",
+    },
+  ] as const;
+
+  for (const entry of cases) {
+    const lint = runLintOperation(entry.files, budgets);
+    const explore = runExploreOperation({
+      baseSnapshot: { reference: `${entry.name}-base`, state: "known" },
+      capturedFiles: entry.files,
+      homeAtlas: { reference: "fixture", state: "known" },
+      query: "needle",
+      budgets,
+    });
+    assert.equal(lint.disposition, "failed", entry.name);
+    assert.equal(explore.disposition, "failed", entry.name);
+    assert.equal(
+      explore.payload.degradation.level,
+      entry.expectedDegradation,
+      entry.name,
+    );
+    assert.ok(
+      lint.handoff.validationState.findings.some(
+        (finding) => finding.code === entry.expectedCode,
+      ),
+      entry.name,
+    );
+    assert.deepEqual(
+      explore.handoff.validationState.findings,
+      lint.handoff.validationState.findings,
+      entry.name,
+    );
+  }
 });
 
 test("Explore budgets cap object loading and context citation scans", () => {

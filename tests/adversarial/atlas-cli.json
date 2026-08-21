@@ -69,6 +69,13 @@
       ]
     },
     {
+      "name": "reject Explore reparsing pages instead of consuming Atlas View",
+      "gate": "atlas-cli",
+      "kind": "source-boundary",
+      "path": "src/graph/explore_atlas.ts",
+      "forbiddenImports": ["parse_atlas_pages"]
+    },
+    {
       "name": "reject total byte budget before reading the offending file",
       "gate": "atlas-cli",
       "kind": "capture-budget",

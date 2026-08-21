@@ -8,7 +8,8 @@ import {
   type AtlasTextFile,
 } from "../atlas/load_atlas_text.ts";
 import { rethrowProcessLimit } from "../atlas/process_limit.ts";
-import { validateAtlasStructure } from "./validate_atlas_structure.ts";
+import type { ParsedAtlasPage } from "../atlas/parse_atlas_pages.ts";
+import { validateAtlasStructureWithPages } from "./validate_atlas_structure.ts";
 
 const attribution = Object.freeze({
   checkId: "sdk-core.atlas-input",
@@ -108,9 +109,16 @@ export interface AtlasInputValidation {
    */
   readonly files: readonly AtlasTextFile[];
   readonly findings: readonly Finding[];
+  readonly pages: readonly ParsedAtlasPage[];
+  readonly validationState: "invalid" | "valid";
 }
 
 const noFiles: readonly AtlasTextFile[] = Object.freeze([]);
+const noPages: readonly ParsedAtlasPage[] = Object.freeze([]);
+
+function validationState(findings: readonly Finding[]): "invalid" | "valid" {
+  return findings.some((finding) => finding.severity === "error") ? "invalid" : "valid";
+}
 
 /**
  * Loads and structurally validates a complete captured Atlas, converting every
@@ -141,10 +149,19 @@ export function loadAndValidateAtlasInput(
 ): AtlasInputValidation {
   const loaded = loadOrFinding(capturedFiles, budgets);
   if ("code" in loaded) {
-    return Object.freeze({ files: noFiles, findings: Object.freeze([loaded]) });
+    const findings = Object.freeze([loaded]);
+    return Object.freeze({
+      files: noFiles,
+      findings,
+      pages: noPages,
+      validationState: "invalid" as const,
+    });
   }
+  const structure = validateAtlasStructureWithPages(loaded);
   return Object.freeze({
     files: loaded,
-    findings: validateAtlasStructure(loaded),
+    findings: structure.findings,
+    pages: structure.pages,
+    validationState: validationState(structure.findings),
   });
 }
