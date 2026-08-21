@@ -78,6 +78,10 @@ Focused commands are `npm run format:check`, `npm run lint`,
 `npm run cacophony:sync` only after editing a Persona, Directive, or composition
 reference.
 
+Review findings that describe a gate miss are resolved only after
+`tests/adversarial/` has a permanent reject or accept case that exercises the
+miss. Existing gate additions should be data-only corpus edits.
+
 ## Glossary and contract vocabulary agreement
 
 `CONTEXT.md` is the authoritative domain glossary, and `src/domain/core_archetype.ts`

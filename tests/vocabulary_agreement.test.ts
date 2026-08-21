@@ -18,6 +18,7 @@ import {
   main,
   validateRepository,
 } from "../scripts/vocabulary_agreement.ts";
+import { assertGrowthRatio, assertWallClockUnder } from "./growth.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const SCRIPT = resolve(ROOT, "scripts", "vocabulary_agreement.ts");
@@ -629,41 +630,73 @@ test("the repository binds every declared Core Archetype", () => {
   ]);
 });
 
-test("a hostile contract cannot make the check run long", () => {
-  const started = process.hrtime.bigint();
-  assert.deepEqual(
-    validate(anchorBinding, [contract(`// from${" ".repeat(200_000)}`)]),
-    [],
+test("vocabulary scanning cost follows input growth", () => {
+  const nonSpecifierSmall = contract(`// from${" ".repeat(100_000)}`);
+  const nonSpecifierLarge = contract(`// from${" ".repeat(200_000)}`);
+  assertWallClockUnder("masking a long non-specifier", 2000, () =>
+    assert.deepEqual(validate(anchorBinding, [nonSpecifierLarge]), []),
   );
-  const elapsedMs = Number(process.hrtime.bigint() - started) / 1_000_000;
+  assertGrowthRatio({
+    large: () => assert.deepEqual(validate(anchorBinding, [nonSpecifierLarge]), []),
+    name: "masking a long non-specifier",
+    small: () => assert.deepEqual(validate(anchorBinding, [nonSpecifierSmall]), []),
+  });
 
-  assert.ok(elapsedMs < 2000, `scanning took ${String(elapsedMs)}ms`);
-});
-
-test("a token-dense contract stays linear in its own length", () => {
   const line =
     'const found = finding("ATLAS_CORE_EXAMPLE_INVALID", "Atlas SDK reports One Page Here Today.", ".atlas/anchors/page.md");';
-  const dense = `${line}\n`.repeat(3000);
-  const started = process.hrtime.bigint();
-
-  assert.deepEqual(validate(anchorBinding, [contract(dense)]), []);
-
-  const elapsedMs = Number(process.hrtime.bigint() - started) / 1_000_000;
-  assert.ok(
-    elapsedMs < 2000,
-    `scanning ${String(dense.length)} characters took ${String(elapsedMs)}ms`,
+  const denseSmall = contract(`${line}\n`.repeat(1500));
+  const denseLarge = contract(`${line}\n`.repeat(3000));
+  assertWallClockUnder("scanning token-dense vocabulary contract", 2000, () =>
+    assert.deepEqual(validate(anchorBinding, [denseLarge]), []),
   );
-});
+  assertGrowthRatio({
+    large: () => assert.deepEqual(validate(anchorBinding, [denseLarge]), []),
+    name: "token-dense vocabulary contract",
+    small: () => assert.deepEqual(validate(anchorBinding, [denseSmall]), []),
+  });
 
-test("an unterminated literal cannot make the check run long", () => {
-  const started = process.hrtime.bigint();
-  assert.deepEqual(
-    validate(anchorBinding, [contract(`// "${'\\"'.repeat(100_000)}`)]),
-    [],
+  const unterminatedSmall = contract(`// "${'\\"'.repeat(50_000)}`);
+  const unterminatedLarge = contract(`// "${'\\"'.repeat(100_000)}`);
+  assertWallClockUnder("scanning unterminated literal", 2000, () =>
+    assert.deepEqual(validate(anchorBinding, [unterminatedLarge]), []),
   );
-  const elapsedMs = Number(process.hrtime.bigint() - started) / 1_000_000;
+  assertGrowthRatio({
+    large: () => assert.deepEqual(validate(anchorBinding, [unterminatedLarge]), []),
+    name: "unterminated literal scan",
+    small: () => assert.deepEqual(validate(anchorBinding, [unterminatedSmall]), []),
+  });
 
-  assert.ok(elapsedMs < 2000, `scanning took ${String(elapsedMs)}ms`);
+  const exported = (count: number): VocabularyTextFile =>
+    contract(
+      Array.from(
+        { length: count },
+        (_, index) => `export interface Exported${String(index)} {}`,
+      ).join("\n"),
+    );
+  const exportedSmall = exported(1500);
+  const exportedLarge = exported(3000);
+  const exportedTerm: readonly ContractVocabularyBinding[] = [
+    { exportedIdentifiers: ["Exported0"], term: "Anchor" },
+  ];
+  assertWallClockUnder("scanning exported contract identifiers", 2000, () =>
+    assert.deepEqual(
+      validate(anchorBinding, [exportedLarge], glossaryLines, exportedTerm),
+      [],
+    ),
+  );
+  assertGrowthRatio({
+    large: () =>
+      assert.deepEqual(
+        validate(anchorBinding, [exportedLarge], glossaryLines, exportedTerm),
+        [],
+      ),
+    name: "exported contract identifier scan",
+    small: () =>
+      assert.deepEqual(
+        validate(anchorBinding, [exportedSmall], glossaryLines, exportedTerm),
+        [],
+      ),
+  });
 });
 
 test("a contract longer than Atlas SDK reads is reported, not scanned", () => {
