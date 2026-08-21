@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "reviewResolutionRule": "A review finding is resolved only after tests/adversarial has a case exercising the governance gate.",
+  "cases": [
+    {
+      "name": "semantic-verdict-without-evidence-is-rejected",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_SEMANTIC_EVIDENCE_REQUIRED"
+    },
+    {
+      "name": "semantic-verdict-challenge-disagreement-escalates",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_SEMANTIC_DISAGREEMENT"
+    },
+    {
+      "name": "hostile-finding-downgrade-is-rejected",
+      "gate": "governance",
+      "kind": "finding-merge",
+      "expectedCode": "ATLAS_GOVERNANCE_TRUSTED_FINDING_OVERRIDE_REJECTED"
+    }
+  ]
+}
