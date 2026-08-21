@@ -9,6 +9,13 @@ export interface LintCommandCapturedFile {
   readonly path: string;
 }
 
+export interface LintCommandCaptureBudgets {
+  readonly maxFileBytes: number;
+  readonly maxFiles: number;
+  readonly maxTotalBytes: number;
+  readonly maxTraversalDepth: number;
+}
+
 export const lintCommandExitCodes = Object.freeze({
   atlasInvalid: 1,
   operationNotCompleted: 2,
@@ -19,6 +26,13 @@ export const lintCommandExitCodes = Object.freeze({
 export const lintCommandBudgets = Object.freeze({
   maxFileBytes: 1024 * 1024,
   maxTotalBytes: 16 * 1024 * 1024,
+});
+
+export const lintCommandCaptureBudgets: LintCommandCaptureBudgets = Object.freeze({
+  maxFileBytes: lintCommandBudgets.maxFileBytes,
+  maxFiles: 4096,
+  maxTotalBytes: lintCommandBudgets.maxTotalBytes,
+  maxTraversalDepth: 32,
 });
 
 export const lintCommandUsage =

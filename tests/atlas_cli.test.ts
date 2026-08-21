@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
+import { captureAtlasHostDirectory, CaptureBudgetError } from "../scripts/atlas.ts";
 import {
   exitCodeForLintOperationResult,
   lintCommandExitCodes,
@@ -10,7 +11,10 @@ import {
   unreadableAtlasLintOperationResult,
   usageLintOperationResult,
 } from "../src/interfaces/lint_command.ts";
-import type { LintOperationResult } from "../src/operations/lint_operation.ts";
+import {
+  runLintOperation,
+  type LintOperationResult,
+} from "../src/operations/lint_operation.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const COMMAND = resolve(ROOT, "scripts", "atlas.ts");
@@ -216,6 +220,71 @@ test("atlas lint --machine gives unreadable Atlas files a distinct runtime diagn
     chmodSync(resolve(WORKSPACE, ".atlas"), 0o700);
     rmSync(WORKSPACE, { force: true, recursive: true });
   }
+});
+
+test("Atlas capture enforces total byte budget before reading the offending file", () => {
+  rmSync(WORKSPACE, { force: true, recursive: true });
+  mkdirSync(resolve(WORKSPACE, ".atlas"), { recursive: true });
+  writeFileSync(resolve(WORKSPACE, ".atlas", "a.md"), "a".repeat(10));
+  writeFileSync(resolve(WORKSPACE, ".atlas", "b.md"), "b".repeat(10));
+  let bytesRead = 0;
+  try {
+    captureAtlasHostDirectory(
+      WORKSPACE,
+      {
+        maxFileBytes: 10,
+        maxFiles: 10,
+        maxTotalBytes: 15,
+        maxTraversalDepth: 4,
+      },
+      (path) => {
+        const bytes = readFileSync(path);
+        bytesRead += bytes.byteLength;
+        return bytes;
+      },
+    );
+    assert.fail("expected capture budget failure");
+  } catch (error: unknown) {
+    assert.ok(error instanceof CaptureBudgetError);
+    assert.equal(bytesRead, 10);
+    const result = runLintOperation(error.capturedFiles, {
+      maxFileBytes: 10,
+      maxTotalBytes: 15,
+    });
+    assert.equal(result.completion, "completed");
+    assert.equal(result.disposition, "failed");
+    if (result.payload.state !== "completed") assert.fail("budget result failed");
+    assert.equal(result.payload.lint.findings[0]?.code, "ATLAS_LOAD_TOTAL_TOO_LARGE");
+  } finally {
+    rmSync(WORKSPACE, { force: true, recursive: true });
+  }
+});
+
+test("Atlas capture enforces file count and traversal depth during the walk", () => {
+  rmSync(WORKSPACE, { force: true, recursive: true });
+  mkdirSync(resolve(WORKSPACE, ".atlas", "a", "b"), { recursive: true });
+  writeFileSync(resolve(WORKSPACE, ".atlas", "a.md"), "a");
+  assert.throws(
+    () =>
+      captureAtlasHostDirectory(WORKSPACE, {
+        maxFileBytes: 10,
+        maxFiles: 0,
+        maxTotalBytes: 10,
+        maxTraversalDepth: 4,
+      }),
+    /file count/u,
+  );
+  assert.throws(
+    () =>
+      captureAtlasHostDirectory(WORKSPACE, {
+        maxFileBytes: 10,
+        maxFiles: 10,
+        maxTotalBytes: 10,
+        maxTraversalDepth: 1,
+      }),
+    /traversal depth/u,
+  );
+  rmSync(WORKSPACE, { force: true, recursive: true });
 });
 
 test("Lint command exit-code and JSON helpers preserve the public machine contract", () => {

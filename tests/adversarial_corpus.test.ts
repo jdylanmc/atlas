@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test, { after } from "node:test";
+import { captureAtlasHostDirectory, CaptureBudgetError } from "../scripts/atlas.ts";
 import type { CoreArchetypeBindings } from "../src/domain/core_archetype.ts";
+import { runLintOperation } from "../src/operations/lint_operation.ts";
 import {
   validateVocabularyAgreement,
   type VocabularyTextFile,
@@ -63,7 +65,26 @@ interface AtlasCliSourceBoundaryCase {
   readonly path: string;
 }
 
-type AtlasCliCase = AtlasCliCommandCase | AtlasCliSourceBoundaryCase;
+interface AtlasCliCaptureBudgetCase {
+  readonly budgets: {
+    readonly maxFileBytes: number;
+    readonly maxFiles: number;
+    readonly maxTotalBytes: number;
+    readonly maxTraversalDepth: number;
+  };
+  readonly expectedCode: string;
+  readonly files: readonly {
+    readonly path: string;
+    readonly text: string;
+  }[];
+  readonly gate: "atlas-cli";
+  readonly kind: "capture-budget";
+  readonly maxBytesRead: number;
+  readonly name: string;
+}
+
+type AtlasCliCase =
+  AtlasCliCaptureBudgetCase | AtlasCliCommandCase | AtlasCliSourceBoundaryCase;
 
 interface AtlasCliCorpus {
   readonly cases: readonly AtlasCliCase[];
@@ -184,6 +205,49 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
         }
         return { ...parsed, ...optional };
       }
+      if (entry["kind"] === "capture-budget") {
+        assert.ok(Array.isArray(entry["files"]), `${path}.files must be an array`);
+        return {
+          budgets: {
+            maxFileBytes: assertNumber(
+              (entry["budgets"] as Readonly<Record<string, unknown>> | undefined)?.[
+                "maxFileBytes"
+              ],
+              `${path}.budgets.maxFileBytes`,
+            ),
+            maxFiles: assertNumber(
+              (entry["budgets"] as Readonly<Record<string, unknown>> | undefined)?.[
+                "maxFiles"
+              ],
+              `${path}.budgets.maxFiles`,
+            ),
+            maxTotalBytes: assertNumber(
+              (entry["budgets"] as Readonly<Record<string, unknown>> | undefined)?.[
+                "maxTotalBytes"
+              ],
+              `${path}.budgets.maxTotalBytes`,
+            ),
+            maxTraversalDepth: assertNumber(
+              (entry["budgets"] as Readonly<Record<string, unknown>> | undefined)?.[
+                "maxTraversalDepth"
+              ],
+              `${path}.budgets.maxTraversalDepth`,
+            ),
+          },
+          expectedCode: assertString(entry["expectedCode"], `${path}.expectedCode`),
+          files: (entry["files"] as readonly unknown[]).map((file, fileIndex) => {
+            assert.ok(isRecord(file), `${path}.files[${String(fileIndex)}]`);
+            return {
+              path: assertString(file["path"], `${path}.files.path`),
+              text: assertString(file["text"], `${path}.files.text`),
+            };
+          }),
+          gate: "atlas-cli",
+          kind: "capture-budget",
+          maxBytesRead: assertNumber(entry["maxBytesRead"], `${path}.maxBytesRead`),
+          name,
+        };
+      }
       assert.equal(entry["kind"], "source-boundary", `${path}.kind is unsupported`);
       return {
         forbiddenImports: assertStringArray(
@@ -292,12 +356,39 @@ test("the adversarial atlas-cli corpus is structurally valid", () => {
     atlasCliCorpus.cases.length,
   );
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "command"));
+  assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "capture-budget"));
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "source-boundary"));
 });
 
 for (const entry of atlasCliCorpus.cases) {
   test(`adversarial atlas-cli corpus: ${entry.name}`, () => {
     executedCases += 1;
+    if (entry.kind === "capture-budget") {
+      const workspace = resolve(ROOT, ".test-workspaces", "adversarial-atlas-cli");
+      rmSync(workspace, { force: true, recursive: true });
+      mkdirSync(resolve(workspace, ".atlas"), { recursive: true });
+      for (const file of entry.files) {
+        writeFileSync(resolve(workspace, file.path), file.text);
+      }
+      let bytesRead = 0;
+      try {
+        captureAtlasHostDirectory(workspace, entry.budgets, (path) => {
+          const bytes = readFileSync(path);
+          bytesRead += bytes.byteLength;
+          return bytes;
+        });
+        assert.fail("expected capture budget failure");
+      } catch (error: unknown) {
+        assert.ok(error instanceof CaptureBudgetError);
+        assert.ok(bytesRead <= entry.maxBytesRead, String(bytesRead));
+        const result = runLintOperation(error.capturedFiles, entry.budgets);
+        assert.equal(result.payload.state, "completed");
+        assert.equal(result.payload.lint.findings[0]?.code, entry.expectedCode);
+      } finally {
+        rmSync(workspace, { force: true, recursive: true });
+      }
+      return;
+    }
     if (entry.kind === "source-boundary") {
       const source = readFileSync(resolve(ROOT, entry.path), "utf8");
       for (const forbidden of entry.forbiddenImports) {

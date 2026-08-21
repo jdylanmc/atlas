@@ -67,6 +67,29 @@
         "../src/domain/",
         "../src/lint/"
       ]
+    },
+    {
+      "name": "reject total byte budget before reading the offending file",
+      "gate": "atlas-cli",
+      "kind": "capture-budget",
+      "files": [
+        {
+          "path": ".atlas/a.md",
+          "text": "aaaaaaaaaa"
+        },
+        {
+          "path": ".atlas/b.md",
+          "text": "bbbbbbbbbb"
+        }
+      ],
+      "budgets": {
+        "maxFileBytes": 10,
+        "maxFiles": 10,
+        "maxTotalBytes": 15,
+        "maxTraversalDepth": 4
+      },
+      "maxBytesRead": 10,
+      "expectedCode": "ATLAS_LOAD_TOTAL_TOO_LARGE"
     }
   ]
 }
