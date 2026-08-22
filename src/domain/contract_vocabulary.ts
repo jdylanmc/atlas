@@ -58,11 +58,17 @@ export const contractVocabularyBindings = Object.freeze([
     term: "Atlas Initialization",
   }),
   Object.freeze({
-    exportedIdentifiers: Object.freeze(["AtlasInitializationWorkflowState"]),
+    exportedIdentifiers: Object.freeze([
+      "AtlasInitializationWorkflowState",
+      "AtlasGovernanceWorkflowState",
+    ]),
     term: "Operation Workflow",
   }),
   Object.freeze({
-    exportedIdentifiers: Object.freeze(["AtlasInitializationChangeSet"]),
+    exportedIdentifiers: Object.freeze([
+      "AtlasInitializationChangeSet",
+      "AtlasGovernanceChangeSet",
+    ]),
     term: "Atlas Change Set",
   }),
   Object.freeze({
