@@ -20,12 +20,16 @@ export interface AtlasGovernanceOperationIdentity extends OperationIdentity {
 }
 
 export interface AtlasGovernanceEffectReceipt {
+  readonly changeSetDigest?: string;
+  readonly commit?: string;
   readonly effect:
     | "create-proposal-worktree"
     | "write-change-set"
     | "commit-proposal"
     | "lint-proposal";
+  readonly lintEvidenceCommit?: string;
   readonly receipt: string;
+  readonly writtenTree?: string;
 }
 
 export interface AtlasGovernanceWorkflowState {
@@ -70,20 +74,9 @@ export interface AtlasGovernanceRequest {
   readonly subject: AtlasGovernanceSubject;
 }
 
-export interface AtlasGovernanceLintStamp {
-  readonly "lint-stamp-schema": "1.0.0";
-  readonly atlasCommit: string;
-  readonly checkRevision: string;
-  readonly evidenceRevision: string;
-  readonly frameworkRevision: string;
-  readonly policyRevision: string;
-  readonly schemaRevision: string;
-}
-
 export interface AtlasGovernancePayload {
   readonly changeSet?: AtlasGovernanceChangeSet;
   readonly lint?: LintOperationResult;
-  readonly lintStamp?: AtlasGovernanceLintStamp;
   readonly state: "completed" | "not-completed";
   readonly workflowState: AtlasGovernanceWorkflowState;
 }
@@ -293,6 +286,68 @@ function capturedPathSet(
   return paths;
 }
 
+function capturedText(file: CapturedAtlasFile | undefined): string | undefined {
+  return file === undefined ? undefined : new TextDecoder().decode(file.bytes);
+}
+
+function frontmatterId(content: string): string | undefined {
+  return /^\s*id:\s*([^\s]+)\s*$/mu.exec(content)?.[1];
+}
+
+function expectedIdFromPath(path: string, prefix: string): string | undefined {
+  const match = /^\.atlas\/(?:types\/policy|principles)\/([^/]+)\.md$/u.exec(path);
+  const slug = match?.[1];
+  return slug === undefined ? undefined : `${prefix}:${slug}`;
+}
+
+function digestText(input: string): string {
+  let hash = 0xcbf29ce484222325n;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= BigInt(input.charCodeAt(index));
+    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
+  }
+  return hash.toString(16).padStart(16, "0");
+}
+
+function changeSetDigest(changeSet: AtlasGovernanceChangeSet): string {
+  const parts = [changeSet.baseSnapshotDigest, changeSet.targetHead];
+  for (const change of [...changeSet.changes].toSorted((left, right) =>
+    compareCodePoints(left.path, right.path),
+  )) {
+    parts.push(change.path, digestText(change.content));
+  }
+  return digestText(parts.join("\0"));
+}
+
+interface PolicyTarget {
+  readonly id: string;
+  readonly path: string;
+}
+
+function changedPolicyTargets(
+  existing: readonly CapturedAtlasFile[],
+  changeSet: AtlasGovernanceChangeSet | undefined,
+): readonly PolicyTarget[] {
+  if (changeSet === undefined) return Object.freeze([]);
+  const existingByPath = new Map(existing.map((file) => [file.path, file]));
+  return Object.freeze(
+    changeSet.changes
+      .filter((change) => change.path.startsWith(".atlas/types/policy/"))
+      .map((change) => {
+        const baseId = frontmatterId(
+          capturedText(existingByPath.get(change.path)) ?? "",
+        );
+        const changedId = frontmatterId(change.content);
+        const expectedId = expectedIdFromPath(change.path, "policy");
+        return Object.freeze({
+          id: baseId ?? changedId ?? expectedId ?? "",
+          path: change.path,
+        });
+      })
+      .filter((target) => target.id !== ""),
+  );
+}
+
 function validateEvidence(
   references: readonly string[],
   paths: ReadonlySet<string>,
@@ -326,24 +381,58 @@ function validateEvidence(
 function validateSemanticVerdicts(
   request: AtlasGovernanceRequest,
   paths: ReadonlySet<string>,
+  targets: readonly PolicyTarget[],
 ): readonly Finding[] {
   const findings: Finding[] = [];
-  if (
-    request.subject === "atlas-policy" &&
-    request.action !== "verify" &&
-    (request.semanticVerdicts?.length ?? 0) === 0
-  ) {
-    findings.push(
-      finding(
-        "ATLAS_GOVERNANCE_POLICY_DOCTRINE_UNSUPPORTED",
-        "Atlas Policy doctrine must be enforceable by deterministic rules or supplied semantic verdicts.",
-      ),
-    );
+  const verdicts = request.semanticVerdicts ?? [];
+  const targetIds = new Set(targets.map((target) => target.id));
+  if (request.subject === "atlas-policy" && request.action !== "verify") {
+    if (verdicts.length === 0) {
+      findings.push(
+        finding(
+          "ATLAS_GOVERNANCE_POLICY_DOCTRINE_UNSUPPORTED",
+          "Atlas Policy doctrine must be enforceable by deterministic rules or supplied semantic verdicts.",
+        ),
+      );
+    }
+    for (const target of targets) {
+      if (!verdicts.some((verdict) => verdict.policyId === target.id)) {
+        findings.push(
+          finding(
+            "ATLAS_GOVERNANCE_POLICY_VERDICT_MISSING",
+            "Every changed Atlas Policy identity must have its own semantic verdict.",
+            target.path,
+          ),
+        );
+      }
+    }
+    for (const verdict of verdicts) {
+      if (!targetIds.has(verdict.policyId)) {
+        findings.push(
+          finding(
+            "ATLAS_GOVERNANCE_POLICY_VERDICT_UNMATCHED",
+            "Semantic Policy verdicts must correspond to a Policy changed by this Atlas Change Set.",
+            `.atlas/types/policy/${verdict.policyId.replace(/^policy:/u, "")}.md`,
+          ),
+        );
+      }
+    }
   }
-  for (const verdict of request.semanticVerdicts ?? []) {
-    const path = `.atlas/types/policy/${verdict.policyId.replace(/^policy:/u, "")}.md`;
+  for (const verdict of verdicts) {
+    const path =
+      targets.find((target) => target.id === verdict.policyId)?.path ??
+      `.atlas/types/policy/${verdict.policyId.replace(/^policy:/u, "")}.md`;
     findings.push(...validateEvidence(verdict.evidence, paths, path));
     findings.push(...validateEvidence(verdict.challenge.evidence, paths, path));
+    if (verdict.verdict === "fail") {
+      findings.push(
+        finding(
+          "ATLAS_GOVERNANCE_SEMANTIC_VERDICT_FAILED",
+          "A failing semantic Atlas Policy verdict blocks the governed operation.",
+          path,
+        ),
+      );
+    }
     if (verdict.challenge.argument.trim() === "") {
       findings.push(
         finding(
@@ -398,13 +487,64 @@ function activeTruthIds(content: string): readonly string[] {
 function validatePrincipleChangeSet(
   request: AtlasGovernanceRequest,
   changeSet: AtlasGovernanceChangeSet | undefined,
+  existing: readonly CapturedAtlasFile[],
 ): readonly Finding[] {
   if (request.subject !== "principle" || changeSet === undefined)
     return Object.freeze([]);
   const findings: Finding[] = [];
+  const existingByPath = new Map(existing.map((file) => [file.path, file]));
   for (const change of changeSet.changes) {
     if (!change.path.startsWith(".atlas/principles/")) continue;
     const ids = activeTruthIds(change.content);
+    const baseContent = capturedText(existingByPath.get(change.path));
+    const baseId = frontmatterId(baseContent ?? "");
+    const changedId = frontmatterId(change.content);
+    const expectedId = expectedIdFromPath(change.path, "principle");
+    if (baseId !== undefined && changedId !== baseId) {
+      findings.push(
+        finding(
+          "ATLAS_GOVERNANCE_PRINCIPLE_IDENTITY_CHANGED",
+          "Principle amendments must retain the stable Principle identity captured at that path.",
+          change.path,
+        ),
+      );
+    } else if (
+      baseId === undefined &&
+      expectedId !== undefined &&
+      changedId !== expectedId
+    ) {
+      findings.push(
+        finding(
+          "ATLAS_GOVERNANCE_PRINCIPLE_IDENTITY_CHANGED",
+          "New Principle pages must use the deterministic path-derived Principle identity.",
+          change.path,
+        ),
+      );
+    }
+    if (baseContent !== undefined && request.action === "amend") {
+      const oldIds = new Set(activeTruthIds(baseContent));
+      const nextIds = new Set(ids);
+      const removed = [...oldIds].filter((id) => !nextIds.has(id));
+      const added = ids.filter((id) => !oldIds.has(id));
+      if (removed.length > 0 && added.length > 0) {
+        const lower = change.content.toLowerCase();
+        const recordsInvalidation = removed.every(
+          (id) => lower.includes(id.toLowerCase()) && lower.includes("invalidat"),
+        );
+        const recordsSuccessor = added.every(
+          (id) => lower.includes(id.toLowerCase()) && lower.includes("successor"),
+        );
+        if (!recordsInvalidation || !recordsSuccessor) {
+          findings.push(
+            finding(
+              "ATLAS_GOVERNANCE_PRINCIPLE_TRUTH_SUCCESSOR_REQUIRED",
+              "Semantic Principle truth replacement must invalidate the old truth and record a linked successor with a new identity.",
+              change.path,
+            ),
+          );
+        }
+      }
+    }
     if (ids.length === 0 && request.action !== "retire") {
       findings.push(
         finding(
@@ -442,6 +582,7 @@ function validatePrincipleChangeSet(
 function validatePolicyChangeSet(
   request: AtlasGovernanceRequest,
   changeSet: AtlasGovernanceChangeSet | undefined,
+  existing: readonly CapturedAtlasFile[],
 ): readonly Finding[] {
   if (request.subject !== "atlas-policy" || changeSet === undefined) {
     return Object.freeze([]);
@@ -458,7 +599,24 @@ function validatePolicyChangeSet(
     ]);
   }
   const findings: Finding[] = [];
+  const existingByPath = new Map(existing.map((file) => [file.path, file]));
   for (const change of policyChanges) {
+    const id = frontmatterId(change.content);
+    const baseId = frontmatterId(capturedText(existingByPath.get(change.path)) ?? "");
+    const expectedId = expectedIdFromPath(change.path, "policy");
+    if (
+      id !== undefined &&
+      ((baseId !== undefined && id !== baseId) ||
+        (baseId === undefined && expectedId !== undefined && id !== expectedId))
+    ) {
+      findings.push(
+        finding(
+          "ATLAS_GOVERNANCE_POLICY_IDENTITY_CHANGED",
+          "Atlas Policy page identity must correspond to the existing page or deterministic path target.",
+          change.path,
+        ),
+      );
+    }
     if (!/^\s*id: policy:[^\s]+$/mu.test(change.content)) {
       findings.push(
         finding(
@@ -473,6 +631,40 @@ function validatePolicyChangeSet(
         finding(
           "ATLAS_GOVERNANCE_POLICY_TYPE_REQUIRED",
           "Atlas Policy pages must declare the Policy page type.",
+          change.path,
+        ),
+      );
+    }
+    for (const [heading, code, message] of [
+      [
+        "Scope",
+        "ATLAS_GOVERNANCE_POLICY_SCOPE_REQUIRED",
+        "Atlas Policy pages must declare the workflows or operations they govern.",
+      ],
+      [
+        "Evaluation",
+        "ATLAS_GOVERNANCE_POLICY_EVALUATION_REQUIRED",
+        "Atlas Policy pages must declare deterministic or semantic evaluation.",
+      ],
+      [
+        "Consequence",
+        "ATLAS_GOVERNANCE_POLICY_CONSEQUENCE_REQUIRED",
+        "Atlas Policy pages must declare the consequence of violation.",
+      ],
+    ] as const) {
+      if (!new RegExp(`^##\\s+${heading}\\b`, "imu").test(change.content)) {
+        findings.push(finding(code, message, change.path));
+      }
+    }
+    if (
+      /\bExplore\b[^.\n]*\bgovern(?:ed|s|ance)?\b|\bgovern(?:ed|s|ance)?\b[^.\n]*\bExplore\b/iu.test(
+        change.content,
+      )
+    ) {
+      findings.push(
+        finding(
+          "ATLAS_GOVERNANCE_POLICY_EXPLORE_FORBIDDEN",
+          "Explore is descriptive context for traversal and is never governed by Atlas Policies.",
           change.path,
         ),
       );
@@ -554,8 +746,9 @@ export function validateAtlasGovernanceChangeSet(
       ),
     );
   }
-  findings.push(...validatePrincipleChangeSet(request, changeSet));
-  findings.push(...validatePolicyChangeSet(request, changeSet));
+  const existing: readonly CapturedAtlasFile[] = Object.freeze([]);
+  findings.push(...validatePrincipleChangeSet(request, changeSet, existing));
+  findings.push(...validatePolicyChangeSet(request, changeSet, existing));
   return Object.freeze(findings);
 }
 
@@ -592,35 +785,65 @@ export function mergeGovernanceFindings(
   );
 }
 
-const stampRevisions = Object.freeze({
-  checkRevision: [
-    "sha256",
-    "1111111111111111111111111111111111111111111111111111111111111111",
-  ].join(":"),
-  frameworkRevision: [
-    "sha256",
-    "2222222222222222222222222222222222222222222222222222222222222222",
-  ].join(":"),
-  policyRevision: [
-    "sha256",
-    "3333333333333333333333333333333333333333333333333333333333333333",
-  ].join(":"),
-  schemaRevision: [
-    "sha256",
-    "4444444444444444444444444444444444444444444444444444444444444444",
-  ].join(":"),
-});
-
-function lintStamp(commit: string): AtlasGovernanceLintStamp {
-  return Object.freeze({
-    "lint-stamp-schema": "1.0.0",
-    atlasCommit: commit,
-    checkRevision: stampRevisions.checkRevision,
-    evidenceRevision: commit,
-    frameworkRevision: stampRevisions.frameworkRevision,
-    policyRevision: stampRevisions.policyRevision,
-    schemaRevision: stampRevisions.schemaRevision,
-  });
+function validateResumeReceipts(
+  state: AtlasGovernanceWorkflowState,
+  changeSet: AtlasGovernanceChangeSet,
+): readonly Finding[] {
+  const digest = changeSetDigest(changeSet);
+  const findings: Finding[] = [];
+  const writeReceipt = receiptFor(state, "write-change-set");
+  if (
+    writeReceipt !== undefined &&
+    (writeReceipt.changeSetDigest !== digest ||
+      writeReceipt.writtenTree !== writeReceipt.receipt)
+  ) {
+    findings.push(
+      finding(
+        "ATLAS_GOVERNANCE_RESUME_CHANGE_SET_MISMATCH",
+        "Atlas Governance resume receipts must be content-addressed to the current Atlas Change Set digest and written tree.",
+      ),
+    );
+  }
+  const commitReceipt = receiptFor(state, "commit-proposal");
+  if (
+    commitReceipt !== undefined &&
+    (commitReceipt.changeSetDigest !== digest ||
+      commitReceipt.commit !== commitReceipt.receipt)
+  ) {
+    findings.push(
+      finding(
+        "ATLAS_GOVERNANCE_RESUME_CHANGE_SET_MISMATCH",
+        "Atlas Governance commit receipts must bind the current Atlas Change Set digest to the proposal commit OID.",
+      ),
+    );
+  }
+  const lintReceipt = receiptFor(state, "lint-proposal");
+  if (
+    lintReceipt !== undefined &&
+    (lintReceipt.changeSetDigest !== digest ||
+      lintReceipt.lintEvidenceCommit !== lintReceipt.receipt)
+  ) {
+    findings.push(
+      finding(
+        "ATLAS_GOVERNANCE_RESUME_CHANGE_SET_MISMATCH",
+        "Atlas Governance Lint receipts must bind the current Atlas Change Set digest to the lint evidence commit.",
+      ),
+    );
+  }
+  if (
+    commitReceipt !== undefined &&
+    lintReceipt !== undefined &&
+    (lintReceipt.lintEvidenceCommit ?? lintReceipt.receipt) !==
+      (commitReceipt.commit ?? commitReceipt.receipt)
+  ) {
+    findings.push(
+      finding(
+        "ATLAS_GOVERNANCE_LINT_STAMP_STALE",
+        "Atlas Governance refused to accept Lint evidence for a proposal commit different from the committed Atlas Change Set.",
+      ),
+    );
+  }
+  return Object.freeze(findings);
 }
 
 function canContinue(findings: readonly Finding[]): boolean {
@@ -679,10 +902,22 @@ export function runAtlasGovernanceWorkflow(
 
     const existing = runtime.existingAtlasFiles();
     const paths = capturedPathSet(existing, request.changeSet);
+    const policyTargets = changedPolicyTargets(existing, request.changeSet);
+    const changeSetFindings = validateAtlasGovernanceChangeSet(state, request);
+    const correspondenceFindings = Object.freeze([
+      ...validatePrincipleChangeSet(request, request.changeSet, existing),
+      ...validatePolicyChangeSet(request, request.changeSet, existing),
+    ]);
+    const resumeFindings =
+      request.action === "verify" || request.changeSet === undefined
+        ? Object.freeze([])
+        : validateResumeReceipts(state, request.changeSet);
     const findings = Object.freeze([
       ...validateApproval(request),
-      ...validateAtlasGovernanceChangeSet(state, request),
-      ...validateSemanticVerdicts(request, paths),
+      ...changeSetFindings,
+      ...correspondenceFindings,
+      ...validateSemanticVerdicts(request, paths, policyTargets),
+      ...resumeFindings,
     ]);
     if (!canContinue(findings)) {
       return result(
@@ -713,6 +948,7 @@ export function runAtlasGovernanceWorkflow(
       );
     }
 
+    const digest = changeSetDigest(request.changeSet as AtlasGovernanceChangeSet);
     let nextState = state;
     if (
       receiptFor(nextState, "create-proposal-worktree") === undefined &&
@@ -768,19 +1004,23 @@ export function runAtlasGovernanceWorkflow(
         request.changeSet as AtlasGovernanceChangeSet,
       );
       nextState = addReceipt(nextState, {
+        changeSetDigest: digest,
         effect: "write-change-set",
         receipt: written.receipt,
+        writtenTree: written.receipt,
       });
       latestState = nextState;
       runtime.persistState?.(nextState);
     }
-    let commit = receiptFor(nextState, "commit-proposal")?.receipt;
+    let commit = receiptFor(nextState, "commit-proposal")?.commit;
     if (commit === undefined) {
       const committed = runtime.commitProposal();
       commit = committed.commit;
       nextState = addReceipt(nextState, {
+        changeSetDigest: digest,
+        commit: committed.commit,
         effect: "commit-proposal",
-        receipt: committed.receipt,
+        receipt: committed.commit,
       });
       latestState = nextState;
       runtime.persistState?.(nextState);
@@ -788,7 +1028,10 @@ export function runAtlasGovernanceWorkflow(
     const linted = runtime.lintProposal();
     if (receiptFor(nextState, "lint-proposal") === undefined) {
       nextState = addReceipt(nextState, {
+        changeSetDigest: digest,
+        commit,
         effect: "lint-proposal",
+        lintEvidenceCommit: linted.receipt,
         receipt: linted.receipt,
       });
       latestState = nextState;
@@ -831,7 +1074,7 @@ export function runAtlasGovernanceWorkflow(
       request,
       "completed",
       "success",
-      { changeSet: acceptedChangeSet, lint: linted.lint, lintStamp: lintStamp(commit) },
+      { changeSet: acceptedChangeSet, lint: linted.lint },
       Object.freeze([]),
       "Governance maintenance produced a Linted Atlas Proposal.",
     );

@@ -104,16 +104,51 @@ function principleContent(
   );
 }
 
-function policyContent(): string {
+function policyContent(
+  body = [
+    "# Publication",
+    "",
+    "## Scope",
+    "",
+    "Atlas maintenance and publication are governed by this Policy.",
+    "",
+    "## Evaluation",
+    "",
+    "Semantic evaluation with Challenge is required.",
+    "",
+    "## Consequence",
+    "",
+    "Violations block only the governed operation.",
+    "",
+  ].join("\n"),
+): string {
   return new TextDecoder().decode(
     page(
       ".atlas/types/policy/publication.md",
       "policy:publication",
       "policy",
       "Publication",
-      "# Publication\n\n## Policy\n\nPublication requires cited evidence.\n",
+      body,
     ).bytes,
   );
+}
+
+function semanticVerdict(
+  policyId = "policy:publication",
+  verdict: "pass" | "fail" = "pass",
+): AtlasGovernanceRequest["semanticVerdicts"] {
+  return [
+    {
+      challenge: {
+        argument: "The cited Atlas locations support this result.",
+        evidence: [".atlas/index.md#L1"],
+        position: "agree",
+      },
+      evidence: [".atlas/index.md#L1"],
+      policyId,
+      verdict,
+    },
+  ];
 }
 
 function changeSet(
@@ -250,7 +285,7 @@ function runtime(
   };
 }
 
-test("Governance creates a Linted Principle proposal with stable truths and stamped handoff", () => {
+test("Governance creates a Linted Principle proposal with stable truths and resumable receipts", () => {
   const workflowState = state();
   const maintenanceRequest = request({ changeSet: changeSet(workflowState) });
   const adapter = runtime(workflowState, maintenanceRequest);
@@ -276,10 +311,7 @@ test("Governance creates a Linted Principle proposal with stable truths and stam
   assert.ok(result.payload.lint);
   assert.equal(result.payload.lint.payload.state, "completed");
   assert.equal(result.payload.lint.payload.lint.outcome, "valid");
-  assert.equal(
-    result.payload.lintStamp?.atlasCommit,
-    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-  );
+  assert.equal("lintStamp" in result.payload, false);
   assert.deepEqual(
     result.payload.workflowState.effectReceipts.map((receipt) => receipt.effect),
     [
@@ -294,7 +326,31 @@ test("Governance creates a Linted Principle proposal with stable truths and stam
   assert.equal(adapter.counts.linted(), 1);
 });
 
-test("Governance resumes effect receipts without replaying proposal writes", () => {
+test("Governance resumes content-addressed receipts without replaying proposal writes", () => {
+  const workflowState = state();
+  const maintenanceRequest = request({ changeSet: changeSet(workflowState) });
+  const persisted: AtlasGovernanceWorkflowState[] = [];
+  const first = runAtlasGovernanceWorkflow(workflowState, maintenanceRequest, {
+    ...runtime(workflowState, maintenanceRequest),
+    persistState: (nextState: AtlasGovernanceWorkflowState) => {
+      persisted.push(nextState);
+    },
+  });
+  assert.equal(first.completion, "completed");
+  const resumedState = persisted.at(-1);
+  assert.ok(resumedState);
+  const adapter = runtime(resumedState, maintenanceRequest);
+
+  const result = runAtlasGovernanceWorkflow(resumedState, maintenanceRequest, adapter);
+
+  assert.equal(result.completion, "completed");
+  assert.equal(adapter.counts.created(), 0);
+  assert.equal(adapter.counts.written(), 0);
+  assert.equal(adapter.counts.committed(), 0);
+  assert.equal(adapter.counts.linted(), 1);
+});
+
+test("Governance rejects crafted resume receipts that are not bound to the change set", () => {
   const workflowState = state([
     { effect: "create-proposal-worktree", receipt: "created" },
     { effect: "write-change-set", receipt: "written" },
@@ -314,11 +370,53 @@ test("Governance resumes effect receipts without replaying proposal writes", () 
 
   const result = runAtlasGovernanceWorkflow(workflowState, maintenanceRequest, adapter);
 
-  assert.equal(result.completion, "completed");
+  assert.equal(result.completion, "not-completed");
   assert.equal(adapter.counts.created(), 0);
   assert.equal(adapter.counts.written(), 0);
   assert.equal(adapter.counts.committed(), 0);
-  assert.equal(adapter.counts.linted(), 1);
+  assert.equal(adapter.counts.linted(), 0);
+  assert.ok(
+    result.handoff.validationState.findings.some(
+      (entry) => entry.code === "ATLAS_GOVERNANCE_RESUME_CHANGE_SET_MISMATCH",
+    ),
+  );
+});
+
+test("Governance rejects resumed Lint evidence for a different commit", () => {
+  const workflowState = state();
+  const maintenanceRequest = request({ changeSet: changeSet(workflowState) });
+  const persisted: AtlasGovernanceWorkflowState[] = [];
+  const first = runAtlasGovernanceWorkflow(workflowState, maintenanceRequest, {
+    ...runtime(workflowState, maintenanceRequest),
+    persistState: (nextState: AtlasGovernanceWorkflowState) => {
+      persisted.push(nextState);
+    },
+  });
+  assert.equal(first.completion, "completed");
+  const resumedState = persisted.at(-1);
+  assert.ok(resumedState);
+  const tamperedState: AtlasGovernanceWorkflowState = {
+    ...resumedState,
+    effectReceipts: resumedState.effectReceipts.map((receipt) =>
+      receipt.effect === "lint-proposal"
+        ? {
+            ...receipt,
+            lintEvidenceCommit: "dddddddddddddddddddddddddddddddddddddddd",
+            receipt: "dddddddddddddddddddddddddddddddddddddddd",
+          }
+        : receipt,
+    ),
+  };
+  const adapter = runtime(tamperedState, maintenanceRequest);
+
+  const result = runAtlasGovernanceWorkflow(tamperedState, maintenanceRequest, adapter);
+
+  assert.equal(result.completion, "not-completed");
+  assert.equal(
+    result.handoff.validationState.findings[0]?.code,
+    "ATLAS_GOVERNANCE_LINT_STAMP_STALE",
+  );
+  assert.equal(adapter.counts.linted(), 0);
 });
 
 test("Governance blocks stale bases, unsafe branches, workspace collisions, and runtime failures before unsafe writes", () => {
@@ -360,12 +458,18 @@ test("Governance proves every deterministic input gate can fail with specific co
   const workflowState = state();
   const invalid = changeSet(workflowState, [
     { content: "missing operation id", path: ".atlas/CHANGELOG.md" },
-    { content: principleContent(""), path: ".atlas/principles/empty.md" },
+    {
+      content: principleContent("").replace(
+        "  id: principle:determinism",
+        "  id: principle:empty",
+      ),
+      path: ".atlas/principles/empty.md",
+    },
     {
       content: principleContent(
         "- `truth:dup` One.\n- `truth:dup` Two.\n",
         "No amendment heading.\n",
-      ),
+      ).replace("  id: principle:determinism", "  id: principle:duplicate"),
       path: ".atlas/principles/duplicate.md",
     },
     { content: "bad", path: "../escape.md" },
@@ -389,7 +493,12 @@ test("Governance proves every deterministic input gate can fail with specific co
       request({
         changeSet: {
           baseSnapshotDigest: "stale",
-          changes: [{ content: "no changelog", path: ".atlas/principles/one.md" }],
+          changes: [
+            {
+              content: "---\nsdk:\n  id: principle:one\n---\n\nno changelog",
+              path: ".atlas/principles/one.md",
+            },
+          ],
           targetHead: workflowState.targetHead,
         },
       }),
@@ -412,7 +521,10 @@ test("Governance proves every deterministic input gate can fail with specific co
             path: ".atlas/CHANGELOG.md",
           },
           {
-            content: principleContent(""),
+            content: principleContent("").replace(
+              "  id: principle:determinism",
+              "  id: principle:retired",
+            ),
             path: ".atlas/principles/retired.md",
           },
         ]),
@@ -449,7 +561,11 @@ test("Governance proves every deterministic input gate can fail with specific co
         subject: "atlas-policy",
       }),
     ).map((entry) => entry.code),
-    ["ATLAS_GOVERNANCE_POLICY_ID_REQUIRED", "ATLAS_GOVERNANCE_POLICY_TYPE_REQUIRED"],
+    [
+      "ATLAS_GOVERNANCE_POLICY_IDENTITY_CHANGED",
+      "ATLAS_GOVERNANCE_POLICY_ID_REQUIRED",
+      "ATLAS_GOVERNANCE_POLICY_TYPE_REQUIRED",
+    ],
   );
 
   for (const [name, maintenanceRequest, expected] of [
@@ -483,6 +599,211 @@ test("Governance proves every deterministic input gate can fail with specific co
     assert.equal(result.completion, "not-completed", name);
     assert.equal(result.handoff.validationState.findings[0]?.code, expected, name);
   }
+});
+
+test("Governance rejects Principle and Atlas Policy correspondence violations", () => {
+  const workflowState = state();
+  const basePrinciple = page(
+    ".atlas/principles/determinism.md",
+    "principle:determinism",
+    "principle",
+    "Determinism",
+    "# Determinism\n\n## Active truths\n\n- `truth:one` Original meaning.\n\n## Amendments\n\n### 1 - 2026-08-21\n\nAdded `truth:one`.\n",
+  );
+  const changedPrinciple = principleContent(
+    "- `truth:new-meaning` Replacement meaning.\n",
+  ).replace("  id: principle:determinism", "  id: principle:replacement");
+  const principleRequest = request({
+    action: "amend",
+    changeSet: changeSet(workflowState, [
+      {
+        content: "# Changelog\n\n- governance-op-80: Amended Principle.\n",
+        path: ".atlas/CHANGELOG.md",
+      },
+      { content: changedPrinciple, path: ".atlas/principles/determinism.md" },
+    ]),
+  });
+  const principleResult = runAtlasGovernanceWorkflow(
+    workflowState,
+    principleRequest,
+    runtime(workflowState, principleRequest, {
+      baseFiles: [root, changelog, basePrinciple],
+    }),
+  );
+  assert.equal(principleResult.completion, "not-completed");
+  assert.ok(
+    principleResult.handoff.validationState.findings.some(
+      (entry) => entry.code === "ATLAS_GOVERNANCE_PRINCIPLE_IDENTITY_CHANGED",
+    ),
+  );
+  assert.ok(
+    principleResult.handoff.validationState.findings.some(
+      (entry) => entry.code === "ATLAS_GOVERNANCE_PRINCIPLE_TRUTH_SUCCESSOR_REQUIRED",
+    ),
+  );
+
+  const validReplacement = principleContent(
+    "- `truth:new-meaning` Replacement meaning.\n",
+    [
+      "## Amendments",
+      "",
+      "### 2 - 2026-08-21",
+      "",
+      "Invalidated `truth:one`; linked successor `truth:new-meaning` records the replacement.",
+      "",
+    ].join("\n"),
+  );
+  const validReplacementRequest = request({
+    action: "amend",
+    changeSet: changeSet(workflowState, [
+      {
+        content: "# Changelog\n\n- governance-op-80: Amended Principle.\n",
+        path: ".atlas/CHANGELOG.md",
+      },
+      { content: validReplacement, path: ".atlas/principles/determinism.md" },
+    ]),
+  });
+  const validReplacementResult = runAtlasGovernanceWorkflow(
+    workflowState,
+    validReplacementRequest,
+    runtime(workflowState, validReplacementRequest, {
+      baseFiles: [root, changelog, basePrinciple],
+    }),
+  );
+  assert.equal(
+    validReplacementResult.handoff.validationState.findings.some(
+      (entry) => entry.code === "ATLAS_GOVERNANCE_PRINCIPLE_TRUTH_SUCCESSOR_REQUIRED",
+    ),
+    false,
+  );
+
+  const hollowPolicy = policyContent(
+    "# Publication\n\n## Policy\n\nExplore is governed by this Policy.\n",
+  );
+  const hollowRequest = request({
+    changeSet: changeSet(workflowState, [
+      {
+        content: "# Changelog\n\n- governance-op-80: Policy.\n",
+        path: ".atlas/CHANGELOG.md",
+      },
+      { content: hollowPolicy, path: ".atlas/types/policy/publication.md" },
+    ]),
+    semanticVerdicts: semanticVerdict(),
+    subject: "atlas-policy",
+  });
+  const hollowResult = runAtlasGovernanceWorkflow(
+    workflowState,
+    hollowRequest,
+    runtime(workflowState, hollowRequest),
+  );
+  assert.equal(hollowResult.completion, "not-completed");
+  for (const code of [
+    "ATLAS_GOVERNANCE_POLICY_SCOPE_REQUIRED",
+    "ATLAS_GOVERNANCE_POLICY_EVALUATION_REQUIRED",
+    "ATLAS_GOVERNANCE_POLICY_CONSEQUENCE_REQUIRED",
+    "ATLAS_GOVERNANCE_POLICY_EXPLORE_FORBIDDEN",
+  ]) {
+    assert.ok(
+      hollowResult.handoff.validationState.findings.some(
+        (entry) => entry.code === code,
+      ),
+      code,
+    );
+  }
+
+  const driftRequest = request({
+    changeSet: changeSet(workflowState, [
+      {
+        content: "# Changelog\n\n- governance-op-80: Policy.\n",
+        path: ".atlas/CHANGELOG.md",
+      },
+      {
+        content: policyContent().replace(
+          "  id: policy:publication",
+          "  id: policy:unrelated",
+        ),
+        path: ".atlas/types/policy/publication.md",
+      },
+    ]),
+    semanticVerdicts: semanticVerdict("policy:unrelated"),
+    subject: "atlas-policy",
+  });
+  const driftResult = runAtlasGovernanceWorkflow(
+    workflowState,
+    driftRequest,
+    runtime(workflowState, driftRequest),
+  );
+  assert.equal(driftResult.completion, "not-completed");
+  assert.ok(
+    driftResult.handoff.validationState.findings.some(
+      (entry) => entry.code === "ATLAS_GOVERNANCE_POLICY_IDENTITY_CHANGED",
+    ),
+  );
+
+  const existingPolicy = page(
+    ".atlas/types/policy/publication.md",
+    "policy:publication",
+    "policy",
+    "Publication",
+    "# Publication\n\n## Scope\n\nAtlas maintenance.\n\n## Evaluation\n\nSemantic.\n\n## Consequence\n\nBlock operation.\n",
+  );
+  const existingDriftRequest = request({
+    changeSet: changeSet(workflowState, [
+      {
+        content: "# Changelog\n\n- governance-op-80: Policy.\n",
+        path: ".atlas/CHANGELOG.md",
+      },
+      {
+        content: policyContent().replace(
+          "  id: policy:publication",
+          "  id: policy:renamed",
+        ),
+        path: ".atlas/types/policy/publication.md",
+      },
+    ]),
+    semanticVerdicts: semanticVerdict(),
+    subject: "atlas-policy",
+  });
+  const existingDriftResult = runAtlasGovernanceWorkflow(
+    workflowState,
+    existingDriftRequest,
+    runtime(workflowState, existingDriftRequest, {
+      baseFiles: [root, changelog, existingPolicy],
+    }),
+  );
+  assert.equal(existingDriftResult.completion, "not-completed");
+  assert.ok(
+    existingDriftResult.handoff.validationState.findings.some(
+      (entry) => entry.code === "ATLAS_GOVERNANCE_POLICY_IDENTITY_CHANGED",
+    ),
+  );
+
+  const malformedPathRequest = request({
+    changeSet: changeSet(workflowState, [
+      {
+        content: "# Changelog\n\n- governance-op-80: Policy.\n",
+        path: ".atlas/CHANGELOG.md",
+      },
+      {
+        content:
+          "# Missing frontmatter\n\n## Scope\n\nPublication.\n\n## Evaluation\n\nSemantic.\n\n## Consequence\n\nBlock operation.\n",
+        path: ".atlas/types/policy/publication",
+      },
+    ]),
+    semanticVerdicts: semanticVerdict(),
+    subject: "atlas-policy",
+  });
+  const malformedPathResult = runAtlasGovernanceWorkflow(
+    workflowState,
+    malformedPathRequest,
+    runtime(workflowState, malformedPathRequest),
+  );
+  assert.equal(malformedPathResult.completion, "not-completed");
+  assert.ok(
+    malformedPathResult.handoff.validationState.findings.some(
+      (entry) => entry.code === "ATLAS_GOVERNANCE_POLICY_ID_REQUIRED",
+    ),
+  );
 });
 
 test("Atlas Policy semantics require resolved evidence, Challenge, and Maintainer escalation on disagreement", () => {
@@ -523,7 +844,7 @@ test("Atlas Policy semantics require resolved evidence, Challenge, and Maintaine
           },
           evidence: [".atlas/missing.md"],
           policyId: "policy:publication",
-          verdict: "fail",
+          verdict: "pass",
         },
       ],
       "ATLAS_GOVERNANCE_SEMANTIC_EVIDENCE_UNRESOLVED",
@@ -559,6 +880,16 @@ test("Atlas Policy semantics require resolved evidence, Challenge, and Maintaine
         },
       ],
       "ATLAS_GOVERNANCE_CHALLENGE_ARGUMENT_REQUIRED",
+    ],
+    [
+      "unmatched-policy",
+      semanticVerdict("policy:unrelated"),
+      "ATLAS_GOVERNANCE_POLICY_VERDICT_MISSING",
+    ],
+    [
+      "failing-verdict",
+      semanticVerdict("policy:publication", "fail"),
+      "ATLAS_GOVERNANCE_SEMANTIC_VERDICT_FAILED",
     ],
     [
       "disagree",
@@ -609,18 +940,7 @@ test("Atlas Policy semantic agreement can produce a proposal while stale stamps 
   ]);
   const maintenanceRequest = request({
     changeSet: policyChangeSet,
-    semanticVerdicts: [
-      {
-        challenge: {
-          argument: "The cited Atlas locations support this result.",
-          evidence: [".atlas/index.md#L1"],
-          position: "agree",
-        },
-        evidence: [".atlas/index.md#L1"],
-        policyId: "policy:publication",
-        verdict: "pass",
-      },
-    ],
+    semanticVerdicts: semanticVerdict(),
     subject: "atlas-policy",
   });
 
@@ -666,6 +986,14 @@ test("Verification-only governance creates no proposal and can fail read-only", 
     maintenanceRequest,
     successAdapter,
   );
+  const readOnlyViolation = runAtlasGovernanceWorkflow(
+    workflowState,
+    request({ action: "verify", changeSet: changeSet(workflowState) }),
+    runtime(
+      workflowState,
+      request({ action: "verify", changeSet: changeSet(workflowState) }),
+    ),
+  );
   const failed = runAtlasGovernanceWorkflow(
     workflowState,
     maintenanceRequest,
@@ -698,7 +1026,12 @@ test("Verification-only governance creates no proposal and can fail read-only", 
 
   assert.equal(success.completion, "completed");
   assert.equal(successAdapter.counts.created(), 0);
-  assert.equal(success.payload.lintStamp, undefined);
+  assert.equal("lintStamp" in success.payload, false);
+  assert.equal(readOnlyViolation.completion, "not-completed");
+  assert.equal(
+    readOnlyViolation.handoff.validationState.findings[0]?.code,
+    "ATLAS_GOVERNANCE_VERIFY_IS_READ_ONLY",
+  );
   assert.equal(failed.completion, "not-completed");
   assert.equal(notCompleted.completion, "not-completed");
 });
@@ -773,6 +1106,16 @@ test("the adversarial governance corpus maps to enforced gates", () => {
         "finding-merge",
         "ATLAS_GOVERNANCE_TRUSTED_FINDING_OVERRIDE_REJECTED",
       ],
+      ["governance", "semantic", "ATLAS_GOVERNANCE_PRINCIPLE_IDENTITY_CHANGED"],
+      ["governance", "semantic", "ATLAS_GOVERNANCE_PRINCIPLE_TRUTH_SUCCESSOR_REQUIRED"],
+      ["governance", "semantic", "ATLAS_GOVERNANCE_POLICY_SCOPE_REQUIRED"],
+      ["governance", "semantic", "ATLAS_GOVERNANCE_POLICY_EVALUATION_REQUIRED"],
+      ["governance", "semantic", "ATLAS_GOVERNANCE_POLICY_CONSEQUENCE_REQUIRED"],
+      ["governance", "semantic", "ATLAS_GOVERNANCE_POLICY_EXPLORE_FORBIDDEN"],
+      ["governance", "semantic", "ATLAS_GOVERNANCE_POLICY_VERDICT_MISSING"],
+      ["governance", "semantic", "ATLAS_GOVERNANCE_POLICY_IDENTITY_CHANGED"],
+      ["governance", "semantic", "ATLAS_GOVERNANCE_SEMANTIC_VERDICT_FAILED"],
+      ["governance", "semantic", "ATLAS_GOVERNANCE_RESUME_CHANGE_SET_MISMATCH"],
     ],
   );
 });

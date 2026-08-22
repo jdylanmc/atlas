@@ -19,6 +19,66 @@
       "gate": "governance",
       "kind": "finding-merge",
       "expectedCode": "ATLAS_GOVERNANCE_TRUSTED_FINDING_OVERRIDE_REJECTED"
+    },
+    {
+      "name": "principle-amendment-identity-drift-is-rejected",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_PRINCIPLE_IDENTITY_CHANGED"
+    },
+    {
+      "name": "principle-truth-replacement-without-successor-is-rejected",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_PRINCIPLE_TRUTH_SUCCESSOR_REQUIRED"
+    },
+    {
+      "name": "policy-without-scope-is-rejected",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_POLICY_SCOPE_REQUIRED"
+    },
+    {
+      "name": "policy-without-evaluation-is-rejected",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_POLICY_EVALUATION_REQUIRED"
+    },
+    {
+      "name": "policy-without-consequence-is-rejected",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_POLICY_CONSEQUENCE_REQUIRED"
+    },
+    {
+      "name": "policy-governing-explore-is-rejected",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_POLICY_EXPLORE_FORBIDDEN"
+    },
+    {
+      "name": "semantic-verdict-for-unrelated-policy-is-rejected",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_POLICY_VERDICT_MISSING"
+    },
+    {
+      "name": "policy-page-identity-drift-is-rejected",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_POLICY_IDENTITY_CHANGED"
+    },
+    {
+      "name": "failing-semantic-verdict-is-rejected",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_SEMANTIC_VERDICT_FAILED"
+    },
+    {
+      "name": "crafted-resume-receipts-are-rejected",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_RESUME_CHANGE_SET_MISMATCH"
     }
   ]
 }
