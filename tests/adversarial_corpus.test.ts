@@ -4,7 +4,10 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test, { after } from "node:test";
 import { captureAtlasHostDirectory, CaptureBudgetError } from "../scripts/atlas.ts";
+import { buildAtlasView } from "../src/atlas/atlas_view.ts";
+import type { CapturedAtlasFile } from "../src/atlas/load_atlas_text.ts";
 import type { CoreArchetypeBindings } from "../src/domain/core_archetype.ts";
+import { loadAndValidateAtlasInput } from "../src/lint/validate_atlas_input.ts";
 import { runLintOperation } from "../src/operations/lint_operation.ts";
 import {
   validateVocabularyAgreement,
@@ -65,6 +68,25 @@ interface AtlasCliSourceBoundaryCase {
   readonly path: string;
 }
 
+interface AtlasCliSourceContractCase {
+  readonly forbiddenText: string;
+  readonly gate: "atlas-cli";
+  readonly kind: "source-contract";
+  readonly name: string;
+  readonly path: string;
+  readonly requiredText: string;
+}
+
+interface AtlasCliAtlasViewMutationCase {
+  readonly expectedSlug: string;
+  readonly expectedSnapshot: string;
+  readonly gate: "atlas-cli";
+  readonly kind: "atlas-view-mutation";
+  readonly mutatedSlug: string;
+  readonly mutatedSnapshot: string;
+  readonly name: string;
+}
+
 interface AtlasCliCaptureBudgetCase {
   readonly budgets: {
     readonly maxFileBytes: number;
@@ -84,13 +106,19 @@ interface AtlasCliCaptureBudgetCase {
 }
 
 type AtlasCliCase =
-  AtlasCliCaptureBudgetCase | AtlasCliCommandCase | AtlasCliSourceBoundaryCase;
+  | AtlasCliAtlasViewMutationCase
+  | AtlasCliCaptureBudgetCase
+  | AtlasCliCommandCase
+  | AtlasCliSourceBoundaryCase
+  | AtlasCliSourceContractCase;
 
 interface AtlasCliCorpus {
   readonly cases: readonly AtlasCliCase[];
   readonly reviewResolutionRule: string;
   readonly schema: 1;
 }
+
+const adversarialEncoder = new TextEncoder();
 
 const binding: CoreArchetypeBindings = Object.freeze({
   Anchor: Object.freeze({
@@ -248,6 +276,33 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
           name,
         };
       }
+      if (entry["kind"] === "source-contract") {
+        return {
+          forbiddenText: assertString(entry["forbiddenText"], `${path}.forbiddenText`),
+          gate: "atlas-cli",
+          kind: "source-contract",
+          name,
+          path: assertString(entry["path"], `${path}.path`),
+          requiredText: assertString(entry["requiredText"], `${path}.requiredText`),
+        };
+      }
+      if (entry["kind"] === "atlas-view-mutation") {
+        return {
+          expectedSlug: assertString(entry["expectedSlug"], `${path}.expectedSlug`),
+          expectedSnapshot: assertString(
+            entry["expectedSnapshot"],
+            `${path}.expectedSnapshot`,
+          ),
+          gate: "atlas-cli",
+          kind: "atlas-view-mutation",
+          mutatedSlug: assertString(entry["mutatedSlug"], `${path}.mutatedSlug`),
+          mutatedSnapshot: assertString(
+            entry["mutatedSnapshot"],
+            `${path}.mutatedSnapshot`,
+          ),
+          name,
+        };
+      }
       assert.equal(entry["kind"], "source-boundary", `${path}.kind is unsupported`);
       return {
         forbiddenImports: assertStringArray(
@@ -358,7 +413,71 @@ test("the adversarial atlas-cli corpus is structurally valid", () => {
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "command"));
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "capture-budget"));
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "source-boundary"));
+  assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "source-contract"));
+  assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "atlas-view-mutation"));
 });
+
+function adversarialCaptured(path: string, content: string): CapturedAtlasFile {
+  return { bytes: adversarialEncoder.encode(content), path };
+}
+
+function adversarialPage(): CapturedAtlasFile {
+  return adversarialCaptured(
+    ".atlas/index.md",
+    [
+      "---",
+      "sdk:",
+      "  atlas-sdk-schema: 1.0.0",
+      "  local-atlas-schema: 1.0.0",
+      "  id: anchor:root",
+      "  type: anchor",
+      "  title: Root",
+      '  created-at: "2026-08-17T00:00:00Z"',
+      "  created-by: { kind: human, name: Fixture Author }",
+      '  updated-at: "2026-08-17T00:00:00Z"',
+      "  updated-by: { kind: human, name: Fixture Author }",
+      "  tags: []",
+      "atlas: {}",
+      "---",
+      "# Root",
+    ].join("\n"),
+  );
+}
+
+function exerciseAtlasViewMutation(entry: AtlasCliAtlasViewMutationCase): void {
+  const validation = loadAndValidateAtlasInput([adversarialPage()], {
+    maxFileBytes: 8192,
+    maxTotalBytes: 65536,
+  });
+  const identity = {
+    atlas: { reference: "local-home-atlas", state: "known" as const },
+    role: "home" as const,
+    slug: entry.expectedSlug,
+    snapshot: { reference: entry.expectedSnapshot, state: "known" as const },
+  };
+  const atlasView = buildAtlasView({ identity, validation });
+
+  identity.slug = entry.mutatedSlug;
+  identity.snapshot.reference = entry.mutatedSnapshot;
+
+  const snapshot = atlasView.snapshots[0];
+  const file = atlasView.files[0];
+  const object = atlasView.objects[0];
+  const digest = atlasView.fileDigests[0];
+  assert.ok(snapshot);
+  assert.ok(file);
+  assert.ok(object);
+  assert.ok(digest);
+  assert.equal(snapshot.slug, entry.expectedSlug);
+  assert.equal(snapshot.snapshot.reference, entry.expectedSnapshot);
+  assert.equal(file.snapshot.slug, entry.expectedSlug);
+  assert.equal(object.sourceLocation.snapshot.slug, entry.expectedSlug);
+  assert.equal(digest.snapshot.slug, entry.expectedSlug);
+  assert.equal(digest.snapshot.snapshot.reference, entry.expectedSnapshot);
+  assert.equal(Object.isFrozen(snapshot), true);
+  assert.equal(Object.isFrozen(snapshot.snapshot), true);
+  assert.equal(Object.isFrozen(object.page.sdk), true);
+}
 
 for (const entry of atlasCliCorpus.cases) {
   test(`adversarial atlas-cli corpus: ${entry.name}`, () => {
@@ -394,6 +513,16 @@ for (const entry of atlasCliCorpus.cases) {
       for (const forbidden of entry.forbiddenImports) {
         assert.equal(source.includes(forbidden), false, forbidden);
       }
+      return;
+    }
+    if (entry.kind === "source-contract") {
+      const source = readFileSync(resolve(ROOT, entry.path), "utf8");
+      assert.equal(source.includes(entry.requiredText), true, entry.requiredText);
+      assert.equal(source.includes(entry.forbiddenText), false, entry.forbiddenText);
+      return;
+    }
+    if (entry.kind === "atlas-view-mutation") {
+      exerciseAtlasViewMutation(entry);
       return;
     }
 

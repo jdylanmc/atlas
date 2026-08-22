@@ -179,18 +179,13 @@ export function runExploreOperation(
   const budgets = budgetsOf(request);
   const validated = loadAndValidateAtlasInput(request.capturedFiles, budgets);
   const atlasView = buildAtlasView({
-    files: validated.files,
     identity: Object.freeze({
       atlas: request.homeAtlas,
       role: "home" as const,
       slug: "local-home-atlas",
       snapshot: request.baseSnapshot,
     }),
-    pages: validated.pages,
-    validationState: Object.freeze({
-      findings: validated.findings,
-      state: validated.validationState,
-    }),
+    validation: validated,
   });
   const payload = exploreAtlas(
     atlasView,

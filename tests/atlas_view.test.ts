@@ -79,13 +79,8 @@ test("Atlas View carries normalized objects, locations, digests, ownership, vali
     snapshot: Object.freeze({ reference: "abc123", state: "known" as const }),
   });
   const atlasView = buildAtlasView({
-    files: validated.files,
     identity,
-    pages: validated.pages,
-    validationState: Object.freeze({
-      findings: validated.findings,
-      state: validated.validationState,
-    }),
+    validation: validated,
   });
 
   assert.equal(Object.isFrozen(atlasView), true);
@@ -171,18 +166,13 @@ test("Atlas View does not invent graph indexes for Edge pages without endpoints"
   ];
   const validated = loadAndValidateAtlasInput(files, budgets);
   const atlasView = buildAtlasView({
-    files: validated.files,
     identity: {
       atlas: { reference: "local-home-atlas", state: "known" },
       role: "home",
       slug: "local-home-atlas",
       snapshot: { reference: "abc123", state: "known" },
     },
-    pages: validated.pages,
-    validationState: {
-      findings: validated.findings,
-      state: validated.validationState,
-    },
+    validation: validated,
   });
 
   assert.equal(atlasView.validationState.state, "valid");
@@ -197,18 +187,13 @@ test("Atlas View carries invalid validation state decided before it is built", (
   ];
   const validated = loadAndValidateAtlasInput(files, budgets);
   const atlasView = buildAtlasView({
-    files: validated.files,
     identity: {
       atlas: { reference: "local-home-atlas", state: "known" },
       role: "home",
       slug: "local-home-atlas",
       snapshot: { reference: "abc123", state: "known" },
     },
-    pages: validated.pages,
-    validationState: {
-      findings: validated.findings,
-      state: validated.validationState,
-    },
+    validation: validated,
   });
 
   assert.equal(atlasView.validationState.state, "invalid");
@@ -229,33 +214,23 @@ test("Atlas View carries tracked snapshot identity beside the Home Atlas", () =>
   );
   const atlasView = buildAtlasView(
     {
-      files: home.files,
       identity: {
         atlas: { reference: "home", state: "known" },
         role: "home",
         slug: "home",
         snapshot: { reference: "home-sha", state: "known" },
       },
-      pages: home.pages,
-      validationState: {
-        findings: home.findings,
-        state: home.validationState,
-      },
+      validation: home,
     },
     [
       {
-        files: tracked.files,
         identity: {
           atlas: { reference: "tracked", state: "known" },
           role: "tracked",
           slug: "tracked",
           snapshot: { reference: "tracked-sha", state: "known" },
         },
-        pages: tracked.pages,
-        validationState: {
-          findings: tracked.findings,
-          state: tracked.validationState,
-        },
+        validation: tracked,
       },
     ],
   );
@@ -268,6 +243,61 @@ test("Atlas View carries tracked snapshot identity beside the Home Atlas", () =>
     atlasView.files.map((file) => `${file.snapshot.slug}:${file.path}`),
     ["home:.atlas/index.md", "tracked:.atlas/index.md"],
   );
+});
+
+test("Atlas View rejects non-JSON page values at its ownership boundary", () => {
+  for (const atlas of [undefined, { notJson: Number.POSITIVE_INFINITY }]) {
+    const validation = {
+      files: Object.freeze([]),
+      findings: Object.freeze([]),
+      pages: Object.freeze([
+        Object.freeze({
+          page: Object.freeze({
+            atlas,
+            body: "# Root",
+            sdk: Object.freeze({
+              "atlas-sdk-schema": "1.0.0",
+              "created-at": "2026-08-17T00:00:00Z",
+              "created-by": Object.freeze({
+                kind: "human",
+                name: "Fixture Author",
+              }),
+              id: "anchor:root",
+              "local-atlas-schema": "1.0.0",
+              tags: Object.freeze([]),
+              title: "Root",
+              type: "anchor",
+              "updated-at": "2026-08-17T00:00:00Z",
+              "updated-by": Object.freeze({
+                kind: "human",
+                name: "Fixture Author",
+              }),
+            }),
+          }),
+          source: Object.freeze({
+            body: Object.freeze({ endLine: 15, startLine: 15 }),
+            frontmatter: Object.freeze({ endLine: 13, startLine: 2 }),
+            path: ".atlas/index.md",
+          }),
+        }),
+      ]),
+      validationState: "valid" as const,
+    } as unknown as ReturnType<typeof loadAndValidateAtlasInput>;
+
+    assert.throws(
+      () =>
+        buildAtlasView({
+          identity: {
+            atlas: { reference: "local-home-atlas", state: "known" },
+            role: "home",
+            slug: "local-home-atlas",
+            snapshot: { reference: "abc123", state: "known" },
+          },
+          validation,
+        }),
+      /JSON-compatible page values/u,
+    );
+  }
 });
 
 test("Atlas View construction stays within the declared growth budget", () => {
@@ -291,18 +321,13 @@ test("Atlas View construction stays within the declared growth budget", () => {
       maxTotalBytes: 1024 * 1024,
     });
     buildAtlasView({
-      files: validated.files,
       identity: {
         atlas: { reference: "local-home-atlas", state: "known" },
         role: "home",
         slug: "local-home-atlas",
         snapshot: { reference: "growth", state: "known" },
       },
-      pages: validated.pages,
-      validationState: {
-        findings: validated.findings,
-        state: validated.validationState,
-      },
+      validation: validated,
     });
   };
 

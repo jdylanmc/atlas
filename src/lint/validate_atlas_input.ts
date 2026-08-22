@@ -102,7 +102,10 @@ function loadOrFinding(
   }
 }
 
+const atlasInputValidationBrand: unique symbol = Symbol("atlas-input-validation");
+
 export interface AtlasInputValidation {
+  readonly [atlasInputValidationBrand]: true;
   /**
    * The loaded Atlas text, empty when loading itself failed and otherwise the
    * text these Findings were decided from, whether or not the Atlas is valid.
@@ -151,6 +154,7 @@ export function loadAndValidateAtlasInput(
   if ("code" in loaded) {
     const findings = Object.freeze([loaded]);
     return Object.freeze({
+      [atlasInputValidationBrand]: true as const,
       files: noFiles,
       findings,
       pages: noPages,
@@ -159,6 +163,7 @@ export function loadAndValidateAtlasInput(
   }
   const structure = validateAtlasStructureWithPages(loaded);
   return Object.freeze({
+    [atlasInputValidationBrand]: true as const,
     files: loaded,
     findings: structure.findings,
     pages: structure.pages,

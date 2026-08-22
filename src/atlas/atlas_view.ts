@@ -1,5 +1,8 @@
 import { compareCodePoints } from "./compare_code_points.ts";
 import type { AtlasTextFile } from "./load_atlas_text.ts";
+// Atlas View only names Lint output as an opaque type; it never runs Lint.
+// eslint-disable-next-line atlas/inward-imports
+import type { AtlasInputValidation } from "../lint/validate_atlas_input.ts";
 import type { ParsedAtlasPage } from "./parse_atlas_pages.ts";
 import type { AtlasPageEnvelope } from "../domain/atlas_page.ts";
 import type { Finding } from "../domain/finding.ts";
@@ -78,10 +81,8 @@ export interface AtlasViewValidationState {
 }
 
 export interface AtlasViewSnapshotInput {
-  readonly files: readonly AtlasTextFile[];
   readonly identity: AtlasViewSnapshotIdentity;
-  readonly pages: readonly ParsedAtlasPage[];
-  readonly validationState: AtlasViewValidationState;
+  readonly validation: AtlasInputValidation;
 }
 
 export interface AtlasView {
@@ -95,6 +96,103 @@ export interface AtlasView {
 }
 
 const encoder = new TextEncoder();
+
+type DeepReadonlyJson =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly DeepReadonlyJson[]
+  | { readonly [key: string]: DeepReadonlyJson };
+
+function frozenReference(
+  reference: AtlasViewSnapshotReference,
+): AtlasViewSnapshotReference {
+  return Object.freeze({
+    ...(reference.reason === undefined ? {} : { reason: reference.reason }),
+    ...(reference.reference === undefined ? {} : { reference: reference.reference }),
+    state: reference.state,
+  });
+}
+
+function frozenIdentity(
+  identity: AtlasViewSnapshotIdentity,
+): AtlasViewSnapshotIdentity {
+  return Object.freeze({
+    atlas: frozenReference(identity.atlas),
+    role: identity.role,
+    slug: identity.slug,
+    snapshot: frozenReference(identity.snapshot),
+  });
+}
+
+function frozenJson(value: unknown): DeepReadonlyJson {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value))
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map(frozenJson));
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Readonly<Record<string, unknown>>).map(
+      ([key, entry]) => [key, frozenJson(entry)] as const,
+    );
+    return Object.freeze(Object.fromEntries(entries));
+  }
+  throw new TypeError("Atlas View can only own JSON-compatible page values.");
+}
+
+function frozenSourceLines(
+  lines: ParsedAtlasPage["source"]["body"],
+): ParsedAtlasPage["source"]["body"] {
+  return Object.freeze({ endLine: lines.endLine, startLine: lines.startLine });
+}
+
+function frozenParsedPage(parsed: ParsedAtlasPage): ParsedAtlasPage {
+  return Object.freeze({
+    page: Object.freeze({
+      atlas: frozenJson(parsed.page.atlas) as AtlasPageEnvelope["atlas"],
+      body: parsed.page.body,
+      sdk: frozenJson(parsed.page.sdk) as AtlasPageEnvelope["sdk"],
+    }),
+    source: Object.freeze({
+      body: frozenSourceLines(parsed.source.body),
+      frontmatter: frozenSourceLines(parsed.source.frontmatter),
+      path: parsed.source.path,
+    }),
+  });
+}
+
+function frozenTextFile(file: AtlasTextFile): AtlasTextFile {
+  return Object.freeze({ content: file.content, path: file.path });
+}
+
+interface OwnedAtlasViewSnapshotInput {
+  readonly files: readonly AtlasTextFile[];
+  readonly identity: AtlasViewSnapshotIdentity;
+  readonly pages: readonly ParsedAtlasPage[];
+  readonly validationState: AtlasViewValidationState;
+}
+
+function ownedSnapshotInput(
+  input: AtlasViewSnapshotInput,
+): OwnedAtlasViewSnapshotInput {
+  const validation = input.validation;
+  return Object.freeze({
+    files: Object.freeze(validation.files.map(frozenTextFile)),
+    identity: frozenIdentity(input.identity),
+    pages: Object.freeze(validation.pages.map(frozenParsedPage)),
+    validationState: Object.freeze({
+      findings: Object.freeze(validation.findings),
+      state: validation.validationState,
+    }),
+  });
+}
 
 class ImmutableMap<K, V> implements ReadonlyMap<K, V> {
   readonly #map: Map<K, V>;
@@ -302,7 +400,7 @@ function objectOf(
 }
 
 function snapshotFileDigests(
-  input: AtlasViewSnapshotInput,
+  input: OwnedAtlasViewSnapshotInput,
 ): readonly AtlasViewFileDigest[] {
   return Object.freeze(
     input.files.map((file) => {
@@ -318,7 +416,7 @@ function snapshotFileDigests(
   );
 }
 
-function snapshotFiles(input: AtlasViewSnapshotInput): readonly AtlasViewFile[] {
+function snapshotFiles(input: OwnedAtlasViewSnapshotInput): readonly AtlasViewFile[] {
   return Object.freeze(
     input.files.map((file) =>
       Object.freeze({
@@ -371,11 +469,8 @@ export function buildAtlasView(
   home: AtlasViewSnapshotInput,
   tracked: readonly AtlasViewSnapshotInput[] = Object.freeze([]),
 ): AtlasView {
-  const snapshots = Object.freeze([
-    home.identity,
-    ...tracked.map((entry) => entry.identity),
-  ]);
-  const inputs = [home, ...tracked];
+  const inputs = Object.freeze([home, ...tracked].map(ownedSnapshotInput));
+  const snapshots = Object.freeze(inputs.map((entry) => entry.identity));
   const objects = Object.freeze(
     inputs.flatMap((input) =>
       input.pages.map((page) => objectOf(page, input.identity)),

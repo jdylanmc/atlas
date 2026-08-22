@@ -91,18 +91,13 @@ function exploreCaptured(
 ): ReturnType<typeof exploreAtlas> {
   const validated = loadAndValidateAtlasInput(files, exploreBudgets);
   const atlasView = buildAtlasView({
-    files: validated.files,
     identity: {
       atlas: { reference: "fixture", state: "known" },
       role: "home",
       slug: "fixture",
       snapshot: { reference: "fixture-base", state: "known" },
     },
-    pages: validated.pages,
-    validationState: {
-      findings: validated.findings,
-      state: validated.validationState,
-    },
+    validation: validated,
   });
   return exploreAtlas(atlasView, query, provider, exploreBudgets);
 }
