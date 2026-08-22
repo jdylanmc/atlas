@@ -209,7 +209,7 @@ The human-facing workflow for validating an Atlas. Trusted deterministic validat
 _Avoid_: Weave
 
 **Lint Stamp**:
-A deterministic machine-readable attestation that one exact Atlas commit completed a full Lint under identified Framework, schema, check, Policy, and evidence revisions. It is reproducible validation evidence rather than committed Atlas knowledge, and any change to the stamped commit invalidates it.
+A deterministic machine-readable attestation that one exact Atlas commit completed a full Lint with matching evidence. It is reproducible validation evidence rather than committed Atlas knowledge, and any change to the stamped commit invalidates it. Framework, schema, check, and Policy revisions belong in the stamp only when Atlas SDK has authoritative revision sources for them.
 
 **Finding**:
 One result reported by a Lint, attributed to the check that raised it and to whether that check is trusted Atlas SDK validation or Atlas-owned. A finding is an error, a warning, a suggestion, an inconclusive semantic verdict, or a check skipped because one it depended on failed. An Atlas-owned check may add findings; it may never suppress or downgrade a trusted one.

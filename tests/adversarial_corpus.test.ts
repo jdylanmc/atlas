@@ -8,6 +8,11 @@ import { buildAtlasView } from "../src/atlas/atlas_view.ts";
 import type { CapturedAtlasFile } from "../src/atlas/load_atlas_text.ts";
 import type { CoreArchetypeBindings } from "../src/domain/core_archetype.ts";
 import { loadAndValidateAtlasInput } from "../src/lint/validate_atlas_input.ts";
+import {
+  atlasInitializationFiles,
+  initialAtlasInitializationWorkflowState,
+  runAtlasInitializationWorkflow,
+} from "../src/operations/initialize_operation.ts";
 import { runLintOperation } from "../src/operations/lint_operation.ts";
 import {
   validateVocabularyAgreement,
@@ -36,6 +41,11 @@ const ROOT = resolve(import.meta.dirname, "..");
 const atlasCliCorpus = parseAtlasCliCorpus(
   JSON.parse(
     readFileSync(resolve(ROOT, "tests", "adversarial", "atlas-cli.json"), "utf8"),
+  ),
+);
+const lintStampCorpus = parseLintStampCorpus(
+  JSON.parse(
+    readFileSync(resolve(ROOT, "tests", "adversarial", "lint-stamp.json"), "utf8"),
   ),
 );
 const corpus = parseCorpus(
@@ -118,6 +128,51 @@ interface AtlasCliCorpus {
   readonly schema: 1;
 }
 
+type LintStampCase =
+  | LintStampEmittedKeyShapeCase
+  | LintStampInlineLiteralSourceCase
+  | LintStampSourceBypassEmittedShapeCase;
+
+interface LintStampEmittedKeyShapeCase {
+  readonly expectation: "accept" | "reject";
+  readonly extraKeys?: readonly string[];
+  readonly gate: "lint-stamp";
+  readonly kind: "emitted-key-shape";
+  readonly name: string;
+}
+
+interface LintStampInlineLiteralSourceCase {
+  readonly expectation: "accept" | "reject";
+  readonly gate: "lint-stamp";
+  readonly input?: {
+    readonly source: string;
+  };
+  readonly kind: "inline-literal-source";
+  readonly literalFields?: readonly string[];
+  readonly name: string;
+  readonly sourcePath?: string;
+}
+
+interface LintStampSourceBypassEmittedShapeCase {
+  readonly expectation: "reject";
+  readonly extraKeys: readonly string[];
+  readonly gate: "lint-stamp";
+  readonly inlineLiteralFields: readonly string[];
+  readonly input: {
+    readonly source: string;
+  };
+  readonly kind: "source-bypass-emitted-shape";
+  readonly name: string;
+}
+
+interface LintStampCorpus {
+  readonly allowedKeys: readonly string[];
+  readonly cases: readonly LintStampCase[];
+  readonly literalFields: readonly string[];
+  readonly reviewResolutionRule: string;
+  readonly schema: 1;
+}
+
 const adversarialEncoder = new TextEncoder();
 
 const binding: CoreArchetypeBindings = Object.freeze({
@@ -156,8 +211,16 @@ function assertString(value: unknown, path: string): string {
 }
 
 function assertStringArray(value: unknown, path: string): readonly string[] {
+  const entries = assertPossiblyEmptyStringArray(value, path);
+  assert.notEqual(entries.length, 0, `${path} must not be empty`);
+  return entries;
+}
+
+function assertPossiblyEmptyStringArray(
+  value: unknown,
+  path: string,
+): readonly string[] {
   assert.ok(Array.isArray(value), `${path} must be an array`);
-  assert.notEqual(value.length, 0, `${path} must not be empty`);
   return (value as readonly unknown[]).map((entry, index) =>
     assertString(entry, `${path}[${String(index)}]`),
   );
@@ -319,6 +382,131 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
   return { cases, reviewResolutionRule, schema: 1 };
 }
 
+function parseLintStampCorpus(value: unknown): LintStampCorpus {
+  assert.ok(isRecord(value), "lint-stamp corpus must be an object");
+  assert.equal(value["schema"], 1, "lint-stamp corpus schema must be 1");
+  const reviewResolutionRule = assertString(
+    value["reviewResolutionRule"],
+    "lint-stamp.reviewResolutionRule",
+  );
+  const allowedKeys = assertStringArray(value["allowedKeys"], "lint-stamp.allowedKeys");
+  const literalFields = assertStringArray(
+    value["literalFields"],
+    "lint-stamp.literalFields",
+  );
+  assert.ok(Array.isArray(value["cases"]), "lint-stamp cases must be an array");
+  assert.notEqual(value["cases"].length, 0, "lint-stamp cases must not be empty");
+  const names = new Set<string>();
+  let accepts = 0;
+  let rejects = 0;
+  const cases = (value["cases"] as readonly unknown[]).map(
+    (entry, index): LintStampCase => {
+      const path = `lint-stamp.cases[${String(index)}]`;
+      assert.ok(isRecord(entry), `${path} must be an object`);
+      const name = assertString(entry["name"], `${path}.name`);
+      assert.equal(names.has(name), false, `${path}.name must be unique`);
+      names.add(name);
+      assert.equal(entry["gate"], "lint-stamp", `${path}.gate is unsupported`);
+      if (entry["kind"] === "emitted-key-shape") {
+        if (entry["expectation"] === "accept") {
+          accepts += 1;
+          assert.equal(entry["extraKeys"], undefined, `${path}.extraKeys`);
+          return {
+            expectation: "accept",
+            gate: "lint-stamp",
+            kind: "emitted-key-shape",
+            name,
+          };
+        }
+        assert.equal(
+          entry["expectation"],
+          "reject",
+          `${path}.expectation is unsupported`,
+        );
+        rejects += 1;
+        return {
+          expectation: "reject",
+          extraKeys: assertStringArray(entry["extraKeys"], `${path}.extraKeys`),
+          gate: "lint-stamp",
+          kind: "emitted-key-shape",
+          name,
+        };
+      }
+      if (entry["kind"] === "source-bypass-emitted-shape") {
+        assert.equal(entry["expectation"], "reject", `${path}.expectation`);
+        assert.ok(isRecord(entry["input"]), `${path}.input must be an object`);
+        rejects += 1;
+        return {
+          expectation: "reject",
+          extraKeys: assertStringArray(entry["extraKeys"], `${path}.extraKeys`),
+          gate: "lint-stamp",
+          inlineLiteralFields: assertPossiblyEmptyStringArray(
+            entry["inlineLiteralFields"],
+            `${path}.inlineLiteralFields`,
+          ),
+          input: {
+            source: assertString(entry["input"]["source"], `${path}.input.source`),
+          },
+          kind: "source-bypass-emitted-shape",
+          name,
+        };
+      }
+      assert.equal(
+        entry["kind"],
+        "inline-literal-source",
+        `${path}.kind is unsupported`,
+      );
+      assert.ok(
+        entry["input"] !== undefined || entry["sourcePath"] !== undefined,
+        `${path} must provide input or sourcePath`,
+      );
+      assert.ok(
+        entry["input"] === undefined || entry["sourcePath"] === undefined,
+        `${path} must not provide both input and sourcePath`,
+      );
+      const input = entry["input"];
+      const parsedInput =
+        input === undefined
+          ? undefined
+          : (() => {
+              assert.ok(isRecord(input), `${path}.input must be an object`);
+              return { source: assertString(input["source"], `${path}.input.source`) };
+            })();
+      const parsed = {
+        expectation: entry["expectation"] as "accept" | "reject",
+        gate: "lint-stamp" as const,
+        kind: "inline-literal-source" as const,
+        name,
+        ...(parsedInput === undefined ? {} : { input: parsedInput }),
+        ...(entry["sourcePath"] === undefined
+          ? {}
+          : { sourcePath: assertString(entry["sourcePath"], `${path}.sourcePath`) }),
+      };
+      if (entry["expectation"] === "accept") {
+        accepts += 1;
+        assert.equal(entry["literalFields"], undefined, `${path}.literalFields`);
+        return parsed;
+      }
+      assert.equal(
+        entry["expectation"],
+        "reject",
+        `${path}.expectation is unsupported`,
+      );
+      rejects += 1;
+      return {
+        ...parsed,
+        literalFields: assertStringArray(
+          entry["literalFields"],
+          `${path}.literalFields`,
+        ),
+      };
+    },
+  );
+  assert.notEqual(accepts, 0, "lint-stamp corpus must include an accept case");
+  assert.notEqual(rejects, 0, "lint-stamp corpus must include a reject case");
+  return { allowedKeys, cases, literalFields, reviewResolutionRule, schema: 1 };
+}
+
 function parseCorpus(value: unknown): Corpus {
   assert.ok(isRecord(value), "corpus must be an object");
   assert.equal(value["schema"], 1, "corpus schema must be 1");
@@ -389,7 +577,10 @@ function parseCorpus(value: unknown): Corpus {
 let executedCases = 0;
 
 after(() => {
-  assert.equal(executedCases, corpus.cases.length + atlasCliCorpus.cases.length);
+  assert.equal(
+    executedCases,
+    corpus.cases.length + atlasCliCorpus.cases.length + lintStampCorpus.cases.length,
+  );
 });
 
 test("the adversarial vocabulary corpus is structurally valid", () => {
@@ -415,6 +606,26 @@ test("the adversarial atlas-cli corpus is structurally valid", () => {
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "source-boundary"));
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "source-contract"));
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "atlas-view-mutation"));
+});
+
+test("the adversarial lint-stamp corpus is structurally valid", () => {
+  assert.match(lintStampCorpus.reviewResolutionRule, /review finding/u);
+  assert.equal(lintStampCorpus.schema, 1);
+  assert.notEqual(lintStampCorpus.allowedKeys.length, 0);
+  assert.notEqual(lintStampCorpus.literalFields.length, 0);
+  assert.equal(
+    new Set(lintStampCorpus.cases.map((entry) => entry.name)).size,
+    lintStampCorpus.cases.length,
+  );
+  assert.ok(lintStampCorpus.cases.some((entry) => entry.expectation === "accept"));
+  assert.ok(lintStampCorpus.cases.some((entry) => entry.expectation === "reject"));
+  assert.ok(lintStampCorpus.cases.some((entry) => entry.kind === "emitted-key-shape"));
+  assert.ok(
+    lintStampCorpus.cases.some((entry) => entry.kind === "inline-literal-source"),
+  );
+  assert.ok(
+    lintStampCorpus.cases.some((entry) => entry.kind === "source-bypass-emitted-shape"),
+  );
 });
 
 function adversarialCaptured(path: string, content: string): CapturedAtlasFile {
@@ -569,6 +780,111 @@ for (const entry of atlasCliCorpus.cases) {
         command.stderr.toString("utf8"),
       );
     }
+  });
+}
+
+function actualLintStamp(): Readonly<Record<string, unknown>> {
+  const state = initialAtlasInitializationWorkflowState({
+    baseSnapshotDigest: "base-digest",
+    proposalBranch: "atlas-initialization-adversarial",
+    targetBranch: "main",
+    targetHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  });
+  const commit = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  const result = runAtlasInitializationWorkflow(state, {
+    commitProposal: () => ({ commit, receipt: commit }),
+    createProposalWorktree: () => ({ receipt: "created" }),
+    currentBaseSnapshotDigest: () => state.baseSnapshotDigest,
+    currentTargetHead: () => state.targetHead,
+    lintProposal: () => ({
+      lint: runLintOperation(atlasInitializationFiles(state), {
+        maxFileBytes: 4096,
+        maxTotalBytes: 65536,
+      }),
+      receipt: commit,
+    }),
+    writeChangeSet: () => ({ receipt: "written" }),
+  });
+  assert.equal(result.completion, "completed");
+  assert.ok(result.payload.atlasReadinessReport !== undefined);
+  return { ...result.payload.atlasReadinessReport.lintStamp };
+}
+
+function lintStampShapeExtraKeys(
+  stamp: Readonly<Record<string, unknown>>,
+  allowedKeys: readonly string[],
+): readonly string[] {
+  const allowed = new Set(allowedKeys);
+  return Object.keys(stamp).filter((key) => !allowed.has(key));
+}
+
+function stampWithExtraKeys(
+  extraKeys: readonly string[],
+): Readonly<Record<string, unknown>> {
+  return Object.freeze({
+    "lint-stamp-schema": "1.0.0",
+    atlasCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    evidenceRevision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    ...Object.fromEntries(extraKeys.map((key) => [key, "fabricated"])),
+  });
+}
+
+function lintStampLiteralFields(
+  source: string,
+  fields: readonly string[],
+): readonly string[] {
+  const literalFields: string[] = [];
+  for (const field of fields) {
+    const escaped = field.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const literalAssignment = new RegExp(
+      `(?:^|[^A-Za-z0-9_$])${escaped}\\s*:\\s*(?:\\r?\\n\\s*)?(?:["'\`]|\\[)`,
+      "u",
+    );
+    if (literalAssignment.test(source)) literalFields.push(field);
+  }
+  return literalFields;
+}
+
+for (const entry of lintStampCorpus.cases) {
+  test(`adversarial lint-stamp corpus: ${entry.name}`, () => {
+    executedCases += 1;
+    assert.equal(entry.gate, "lint-stamp");
+    if (entry.kind === "emitted-key-shape") {
+      const stamp =
+        entry.expectation === "accept"
+          ? actualLintStamp()
+          : stampWithExtraKeys(entry.extraKeys ?? []);
+      const extraKeys = lintStampShapeExtraKeys(stamp, lintStampCorpus.allowedKeys);
+      if (entry.expectation === "accept") {
+        assert.deepEqual(Object.keys(stamp), lintStampCorpus.allowedKeys);
+        assert.deepEqual(extraKeys, []);
+        return;
+      }
+      assert.deepEqual(extraKeys, entry.extraKeys);
+      return;
+    }
+    const source =
+      entry.kind === "source-bypass-emitted-shape"
+        ? entry.input.source
+        : (entry.input?.source ??
+          readFileSync(resolve(ROOT, entry.sourcePath ?? ""), "utf8"));
+    const literalFields = lintStampLiteralFields(source, lintStampCorpus.literalFields);
+    if (entry.kind === "source-bypass-emitted-shape") {
+      assert.deepEqual(literalFields, entry.inlineLiteralFields);
+      assert.deepEqual(
+        lintStampShapeExtraKeys(
+          stampWithExtraKeys(entry.extraKeys),
+          lintStampCorpus.allowedKeys,
+        ),
+        entry.extraKeys,
+      );
+      return;
+    }
+    if (entry.expectation === "accept") {
+      assert.deepEqual(literalFields, []);
+      return;
+    }
+    assert.deepEqual(literalFields, entry.literalFields);
   });
 }
 

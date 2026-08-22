@@ -112,7 +112,7 @@ test("Atlas Initialization writes a valid proposal while the target branch commi
   });
 });
 
-test("atlas initialize --machine emits the proposal Operation Result", () => {
+test("atlas initialize --machine emits only the narrowed Lint Stamp keys", () => {
   const repository = resolve(WORKSPACE, "cli-proposal");
   const before = initRepository(repository);
   const command = spawnSync(
@@ -127,9 +127,14 @@ test("atlas initialize --machine emits the proposal Operation Result", () => {
     typeof runLocalAtlasInitialization
   >;
   assert.equal(parsed.completion, "completed");
+  assert.deepEqual(Object.keys(parsed.payload.atlasReadinessReport?.lintStamp ?? {}), [
+    "lint-stamp-schema",
+    "atlasCommit",
+    "evidenceRevision",
+  ]);
   assert.equal(
-    parsed.payload.atlasReadinessReport?.lintStamp.checkRevision.startsWith("sha256:"),
-    true,
+    parsed.payload.atlasReadinessReport?.lintStamp.evidenceRevision,
+    parsed.payload.atlasReadinessReport?.lintStamp.atlasCommit,
   );
 });
 

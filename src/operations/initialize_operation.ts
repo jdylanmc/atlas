@@ -9,7 +9,10 @@ import {
   type OperationResult,
   type OperationReviewLink,
 } from "./operation_result.ts";
-import type { LintOperationResult } from "./lint_operation.ts";
+import type {
+  CompletedLintOperationPayload,
+  LintOperationResult,
+} from "./lint_operation.ts";
 
 export interface AtlasInitializationOperationIdentity extends OperationIdentity {
   readonly kind: "initialization";
@@ -45,14 +48,30 @@ export interface AtlasInitializationChangeSet {
   readonly targetHead: string;
 }
 
+const lintStampBrand: unique symbol = Symbol("lint-stamp");
+const successfulProposalLintBrand: unique symbol = Symbol("successful-proposal-lint");
+
 export interface LintStamp {
+  readonly [lintStampBrand]: true;
   readonly "lint-stamp-schema": "1.0.0";
   readonly atlasCommit: string;
-  readonly checkRevision: string;
   readonly evidenceRevision: string;
-  readonly frameworkRevision: string;
-  readonly policyRevision: string;
-  readonly schemaRevision: string;
+}
+
+export interface SuccessfulProposalLint {
+  readonly [successfulProposalLintBrand]: true;
+  readonly atlasCommit: string;
+  readonly evidenceRevision: string;
+  readonly lint: LintOperationResult & {
+    readonly completion: "completed";
+    readonly disposition: "success";
+    readonly payload: CompletedLintOperationPayload & {
+      readonly lint: CompletedLintOperationPayload["lint"] & {
+        readonly outcome: "valid";
+      };
+      readonly state: "completed";
+    };
+  };
 }
 
 export interface AtlasReadinessReport {
@@ -334,34 +353,48 @@ export function validateAtlasInitializationChangeSet(
   return Object.freeze(findings);
 }
 
-const stampRevisions = Object.freeze({
-  checkRevision: [
-    "sha256",
-    "6d8b13d8a9cb7716c703ec1f5f872b3250b64eb07828f955d411c418085b8461",
-  ].join(":"),
-  frameworkRevision: [
-    "sha256",
-    "99bb15b450f1fde1b276501ff0f3f7a22ef13ed16ec83006a34430908a2e2b73",
-  ].join(":"),
-  policyRevision: [
-    "sha256",
-    "b3696129c37e683df5887c5d5f44a485e82e7915564ff6ee1894045c7c29d9ff",
-  ].join(":"),
-  schemaRevision: [
-    "sha256",
-    "47b8c00d25e5f7f77d85239e2804effff628705ebc215a85947ca1084c530184",
-  ].join(":"),
-});
+function isSuccessfulCompletedLint(
+  lint: LintOperationResult,
+): lint is SuccessfulProposalLint["lint"] {
+  return (
+    lint.completion === "completed" &&
+    lint.disposition === "success" &&
+    lint.payload.state === "completed" &&
+    lint.payload.lint.outcome === "valid"
+  );
+}
 
-function completedReport(commit: string, lintReceipt: string): AtlasReadinessReport {
+function successfulProposalLint(input: {
+  readonly atlasCommit: string;
+  readonly evidenceRevision: string;
+  readonly lint: LintOperationResult;
+}): SuccessfulProposalLint | Finding {
+  if (!isSuccessfulCompletedLint(input.lint)) {
+    return finding(
+      "ATLAS_INITIALIZATION_LINT_STAMP_UNPROVEN",
+      "Atlas Initialization refused to stamp a proposal without a successful completed Lint.",
+    );
+  }
+  if (input.evidenceRevision !== input.atlasCommit) {
+    return finding(
+      "ATLAS_INITIALIZATION_LINT_STAMP_STALE",
+      "Atlas Initialization refused to stamp a proposal commit different from the Lint evidence commit.",
+    );
+  }
+  return Object.freeze({
+    [successfulProposalLintBrand]: true as const,
+    atlasCommit: input.atlasCommit,
+    evidenceRevision: input.evidenceRevision,
+    lint: input.lint,
+  });
+}
+
+function completedReport(evidence: SuccessfulProposalLint): AtlasReadinessReport {
   const lintStamp: LintStamp = Object.freeze({
+    [lintStampBrand]: true as const,
     "lint-stamp-schema": "1.0.0",
-    atlasCommit: commit,
-    checkRevision: stampRevisions.checkRevision,
-    evidenceRevision: lintReceipt,
-    frameworkRevision: stampRevisions.frameworkRevision,
-    policyRevision: stampRevisions.policyRevision,
-    schemaRevision: stampRevisions.schemaRevision,
+    atlasCommit: evidence.atlasCommit,
+    evidenceRevision: evidence.evidenceRevision,
   });
   return Object.freeze({
     boundary: "The Home Atlas boundary is the repository root Atlas Host Directory.",
@@ -548,30 +581,23 @@ export function runAtlasInitializationWorkflow(
       lintReceipt = linted.receipt;
     }
 
-    if (lint.completion !== "completed" || lint.disposition !== "success") {
+    const stampEvidence = successfulProposalLint({
+      atlasCommit: commit,
+      evidenceRevision: lintReceipt,
+      lint,
+    });
+    if ("code" in stampEvidence) {
       return result(
         nextState,
         "not-completed",
         "failed",
         { changeSet, lint },
-        lint.handoff.validationState.findings,
-        "Initialization proposal did not pass trusted Lint.",
-      );
-    }
-    if (lintReceipt !== commit) {
-      const findings = Object.freeze([
-        finding(
-          "ATLAS_INITIALIZATION_LINT_STAMP_STALE",
-          "Atlas Initialization refused to stamp a proposal commit different from the Lint evidence commit.",
-        ),
-      ]);
-      return result(
-        nextState,
-        "not-completed",
-        "failed",
-        { changeSet, lint },
-        findings,
-        "Initialization refused a stale Lint Stamp.",
+        stampEvidence.code === "ATLAS_INITIALIZATION_LINT_STAMP_UNPROVEN"
+          ? lint.handoff.validationState.findings
+          : Object.freeze([stampEvidence]),
+        stampEvidence.code === "ATLAS_INITIALIZATION_LINT_STAMP_UNPROVEN"
+          ? "Initialization proposal did not pass trusted Lint."
+          : "Initialization refused a stale Lint Stamp.",
       );
     }
 
@@ -579,7 +605,7 @@ export function runAtlasInitializationWorkflow(
       nextState,
       "completed",
       "success",
-      { atlasReadinessReport: completedReport(commit, lintReceipt), changeSet, lint },
+      { atlasReadinessReport: completedReport(stampEvidence), changeSet, lint },
       Object.freeze([]),
       "Initialization produced a Linted local Atlas Proposal.",
     );
