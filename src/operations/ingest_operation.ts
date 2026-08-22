@@ -505,13 +505,17 @@ function collisionFindings(
     prefix: string,
     refreshable: boolean,
   ): void => {
+    const slug = slugForId(id, prefix);
+    // A non-canonical identity is already reported by its own identity check, so
+    // collision detection only concerns identities that name a real page.
+    if (slug === undefined) return;
     if (!existing.pageIds.has(id)) return;
     if (refreshable && id === scope.sourceId) return;
     findings.push(
       finding(
         "ATLAS_INGEST_ID_COLLISION",
         "A crawled page identity already names a page in the Home Atlas and would replace it; only a Source Refresh of that Source may reuse an identity.",
-        `.atlas/${directory}/${slugForId(id, prefix) ?? "unknown"}.md`,
+        `.atlas/${directory}/${slug}.md`,
       ),
     );
   };

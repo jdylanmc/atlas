@@ -12,6 +12,7 @@ import {
   sourceRevisionDigest,
   validateAtlasIngestChangeSet,
   validateCandidateGraph,
+  validateCitationCorrespondence,
   type AtlasIngestCandidateConcept,
   type AtlasIngestCandidateEdge,
   type AtlasIngestCandidateGraph,
@@ -105,6 +106,15 @@ const determinismPrinciple = page(
   "Determinism",
   "atlas: {}",
   "# Determinism\n\n## Active truths\n\n- `truth:no-model` Atlas SDK never invokes a model.\n\n## Amendments\n\n### 1 - 2026-08-17\n\nAdded `truth:no-model`.\n",
+);
+
+const publicationPolicy = page(
+  ".atlas/types/policy/publication.md",
+  "policy:publication",
+  "policy",
+  "Publication Policy",
+  "atlas:\n  scope: publication\n  evaluation: deterministic\n  consequence: block-operation",
+  "# Publication Policy\n\nGoverns publication.\n",
 );
 
 const baseFilesDefault = Object.freeze([rootAnchor, changelog]);
@@ -684,6 +694,196 @@ test("A Contradiction blocks until accepted and must name a real Principle truth
     [rootAnchor, changelog, determinismPrinciple],
   );
   assert.ok(codes(unresolved).includes("ATLAS_INGEST_CONTRADICTION_UNRESOLVED"));
+});
+
+test("A Contradiction may name an Atlas Policy, but not both governors or none", () => {
+  const acceptedPolicy = validateCandidateGraph(
+    request({
+      candidateGraph: graph({
+        concepts: Object.freeze([
+          concept({
+            contradiction: { acceptedBy: "M", atlasPolicyId: "policy:publication" },
+          }),
+        ]),
+      }),
+    }),
+    [rootAnchor, changelog, publicationPolicy],
+  );
+  assert.deepEqual(acceptedPolicy, []);
+
+  const unacceptedPolicy = validateCandidateGraph(
+    request({
+      candidateGraph: graph({
+        concepts: Object.freeze([
+          concept({ contradiction: { atlasPolicyId: "policy:publication" } }),
+        ]),
+      }),
+    }),
+    [rootAnchor, changelog, publicationPolicy],
+  );
+  assert.ok(codes(unacceptedPolicy).includes("ATLAS_INGEST_CONTRADICTION_UNACCEPTED"));
+
+  const missingPolicy = validateCandidateGraph(
+    request({
+      candidateGraph: graph({
+        concepts: Object.freeze([
+          concept({
+            contradiction: { acceptedBy: "M", atlasPolicyId: "policy:ghost" },
+          }),
+        ]),
+      }),
+    }),
+    [rootAnchor, changelog, publicationPolicy],
+  );
+  assert.ok(codes(missingPolicy).includes("ATLAS_INGEST_CONTRADICTION_UNRESOLVED"));
+
+  const bothGovernors = validateCandidateGraph(
+    request({
+      candidateGraph: graph({
+        concepts: Object.freeze([
+          concept({
+            contradiction: {
+              acceptedBy: "M",
+              atlasPolicyId: "policy:publication",
+              principleTruthId: "truth:no-model",
+            },
+          }),
+        ]),
+      }),
+    }),
+    [rootAnchor, changelog, determinismPrinciple, publicationPolicy],
+  );
+  assert.ok(codes(bothGovernors).includes("ATLAS_INGEST_CONTRADICTION_UNRESOLVED"));
+
+  const noGovernor = validateCandidateGraph(
+    request({
+      candidateGraph: graph({
+        concepts: Object.freeze([concept({ contradiction: { acceptedBy: "M" } })]),
+      }),
+    }),
+    [rootAnchor, changelog],
+  );
+  assert.ok(codes(noGovernor).includes("ATLAS_INGEST_CONTRADICTION_UNRESOLVED"));
+});
+
+test("A page whose frontmatter cannot be safely emitted fails as a typed value", () => {
+  const workflowState = state();
+  const ingestRequest = request({
+    candidateGraph: graph({
+      concepts: Object.freeze([concept({ title: "" })]),
+    }),
+  });
+  const result = runAtlasIngestWorkflow(
+    workflowState,
+    ingestRequest,
+    runtime(workflowState, ingestRequest),
+  );
+  assert.equal(result.completion, "not-completed");
+  assert.ok(
+    codes(result.handoff.validationState.findings).includes(
+      "ATLAS_INGEST_PAGE_EMISSION_INVALID",
+    ),
+  );
+});
+
+test("Reconciliation records a Source Refresh when the Source already exists", () => {
+  const existing = [
+    rootAnchor,
+    changelog,
+    page(
+      ".atlas/sources/readme.md",
+      "source:readme",
+      "source",
+      "Readme",
+      "atlas:\n  authority: official",
+      "# Readme\n",
+    ),
+  ];
+  const changeSet = reconcileCandidateGraph(state(), request(), existing);
+  const entry = changeSet.changes.find(
+    (change) => change.path === ".atlas/CHANGELOG.md",
+  );
+  assert.ok(entry);
+  assert.match(entry.content, /Refreshed source:readme/u);
+});
+
+test("A locator carrying a control character is not a canonical path", () => {
+  const findings = validateCandidateGraph(
+    request({
+      candidateGraph: graph({
+        sources: Object.freeze([source({ locator: "docs/read\nme.md" })]),
+      }),
+    }),
+    baseFilesDefault,
+  );
+  assert.ok(codes(findings).includes("ATLAS_INGEST_LOCATOR_INVALID"));
+});
+
+test("A Source Refresh reusing the scope's Source id is not a collision", () => {
+  const existing = [
+    rootAnchor,
+    changelog,
+    page(
+      ".atlas/sources/readme.md",
+      "source:readme",
+      "source",
+      "Readme",
+      "atlas:\n  authority: official",
+      "# Readme\n",
+    ),
+  ];
+  const findings = validateCandidateGraph(request(), existing);
+  assert.equal(codes(findings).includes("ATLAS_INGEST_ID_COLLISION"), false);
+});
+
+test("An accepted Atlas Policy Contradiction is emitted onto the Concept page", () => {
+  const changeSet = reconcileCandidateGraph(
+    state(),
+    request({
+      candidateGraph: graph({
+        concepts: Object.freeze([
+          concept({
+            contradiction: { acceptedBy: "M", atlasPolicyId: "policy:publication" },
+          }),
+        ]),
+      }),
+    }),
+  );
+  const conceptChange = changeSet.changes.find(
+    (change) => change.path === ".atlas/concepts/determinism.md",
+  );
+  assert.ok(conceptChange);
+  assert.match(conceptChange.content, /contradicts: policy:publication/u);
+  assert.match(conceptChange.content, /accepted Contradiction of policy:publication/u);
+});
+
+test("Citation correspondence skips bad ids and missing pages and reads a bare body", () => {
+  const stale = { baseSnapshotDigest: "b", changes: [], targetHead: "t" } as const;
+  const badId = validateCitationCorrespondence(
+    request({
+      candidateGraph: graph({
+        concepts: Object.freeze([concept({ id: "badid" })]),
+        edges: Object.freeze([]),
+      }),
+    }),
+    stale,
+  );
+  assert.deepEqual(badId, []);
+
+  const missingPage = validateCitationCorrespondence(request(), stale);
+  assert.deepEqual(missingPage, []);
+
+  const bareBody = validateCitationCorrespondence(request(), {
+    baseSnapshotDigest: "b",
+    changes: [
+      {
+        content: "no frontmatter, only [[.atlas/sources/readme]] mentioned in prose",
+        path: ".atlas/concepts/determinism.md",
+      },
+    ],
+    targetHead: "t",
+  });
+  assert.ok(codes(bareBody).includes("ATLAS_INGEST_CITATION_CORRESPONDENCE"));
 });
 
 test("Disputes settle by Source Authority and by Source Revision Time, else escalate", () => {
