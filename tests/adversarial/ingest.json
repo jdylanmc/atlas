@@ -58,7 +58,7 @@
       "expectedCode": "ATLAS_INGEST_EDGE_ENDPOINT_MISSING"
     },
     {
-      "name": "duplicate-unordered-edge-pair-is-rejected",
+      "name": "duplicate-unordered-edge-pair-in-graph-is-rejected",
       "gate": "ingest",
       "kind": "graph",
       "mutation": "duplicate-edge-pair",
@@ -82,7 +82,7 @@
       "expectedCode": "ATLAS_INGEST_LOCATOR_INVALID"
     },
     {
-      "name": "unaccepted-contradiction-is-blocked",
+      "name": "unaccepted-principle-contradiction-is-blocked",
       "gate": "ingest",
       "kind": "graph-principle",
       "mutation": "contradiction-unaccepted",
@@ -90,7 +90,7 @@
       "expectedCode": "ATLAS_INGEST_CONTRADICTION_UNACCEPTED"
     },
     {
-      "name": "equal-authority-untimed-dispute-escalates",
+      "name": "equal-authority-untimed-dispute-escalates-otherwise-clean",
       "gate": "ingest",
       "kind": "graph",
       "mutation": "equal-authority-tie",
@@ -104,6 +104,141 @@
       "mutation": "forged-resume-receipt",
       "expectation": "reject",
       "expectedCode": "ATLAS_INGEST_RESUME_CHANGE_SET_MISMATCH"
+    },
+    {
+      "name": "H1-crawled-id-colliding-with-home-page-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "concept-id-collides-existing",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_ID_COLLISION"
+    },
+    {
+      "name": "H2-edge-over-a-pair-the-home-atlas-already-relates-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "edge-pair-exists-in-home-atlas",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_EDGE_PAIR_DUPLICATE"
+    },
+    {
+      "name": "H3-change-set-path-with-a-control-character-is-rejected",
+      "gate": "ingest",
+      "kind": "change-set",
+      "mutation": "control-char-change-set-path",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_CHANGE_SET_PATH_INVALID"
+    },
+    {
+      "name": "H4-emitted-source-revision-is-a-sha256-digest",
+      "gate": "ingest",
+      "kind": "emission",
+      "mutation": "source-revision-digest-is-sha256",
+      "expectation": "accept"
+    },
+    {
+      "name": "H5-ingest-without-maintainer-approval-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "approval-missing",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_APPROVAL_REQUIRED"
+    },
+    {
+      "name": "H6-forged-body-footnote-fails-citation-correspondence",
+      "gate": "ingest",
+      "kind": "workflow",
+      "mutation": "forged-body-citation",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_CITATION_CORRESPONDENCE"
+    },
+    {
+      "name": "H7-edge-semantic-newline-is-neutralized-by-the-serializer",
+      "gate": "ingest",
+      "kind": "emission",
+      "mutation": "edge-semantic-yaml-injection",
+      "expectation": "accept"
+    },
+    {
+      "name": "H8-excluded-directory-case-variant-pauses-for-approval",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "excluded-path-case-variant",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_SCOPE_EXPANSION_PENDING"
+    },
+    {
+      "name": "H8-excluded-directory-nfd-variant-pauses-for-approval",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "excluded-path-nfd-variant",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_SCOPE_EXPANSION_PENDING"
+    },
+    {
+      "name": "M1-concept-title-newline-is-neutralized-by-the-serializer",
+      "gate": "ingest",
+      "kind": "emission",
+      "mutation": "concept-title-yaml-injection",
+      "expectation": "accept"
+    },
+    {
+      "name": "M2-source-authority-above-the-approved-scope-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "source-authority-exceeds-scope",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_SOURCE_AUTHORITY_EXCEEDS_SCOPE"
+    },
+    {
+      "name": "M2-scope-freshness-window-caps-a-longer-source-window",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "scope-freshness-ceiling",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_SOURCE_STALE"
+    },
+    {
+      "name": "M3-one-character-citation-span-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "citation-span-too-short",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_CITATION_SPAN_TOO_SHORT"
+    },
+    {
+      "name": "M4-digest-and-branch-primitives-are-single-sourced",
+      "gate": "ingest",
+      "kind": "source-reuse",
+      "mutation": "shared-operation-support",
+      "expectation": "accept"
+    },
+    {
+      "name": "L1-edge-without-any-citation-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "edge-uncited",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_EDGE_UNCITED"
+    },
+    {
+      "name": "L2-unaccepted-atlas-policy-contradiction-is-blocked",
+      "gate": "ingest",
+      "kind": "graph-policy",
+      "mutation": "contradiction-policy-unaccepted",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_CONTRADICTION_UNACCEPTED"
+    },
+    {
+      "name": "L3-concept-reachable-only-through-an-illegal-edge-is-unreachable",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "concept-reachable-only-via-illegal-edge",
+      "expectation": "reject",
+      "expectedCodes": [
+        "ATLAS_INGEST_CONCEPT_UNREACHABLE",
+        "ATLAS_INGEST_EDGE_CONNECTS_SOURCE"
+      ]
     }
   ]
 }

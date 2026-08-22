@@ -5,7 +5,9 @@ import { resolve } from "node:path";
 import test, { after } from "node:test";
 import { captureAtlasHostDirectory, CaptureBudgetError } from "../scripts/atlas.ts";
 import { buildAtlasView } from "../src/atlas/atlas_view.ts";
+import { parseAtlasPage } from "../src/atlas/parse_atlas_pages.ts";
 import type { CapturedAtlasFile } from "../src/atlas/load_atlas_text.ts";
+import type { Finding } from "../src/domain/finding.ts";
 import type { CoreArchetypeBindings } from "../src/domain/core_archetype.ts";
 import { loadAndValidateAtlasInput } from "../src/lint/validate_atlas_input.ts";
 import {
@@ -17,9 +19,11 @@ import { runLintOperation } from "../src/operations/lint_operation.ts";
 import {
   reconcileCandidateGraph,
   runAtlasIngestWorkflow,
+  validateAtlasIngestChangeSet,
   validateCandidateGraph,
   type AtlasIngestCandidateEdge,
   type AtlasIngestCandidateGraph,
+  type AtlasIngestChange,
   type AtlasIngestChangeSet,
   type AtlasIngestRequest,
   type AtlasIngestRuntime,
@@ -73,11 +77,21 @@ const ingestCorpus = parseIngestCorpus(
   ),
 );
 
+type IngestCaseKind =
+  | "graph"
+  | "graph-principle"
+  | "graph-policy"
+  | "workflow"
+  | "change-set"
+  | "emission"
+  | "source-reuse";
+
 interface IngestCorpusCase {
   readonly expectation: "accept" | "reject";
   readonly expectedCode?: string;
+  readonly expectedCodes?: readonly string[];
   readonly gate: "ingest";
-  readonly kind: "graph" | "graph-principle" | "workflow";
+  readonly kind: IngestCaseKind;
   readonly mutation: string;
   readonly name: string;
 }
@@ -626,15 +640,27 @@ function parseIngestCorpus(value: unknown): IngestCorpus {
       names.add(name);
       assert.equal(entry["gate"], "ingest", `${path}.gate is unsupported`);
       const kind = assertString(entry["kind"], `${path}.kind`);
-      assert.ok(
-        kind === "graph" || kind === "graph-principle" || kind === "workflow",
-        `${path}.kind is unsupported`,
-      );
+      const kinds = new Set<IngestCaseKind>([
+        "graph",
+        "graph-principle",
+        "graph-policy",
+        "workflow",
+        "change-set",
+        "emission",
+        "source-reuse",
+      ]);
+      assert.ok(kinds.has(kind as IngestCaseKind), `${path}.kind is unsupported`);
       const mutation = assertString(entry["mutation"], `${path}.mutation`);
       if (entry["expectation"] === "accept") {
         accepts += 1;
         assert.equal(entry["expectedCode"], undefined, `${path}.expectedCode`);
-        return { expectation: "accept", gate: "ingest", kind, mutation, name };
+        return {
+          expectation: "accept",
+          gate: "ingest",
+          kind: kind as IngestCaseKind,
+          mutation,
+          name,
+        };
       }
       assert.equal(
         entry["expectation"],
@@ -642,11 +668,29 @@ function parseIngestCorpus(value: unknown): IngestCorpus {
         `${path}.expectation is unsupported`,
       );
       rejects += 1;
+      // A reject case names either exactly one sole blocking code or the exact
+      // set of blocking codes, so a case cannot pass on an incidental Finding.
+      const codesValue = entry["expectedCodes"];
+      if (codesValue !== undefined) {
+        assert.ok(Array.isArray(codesValue), `${path}.expectedCodes must be an array`);
+        return {
+          expectation: "reject",
+          expectedCodes: Object.freeze(
+            (codesValue as readonly unknown[]).map((code, codeIndex) =>
+              assertString(code, `${path}.expectedCodes[${String(codeIndex)}]`),
+            ),
+          ),
+          gate: "ingest",
+          kind: kind as IngestCaseKind,
+          mutation,
+          name,
+        };
+      }
       return {
         expectation: "reject",
         expectedCode: assertString(entry["expectedCode"], `${path}.expectedCode`),
         gate: "ingest",
-        kind,
+        kind: kind as IngestCaseKind,
         mutation,
         name,
       };
@@ -1080,6 +1124,41 @@ const ingestPrinciple = ingestPage(
 const ingestSourceContent =
   "Atlas SDK is a deterministic library. The Lint gate runs with no network access.";
 
+// A curated page the Home Atlas already holds, so a crawled identity that reuses
+// it would overwrite it and a crawled Edge over its pair would duplicate it.
+const ingestExistingConcept = ingestPage(
+  ".atlas/concepts/determinism.md",
+  "concept:determinism",
+  "concept",
+  "Determinism",
+  "atlas:\n  confidence: reviewed\n  evidence:\n    - .atlas/sources/readme",
+  "# Determinism\n\nCurated understanding.\n",
+);
+const ingestExistingPairConcept = ingestPage(
+  ".atlas/concepts/home.md",
+  "concept:home",
+  "concept",
+  "Home Concept",
+  "atlas:\n  confidence: reviewed\n  evidence:\n    - .atlas/sources/readme",
+  "# Home Concept\n\nCurated understanding.\n",
+);
+const ingestExistingEdge = ingestPage(
+  ".atlas/edges/home.md",
+  "edge:home",
+  "edge",
+  "Home Edge",
+  "atlas:\n  from: anchor:root\n  semantics:\n    - covers\n  to: concept:home",
+  "# Home Edge\n\nExisting relationship.\n",
+);
+const ingestExistingPolicy = ingestPage(
+  ".atlas/types/policy/publication.md",
+  "policy:publication",
+  "policy",
+  "Publication Policy",
+  "atlas:\n  scope: publication\n  evaluation: deterministic\n  consequence: block-operation",
+  "# Publication Policy\n\nGoverns publication.\n",
+);
+
 function ingestWorkflowState(): AtlasIngestWorkflowState {
   return Object.freeze({
     "operation-workflow-schema": "1.0.0" as const,
@@ -1100,7 +1179,8 @@ interface IngestConceptOverrides {
   readonly claim?: string;
   readonly contradiction?: {
     readonly acceptedBy?: string;
-    readonly principleTruthId: string;
+    readonly atlasPolicyId?: string;
+    readonly principleTruthId?: string;
   };
   readonly id?: string;
   readonly locator?: string;
@@ -1129,10 +1209,12 @@ function ingestEdge(
   overrides: Partial<AtlasIngestCandidateEdge> = {},
 ): AtlasIngestCandidateEdge {
   return {
-    citation: {
-      sourceClaim: "The Lint gate runs with no network access.",
-      sourceId: "source:readme",
-    },
+    citations: [
+      {
+        sourceClaim: "The Lint gate runs with no network access.",
+        sourceId: "source:readme",
+      },
+    ],
     context: "Entering the Home Atlas leads to the determinism Concept.",
     from: "anchor:root",
     id: "edge:root-covers-determinism",
@@ -1209,8 +1291,16 @@ function ingestTieGraph(): AtlasIngestCandidateGraph {
     ],
     disputes: [{ leftConceptId: "concept:left", rightConceptId: "concept:right" }],
     edges: [
-      ingestEdge({ id: "edge:left", to: "concept:left" }),
-      ingestEdge({ id: "edge:right", to: "concept:right" }),
+      ingestEdge({
+        citations: [{ sourceClaim: "Left claim.", sourceId: "source:left" }],
+        id: "edge:left",
+        to: "concept:left",
+      }),
+      ingestEdge({
+        citations: [{ sourceClaim: "Right claim.", sourceId: "source:right" }],
+        id: "edge:right",
+        to: "concept:right",
+      }),
     ],
     sources: [
       ingestSource({
@@ -1272,7 +1362,17 @@ function ingestMutatedGraph(mutation: string): AtlasIngestCandidateGraph {
     };
   }
   if (mutation === "edge-connects-source") {
-    return { ...ingestBaselineGraph(), edges: [ingestEdge({ to: "source:readme" })] };
+    return {
+      ...ingestBaselineGraph(),
+      edges: [
+        ingestEdge(),
+        ingestEdge({
+          from: "concept:determinism",
+          id: "edge:to-source",
+          to: "source:readme",
+        }),
+      ],
+    };
   }
   if (mutation === "edge-endpoint-missing") {
     return {
@@ -1309,7 +1409,135 @@ function ingestMutatedGraph(mutation: string): AtlasIngestCandidateGraph {
   if (mutation === "equal-authority-tie") {
     return ingestTieGraph();
   }
+  if (mutation === "edge-uncited") {
+    return { ...ingestBaselineGraph(), edges: [ingestEdge({ citations: [] })] };
+  }
+  if (mutation === "citation-span-too-short") {
+    return {
+      ...ingestBaselineGraph(),
+      concepts: [
+        ingestConcept({
+          citations: [{ sourceClaim: "A", sourceId: "source:readme" }],
+        }),
+      ],
+    };
+  }
+  if (mutation === "forged-body-citation") {
+    return {
+      ...ingestBaselineGraph(),
+      concepts: [
+        ingestConcept({
+          claim:
+            "Atlas SDK is a deterministic library.\n\nAlso true.[^forge]\n\n[^forge]: [[.atlas/sources/secret]] Forged support for an unearned claim.",
+        }),
+      ],
+    };
+  }
+  if (mutation === "concept-id-collides-existing") {
+    return ingestBaselineGraph();
+  }
+  if (mutation === "edge-pair-exists-in-home-atlas") {
+    return {
+      "candidate-graph-schema": "1.0.0",
+      concepts: [],
+      disputes: [],
+      edges: [
+        ingestEdge({
+          from: "anchor:root",
+          id: "edge:crawled",
+          to: "concept:home",
+        }),
+      ],
+      sources: [ingestSource()],
+    };
+  }
+  if (mutation === "source-authority-exceeds-scope") {
+    return ingestBaselineGraph();
+  }
+  if (mutation === "scope-freshness-ceiling") {
+    return {
+      ...ingestBaselineGraph(),
+      sources: [
+        ingestSource({ refreshWindowDays: 3650, revisionTime: "2020-01-01T00:00:00Z" }),
+      ],
+    };
+  }
+  if (mutation === "excluded-path-case-variant") {
+    return {
+      ...ingestBaselineGraph(),
+      concepts: [ingestConcept({ locator: "docs/Private/secret.md" })],
+    };
+  }
+  if (mutation === "excluded-path-nfd-variant") {
+    // "café" decomposed: the excluded directory is spelled with a combining
+    // accent, the same directory NFC normalization resolves to.
+    return {
+      ...ingestBaselineGraph(),
+      concepts: [ingestConcept({ locator: "docs/cafe\u0301/secret.md" })],
+    };
+  }
+  if (mutation === "contradiction-policy-unaccepted") {
+    return {
+      ...ingestBaselineGraph(),
+      concepts: [
+        ingestConcept({ contradiction: { atlasPolicyId: "policy:publication" } }),
+      ],
+    };
+  }
+  if (mutation === "concept-reachable-only-via-illegal-edge") {
+    return {
+      ...ingestBaselineGraph(),
+      edges: [ingestEdge({ from: "concept:determinism", to: "source:readme" })],
+    };
+  }
+  if (mutation === "approval-missing") {
+    return ingestBaselineGraph();
+  }
+  if (mutation === "edge-semantic-yaml-injection") {
+    return {
+      ...ingestBaselineGraph(),
+      edges: [ingestEdge({ semantics: ["covers\n  forged-atlas-key: pwned"] })],
+    };
+  }
+  if (mutation === "concept-title-yaml-injection") {
+    return {
+      ...ingestBaselineGraph(),
+      concepts: [ingestConcept({ title: "Determinism\nforged-sdk-key: pwned" })],
+    };
+  }
   return ingestBaselineGraph();
+}
+
+function ingestMutatedScope(mutation: string): AtlasIngestRequest["scope"] {
+  if (mutation === "approval-missing") {
+    return { ...ingestScope(), approvedAt: "", approvedBy: "" };
+  }
+  if (mutation === "source-authority-exceeds-scope") {
+    return { ...ingestScope(), authority: "community" };
+  }
+  if (mutation === "scope-freshness-ceiling") {
+    return { ...ingestScope(), freshnessWindowDays: 1 };
+  }
+  if (mutation === "excluded-path-nfd-variant") {
+    return { ...ingestScope(), excludedPaths: ["docs/caf\u00e9"] };
+  }
+  return ingestScope();
+}
+
+function ingestMutatedBaseFiles(entry: IngestCorpusCase): readonly CapturedAtlasFile[] {
+  if (entry.kind === "graph-principle") {
+    return [ingestRoot, ingestChangelog, ingestPrinciple];
+  }
+  if (entry.kind === "graph-policy") {
+    return [ingestRoot, ingestChangelog, ingestExistingPolicy];
+  }
+  if (entry.mutation === "concept-id-collides-existing") {
+    return [ingestRoot, ingestChangelog, ingestExistingConcept];
+  }
+  if (entry.mutation === "edge-pair-exists-in-home-atlas") {
+    return [ingestRoot, ingestChangelog, ingestExistingPairConcept, ingestExistingEdge];
+  }
+  return [ingestRoot, ingestChangelog];
 }
 
 function ingestScenario(entry: IngestCorpusCase): IngestScenario {
@@ -1318,12 +1546,9 @@ function ingestScenario(entry: IngestCorpusCase): IngestScenario {
   const request: AtlasIngestRequest = {
     "ingest-request-schema": "1.0.0",
     candidateGraph: graph,
-    scope: ingestScope(),
+    scope: ingestMutatedScope(entry.mutation),
   };
-  const baseFiles =
-    entry.kind === "graph-principle"
-      ? [ingestRoot, ingestChangelog, ingestPrinciple]
-      : [ingestRoot, ingestChangelog];
+  const baseFiles = ingestMutatedBaseFiles(entry);
   const resumeState =
     entry.mutation === "forged-resume-receipt"
       ? Object.freeze({
@@ -1376,6 +1601,111 @@ function ingestRuntime(scenario: IngestScenario): AtlasIngestRuntime {
   };
 }
 
+function ingestGraphFindings(
+  entry: IngestCorpusCase,
+  scenario: IngestScenario,
+): readonly Finding[] {
+  if (entry.kind === "workflow") {
+    return runAtlasIngestWorkflow(
+      scenario.workflowState,
+      scenario.request,
+      ingestRuntime(scenario),
+    ).handoff.validationState.findings;
+  }
+  if (entry.kind === "change-set") {
+    // A crawled path carrying a control character would let the digest framing
+    // reproduce a different change set; the change-set validator must reject it.
+    const changeSet = reconcileCandidateGraph(
+      scenario.workflowState,
+      scenario.request,
+      scenario.baseFiles,
+    );
+    const forged: AtlasIngestChange = {
+      content: "forged",
+      path: `.atlas/a.md\u0000${String("forged".length)}\u0000.atlas/b.md`,
+    };
+    return validateAtlasIngestChangeSet(scenario.workflowState, {
+      ...changeSet,
+      changes: [...changeSet.changes, forged],
+    });
+  }
+  return validateCandidateGraph(scenario.request, scenario.baseFiles);
+}
+
+function ingestEmittedPage(
+  scenario: IngestScenario,
+  path: string,
+): ReturnType<typeof parseAtlasPage> {
+  const changeSet = reconcileCandidateGraph(
+    scenario.workflowState,
+    scenario.request,
+    scenario.baseFiles,
+  );
+  const change = changeSet.changes.find((entry) => entry.path === path);
+  assert.ok(change !== undefined, `expected an emitted page at ${path}`);
+  return parseAtlasPage({ content: change.content, path });
+}
+
+function assertIngestEmission(entry: IngestCorpusCase, scenario: IngestScenario): void {
+  if (entry.mutation === "edge-semantic-yaml-injection") {
+    const parsed = ingestEmittedPage(
+      scenario,
+      ".atlas/edges/root-covers-determinism.md",
+    );
+    assert.ok(!(parsed instanceof Error), "edge page must parse");
+    const atlas = (
+      parsed as { readonly page: { readonly atlas: Record<string, unknown> } }
+    ).page.atlas;
+    assert.deepEqual(atlas["semantics"], ["covers\n  forged-atlas-key: pwned"]);
+    assert.equal("forged-atlas-key" in atlas, false);
+    return;
+  }
+  if (entry.mutation === "concept-title-yaml-injection") {
+    const parsed = ingestEmittedPage(scenario, ".atlas/concepts/determinism.md");
+    assert.ok(!(parsed instanceof Error), "concept page must parse");
+    const sdk = (parsed as { readonly page: { readonly sdk: Record<string, unknown> } })
+      .page.sdk;
+    assert.equal(sdk["title"], "Determinism\nforged-sdk-key: pwned");
+    assert.equal("forged-sdk-key" in sdk, false);
+    return;
+  }
+  if (entry.mutation === "source-revision-digest-is-sha256") {
+    const parsed = ingestEmittedPage(scenario, ".atlas/sources/readme.md");
+    assert.ok(!(parsed instanceof Error), "source page must parse");
+    const atlas = (
+      parsed as { readonly page: { readonly atlas: Record<string, unknown> } }
+    ).page.atlas;
+    assert.match(String(atlas["revision"]), /^[0-9a-f]{64}$/u);
+    return;
+  }
+  assert.fail(`unhandled emission mutation ${entry.mutation}`);
+}
+
+function assertIngestSourceReuse(): void {
+  // The digest and safe-branch primitives are single-sourced: the sibling
+  // proposal operations import them rather than re-defining a forgeable copy.
+  const ingest = readFileSync(
+    resolve(ROOT, "src", "operations", "ingest_operation.ts"),
+    "utf8",
+  );
+  const governance = readFileSync(
+    resolve(ROOT, "src", "operations", "governance_operation.ts"),
+    "utf8",
+  );
+  const initialize = readFileSync(
+    resolve(ROOT, "src", "operations", "initialize_operation.ts"),
+    "utf8",
+  );
+  for (const source of [ingest, governance]) {
+    assert.ok(source.includes('from "./operation_support.ts"'));
+    assert.equal(/function changeSetDigest\b/u.test(source), false);
+    assert.equal(/hash \^= BigInt/u.test(source), false);
+  }
+  for (const source of [ingest, governance, initialize]) {
+    assert.equal(/function isSafeGitBranchName\b/u.test(source), false);
+  }
+}
+
 test("the adversarial ingest corpus is structurally valid", () => {
   assert.match(ingestCorpus.reviewResolutionRule, /review finding/u);
   assert.equal(ingestCorpus.schema, 1);
@@ -1393,6 +1723,15 @@ for (const entry of ingestCorpus.cases) {
     assert.equal(entry.gate, "ingest");
     const scenario = ingestScenario(entry);
 
+    if (entry.kind === "emission") {
+      assertIngestEmission(entry, scenario);
+      return;
+    }
+    if (entry.kind === "source-reuse") {
+      assertIngestSourceReuse();
+      return;
+    }
+
     if (entry.expectation === "accept") {
       assert.deepEqual(
         validateCandidateGraph(scenario.request, scenario.baseFiles),
@@ -1407,19 +1746,48 @@ for (const entry of ingestCorpus.cases) {
       return;
     }
 
-    const findings =
-      entry.kind === "workflow"
-        ? runAtlasIngestWorkflow(
-            scenario.workflowState,
-            scenario.request,
-            ingestRuntime(scenario),
-          ).handoff.validationState.findings
-        : validateCandidateGraph(scenario.request, scenario.baseFiles);
+    const findings = ingestGraphFindings(entry, scenario);
+    const summary = findings.map((finding) => `${finding.code} ${finding.severity}`);
+    const blocking = [
+      ...new Set(
+        findings
+          .filter(
+            (finding) =>
+              finding.severity === "error" || finding.severity === "inconclusive",
+          )
+          .map((finding) => finding.code),
+      ),
+    ].sort();
+    if (entry.expectedCodes !== undefined) {
+      assert.deepEqual(
+        blocking,
+        [...entry.expectedCodes].sort(),
+        `${entry.name} blocking mismatch: ${summary.join(", ")}`,
+      );
+      return;
+    }
+    const expected = entry.expectedCode as string;
     assert.ok(
-      findings.some((finding) => finding.code === entry.expectedCode),
-      `${entry.name} did not report ${entry.expectedCode ?? "?"}: ${findings
-        .map((finding) => finding.code)
-        .join(", ")}`,
+      findings.some((finding) => finding.code === expected),
+      `${entry.name} did not report ${expected}: ${summary.join(", ")}`,
     );
+    const expectedIsBlocking = findings.some(
+      (finding) =>
+        finding.code === expected &&
+        (finding.severity === "error" || finding.severity === "inconclusive"),
+    );
+    if (expectedIsBlocking) {
+      assert.deepEqual(
+        blocking,
+        [expected],
+        `${entry.name} is not otherwise-clean: ${summary.join(", ")}`,
+      );
+    } else {
+      assert.deepEqual(
+        blocking,
+        [],
+        `${entry.name} warning case has unexpected blocking Findings: ${summary.join(", ")}`,
+      );
+    }
   });
 }

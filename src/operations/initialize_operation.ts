@@ -1,4 +1,5 @@
 import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
+import { isSafeGitBranchName as isSafeGitBranchNameShared } from "./operation_support.ts";
 import type { Finding } from "../domain/finding.ts";
 import {
   operationHandoffSchemaVersion,
@@ -427,16 +428,7 @@ export function atlasInitializationFiles(
   );
 }
 
-export function isSafeGitBranchName(name: string): boolean {
-  return (
-    /^[A-Za-z0-9._/-]+$/u.test(name) &&
-    !name.startsWith("-") &&
-    !name.startsWith("/") &&
-    !name.endsWith("/") &&
-    !name.includes("..") &&
-    !name.split("/").some((segment) => segment === "" || segment === ".")
-  );
-}
+export const isSafeGitBranchName = isSafeGitBranchNameShared;
 
 export function runAtlasInitializationWorkflow(
   state: AtlasInitializationWorkflowState,

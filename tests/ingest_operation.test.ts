@@ -5,6 +5,7 @@ import test from "node:test";
 import type { CapturedAtlasFile } from "../src/atlas/load_atlas_text.ts";
 import type { Finding } from "../src/domain/finding.ts";
 import {
+  atlasIngestChangeSetDigest,
   isSafeGitBranchName,
   reconcileCandidateGraph,
   runAtlasIngestWorkflow,
@@ -165,10 +166,12 @@ function edge(
   overrides: Partial<AtlasIngestCandidateEdge> = {},
 ): AtlasIngestCandidateEdge {
   return Object.freeze({
-    citation: {
-      sourceClaim: "The Lint gate runs with no network access.",
-      sourceId: "source:readme",
-    },
+    citations: Object.freeze([
+      {
+        sourceClaim: "The Lint gate runs with no network access.",
+        sourceId: "source:readme",
+      },
+    ]),
     context: "Entering the Home Atlas leads to the determinism Concept.",
     from: "anchor:root",
     id: "edge:root-covers-determinism",
@@ -531,10 +534,12 @@ test("Edge endpoint, self-loop, semantics, and Source-connection rules are enfor
             to: "concept:determinism",
           }),
           edge({
-            citation: {
-              sourceClaim: "The Lint gate runs with no network access.",
-              sourceId: "source:readme",
-            },
+            citations: [
+              {
+                sourceClaim: "The Lint gate runs with no network access.",
+                sourceId: "source:readme",
+              },
+            ],
             from: "concept:missing",
             id: "edge:dangling",
             to: "source:readme",
@@ -1266,19 +1271,5 @@ test("the adversarial ingest corpus maps to enforced gates", () => {
 });
 
 function digestOf(changeSet: AtlasIngestChangeSet): string {
-  const parts = [changeSet.baseSnapshotDigest, changeSet.targetHead];
-  const sorted = [...changeSet.changes].toSorted((left, right) =>
-    left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
-  );
-  for (const change of sorted) parts.push(change.path, digestText(change.content));
-  return digestText(parts.join("\u0000"));
-}
-
-function digestText(input: string): string {
-  let hash = 0xcbf29ce484222325n;
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= BigInt(input.charCodeAt(index));
-    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
-  }
-  return hash.toString(16).padStart(16, "0");
+  return atlasIngestChangeSetDigest(changeSet);
 }
