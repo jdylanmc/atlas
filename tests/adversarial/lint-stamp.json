@@ -1,0 +1,152 @@
+{
+  "schema": 1,
+  "reviewResolutionRule": "A review finding is resolved only after this corpus has a reject or accept case that exercises the Lint Stamp gates.",
+  "allowedKeys": ["lint-stamp-schema", "atlasCommit", "evidenceRevision"],
+  "literalFields": [
+    "atlasCommit",
+    "evidenceRevision",
+    "checkRevision",
+    "frameworkRevision",
+    "policyRevision",
+    "schemaRevision"
+  ],
+  "cases": [
+    {
+      "name": "repository emitted Lint Stamp has exactly narrowed keys",
+      "kind": "emitted-key-shape",
+      "expectation": "accept",
+      "gate": "lint-stamp"
+    },
+    {
+      "name": "reject extra emitted revision key regardless of value origin",
+      "kind": "emitted-key-shape",
+      "expectation": "reject",
+      "gate": "lint-stamp",
+      "extraKeys": ["checkRevision"]
+    },
+    {
+      "name": "reject plausible-looking inline hardcoded Lint Stamp revision",
+      "kind": "inline-literal-source",
+      "expectation": "reject",
+      "gate": "lint-stamp",
+      "input": {
+        "source": "const lintStamp: LintStamp = Object.freeze({\n  \"lint-stamp-schema\": \"1.0.0\",\n  atlasCommit: evidence.atlasCommit,\n  evidenceRevision: evidence.evidenceRevision,\n  checkRevision: \"sha256:6d8b13d8a9cb7716c703ec1f5f872b3250b64eb07828f955d411c418085b8461\",\n});"
+      },
+      "literalFields": ["checkRevision"]
+    },
+    {
+      "name": "reject array-joined inline plausible-looking Lint Stamp revision",
+      "kind": "inline-literal-source",
+      "expectation": "reject",
+      "gate": "lint-stamp",
+      "input": {
+        "source": "const lintStamp: LintStamp = Object.freeze({\n  \"lint-stamp-schema\": \"1.0.0\",\n  atlasCommit: evidence.atlasCommit,\n  evidenceRevision: evidence.evidenceRevision,\n  frameworkRevision: [\"sha256\", \"99bb15b450f1fde1b276501ff0f3f7a22ef13ed16ec83006a34430908a2e2b73\"].join(\":\"),\n});"
+      },
+      "literalFields": ["frameworkRevision"]
+    },
+    {
+      "name": "accept derived Lint Stamp fields in inline source scan",
+      "kind": "inline-literal-source",
+      "expectation": "accept",
+      "gate": "lint-stamp",
+      "input": {
+        "source": "const lintStamp: LintStamp = Object.freeze({\n  \"lint-stamp-schema\": \"1.0.0\",\n  atlasCommit: evidence.atlasCommit,\n  evidenceRevision: evidence.evidenceRevision,\n});"
+      }
+    },
+    {
+      "name": "repository Lint Stamp source has no inline literal emitted fields",
+      "kind": "inline-literal-source",
+      "expectation": "accept",
+      "gate": "lint-stamp",
+      "sourcePath": "src/operations/initialize_operation.ts"
+    },
+    {
+      "name": "constant indirection bypasses inline scan but emitted shape rejects it",
+      "kind": "source-bypass-emitted-shape",
+      "expectation": "reject",
+      "gate": "lint-stamp",
+      "input": {
+        "source": "const hiddenCheckRevision = \"sha256:6d8b13d8a9cb7716c703ec1f5f872b3250b64eb07828f955d411c418085b8461\";\nconst lintStamp: LintStamp = Object.freeze({\n  \"lint-stamp-schema\": \"1.0.0\",\n  atlasCommit: evidence.atlasCommit,\n  evidenceRevision: evidence.evidenceRevision,\n  checkRevision: hiddenCheckRevision,\n});"
+      },
+      "inlineLiteralFields": [],
+      "extraKeys": ["checkRevision"]
+    },
+    {
+      "name": "property shorthand bypasses inline scan but emitted shape rejects it",
+      "kind": "source-bypass-emitted-shape",
+      "expectation": "reject",
+      "gate": "lint-stamp",
+      "input": {
+        "source": "const checkRevision = \"sha256:6d8b13d8a9cb7716c703ec1f5f872b3250b64eb07828f955d411c418085b8461\";\nconst lintStamp: LintStamp = Object.freeze({\n  \"lint-stamp-schema\": \"1.0.0\",\n  atlasCommit: evidence.atlasCommit,\n  evidenceRevision: evidence.evidenceRevision,\n  checkRevision,\n});"
+      },
+      "inlineLiteralFields": [],
+      "extraKeys": ["checkRevision"]
+    },
+    {
+      "name": "helper return bypasses inline scan but emitted shape rejects it",
+      "kind": "source-bypass-emitted-shape",
+      "expectation": "reject",
+      "gate": "lint-stamp",
+      "input": {
+        "source": "function fabricatedCheckRevision(): string {\n  return \"sha256:6d8b13d8a9cb7716c703ec1f5f872b3250b64eb07828f955d411c418085b8461\";\n}\nconst lintStamp: LintStamp = Object.freeze({\n  \"lint-stamp-schema\": \"1.0.0\",\n  atlasCommit: evidence.atlasCommit,\n  evidenceRevision: evidence.evidenceRevision,\n  checkRevision: fabricatedCheckRevision(),\n});"
+      },
+      "inlineLiteralFields": [],
+      "extraKeys": ["checkRevision"]
+    },
+    {
+      "name": "cross-file import bypasses inline scan but emitted shape rejects it",
+      "kind": "source-bypass-emitted-shape",
+      "expectation": "reject",
+      "gate": "lint-stamp",
+      "input": {
+        "source": "import { checkRevision } from \"./fabricated_revision.ts\";\nconst lintStamp: LintStamp = Object.freeze({\n  \"lint-stamp-schema\": \"1.0.0\",\n  atlasCommit: evidence.atlasCommit,\n  evidenceRevision: evidence.evidenceRevision,\n  checkRevision,\n});"
+      },
+      "inlineLiteralFields": [],
+      "extraKeys": ["checkRevision"]
+    },
+    {
+      "name": "String.fromCharCode bypasses inline scan but emitted shape rejects it",
+      "kind": "source-bypass-emitted-shape",
+      "expectation": "reject",
+      "gate": "lint-stamp",
+      "input": {
+        "source": "const lintStamp: LintStamp = Object.freeze({\n  \"lint-stamp-schema\": \"1.0.0\",\n  atlasCommit: evidence.atlasCommit,\n  evidenceRevision: evidence.evidenceRevision,\n  checkRevision: String.fromCharCode(115, 104, 97, 50, 53, 54, 58),\n});"
+      },
+      "inlineLiteralFields": [],
+      "extraKeys": ["checkRevision"]
+    },
+    {
+      "name": "Buffer assembly bypasses inline scan but emitted shape rejects it",
+      "kind": "source-bypass-emitted-shape",
+      "expectation": "reject",
+      "gate": "lint-stamp",
+      "input": {
+        "source": "const lintStamp: LintStamp = Object.freeze({\n  \"lint-stamp-schema\": \"1.0.0\",\n  atlasCommit: evidence.atlasCommit,\n  evidenceRevision: evidence.evidenceRevision,\n  checkRevision: Buffer.from(\"sha256:6d8b13d8a9cb7716c703ec1f5f872b3250b64eb07828f955d411c418085b8461\", \"utf8\").toString(),\n});"
+      },
+      "inlineLiteralFields": [],
+      "extraKeys": ["checkRevision"]
+    },
+    {
+      "name": "atob assembly bypasses inline scan but emitted shape rejects it",
+      "kind": "source-bypass-emitted-shape",
+      "expectation": "reject",
+      "gate": "lint-stamp",
+      "input": {
+        "source": "const lintStamp: LintStamp = Object.freeze({\n  \"lint-stamp-schema\": \"1.0.0\",\n  atlasCommit: evidence.atlasCommit,\n  evidenceRevision: evidence.evidenceRevision,\n  checkRevision: atob(\"c2hhMjU2Og==\"),\n});"
+      },
+      "inlineLiteralFields": [],
+      "extraKeys": ["checkRevision"]
+    },
+    {
+      "name": "loop assembly bypasses inline scan but emitted shape rejects it",
+      "kind": "source-bypass-emitted-shape",
+      "expectation": "reject",
+      "gate": "lint-stamp",
+      "input": {
+        "source": "let checkRevision = \"\";\nfor (const part of [\"sha\", \"256\", \":\"]) checkRevision += part;\nconst lintStamp: LintStamp = Object.freeze({\n  \"lint-stamp-schema\": \"1.0.0\",\n  atlasCommit: evidence.atlasCommit,\n  evidenceRevision: evidence.evidenceRevision,\n  checkRevision,\n});"
+      },
+      "inlineLiteralFields": [],
+      "extraKeys": ["checkRevision"]
+    }
+  ]
+}

@@ -19,7 +19,12 @@ export interface LintOperationIdentity extends OperationIdentity {
   readonly subject: LintOperationSubject;
 }
 
+const completedLintOperationPayloadBrand: unique symbol = Symbol(
+  "completed-lint-operation-payload",
+);
+
 export interface CompletedLintOperationPayload {
+  readonly [completedLintOperationPayloadBrand]: true;
   readonly lint: AtlasLintResult;
   readonly state: "completed";
 }
@@ -211,6 +216,10 @@ export function runLintOperation(
     disposition: handoff.result.disposition,
     handoff,
     operation: capturedHomeAtlasLintOperation,
-    payload: Object.freeze({ lint, state: "completed" as const }),
+    payload: Object.freeze({
+      [completedLintOperationPayloadBrand]: true as const,
+      lint,
+      state: "completed" as const,
+    }),
   });
 }
