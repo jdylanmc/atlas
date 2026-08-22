@@ -256,7 +256,7 @@ function minimalAtlasChangeSet(
       }),
       Object.freeze({
         content:
-          "# Framework\n\nThis Atlas is initialized from the source Framework Bundle.\n",
+          "# Framework\n\nNo Framework Bundle is installed in this Atlas yet.\nFramework Bundle files, once installed, are opaque to Atlas page parsing.\n",
         path: [".atlas", "framework", "README.md"].join("/"),
       }),
       Object.freeze({ content: rootAnchor, path: ".atlas/index.md" }),
