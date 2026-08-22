@@ -1,5 +1,12 @@
 import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
+import {
+  addReceipt,
+  canContinue,
+  changeSetDigest,
+  isSafeGitBranchName,
+  receiptFor,
+} from "./operation_support.ts";
 import type { Finding } from "../domain/finding.ts";
 import type { LintOperationResult } from "./lint_operation.ts";
 import {
@@ -232,34 +239,6 @@ function result(
   });
 }
 
-function receiptFor(
-  state: AtlasGovernanceWorkflowState,
-  effect: AtlasGovernanceEffectReceipt["effect"],
-): AtlasGovernanceEffectReceipt | undefined {
-  return state.effectReceipts.find((receipt) => receipt.effect === effect);
-}
-
-function addReceipt(
-  state: AtlasGovernanceWorkflowState,
-  receipt: AtlasGovernanceEffectReceipt,
-): AtlasGovernanceWorkflowState {
-  return Object.freeze({
-    ...state,
-    effectReceipts: Object.freeze([...state.effectReceipts, receipt]),
-  });
-}
-
-function isSafeGitBranchName(name: string): boolean {
-  return (
-    /^[A-Za-z0-9._/-]+$/u.test(name) &&
-    !name.startsWith("-") &&
-    !name.startsWith("/") &&
-    !name.endsWith("/") &&
-    !name.includes("..") &&
-    !name.split("/").some((segment) => segment === "" || segment === ".")
-  );
-}
-
 function pathIsCanonicalAtlasPath(path: string): boolean {
   return (
     path.startsWith(".atlas/") &&
@@ -298,25 +277,6 @@ function expectedIdFromPath(path: string, prefix: string): string | undefined {
   const match = /^\.atlas\/(?:types\/policy|principles)\/([^/]+)\.md$/u.exec(path);
   const slug = match?.[1];
   return slug === undefined ? undefined : `${prefix}:${slug}`;
-}
-
-function digestText(input: string): string {
-  let hash = 0xcbf29ce484222325n;
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= BigInt(input.charCodeAt(index));
-    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
-  }
-  return hash.toString(16).padStart(16, "0");
-}
-
-function changeSetDigest(changeSet: AtlasGovernanceChangeSet): string {
-  const parts = [changeSet.baseSnapshotDigest, changeSet.targetHead];
-  for (const change of [...changeSet.changes].toSorted((left, right) =>
-    compareCodePoints(left.path, right.path),
-  )) {
-    parts.push(change.path, digestText(change.content));
-  }
-  return digestText(parts.join("\0"));
 }
 
 interface PolicyTarget {
@@ -844,12 +804,6 @@ function validateResumeReceipts(
     );
   }
   return Object.freeze(findings);
-}
-
-function canContinue(findings: readonly Finding[]): boolean {
-  return findings.every(
-    (entry) => entry.severity !== "error" && entry.severity !== "inconclusive",
-  );
 }
 
 export function runAtlasGovernanceWorkflow(
