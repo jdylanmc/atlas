@@ -1,0 +1,109 @@
+{
+  "schema": 1,
+  "reviewResolutionRule": "A review finding is resolved only after tests/adversarial has a case exercising the ingest gate.",
+  "cases": [
+    {
+      "name": "baseline-valid-graph-is-accepted",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "none",
+      "expectation": "accept"
+    },
+    {
+      "name": "citation-quote-absent-from-source-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "citation-quote-not-in-source",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_CITATION_UNSUPPORTED"
+    },
+    {
+      "name": "citation-to-absent-source-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "citation-source-absent",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_CITATION_SOURCE_MISSING"
+    },
+    {
+      "name": "concept-without-edge-is-unreachable",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "concept-without-edge",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_CONCEPT_UNREACHABLE"
+    },
+    {
+      "name": "uncited-concept-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "concept-uncited",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_CONCEPT_UNCITED"
+    },
+    {
+      "name": "edge-connecting-a-source-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "edge-connects-source",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_EDGE_CONNECTS_SOURCE"
+    },
+    {
+      "name": "edge-with-missing-endpoint-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "edge-endpoint-missing",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_EDGE_ENDPOINT_MISSING"
+    },
+    {
+      "name": "duplicate-unordered-edge-pair-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "duplicate-edge-pair",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_EDGE_PAIR_DUPLICATE"
+    },
+    {
+      "name": "candidate-beyond-scope-pauses-for-approval",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "scope-expansion",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_SCOPE_EXPANSION_PENDING"
+    },
+    {
+      "name": "malformed-locator-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "malformed-locator",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_LOCATOR_INVALID"
+    },
+    {
+      "name": "unaccepted-contradiction-is-blocked",
+      "gate": "ingest",
+      "kind": "graph-principle",
+      "mutation": "contradiction-unaccepted",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_CONTRADICTION_UNACCEPTED"
+    },
+    {
+      "name": "equal-authority-untimed-dispute-escalates",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "equal-authority-tie",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_DISPUTE_UNRESOLVED"
+    },
+    {
+      "name": "forged-resume-receipt-is-rejected",
+      "gate": "ingest",
+      "kind": "workflow",
+      "mutation": "forged-resume-receipt",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_RESUME_CHANGE_SET_MISMATCH"
+    }
+  ]
+}

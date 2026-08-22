@@ -3,6 +3,25 @@
   "reviewResolutionRule": "A review finding is resolved only after this corpus has a reject or accept case that exercises it.",
   "cases": [
     {
+      "name": "reject an Ingest operation that reaches for the network or a model",
+      "gate": "atlas-cli",
+      "kind": "source-boundary",
+      "path": "src/operations/ingest_operation.ts",
+      "forbiddenImports": [
+        "node:http",
+        "node:https",
+        "node:net",
+        "node:tls",
+        "node:dgram",
+        "node:child_process",
+        "child_process",
+        "undici",
+        "openai",
+        "anthropic",
+        "fetch("
+      ]
+    },
+    {
       "name": "reject non-completed payload carrying an Atlas verdict",
       "gate": "atlas-cli",
       "kind": "command",
