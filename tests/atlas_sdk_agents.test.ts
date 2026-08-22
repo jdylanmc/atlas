@@ -241,8 +241,12 @@ test("Atlas Guide composition rejects duplicate JSON keys", () => {
   assert.throws(() => validateComposition(changed), /repeats JSON key/);
 });
 
-test("inactive source does not initialize an Atlas", () => {
-  assert.equal(existsSync(join(ROOT, ".atlas")), false);
+test("inactive source does not activate the Atlas Guide", () => {
+  // The SDK Atlas now exists (a minimal Home Atlas), but the inactive Merlin
+  // source must not be activated into it: neither the Persona nor the role
+  // composition may be written under `.atlas/`.
+  assert.equal(existsSync(join(ROOT, ".atlas/personas/merlin/persona.md")), false);
+  assert.equal(existsSync(join(ROOT, ".atlas/agents/atlas-guide.yaml")), false);
   const readme = readFileSync(join(ROOT, "docs/agents/atlas-sdk/README.md"), "utf8");
   assert.match(readme, /\.atlas\/personas\/merlin\/persona\.md/);
   assert.match(readme, /\.atlas\/agents\/atlas-guide\.yaml/);
