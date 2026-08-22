@@ -69,6 +69,30 @@
       ]
     },
     {
+      "name": "reject Atlas View snapshot input carrying pages and validity separately",
+      "gate": "atlas-cli",
+      "kind": "source-contract",
+      "path": "src/atlas/atlas_view.ts",
+      "requiredText": "readonly validation: AtlasInputValidation;",
+      "forbiddenText": "export interface AtlasViewSnapshotInput {\n  readonly files:"
+    },
+    {
+      "name": "accept Atlas View post-construction input mutation without digest drift",
+      "gate": "atlas-cli",
+      "kind": "atlas-view-mutation",
+      "expectedSlug": "before-slug",
+      "mutatedSlug": "after-slug",
+      "expectedSnapshot": "before-sha",
+      "mutatedSnapshot": "after-sha"
+    },
+    {
+      "name": "reject Explore reparsing pages instead of consuming Atlas View",
+      "gate": "atlas-cli",
+      "kind": "source-boundary",
+      "path": "src/graph/explore_atlas.ts",
+      "forbiddenImports": ["parse_atlas_pages"]
+    },
+    {
       "name": "reject total byte budget before reading the offending file",
       "gate": "atlas-cli",
       "kind": "capture-budget",

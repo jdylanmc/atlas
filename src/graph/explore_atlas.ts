@@ -1,11 +1,6 @@
 import type { AtlasTextBudgets, AtlasTextFile } from "../atlas/load_atlas_text.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
-import {
-  classifyAtlasTextPath,
-  parseAtlasPage,
-  AtlasPageParseError,
-  type ParsedAtlasPage,
-} from "../atlas/parse_atlas_pages.ts";
+import type { AtlasView, AtlasViewEdge } from "../atlas/atlas_view.ts";
 import { resolvedCitationSourcePaths } from "../atlas/resolve_citations.ts";
 import { rootAnchorPageId } from "../domain/core_archetype.ts";
 import type { Finding } from "../domain/finding.ts";
@@ -95,6 +90,8 @@ export interface ExplorePayload {
   readonly results: readonly ExploreResultItem[];
 }
 
+type Edge = AtlasViewEdge;
+
 interface AtlasObject {
   readonly body: string;
   readonly id: string;
@@ -104,19 +101,12 @@ interface AtlasObject {
   readonly type: string;
 }
 
-interface Edge {
-  readonly from: string;
-  readonly id: string;
-  readonly path: string;
-  readonly to: string;
-}
-
 interface Route {
   readonly edges: readonly string[];
   readonly nodes: readonly string[];
 }
 
-interface View {
+interface TraversalIndex {
   readonly diagnostics: readonly Finding[];
   readonly edges: readonly Edge[];
   readonly level: ExploreDegradationLevel;
@@ -158,46 +148,10 @@ function assertBudgets(budgets: ExploreBudgets): void {
   }
 }
 
-function atlasObject(parsed: ParsedAtlasPage): AtlasObject {
-  return Object.freeze({
-    body: parsed.page.body,
-    id: parsed.page.sdk.id,
-    path: parsed.source.path,
-    tags: Object.freeze([...parsed.page.sdk.tags].sort(compareCodePoints)),
-    title: parsed.page.sdk.title,
-    type: parsed.page.sdk.type,
-  });
-}
-
-function edgeOf(parsed: ParsedAtlasPage): Edge | undefined {
-  const atlas = parsed.page.atlas;
-  if (typeof atlas["from"] !== "string" || typeof atlas["to"] !== "string") {
-    return undefined;
-  }
-  return Object.freeze({
-    from: atlas["from"],
-    id: parsed.page.sdk.id,
-    path: parsed.source.path,
-    to: atlas["to"],
-  });
-}
-
-function parseUsablePages(files: readonly AtlasTextFile[]): readonly ParsedAtlasPage[] {
-  const pages: ParsedAtlasPage[] = [];
-  for (const file of files.toSorted((left, right) =>
-    compareCodePoints(left.path, right.path),
-  )) {
-    if (classifyAtlasTextPath(file.path) !== "page") continue;
-    const parsed = parseAtlasPage(file);
-    if (!(parsed instanceof AtlasPageParseError)) pages.push(parsed);
-  }
-  return Object.freeze(pages);
-}
-
-function rawMarkdownView(
+function rawMarkdownTraversalIndex(
   files: readonly AtlasTextFile[],
   diagnostics: readonly Finding[],
-): View {
+): TraversalIndex {
   const objects = new Map<string, AtlasObject>();
   for (const file of files.toSorted((left, right) =>
     compareCodePoints(left.path, right.path),
@@ -226,21 +180,21 @@ function rawMarkdownView(
   });
 }
 
-function structuredView(
-  pages: readonly ParsedAtlasPage[],
+function structuredTraversalIndex(
+  atlasView: AtlasView,
   diagnostics: readonly Finding[],
   level: ExploreDegradationLevel,
   budgets: ExploreBudgets,
-): View {
+): TraversalIndex {
   const objects = new Map<string, AtlasObject>();
   const edges: Edge[] = [];
   const viewDiagnostics = [...diagnostics];
-  const orderedPages = pages.toSorted((left, right) => {
-    if (left.source.path === ".atlas/index.md") return -1;
-    if (right.source.path === ".atlas/index.md") return 1;
-    return compareCodePoints(left.source.path, right.source.path);
+  const orderedObjects = atlasView.objects.toSorted((left, right) => {
+    if (left.path === ".atlas/index.md") return -1;
+    if (right.path === ".atlas/index.md") return 1;
+    return compareCodePoints(left.path, right.path);
   });
-  for (const parsed of orderedPages) {
+  for (const object of orderedObjects) {
     if (objects.size >= budgets.maxObjects) {
       viewDiagnostics.push(
         diagnostic(
@@ -252,10 +206,9 @@ function structuredView(
       );
       break;
     }
-    const object = atlasObject(parsed);
     objects.set(object.id, object);
     if (object.type === "edge" && edges.length < budgets.maxEdges) {
-      const edge = edgeOf(parsed);
+      const edge = atlasView.graphIndexes.edgeByObjectId.get(object.id);
       if (edge !== undefined) edges.push(edge);
     } else if (object.type === "edge") {
       viewDiagnostics.push(
@@ -283,11 +236,12 @@ function structuredView(
   });
 }
 
-function viewFrom(
+function traversalIndexFrom(
+  atlasView: AtlasView,
   files: readonly AtlasTextFile[],
-  validationFindings: readonly Finding[],
   budgets: ExploreBudgets,
-): View {
+): TraversalIndex {
+  const validationFindings = atlasView.validationState.findings;
   if (files.length === 0) {
     return Object.freeze({
       diagnostics: validationFindings,
@@ -299,9 +253,10 @@ function viewFrom(
     });
   }
 
-  const parsed = parseUsablePages(files);
-  if (parsed.length === 0) return rawMarkdownView(files, validationFindings);
-  const rootMissing = !parsed.some((page) => page.source.path === ".atlas/index.md");
+  if (atlasView.objects.length === 0) {
+    return rawMarkdownTraversalIndex(files, validationFindings);
+  }
+  const rootMissing = !atlasView.graphIndexes.objectsByPath.has(".atlas/index.md");
   if (rootMissing) {
     return Object.freeze({
       diagnostics: validationFindings,
@@ -312,10 +267,12 @@ function viewFrom(
     });
   }
   const diagnostics = validationFindings;
-  return structuredView(
-    parsed,
+  return structuredTraversalIndex(
+    atlasView,
     diagnostics,
-    diagnostics.length === 0 ? "valid-structured" : "partial-structure",
+    atlasView.validationState.state === "valid"
+      ? "valid-structured"
+      : "partial-structure",
     budgets,
   );
 }
@@ -344,7 +301,9 @@ function citedContext(
   return Object.freeze(contexts);
 }
 
-function adjacency(view: View): ReadonlyMap<string, readonly ExploreRouteStep[]> {
+function adjacency(
+  view: TraversalIndex,
+): ReadonlyMap<string, readonly ExploreRouteStep[]> {
   const next = new Map<string, ExploreRouteStep[]>();
   const add = (from: string, to: AtlasObject, edgeId: string | undefined): void => {
     const entries = next.get(from) ?? [];
@@ -375,7 +334,9 @@ function adjacency(view: View): ReadonlyMap<string, readonly ExploreRouteStep[]>
   return next;
 }
 
-function edgeOnlyAdjacency(view: View): ReadonlyMap<string, readonly string[]> {
+function edgeOnlyAdjacency(
+  view: TraversalIndex,
+): ReadonlyMap<string, readonly string[]> {
   const next = new Map<string, string[]>();
   const add = (from: string, to: string): void => {
     const entries = next.get(from) ?? [];
@@ -393,7 +354,7 @@ function edgeOnlyAdjacency(view: View): ReadonlyMap<string, readonly string[]> {
   return next;
 }
 
-function anchorReachableObjects(view: View): ReadonlySet<string> {
+function anchorReachableObjects(view: TraversalIndex): ReadonlySet<string> {
   const graph = edgeOnlyAdjacency(view);
   const reached = new Set<string>();
   const queue = [...view.objects.values()]
@@ -413,7 +374,7 @@ function anchorReachableObjects(view: View): ReadonlySet<string> {
 }
 
 function adjacencyWithRootCatalog(
-  view: View,
+  view: TraversalIndex,
 ): ReadonlyMap<string, readonly ExploreRouteStep[]> {
   const next = new Map(adjacency(view));
   const root = view.objects.get(rootAnchorPageId) as AtlasObject;
@@ -489,7 +450,7 @@ function governingTruths(
   );
 }
 
-function routeSteps(route: Route, view: View): readonly ExploreRouteStep[] {
+function routeSteps(route: Route, view: TraversalIndex): readonly ExploreRouteStep[] {
   return Object.freeze(
     route.nodes.map((node, index) => {
       const object = view.objects.get(node) as AtlasObject;
@@ -505,7 +466,7 @@ function routeSteps(route: Route, view: View): readonly ExploreRouteStep[] {
 }
 
 function discoverRoutes(
-  view: View,
+  view: TraversalIndex,
   activeObjective: string,
   budgets: ExploreBudgets,
 ): {
@@ -558,7 +519,7 @@ function discoverRoutes(
   return { reanchors: Object.freeze(reanchors), routes };
 }
 
-function documentsOf(view: View): readonly ExploreSearchDocument[] {
+function documentsOf(view: TraversalIndex): readonly ExploreSearchDocument[] {
   const documents = [...view.objects.values()]
     .filter((object) => object.type !== "edge" && object.type !== "source")
     .map((object) =>
@@ -595,7 +556,7 @@ function compareItems(
 
 function rankedCandidates(
   ranked: readonly ExploreCandidate[],
-  view: View,
+  view: TraversalIndex,
 ): {
   readonly diagnostics: readonly Finding[];
   readonly ranked: readonly ExploreCandidate[];
@@ -628,8 +589,7 @@ function rankedCandidates(
 }
 
 export function exploreAtlas(
-  files: readonly AtlasTextFile[],
-  validationFindings: readonly Finding[],
+  atlasView: AtlasView,
   query: string,
   provider: SearchProvider,
   budgets: ExploreBudgets,
@@ -653,7 +613,7 @@ export function exploreAtlas(
       results: Object.freeze([]),
     });
   }
-  const view = viewFrom(files, validationFindings, budgets);
+  const view = traversalIndexFrom(atlasView, atlasView.files, budgets);
   if (view.level === "blocked" || view.objects.size === 0) {
     return Object.freeze({
       degradation: Object.freeze({

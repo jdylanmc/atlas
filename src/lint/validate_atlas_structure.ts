@@ -35,6 +35,17 @@ import {
   type ParsedAtlasPage,
 } from "../atlas/parse_atlas_pages.ts";
 
+export interface AtlasStructureValidation {
+  /**
+   * Every page whose Atlas page envelope parsed from the validated text. Pages
+   * that later structural checks reject are still carried so downstream
+   * read-only operations consume the same parse Lint examined instead of
+   * reparsing the snapshot.
+   */
+  readonly pages: readonly ParsedAtlasPage[];
+  readonly findings: readonly Finding[];
+}
+
 type MarkdownPosition = NonNullable<Nodes["position"]>;
 
 const finding = sdkFindings("sdk-core.structural-validation");
@@ -864,14 +875,9 @@ function capturePageRecord(input: AtlasTextFile): AtlasTextFile | Finding | unde
   }
 }
 
-/**
- * Parses and validates captured Atlas text, returning deeply immutable Findings
- * ordered by path, source position, code, then message using Unicode code points.
- * Opaque Framework, Changelog, and non-page Markdown records produce no Findings.
- */
-export function validateAtlasStructure(
+function validateAtlasStructureWithPages(
   files: readonly AtlasTextFile[],
-): readonly Finding[] {
+): AtlasStructureValidation {
   const findings: Finding[] = [];
   const pageRecords: AtlasTextFile[] = [];
   for (const input of files) {
@@ -883,11 +889,13 @@ export function validateAtlasStructure(
   pageRecords.sort((left, right) => compareCodePoints(left.path, right.path));
 
   const pagePaths: ReadonlySet<string> = new Set(pageRecords.map((file) => file.path));
+  const pages: ParsedAtlasPage[] = [];
   const parsed: { readonly file: AtlasTextFile; readonly page: ParsedAtlasPage }[] = [];
   for (const file of pageRecords) {
     const result = parseOne(file);
     if ("code" in result) findings.push(result);
     else {
+      pages.push(result);
       // A body carrying more Markdown than Atlas SDK reads is reported from the
       // scan of its text rather than read.
       const bound = bodyMarkdownBound(result.page.body);
@@ -958,5 +966,21 @@ export function validateAtlasStructure(
     }
   }
 
-  return Object.freeze(findings.toSorted(compareFindings));
+  return Object.freeze({
+    findings: Object.freeze(findings.toSorted(compareFindings)),
+    pages: Object.freeze(pages),
+  });
 }
+
+/**
+ * Parses and validates captured Atlas text, returning deeply immutable Findings
+ * ordered by path, source position, code, then message using Unicode code points.
+ * Opaque Framework, Changelog, and non-page Markdown records produce no Findings.
+ */
+export function validateAtlasStructure(
+  files: readonly AtlasTextFile[],
+): readonly Finding[] {
+  return validateAtlasStructureWithPages(files).findings;
+}
+
+export { validateAtlasStructureWithPages };
