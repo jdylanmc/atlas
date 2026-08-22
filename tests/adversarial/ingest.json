@@ -176,6 +176,22 @@
       "expectedCode": "ATLAS_INGEST_SCOPE_EXPANSION_PENDING"
     },
     {
+      "name": "H8-excluded-directory-trailing-dot-is-rejected-as-non-canonical",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "excluded-path-trailing-dot-variant",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_LOCATOR_INVALID"
+    },
+    {
+      "name": "H8-excluded-directory-trailing-space-is-rejected-as-non-canonical",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "excluded-path-trailing-space-variant",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_LOCATOR_INVALID"
+    },
+    {
       "name": "M1-concept-title-newline-is-neutralized-by-the-serializer",
       "gate": "ingest",
       "kind": "emission",

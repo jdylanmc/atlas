@@ -1468,6 +1468,21 @@ function ingestMutatedGraph(mutation: string): AtlasIngestCandidateGraph {
       concepts: [ingestConcept({ locator: "docs/Private/secret.md" })],
     };
   }
+  if (mutation === "excluded-path-trailing-dot-variant") {
+    // Win32 strips a trailing dot from every path component, so this names the
+    // same excluded directory as "docs/private".
+    return {
+      ...ingestBaselineGraph(),
+      concepts: [ingestConcept({ locator: "docs/private./secret.md" })],
+    };
+  }
+  if (mutation === "excluded-path-trailing-space-variant") {
+    // Win32 strips a trailing space the same way.
+    return {
+      ...ingestBaselineGraph(),
+      concepts: [ingestConcept({ locator: "docs/private /secret.md" })],
+    };
+  }
   if (mutation === "excluded-path-nfd-variant") {
     // "café" decomposed: the excluded directory is spelled with a combining
     // accent, the same directory NFC normalization resolves to.

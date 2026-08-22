@@ -353,22 +353,38 @@ function isCanonicalLocator(locator: string): boolean {
   // A repository-relative path holds no control character, so a newline can
   // never reach a value the crawler asserts as a locator.
   if (hasControlCharacter(locator)) return false;
-  return !locator
-    .split("/")
-    .some((segment) => segment === "" || segment === "." || segment === "..");
+  return !locator.split("/").some(
+    (segment) =>
+      segment === "" ||
+      segment === "." ||
+      segment === ".." ||
+      // Win32 strips trailing dots and spaces from every path component, so
+      // `docs/private.` and `docs/private ` name the same directory as
+      // `docs/private`. Such a spelling is not canonical, and accepting it
+      // would let a crawler address a scope-excluded directory under a name
+      // scope confinement does not recognize.
+      segment !== trimWin32Segment(segment),
+  );
+}
+
+/** One path component as Win32 resolves it, without trailing dots or spaces. */
+function trimWin32Segment(segment: string): string {
+  return segment.replace(/[. ]+$/u, "");
 }
 
 // Scope confinement compares directories, not raw strings. A case-insensitive
 // or Unicode-decomposed spelling of an excluded directory names the same
 // directory on a case-folding or normalizing file system, so both sides are
-// folded to NFC lower case before comparison. Component alignment already holds;
-// this closes the case and normalization gap a raw `===` left open.
+// folded to NFC lower case before comparison. Trailing dots and spaces fold
+// away too, because Win32 strips them from every component. Component
+// alignment already holds; this closes the case, normalization, and Win32
+// trailing-form gaps a raw `===` left open.
 function scopeSegments(path: string): readonly string[] {
   return path
     .normalize("NFC")
     .split("/")
-    .filter((segment) => segment.length > 0)
-    .map((segment) => segment.toLowerCase());
+    .map((segment) => trimWin32Segment(segment).toLowerCase())
+    .filter((segment) => segment.length > 0);
 }
 
 function isPrefixPath(prefix: string, path: string): boolean {
