@@ -66,7 +66,7 @@ function hasUnsafePathCharacter(path: string): boolean {
   return Array.from(path).some((character) => unsafePathCharacters.has(character));
 }
 
-function normalizePath(path: string): string {
+export function normalizeAtlasTextPath(path: string): string {
   if (path.startsWith("/") || path.includes("\\") || hasUnsafePathCharacter(path)) {
     throw new AtlasLoadError("INVALID_PATH");
   }
@@ -126,7 +126,7 @@ export function loadAtlasText(
 
   const normalized = [...capturedFiles].map((file) => ({
     bytes: file.bytes,
-    path: normalizePath(file.path),
+    path: normalizeAtlasTextPath(file.path),
   }));
   normalized.sort((left, right) => compareCodePoints(left.path, right.path));
 

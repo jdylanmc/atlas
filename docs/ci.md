@@ -78,8 +78,13 @@ repository `.npmrc` suppresses lifecycle scripts by default.
 
 `npm run ci` performs deterministic Prettier checks, type-aware ESLint flat
 configuration, strict TypeScript checking with `erasableSyntaxOnly`, fail-closed
-Node.js test-runner coverage, glossary and contract vocabulary agreement,
-byte-exact Cacophony prompt validation, and Actionlint `1.7.7`.
+Node.js test-runner coverage, a committed SDK Atlas Lint gate, glossary and
+contract vocabulary agreement, byte-exact Cacophony prompt validation, and
+Actionlint `1.7.7`. The SDK Atlas gate runs `atlas lint --machine` against the
+repository Atlas Host Directory and requires a completed Valid Atlas Lint Result
+with no error Findings. This confirms only the deterministic Lint rules that
+exist today; the Framework Bundle page is still carried as an opaque record, and
+Framework Bundle-specific rules remain deferred.
 The Actionlint launcher also pins ShellCheck `0.11.0`, disables Python-based
 Pyflakes integration, downloads only the assets for the current supported
 platform and architecture, and verifies their release checksums before
@@ -87,9 +92,9 @@ execution.
 
 Focused commands are `npm run format:check`, `npm run lint`,
 `npm run typecheck`, `npm run test:coverage`, `npm run test:unit`,
-`npm run atlas-sdk:validate`, `npm run vocabulary:validate`,
-`npm run cacophony:validate`, `npm run workflow:lint`, and
-`npm run framework:assemble`. Use
+`npm run atlas-sdk:validate`, `npm run sdk-atlas:lint`,
+`npm run vocabulary:validate`, `npm run cacophony:validate`,
+`npm run workflow:lint`, and `npm run framework:assemble`. Use
 `npm run cacophony:sync` only after editing a Persona, Directive, or composition
 reference.
 
