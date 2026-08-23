@@ -1,15 +1,71 @@
 import { strict as assert } from "node:assert";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import {
+  atlasFrameworkDirectory,
   atlasInitializationFiles,
+  canonicalFrameworkPageByBundleState,
+  frameworkBundleStateFromEvidence,
+  frameworkReleaseManifestAtlasPath,
+  frameworkReleaseManifestDigestAtlasPath,
   initialAtlasInitializationWorkflowState,
 } from "../src/operations/initialize_operation.ts";
+import {
+  inventoryPaths,
+  parseFrameworkReleaseManifest,
+} from "../src/framework/framework_release.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+function sha256(content: string | Buffer): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+function slashPath(path: string): string {
+  return path.split(/[/\\]+/u).join("/");
+}
+
+function listFiles(directory: string): readonly string[] {
+  if (!existsSync(directory)) return Object.freeze([]);
+  const files: string[] = [];
+  for (const entry of readdirSync(directory)) {
+    const absolute = join(directory, entry);
+    if (statSync(absolute).isDirectory()) {
+      files.push(...listFiles(absolute));
+      continue;
+    }
+    files.push(slashPath(relative(ROOT, absolute)));
+  }
+  return Object.freeze(files.toSorted());
+}
+
+function committedFrameworkBundleState(): "absent" | "installed" {
+  const manifestPath = join(ROOT, frameworkReleaseManifestAtlasPath);
+  const digestPath = join(ROOT, frameworkReleaseManifestDigestAtlasPath);
+  let manifestPresent = false;
+  let manifestDigestVerified = false;
+  let manifestInventoryPaths: readonly string[] = Object.freeze([]);
+  if (existsSync(manifestPath) && existsSync(digestPath)) {
+    const rawManifest = readFileSync(manifestPath, "utf8");
+    const parsed = parseFrameworkReleaseManifest(JSON.parse(rawManifest));
+    manifestPresent = parsed.state === "parsed";
+    manifestDigestVerified =
+      manifestPresent &&
+      readFileSync(digestPath, "utf8").trim() === sha256(rawManifest);
+    manifestInventoryPaths =
+      parsed.state === "parsed" ? inventoryPaths(parsed.manifest) : Object.freeze([]);
+  }
+  return frameworkBundleStateFromEvidence({
+    frameworkFilePaths: listFiles(join(ROOT, atlasFrameworkDirectory)),
+    inventoryPaths: manifestInventoryPaths,
+    manifestDigestVerified,
+    manifestPresent,
+  });
+}
 
 function emittedAtlasFiles(): Map<string, string> {
   const decoder = new TextDecoder();
@@ -42,15 +98,37 @@ test("the committed SDK Atlas is byte-identical to what Initialization emits", (
   }
 });
 
-test("the SDK Atlas claims no Framework Bundle it does not carry", () => {
+test("the SDK Atlas framework page matches its derived Framework Bundle state", () => {
+  const state = committedFrameworkBundleState();
   const framework = readFileSync(join(ROOT, ".atlas/framework/README.md"), "utf8");
-  // A real Framework Bundle is the installed Release Manifest plus that
-  // manifest's complete inventory of SDK-owned files. Until those exist, the
-  // page must not assert the Atlas is framework-backed.
-  assert.doesNotMatch(
+  assert.equal(
     framework,
-    /is initialized from|is backed by|installed Framework Bundle/iu,
-    "the framework page asserts a Framework Bundle that is not installed",
+    canonicalFrameworkPageByBundleState[state],
+    `the framework page must exactly match the canonical ${state} Framework Bundle text`,
   );
-  assert.match(framework, /No Framework Bundle is installed/u);
+});
+
+test("Framework Bundle page text is selected only from derived states", () => {
+  assert.equal(
+    canonicalFrameworkPageByBundleState[
+      frameworkBundleStateFromEvidence({
+        frameworkFilePaths: Object.freeze([]),
+        inventoryPaths: Object.freeze([]),
+        manifestDigestVerified: false,
+        manifestPresent: false,
+      })
+    ],
+    canonicalFrameworkPageByBundleState.absent,
+  );
+  assert.equal(
+    canonicalFrameworkPageByBundleState[
+      frameworkBundleStateFromEvidence({
+        frameworkFilePaths: Object.freeze([".atlas/framework/src/runtime.ts"]),
+        inventoryPaths: Object.freeze(["src/runtime.ts"]),
+        manifestDigestVerified: true,
+        manifestPresent: true,
+      })
+    ],
+    canonicalFrameworkPageByBundleState.installed,
+  );
 });

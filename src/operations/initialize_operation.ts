@@ -49,6 +49,43 @@ export interface AtlasInitializationChangeSet {
   readonly targetHead: string;
 }
 
+export type FrameworkBundleState = "absent" | "installed";
+
+export interface FrameworkBundleStateEvidence {
+  readonly frameworkFilePaths: readonly string[];
+  readonly inventoryPaths: readonly string[];
+  readonly manifestDigestVerified: boolean;
+  readonly manifestPresent: boolean;
+}
+
+export const atlasFrameworkDirectory = ".atlas/framework";
+export const frameworkReleaseManifestAtlasPath = `${atlasFrameworkDirectory}/framework-release-manifest.json`;
+export const frameworkReleaseManifestDigestAtlasPath = `${atlasFrameworkDirectory}/framework-release-manifest.sha256`;
+
+export const canonicalFrameworkPageByBundleState = Object.freeze({
+  absent:
+    "# Framework\n\nNo Framework Bundle is installed in this Atlas yet.\nFramework Bundle files, once installed, are opaque to Atlas page parsing.\n",
+  installed:
+    "# Framework\n\nFramework Bundle is installed in this Atlas.\nThe Framework Release Manifest and its complete inventory of SDK-owned files are present in the Framework Bundle directory.\nFramework Bundle files are opaque to Atlas page parsing.\n",
+}) satisfies Readonly<Record<FrameworkBundleState, string>>;
+
+export function frameworkBundleStateFromEvidence(
+  evidence: FrameworkBundleStateEvidence,
+): FrameworkBundleState {
+  const frameworkFiles = new Set(evidence.frameworkFilePaths);
+  const inventoryComplete = evidence.inventoryPaths.every((path) =>
+    frameworkFiles.has(`${atlasFrameworkDirectory}/${path}`),
+  );
+  if (
+    evidence.manifestPresent &&
+    evidence.manifestDigestVerified &&
+    inventoryComplete
+  ) {
+    return "installed";
+  }
+  return "absent";
+}
+
 const lintStampBrand: unique symbol = Symbol("lint-stamp");
 const successfulProposalLintBrand: unique symbol = Symbol("successful-proposal-lint");
 
@@ -247,19 +284,26 @@ function minimalAtlasChangeSet(
   state: AtlasInitializationWorkflowState,
 ): AtlasInitializationChangeSet {
   const rootAnchor = `---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  created-at: "2026-01-01T00:00:00Z"\n  created-by:\n    kind: agent\n    name: Atlas SDK\n  id: anchor:root\n  local-atlas-schema: 1.0.0\n  originating-operation: atlas-initialization\n  tags: []\n  title: Home Atlas\n  type: anchor\n  updated-at: "2026-01-01T00:00:00Z"\n  updated-by:\n    kind: agent\n    name: Atlas SDK\natlas: {}\n---\n\n# Home Atlas\n\nThis Root Anchor starts a minimal Home Atlas with no Guide Persona, founding knowledge, or Atlas Site.\n`;
+  const changelog = Object.freeze({
+    content: "# Changelog\n\n- Initialized minimal Home Atlas.\n",
+    path: ".atlas/CHANGELOG.md",
+  });
+  const root = Object.freeze({ content: rootAnchor, path: ".atlas/index.md" });
+  const frameworkBundleState = frameworkBundleStateFromEvidence({
+    frameworkFilePaths: [changelog.path, root.path],
+    inventoryPaths: Object.freeze([]),
+    manifestDigestVerified: false,
+    manifestPresent: false,
+  });
   return Object.freeze({
     baseSnapshotDigest: state.baseSnapshotDigest,
     changes: Object.freeze([
+      changelog,
       Object.freeze({
-        content: "# Changelog\n\n- Initialized minimal Home Atlas.\n",
-        path: ".atlas/CHANGELOG.md",
+        content: canonicalFrameworkPageByBundleState[frameworkBundleState],
+        path: `${atlasFrameworkDirectory}/README.md`,
       }),
-      Object.freeze({
-        content:
-          "# Framework\n\nNo Framework Bundle is installed in this Atlas yet.\nFramework Bundle files, once installed, are opaque to Atlas page parsing.\n",
-        path: [".atlas", "framework", "README.md"].join("/"),
-      }),
-      Object.freeze({ content: rootAnchor, path: ".atlas/index.md" }),
+      root,
     ]),
     targetHead: state.targetHead,
   });
