@@ -5,6 +5,7 @@ export const frameworkReleaseOwnedPathRoots = Object.freeze([
   "src/atlas",
   "src/domain",
   "src/framework",
+  "src/graph",
   "src/interfaces",
   "src/lint",
   "src/operations",

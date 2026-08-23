@@ -4,6 +4,7 @@ import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path";
 import test, { after } from "node:test";
 import { captureAtlasHostDirectory, CaptureBudgetError } from "../scripts/atlas.ts";
+import { exploreCommandBudgets } from "../src/interfaces/explore_command.ts";
 import { ingestCommandInputBudgets } from "../src/interfaces/ingest_command.ts";
 import { buildAtlasView } from "../src/atlas/atlas_view.ts";
 import { parseAtlasPage } from "../src/atlas/parse_atlas_pages.ts";
@@ -121,6 +122,7 @@ interface AtlasCliCommandCase {
   readonly fixtureAtlasHostRepository?: true;
   readonly forbidPayloadLint?: true;
   readonly gate: "atlas-cli";
+  readonly generatedOversizedExploreQuery?: true;
   readonly generatedOversizedIngestRequest?: true;
   readonly kind: "command";
   readonly name: string;
@@ -403,6 +405,7 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
           expectedDegradationState?: "degraded" | "not-degraded";
           fixtureAtlasHostRepository?: true;
           forbidPayloadLint?: true;
+          generatedOversizedExploreQuery?: true;
           generatedOversizedIngestRequest?: true;
           recommendedNextActionExcludes?: string;
           stderrIncludes?: string;
@@ -423,6 +426,13 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
         if (entry["forbidPayloadLint"] !== undefined) {
           assertBoolean(entry["forbidPayloadLint"], `${path}.forbidPayloadLint`);
           optional.forbidPayloadLint = true;
+        }
+        if (entry["generatedOversizedExploreQuery"] !== undefined) {
+          assertBoolean(
+            entry["generatedOversizedExploreQuery"],
+            `${path}.generatedOversizedExploreQuery`,
+          );
+          optional.generatedOversizedExploreQuery = true;
         }
         if (entry["generatedOversizedIngestRequest"] !== undefined) {
           assertBoolean(
@@ -1026,6 +1036,13 @@ for (const entry of atlasCliCorpus.cases) {
       createAdversarialAtlasRepository(repository);
       for (const [index, argument] of arguments_.entries()) {
         if (argument === "{atlasHostDirectory}") arguments_[index] = repository;
+      }
+    }
+    if (entry.generatedOversizedExploreQuery === true) {
+      for (const [index, argument] of arguments_.entries()) {
+        if (argument === "{oversizedExploreQuery}") {
+          arguments_[index] = "x".repeat(exploreCommandBudgets.maxQueryCharacters + 1);
+        }
       }
     }
     if (entry.generatedOversizedIngestRequest === true) {
