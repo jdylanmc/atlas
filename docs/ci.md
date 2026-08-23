@@ -62,6 +62,20 @@ npm ci --ignore-scripts
 npm run ci
 ```
 
+The package tarball is produced only through the explicit release path:
+
+```sh
+npm run package:pack
+```
+
+The repository keeps lifecycle scripts disabled for dependency installation, but
+`package:pack` deliberately invokes `npm pack --ignore-scripts=false` for this
+package only. That runs the local `prepack` build immediately before tarball
+creation, and the build removes `dist/` before compiling so ignored files cannot
+carry into the package. Use `npm run package:publish` for publishing for the
+same reason; bare `npm publish` is not the supported release path because the
+repository `.npmrc` suppresses lifecycle scripts by default.
+
 `npm run ci` performs deterministic Prettier checks, type-aware ESLint flat
 configuration, strict TypeScript checking with `erasableSyntaxOnly`, fail-closed
 Node.js test-runner coverage, glossary and contract vocabulary agreement,

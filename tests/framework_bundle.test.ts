@@ -149,9 +149,9 @@ test("Framework Release identity and inventory path helpers are deterministic", 
     id: "ignored",
     packageName: "@jdylanmc/atlas",
     sourceRevision: "abc123",
-    version: "0.0.0",
+    version: "0.1.0",
   });
-  assert.equal(frameworkReleaseIdentity(release), "@jdylanmc/atlas@0.0.0+abc123");
+  assert.equal(frameworkReleaseIdentity(release), "@jdylanmc/atlas@0.1.0+abc123");
   assert.deepEqual(
     inventoryPaths({
       "framework-release-manifest-schema": "1.0.0",
@@ -176,10 +176,10 @@ test("Framework Release Manifest parser rejects missing compatibility sections",
     atlasContracts: { atlasLintResult: "1.0.0", operationResult: "1.0.0" },
     declaredInventoryRoots: [...frameworkReleaseOwnedPathRoots],
     frameworkRelease: {
-      id: "@jdylanmc/atlas@0.0.0+abc123",
+      id: "@jdylanmc/atlas@0.1.0+abc123",
       packageName: "@jdylanmc/atlas",
       sourceRevision: "abc123",
-      version: "0.0.0",
+      version: "0.1.0",
     },
     inventory: [
       {
