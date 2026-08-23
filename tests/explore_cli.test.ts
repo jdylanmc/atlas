@@ -25,9 +25,10 @@ import {
   captureLocalAtlasExploreSnapshot,
   runLocalAtlasExplore,
 } from "../src/platform/local_atlas_explore.ts";
-import type {
-  TrustedGitResult,
-  runTrustedGitBytes,
+import {
+  runTrustedGitBytesWithInput,
+  runTrustedGitWithInput,
+  type TrustedGitResult,
 } from "../src/platform/trusted_git.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -174,6 +175,66 @@ test("atlas explore --machine refuses oversized queries before Atlas capture", (
     "ATLAS_EXPLORE_QUERY_TOO_LARGE",
   );
   assert.equal(result.payload.degradation.level, "blocked");
+});
+
+test("atlas explore --machine completes at the file-count budget under constrained heap", () => {
+  const repository = resolve(WORKSPACE, "max-files-atlas");
+  initAtlasRepository(repository);
+  const existingFiles = git(repository, [
+    "ls-tree",
+    "-r",
+    "--name-only",
+    "HEAD",
+    ".atlas",
+  ])
+    .split(/\n/u)
+    .filter((path) => path !== "").length;
+  const extraFiles = exploreCommandBudgets.maxFiles - existingFiles;
+  assert.ok(extraFiles > 0);
+  mkdirSync(resolve(repository, ".atlas", "many"), { recursive: true });
+  for (let index = 0; index < extraFiles; index += 1) {
+    writeFileSync(resolve(repository, ".atlas", "many", `${String(index)}.md`), "");
+  }
+  git(repository, ["add", ".atlas/many"]);
+  git(repository, [
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    "commit",
+    "-m",
+    "Reach Explore file-count budget",
+  ]);
+  assert.equal(
+    git(repository, ["ls-tree", "-r", "--name-only", "HEAD", ".atlas"])
+      .split(/\n/u)
+      .filter((path) => path !== "").length,
+    exploreCommandBudgets.maxFiles,
+  );
+
+  const started = performance.now();
+  const command = spawnSync(
+    process.execPath,
+    [
+      "--max-old-space-size=32",
+      COMMAND,
+      "explore",
+      "--machine",
+      "canonical bytes",
+      "--atlas-host-directory",
+      repository,
+    ],
+    { cwd: ROOT, encoding: "utf8", timeout: 30000 },
+  );
+  const elapsedMs = performance.now() - started;
+
+  assert.equal(command.error, undefined);
+  assert.notEqual(command.status, null, "Explore timed out before emitting a result");
+  assert.ok(command.stdout.length > 0);
+  const result = parseExploreResult(command.stdout);
+  assert.equal(result.completion, "completed");
+  assert.ok(result.payload.results.length > 0);
+  assert.ok(elapsedMs < 30000, `Explore max-file capture took ${String(elapsedMs)}ms`);
 });
 
 test("atlas explore --machine refuses too many committed Atlas files before per-file reads", () => {
@@ -341,38 +402,73 @@ test("local Explore capture fails closed on unsupported Git entries and read dri
   ): TrustedGitResult => {
     if (args[0] === "rev-parse") return { state: "succeeded", stdout: revision };
     if (args[0] === "ls-tree") return { state: "succeeded", stdout: tree };
-    if (args[0] === "cat-file") return { state: "succeeded", stdout: "5" };
     return { reason: "unexpected", state: "failed" };
   };
-  const shortBytes: typeof runTrustedGitBytes = () => ({
+  const batchCheck: typeof runTrustedGitWithInput = () => ({
     state: "succeeded",
-    stdout: new TextEncoder().encode("abcd"),
+    stdout: `${"b".repeat(40)} blob 5\n`,
+  });
+  const truncatedBatch: typeof runTrustedGitBytesWithInput = () => ({
+    state: "succeeded",
+    stdout: new TextEncoder().encode(`${"b".repeat(40)} blob 5\nabcd\n`),
   });
   assert.equal(
     captureLocalAtlasExploreSnapshot(repository, exploreCommandBudgets, {
-      readBytes: shortBytes,
+      readBatchBytes: truncatedBatch,
+      readBatchText: batchCheck,
       readText: textRunner,
     }).state,
     "unreadable",
   );
 
-  const badSize = captureLocalAtlasExploreSnapshot(repository, exploreCommandBudgets, {
-    readBytes: shortBytes,
-    readText: (_repository, args) => {
-      if (args[0] === "rev-parse") return { state: "succeeded", stdout: revision };
-      if (args[0] === "ls-tree") return { state: "succeeded", stdout: tree };
-      if (args[0] === "cat-file") return { state: "succeeded", stdout: "NaN" };
-      return { reason: "unexpected", state: "failed" };
+  const failedBatchCheck = captureLocalAtlasExploreSnapshot(
+    repository,
+    exploreCommandBudgets,
+    {
+      readBatchText: () => ({ reason: "check failed", state: "failed" }),
+      readText: textRunner,
     },
+  );
+  assert.equal(failedBatchCheck.state, "unreadable");
+
+  const incompleteBatchCheck = captureLocalAtlasExploreSnapshot(
+    repository,
+    exploreCommandBudgets,
+    {
+      readBatchText: () => ({ state: "succeeded", stdout: "" }),
+      readText: textRunner,
+    },
+  );
+  assert.equal(incompleteBatchCheck.state, "unreadable");
+
+  const malformedBatchCheck = captureLocalAtlasExploreSnapshot(
+    repository,
+    exploreCommandBudgets,
+    {
+      readBatchText: () => ({ state: "succeeded", stdout: "malformed line\n" }),
+      readText: textRunner,
+    },
+  );
+  assert.equal(malformedBatchCheck.state, "unreadable");
+
+  const badSize = captureLocalAtlasExploreSnapshot(repository, exploreCommandBudgets, {
+    readBatchText: () => ({
+      state: "succeeded",
+      stdout: `${"b".repeat(40)} blob NaN\n`,
+    }),
+    readText: textRunner,
   });
   assert.equal(badSize.state, "unreadable");
 
   const badMode = captureLocalAtlasExploreSnapshot(repository, exploreCommandBudgets, {
-    readBytes: shortBytes,
+    readBatchText: batchCheck,
     readText: (_repository, args) => {
       if (args[0] === "rev-parse") return { state: "succeeded", stdout: revision };
       if (args[0] === "ls-tree") {
-        return { state: "succeeded", stdout: `120000 blob c\t${path}\0` };
+        return {
+          state: "succeeded",
+          stdout: `120000 blob ${"b".repeat(40)}\t${path}\0`,
+        };
       }
       return { reason: "unexpected", state: "failed" };
     },
@@ -380,19 +476,17 @@ test("local Explore capture fails closed on unsupported Git entries and read dri
   assert.equal(badMode.state, "unreadable");
 
   const twoFiles = `${tree}100644 blob ${"c".repeat(40)}\t.atlas/second.md\0`;
-  const fiveBytes: typeof runTrustedGitBytes = () => ({
-    state: "succeeded",
-    stdout: new TextEncoder().encode("abcde"),
-  });
   const totalTooLarge = captureLocalAtlasExploreSnapshot(
     repository,
     { ...exploreCommandBudgets, maxFileBytes: 10, maxTotalBytes: 9 },
     {
-      readBytes: fiveBytes,
+      readBatchText: () => ({
+        state: "succeeded",
+        stdout: `${"b".repeat(40)} blob 5\n${"c".repeat(40)} blob 5\n`,
+      }),
       readText: (_repository, args) => {
         if (args[0] === "rev-parse") return { state: "succeeded", stdout: revision };
         if (args[0] === "ls-tree") return { state: "succeeded", stdout: twoFiles };
-        if (args[0] === "cat-file") return { state: "succeeded", stdout: "5" };
         return { reason: "unexpected", state: "failed" };
       },
     },
@@ -403,11 +497,51 @@ test("local Explore capture fails closed on unsupported Git entries and read dri
     repository,
     exploreCommandBudgets,
     {
-      readBytes: () => ({ reason: "read failed", state: "failed" }),
+      readBatchBytes: () => ({ reason: "read failed", state: "failed" }),
+      readBatchText: batchCheck,
       readText: textRunner,
     },
   );
   assert.equal(readFailed.state, "unreadable");
+
+  const missingBatchHeader = captureLocalAtlasExploreSnapshot(
+    repository,
+    exploreCommandBudgets,
+    {
+      readBatchBytes: () => ({ state: "succeeded", stdout: new Uint8Array() }),
+      readBatchText: batchCheck,
+      readText: textRunner,
+    },
+  );
+  assert.equal(missingBatchHeader.state, "unreadable");
+
+  const unexpectedBatchHeader = captureLocalAtlasExploreSnapshot(
+    repository,
+    exploreCommandBudgets,
+    {
+      readBatchBytes: () => ({
+        state: "succeeded",
+        stdout: new TextEncoder().encode(`${"c".repeat(40)} blob 5\nabcde\n`),
+      }),
+      readBatchText: batchCheck,
+      readText: textRunner,
+    },
+  );
+  assert.equal(unexpectedBatchHeader.state, "unreadable");
+
+  const trailingBatchData = captureLocalAtlasExploreSnapshot(
+    repository,
+    exploreCommandBudgets,
+    {
+      readBatchBytes: () => ({
+        state: "succeeded",
+        stdout: new TextEncoder().encode(`${"b".repeat(40)} blob 5\nabcde\nextra`),
+      }),
+      readBatchText: batchCheck,
+      readText: textRunner,
+    },
+  );
+  assert.equal(trailingBatchData.state, "unreadable");
 
   const statFailed = captureLocalAtlasExploreSnapshot(
     repository,
@@ -496,5 +630,21 @@ test("local Explore capture fails closed on unsupported Git entries and read dri
   assert.equal(
     unreadableResult.handoff.validationState.findings[0]?.code,
     "ATLAS_EXPLORE_ATLAS_UNREADABLE",
+  );
+});
+
+test("trusted Git batch helpers fail closed when output exceeds the declared buffer", () => {
+  assert.equal(
+    runTrustedGitWithInput(ROOT, ["rev-parse", "HEAD"], "", 1).state,
+    "failed",
+  );
+  assert.equal(
+    runTrustedGitBytesWithInput(
+      ROOT,
+      ["cat-file", "--batch"],
+      `${git(ROOT, ["rev-parse", "HEAD"])}\n`,
+      1,
+    ).state,
+    "failed",
   );
 });

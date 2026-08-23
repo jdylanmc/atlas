@@ -135,6 +135,14 @@
       "expectedCode": "ATLAS_EXPLORE_ATLAS_TOO_MANY_FILES"
     },
     {
+      "name": "reject Explore per-file Git object reads instead of batch capture",
+      "gate": "atlas-cli",
+      "kind": "source-contract",
+      "path": "src/platform/local_atlas_explore.ts",
+      "requiredText": "[\"cat-file\", \"--batch\"]",
+      "forbiddenText": "[\"show\", `${revision}:${entry.path}`]"
+    },
+    {
       "name": "reject an Explore command with invalid arguments as machine JSON",
       "gate": "atlas-cli",
       "kind": "command",
