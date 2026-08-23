@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join, resolve, sep } from "node:path";
 import test from "node:test";
 
@@ -52,6 +58,20 @@ function walkFiles(directory: string): readonly string[] {
   return paths.toSorted();
 }
 
+function packDryRun(): PackDryRun {
+  const output = execFileSync(
+    "npm",
+    ["pack", "--dry-run", "--json", "--silent", "--ignore-scripts=false"],
+    {
+      cwd: ROOT,
+      encoding: "utf8",
+    },
+  );
+  const [pack] = JSON.parse(output) as readonly PackDryRun[];
+  assert.ok(pack);
+  return pack;
+}
+
 test("package metadata declares the supported consumption contract", () => {
   const packageJson = readPackage();
 
@@ -95,12 +115,7 @@ test("package root is importable and internal subpaths are private", async () =>
 
 test("npm artifact contains only the runtime allowlist", () => {
   assert.equal(statSync(join(ROOT, "dist", "scripts", "atlas.js")).isFile(), true);
-  const output = execFileSync("npm", ["pack", "--dry-run", "--json"], {
-    cwd: ROOT,
-    encoding: "utf8",
-  });
-  const [pack] = JSON.parse(output) as readonly PackDryRun[];
-  assert.ok(pack);
+  const pack = packDryRun();
   assert.equal(pack.version, "0.1.0");
 
   const actual = pack.files.map((file) => file.path).toSorted();
@@ -128,4 +143,16 @@ test("npm artifact contains only the runtime allowlist", () => {
     actual.some((path) => path.includes("package-lock.json")),
     false,
   );
+});
+
+test("prepack rebuild removes ignored dist files before packaging", () => {
+  const injectedPath = join(ROOT, "dist", "proof-unreviewed.js");
+  writeFileSync(injectedPath, 'console.error("unreviewed");\n');
+  assert.equal(existsSync(injectedPath), true);
+
+  const pack = packDryRun();
+  const actual = pack.files.map((file) => file.path).toSorted();
+
+  assert.equal(existsSync(injectedPath), false);
+  assert.equal(actual.includes("dist/proof-unreviewed.js"), false);
 });

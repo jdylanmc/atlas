@@ -11,7 +11,7 @@
     "atlas-sdk:validate": "node scripts/atlas_sdk_agents.ts validate",
     "cacophony:sync": "node scripts/cacophony_agents.ts sync",
     "cacophony:validate": "node scripts/cacophony_agents.ts validate",
-    "ci": "npm run format:check && npm run lint && npm run typecheck && npm run package:verify-build && npm run test:coverage && npm run test:coverage:product && npm run atlas-sdk:validate && npm run vocabulary:validate && npm run cacophony:validate && npm run workflow:lint",
+    "ci": "npm run format:check && npm run lint && npm run typecheck && npm run build && npm run test:coverage && npm run test:coverage:product && npm run atlas-sdk:validate && npm run vocabulary:validate && npm run cacophony:validate && npm run workflow:lint",
     "format": "prettier --write --no-error-on-unmatched-pattern \"src/**/*.ts\" scripts tests .github/workflows docs/ci.md .cacophony/README.md package.json package-lock.json tsconfig.json tsconfig.build.json eslint.config.js prettier.config.js",
     "framework:assemble": "node scripts/framework_bundle.ts assemble --output dist/framework-bundle",
     "format:check": "prettier --check --no-error-on-unmatched-pattern \"src/**/*.ts\" scripts tests .github/workflows docs/ci.md .cacophony/README.md package.json package-lock.json tsconfig.json tsconfig.build.json eslint.config.js prettier.config.js",
@@ -23,7 +23,9 @@
     "vocabulary:validate": "node scripts/vocabulary_agreement.ts validate",
     "workflow:lint": "node scripts/run_actionlint.ts",
     "build": "node --eval \"require('node:fs').rmSync('dist', { force: true, recursive: true })\" && tsc -p tsconfig.build.json",
-    "package:verify-build": "npm run build && git diff --quiet -- dist"
+    "package:pack": "npm pack --ignore-scripts=false",
+    "package:publish": "npm publish --ignore-scripts=false",
+    "prepack": "npm run build"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
