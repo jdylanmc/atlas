@@ -234,8 +234,16 @@ function finding(
   });
 }
 
+// A Source Revision Time must be comparable, not merely well-formed. RFC 3339
+// admits leap seconds such as 1990-12-31T23:59:60Z, which the schema accepts but
+// Date.parse cannot represent. Returning the raw parse would hand NaN to the
+// freshness comparison, where every comparison is false and Stale Knowledge
+// would pass silently. Anything that does not parse to a finite instant is
+// refused here so the caller fails closed.
 function dateTimeMilliseconds(value: string): number | undefined {
-  return checkAtlasDateTime(value) ? Date.parse(value) : undefined;
+  if (!checkAtlasDateTime(value)) return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function pendingDecisions(findings: readonly Finding[]): readonly string[] {
@@ -1064,7 +1072,10 @@ function reachableEndpoints(
 // Maintainer actually approved: approval identity and time are required, exactly
 // as the sibling governance operation requires them before it mutates.
 export function validateApproval(scope: AtlasIngestScope): readonly Finding[] {
-  if (scope.approvedBy.trim() !== "" && checkAtlasDateTime(scope.approvedAt)) {
+  if (
+    scope.approvedBy.trim() !== "" &&
+    dateTimeMilliseconds(scope.approvedAt) !== undefined
+  ) {
     return [];
   }
   return [
@@ -1076,7 +1087,7 @@ export function validateApproval(scope: AtlasIngestScope): readonly Finding[] {
 }
 
 export function validateIngestScopeTime(scope: AtlasIngestScope): readonly Finding[] {
-  if (checkAtlasDateTime(scope.asOf)) return [];
+  if (dateTimeMilliseconds(scope.asOf) !== undefined) return [];
   return [
     finding(
       "ATLAS_INGEST_SCOPE_AS_OF_INVALID",
