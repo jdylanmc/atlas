@@ -1,7 +1,6 @@
 {
   "name": "@jdylanmc/atlas",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
   "engines": {
     "node": ">=24.0.0 <25",
@@ -12,17 +11,19 @@
     "atlas-sdk:validate": "node scripts/atlas_sdk_agents.ts validate",
     "cacophony:sync": "node scripts/cacophony_agents.ts sync",
     "cacophony:validate": "node scripts/cacophony_agents.ts validate",
-    "ci": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage && npm run test:coverage:product && npm run atlas-sdk:validate && npm run vocabulary:validate && npm run cacophony:validate && npm run workflow:lint",
-    "format": "prettier --write --no-error-on-unmatched-pattern \"src/**/*.ts\" scripts tests .github/workflows docs/ci.md .cacophony/README.md package.json package-lock.json tsconfig.json eslint.config.js prettier.config.js",
+    "ci": "npm run format:check && npm run lint && npm run typecheck && npm run package:verify-build && npm run test:coverage && npm run test:coverage:product && npm run atlas-sdk:validate && npm run vocabulary:validate && npm run cacophony:validate && npm run workflow:lint",
+    "format": "prettier --write --no-error-on-unmatched-pattern \"src/**/*.ts\" scripts tests .github/workflows docs/ci.md .cacophony/README.md package.json package-lock.json tsconfig.json tsconfig.build.json eslint.config.js prettier.config.js",
     "framework:assemble": "node scripts/framework_bundle.ts assemble --output dist/framework-bundle",
-    "format:check": "prettier --check --no-error-on-unmatched-pattern \"src/**/*.ts\" scripts tests .github/workflows docs/ci.md .cacophony/README.md package.json package-lock.json tsconfig.json eslint.config.js prettier.config.js",
+    "format:check": "prettier --check --no-error-on-unmatched-pattern \"src/**/*.ts\" scripts tests .github/workflows docs/ci.md .cacophony/README.md package.json package-lock.json tsconfig.json tsconfig.build.json eslint.config.js prettier.config.js",
     "lint": "eslint --no-error-on-unmatched-pattern \"src/**/*.ts\" scripts tests",
     "test:coverage": "c8 --all --include \"scripts/**/*.ts\" --check-coverage --lines 78 --functions 93 --branches 68 --statements 78 node --test tests/*.test.ts",
     "test:coverage:product": "c8 --all --include \"src/**/*.ts\" --check-coverage --100 node --test tests/*.test.ts",
     "test:unit": "node --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "vocabulary:validate": "node scripts/vocabulary_agreement.ts validate",
-    "workflow:lint": "node scripts/run_actionlint.ts"
+    "workflow:lint": "node scripts/run_actionlint.ts",
+    "build": "node --eval \"require('node:fs').rmSync('dist', { force: true, recursive: true })\" && tsc -p tsconfig.build.json",
+    "package:verify-build": "npm run build && git diff --quiet -- dist"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -45,6 +46,21 @@
     "yaml": "2.9.0"
   },
   "bin": {
-    "atlas": "./scripts/atlas.ts"
-  }
+    "atlas": "./dist/scripts/atlas_bin.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "README.md",
+    "dist/**/*.d.ts",
+    "dist/**/*.js"
+  ]
 }
