@@ -1,0 +1,13 @@
+{
+  "ingest-scope-schema": "1.0.0",
+  "approvedAt": "2026-08-22T00:00:00Z",
+  "approvedBy": "Fixture Maintainer",
+  "asOf": "not-a-date",
+  "authority": "official",
+  "entryPoint": "docs",
+  "excludedPaths": ["docs/private"],
+  "freshnessWindowDays": 30,
+  "includedPaths": ["docs"],
+  "maxDepth": 4,
+  "sourceId": "source:readme"
+}

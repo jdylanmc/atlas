@@ -524,6 +524,20 @@ test("An empty Candidate Graph records no Source and is rejected", () => {
   assert.ok(codes(findings).includes("ATLAS_INGEST_SOURCE_REQUIRED"));
 });
 
+test("Invalid Ingest Scope timestamps are rejected before emission", () => {
+  const badApproval = validateCandidateGraph(
+    request({ scope: scope({ approvedAt: "not-a-date" }) }),
+    baseFilesDefault,
+  );
+  assert.ok(codes(badApproval).includes("ATLAS_INGEST_APPROVAL_REQUIRED"));
+
+  const badAsOf = validateCandidateGraph(
+    request({ scope: scope({ asOf: "not-a-date" }) }),
+    baseFilesDefault,
+  );
+  assert.ok(codes(badAsOf).includes("ATLAS_INGEST_SCOPE_AS_OF_INVALID"));
+});
+
 test("An unrecognized Source Authority class in the Ingest Scope is rejected", () => {
   const findings = validateCandidateGraph(
     request({ scope: scope({ authority: "rumor" as AtlasIngestScope["authority"] }) }),
@@ -1033,15 +1047,13 @@ test("Stale Knowledge surfaces as a non-blocking warning that completes the prop
   assert.equal(result.handoff.unresolvedHumanDecisions.state, "none");
 });
 
-test("Stale detection skips when the observation time or revision time is not comparable", () => {
+test("Stale detection fails closed when timestamps are not comparable", () => {
   const badAsOf = validateCandidateGraph(
     request({ scope: scope({ asOf: "not-a-date" }) }),
     baseFilesDefault,
   );
-  assert.equal(
-    codes(badAsOf).filter((code) => code === "ATLAS_INGEST_SOURCE_STALE").length,
-    0,
-  );
+  assert.ok(codes(badAsOf).includes("ATLAS_INGEST_SCOPE_AS_OF_INVALID"));
+
   const badRevision = validateCandidateGraph(
     request({
       candidateGraph: graph({
@@ -1050,9 +1062,24 @@ test("Stale detection skips when the observation time or revision time is not co
     }),
     baseFilesDefault,
   );
-  assert.equal(
-    codes(badRevision).filter((code) => code === "ATLAS_INGEST_SOURCE_STALE").length,
-    0,
+  assert.ok(codes(badRevision).includes("ATLAS_INGEST_SOURCE_REVISION_TIME_INVALID"));
+
+  const badRevisionAndId = validateCandidateGraph(
+    request({
+      candidateGraph: graph({
+        sources: Object.freeze([
+          source({ id: "source:Not Valid", revisionTime: "not-a-date" }),
+        ]),
+      }),
+    }),
+    baseFilesDefault,
+  );
+  assert.ok(
+    badRevisionAndId.some(
+      (finding) =>
+        finding.code === "ATLAS_INGEST_SOURCE_REVISION_TIME_INVALID" &&
+        finding.path === ".atlas/sources/unknown.md",
+    ),
   );
 });
 

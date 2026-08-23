@@ -230,6 +230,10 @@ function finding(
   });
 }
 
+function isDateTime(value: string): boolean {
+  return value.trim() !== "" && !Number.isNaN(Date.parse(value));
+}
+
 function pendingDecisions(findings: readonly Finding[]): readonly string[] {
   const decisions: string[] = [];
   for (const entry of findings) {
@@ -584,15 +588,6 @@ function validateSources(
         ),
       );
     }
-    if (Number.isNaN(Date.parse(source.revisionTime))) {
-      findings.push(
-        finding(
-          "ATLAS_INGEST_SOURCE_REVISION_TIME_INVALID",
-          "A Source Revision Time must be a comparable date-time asserted by the cited revision.",
-          path,
-        ),
-      );
-    }
     if (!isCanonicalLocator(source.locator)) {
       findings.push(
         finding(
@@ -889,10 +884,27 @@ function staleFindings(
 ): readonly Finding[] {
   const findings: Finding[] = [];
   const asOf = Date.parse(scope.asOf);
-  if (Number.isNaN(asOf)) return findings;
+  if (Number.isNaN(asOf)) {
+    findings.push(
+      finding(
+        "ATLAS_INGEST_SCOPE_AS_OF_INVALID",
+        "An Ingest Scope asOf value must be a date-time so Stale Knowledge checks and emitted Atlas page timestamps are deterministic.",
+      ),
+    );
+    return findings;
+  }
   for (const source of graph.sources) {
     const revised = Date.parse(source.revisionTime);
-    if (Number.isNaN(revised)) continue;
+    if (Number.isNaN(revised)) {
+      findings.push(
+        finding(
+          "ATLAS_INGEST_SOURCE_REVISION_TIME_INVALID",
+          "A Source Revision Time must be a comparable date-time asserted by the cited revision.",
+          `.atlas/sources/${slugForId(source.id, "source") ?? "unknown"}.md`,
+        ),
+      );
+      continue;
+    }
     const elapsedDays = (asOf - revised) / 86_400_000;
     // The approved Ingest Scope caps freshness: a crawler-asserted refresh
     // window may be shorter but never outlast the window the human approved.
@@ -1048,13 +1060,23 @@ function reachableEndpoints(
 // Maintainer actually approved: approval identity and time are required, exactly
 // as the sibling governance operation requires them before it mutates.
 export function validateApproval(scope: AtlasIngestScope): readonly Finding[] {
-  if (scope.approvedBy.trim() !== "" && scope.approvedAt.trim() !== "") {
+  if (scope.approvedBy.trim() !== "" && isDateTime(scope.approvedAt)) {
     return [];
   }
   return [
     finding(
       "ATLAS_INGEST_APPROVAL_REQUIRED",
-      "Ingest requires explicit Maintainer approval identity and time before it derives knowledge within the approved Ingest Scope.",
+      "Ingest requires explicit Maintainer approval identity and date-time before it derives knowledge within the approved Ingest Scope.",
+    ),
+  ];
+}
+
+export function validateIngestScopeTime(scope: AtlasIngestScope): readonly Finding[] {
+  if (isDateTime(scope.asOf)) return [];
+  return [
+    finding(
+      "ATLAS_INGEST_SCOPE_AS_OF_INVALID",
+      "An Ingest Scope asOf value must be a date-time so Stale Knowledge checks and emitted Atlas page timestamps are deterministic.",
     ),
   ];
 }
@@ -1069,6 +1091,7 @@ export function validateCandidateGraph(
   const reachable = reachableEndpoints(graph, existing);
   const findings: Finding[] = [];
   findings.push(...validateApproval(scope));
+  findings.push(...staleFindings(graph, scope));
   findings.push(...collisionFindings(graph, scope, existing));
   if (!isSourceAuthority(scope.authority)) {
     findings.push(
@@ -1090,7 +1113,6 @@ export function validateCandidateGraph(
   findings.push(...validateConcepts(graph, scope, sources, existing, reachable));
   findings.push(...validateEdges(graph, scope, sources, existing));
   findings.push(...validateDisputes(graph, sources));
-  findings.push(...staleFindings(graph, scope));
   return Object.freeze(
     findings.toSorted((left, right) => {
       const path = compareCodePoints(left.path, right.path);

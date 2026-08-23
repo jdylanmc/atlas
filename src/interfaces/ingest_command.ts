@@ -2,6 +2,7 @@ import type { Finding } from "../domain/finding.ts";
 import {
   isSourceAuthority,
   validateApproval,
+  validateIngestScopeTime,
   type AtlasIngestCandidateCitation,
   type AtlasIngestCandidateConcept,
   type AtlasIngestCandidateContradiction,
@@ -44,6 +45,10 @@ export const ingestCommandExitCodes = Object.freeze({
   success: 0,
   usage: 64,
 } as const);
+
+export const ingestCommandInputBudgets = Object.freeze({
+  maxFileBytes: 1024 * 1024,
+});
 
 const trustedAttribution = Object.freeze({
   checkId: "sdk-core.atlas-ingest-command",
@@ -142,6 +147,16 @@ export function invalidInputIngestOperationResult(message: string): AtlasIngestR
     [ingestFinding("ATLAS_INGEST_INPUT_INVALID", message)],
     "Ingest command input did not type-check as an Ingest Scope or Candidate Graph.",
     "Correct the typed Ingest input so every field matches the accepted shape, then retry.",
+  );
+}
+
+export function oversizedInputIngestOperationResult(
+  message: string,
+): AtlasIngestResult {
+  return notCompletedIngestResult(
+    [ingestFinding("ATLAS_INGEST_INPUT_TOO_LARGE", message)],
+    "Ingest command input exceeded the JSON byte budget before it could be read.",
+    "Reduce the Ingest input JSON to the supported byte budget, then retry.",
   );
 }
 
@@ -450,6 +465,17 @@ export function planCrawlAssignment(scope: AtlasIngestScope): AtlasIngestPlanOut
       state: "refused",
     };
   }
+  const timestampFindings = validateIngestScopeTime(scope);
+  if (timestampFindings.length > 0) {
+    return {
+      result: notCompletedIngestResult(
+        timestampFindings,
+        "Ingest refused to hand out a Crawl Assignment with an invalid Ingest Scope time.",
+        "Record a date-time as the Ingest Scope asOf value, then plan again.",
+      ),
+      state: "refused",
+    };
+  }
   const assignment: AtlasIngestCrawlAssignment = Object.freeze({
     [crawlAssignmentBrand]: true as const,
     "crawl-assignment-schema": "1.0.0" as const,
@@ -509,7 +535,7 @@ export function serializeIngestMachineResult(result: AtlasIngestResult): string 
 export function exitCodeForIngestPlanOutcome(outcome: AtlasIngestPlanOutcome): number {
   return outcome.state === "assigned"
     ? ingestCommandExitCodes.success
-    : ingestCommandExitCodes.approvalRequired;
+    : exitCodeForIngestOperationResult(outcome.result);
 }
 
 export function exitCodeForIngestOperationResult(result: AtlasIngestResult): number {
@@ -519,7 +545,11 @@ export function exitCodeForIngestOperationResult(result: AtlasIngestResult): num
   const codes = new Set(
     result.handoff.validationState.findings.map((finding) => finding.code),
   );
-  if (codes.has("ATLAS_INGEST_USAGE") || codes.has("ATLAS_INGEST_INPUT_INVALID")) {
+  if (
+    codes.has("ATLAS_INGEST_USAGE") ||
+    codes.has("ATLAS_INGEST_INPUT_INVALID") ||
+    codes.has("ATLAS_INGEST_INPUT_TOO_LARGE")
+  ) {
     return ingestCommandExitCodes.usage;
   }
   if (codes.has("ATLAS_INGEST_APPROVAL_REQUIRED")) {

@@ -15,6 +15,7 @@ import {
   correspondenceRefusalResult,
   exitCodeForIngestOperationResult,
   ingestCommandExitCodes,
+  ingestCommandInputBudgets,
   parseIngestRequest,
   parseIngestScope,
   planCrawlAssignment,
@@ -117,6 +118,97 @@ test("atlas ingest plan emits a Crawler assignment only for an approved Ingest S
   assert.equal(assignment["sourceId"], "source:readme");
   assert.equal(assignment["approvedBy"], "Fixture Maintainer");
   assert.equal(assignment["refreshWindowDays"], 30);
+});
+
+test("atlas ingest plan refuses invalid approval and Ingest Scope timestamps", () => {
+  const badApproval = runAtlas([
+    "ingest",
+    "plan",
+    "--machine",
+    "--ingest-scope",
+    fixtureJson("scope-bad-approved-at.json"),
+  ]);
+  assert.equal(badApproval.status, ingestCommandExitCodes.approvalRequired);
+  assert.equal(
+    parseIngestResult(badApproval.stdout).handoff.validationState.findings[0]?.code,
+    "ATLAS_INGEST_APPROVAL_REQUIRED",
+  );
+
+  const badAsOf = runAtlas([
+    "ingest",
+    "plan",
+    "--machine",
+    "--ingest-scope",
+    fixtureJson("scope-bad-asof.json"),
+  ]);
+  assert.equal(badAsOf.status, ingestCommandExitCodes.operationFailed);
+  assert.equal(
+    parseIngestResult(badAsOf.stdout).handoff.validationState.findings[0]?.code,
+    "ATLAS_INGEST_SCOPE_AS_OF_INVALID",
+  );
+});
+
+test("atlas ingest reconcile refuses invalid Ingest Scope and Source timestamps", () => {
+  const badAsOfRepository = resolve(WORKSPACE, "bad-asof");
+  initAtlasRepository(badAsOfRepository);
+  const badAsOf = runAtlas([
+    "ingest",
+    "reconcile",
+    "--machine",
+    "--ingest-request",
+    fixtureJson("request-bad-asof.json"),
+    "--atlas-host-directory",
+    badAsOfRepository,
+  ]);
+  assert.equal(badAsOf.status, ingestCommandExitCodes.operationFailed);
+  assert.equal(
+    parseIngestResult(badAsOf.stdout).handoff.validationState.findings[0]?.code,
+    "ATLAS_INGEST_SCOPE_AS_OF_INVALID",
+  );
+
+  const badRevisionRepository = resolve(WORKSPACE, "bad-revision-time");
+  initAtlasRepository(badRevisionRepository);
+  const badRevisionTime = runAtlas([
+    "ingest",
+    "reconcile",
+    "--machine",
+    "--ingest-request",
+    fixtureJson("request-bad-revision-time.json"),
+    "--atlas-host-directory",
+    badRevisionRepository,
+  ]);
+  assert.equal(badRevisionTime.status, ingestCommandExitCodes.operationFailed);
+  assert.equal(
+    parseIngestResult(badRevisionTime.stdout).handoff.validationState.findings[0]?.code,
+    "ATLAS_INGEST_SOURCE_REVISION_TIME_INVALID",
+  );
+});
+
+test("atlas ingest reconcile refuses oversized JSON before reading it", () => {
+  const repository = resolve(WORKSPACE, "oversized-request");
+  initAtlasRepository(repository);
+  const path = resolve(WORKSPACE, "oversized-request.json");
+  writeFileSync(
+    path,
+    `{"padding":"${"x".repeat(ingestCommandInputBudgets.maxFileBytes)}"}`,
+  );
+
+  const command = runAtlas([
+    "ingest",
+    "reconcile",
+    "--machine",
+    "--ingest-request",
+    path,
+    "--atlas-host-directory",
+    repository,
+  ]);
+
+  assert.equal(command.status, ingestCommandExitCodes.usage);
+  assert.equal(command.stderr, "");
+  assert.equal(
+    parseIngestResult(command.stdout).handoff.validationState.findings[0]?.code,
+    "ATLAS_INGEST_INPUT_TOO_LARGE",
+  );
 });
 
 test("atlas ingest reconcile pauses scope expansion as a human decision", () => {

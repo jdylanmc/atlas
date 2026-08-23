@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** Atlas command-line interface. */
 
-import { lstatSync, readdirSync, readFileSync, type Dirent } from "node:fs";
+import { lstatSync, readFileSync, readdirSync, statSync, type Dirent } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -30,11 +30,13 @@ import {
   exitCodeForIngestOperationResult,
   exitCodeForIngestPlanOutcome,
   ingestCommandExitCodes,
+  ingestCommandInputBudgets,
   ingestCommandUsage,
   ingestPlanCommandUsage,
   ingestReconcileCommandUsage,
   invalidInputIngestOperationResult,
   parseIngestRequest,
+  oversizedInputIngestOperationResult,
   parseIngestScope,
   planCrawlAssignment,
   serializeCrawlAssignmentMachineResult,
@@ -73,6 +75,7 @@ type ParsedIngestCommand = ParsedIngestPlanCommand | ParsedIngestReconcileComman
 class UsageError extends Error {}
 class MissingAtlasError extends Error {}
 class UnreadableAtlasError extends Error {}
+class IngestInputBudgetError extends Error {}
 export class CaptureBudgetError extends Error {
   readonly capturedFiles: readonly LintCommandCapturedFile[];
 
@@ -446,18 +449,40 @@ function parseIngestReconcileCommand(
   };
 }
 
-function readJsonFile(path: string): unknown {
-  return JSON.parse(readFileSync(resolve(path), "utf8")) as unknown;
+function readJsonFile(path: string, maxFileBytes?: number): unknown {
+  const absolutePath = resolve(path);
+  if (maxFileBytes !== undefined) {
+    const stat = statSync(absolutePath);
+    if (!stat.isFile() || stat.size > maxFileBytes) {
+      throw new IngestInputBudgetError(
+        `Ingest input exceeds the ${String(maxFileBytes)} byte budget.`,
+      );
+    }
+    const bytes = readFileSync(absolutePath);
+    if (bytes.byteLength > maxFileBytes) {
+      throw new IngestInputBudgetError(
+        `Ingest input exceeds the ${String(maxFileBytes)} byte budget.`,
+      );
+    }
+    return JSON.parse(bytes.toString("utf8")) as unknown;
+  }
+  return JSON.parse(readFileSync(absolutePath, "utf8")) as unknown;
 }
 
 function mainIngestPlan(command: ParsedIngestPlanCommand): number {
   let input: unknown;
   try {
-    input = readJsonFile(command.ingestScopePath);
-  } catch {
-    const result = invalidInputIngestOperationResult(
-      "The Ingest Scope file could not be read as JSON.",
+    input = readJsonFile(
+      command.ingestScopePath,
+      ingestCommandInputBudgets.maxFileBytes,
     );
+  } catch (error: unknown) {
+    const result =
+      error instanceof IngestInputBudgetError
+        ? oversizedInputIngestOperationResult(error.message)
+        : invalidInputIngestOperationResult(
+            "The Ingest Scope file could not be read as JSON.",
+          );
     process.stdout.write(serializeIngestMachineResult(result));
     return exitCodeForIngestOperationResult(result);
   }
@@ -478,11 +503,17 @@ function mainIngestPlan(command: ParsedIngestPlanCommand): number {
 function mainIngestReconcile(command: ParsedIngestReconcileCommand): number {
   let input: unknown;
   try {
-    input = readJsonFile(command.ingestRequestPath);
-  } catch {
-    const result = invalidInputIngestOperationResult(
-      "The Ingest request file could not be read as JSON.",
+    input = readJsonFile(
+      command.ingestRequestPath,
+      ingestCommandInputBudgets.maxFileBytes,
     );
+  } catch (error: unknown) {
+    const result =
+      error instanceof IngestInputBudgetError
+        ? oversizedInputIngestOperationResult(error.message)
+        : invalidInputIngestOperationResult(
+            "The Ingest request file could not be read as JSON.",
+          );
     process.stdout.write(serializeIngestMachineResult(result));
     return exitCodeForIngestOperationResult(result);
   }

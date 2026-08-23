@@ -186,6 +186,75 @@
       "forbidPayloadLint": true
     },
     {
+      "name": "reject an Ingest plan whose approval time is not a date-time",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "ingest",
+        "plan",
+        "--machine",
+        "--ingest-scope",
+        "tests/fixtures/ingest/scope-bad-approved-at.json"
+      ],
+      "expectedExit": 4,
+      "expectedCode": "ATLAS_INGEST_APPROVAL_REQUIRED",
+      "forbidPayloadLint": true
+    },
+    {
+      "name": "reject an Ingest reconcile whose Ingest Scope asOf is not a date-time",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "ingest",
+        "reconcile",
+        "--machine",
+        "--ingest-request",
+        "tests/fixtures/ingest/request-bad-asof.json",
+        "--atlas-host-directory",
+        "{atlasHostDirectory}"
+      ],
+      "fixtureAtlasHostRepository": true,
+      "expectedExit": 1,
+      "expectedCode": "ATLAS_INGEST_SCOPE_AS_OF_INVALID",
+      "forbidPayloadLint": true
+    },
+    {
+      "name": "reject an Ingest reconcile whose Source Revision Time is not a date-time",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "ingest",
+        "reconcile",
+        "--machine",
+        "--ingest-request",
+        "tests/fixtures/ingest/request-bad-revision-time.json",
+        "--atlas-host-directory",
+        "{atlasHostDirectory}"
+      ],
+      "fixtureAtlasHostRepository": true,
+      "expectedExit": 1,
+      "expectedCode": "ATLAS_INGEST_SOURCE_REVISION_TIME_INVALID",
+      "forbidPayloadLint": true
+    },
+    {
+      "name": "reject an oversized Ingest request before reading JSON",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "ingest",
+        "reconcile",
+        "--machine",
+        "--ingest-request",
+        "{oversizedIngestRequest}",
+        "--atlas-host-directory",
+        "tests/fixtures/complete-atlas"
+      ],
+      "generatedOversizedIngestRequest": true,
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_INGEST_INPUT_TOO_LARGE",
+      "forbidPayloadLint": true
+    },
+    {
       "name": "reject an Ingest reconcile whose Candidate Graph omits the approved Source",
       "gate": "atlas-cli",
       "kind": "command",
