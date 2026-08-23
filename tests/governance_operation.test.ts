@@ -601,6 +601,38 @@ test("Governance proves every deterministic input gate can fail with specific co
   }
 });
 
+test("Governance refuses unsafe change paths through the one shared path rule", () => {
+  const workflowState = state();
+  // Control characters and bidirectional overrides pass a naive prefix/segment
+  // check but rewrite what a terminal or log renders. The shared
+  // normalizeAtlasTextPath rule refuses them before any mutation, so they are
+  // never written or committed to a proposal branch.
+  for (const unsafePath of [
+    ".atlas/ev\u202eil.md",
+    ".atlas/ev\nil.md",
+    ".atlas/ev\u0000il.md",
+    ".atlas/ev\u2066il.md",
+  ]) {
+    const codes = validateAtlasGovernanceChangeSet(
+      workflowState,
+      request({
+        changeSet: changeSet(workflowState, [
+          {
+            content: "# Changelog\n\n- governance-op-80: Change.\n",
+            path: ".atlas/CHANGELOG.md",
+          },
+          { content: "unsafe", path: unsafePath },
+        ]),
+      }),
+    ).map((entry) => entry.code);
+    assert.equal(
+      codes.includes("ATLAS_GOVERNANCE_CHANGE_SET_PATH_INVALID"),
+      true,
+      unsafePath,
+    );
+  }
+});
+
 test("Governance rejects Principle and Atlas Policy correspondence violations", () => {
   const workflowState = state();
   const basePrinciple = page(
@@ -1116,6 +1148,8 @@ test("the adversarial governance corpus maps to enforced gates", () => {
       ["governance", "semantic", "ATLAS_GOVERNANCE_POLICY_IDENTITY_CHANGED"],
       ["governance", "semantic", "ATLAS_GOVERNANCE_SEMANTIC_VERDICT_FAILED"],
       ["governance", "semantic", "ATLAS_GOVERNANCE_RESUME_CHANGE_SET_MISMATCH"],
+      ["governance", "semantic", "ATLAS_GOVERNANCE_PRINCIPLE_TRUTH_REQUIRED"],
+      ["governance", "semantic", "ATLAS_GOVERNANCE_POLICY_DOCTRINE_UNSUPPORTED"],
     ],
   );
 });

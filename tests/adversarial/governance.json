@@ -79,6 +79,18 @@
       "gate": "governance",
       "kind": "semantic",
       "expectedCode": "ATLAS_GOVERNANCE_RESUME_CHANGE_SET_MISMATCH"
+    },
+    {
+      "name": "amend-that-empties-active-truths-is-rejected",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_PRINCIPLE_TRUTH_REQUIRED"
+    },
+    {
+      "name": "policy-mutation-without-any-verdict-is-rejected",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_POLICY_DOCTRINE_UNSUPPORTED"
     }
   ]
 }

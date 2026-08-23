@@ -1,5 +1,9 @@
-import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
+import {
+  normalizeAtlasTextPath,
+  type CapturedAtlasFile,
+} from "../atlas/load_atlas_text.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
+import { dateTimeMilliseconds } from "../domain/atlas_page.ts";
 import {
   addReceipt,
   canContinue,
@@ -239,15 +243,19 @@ function result(
   });
 }
 
+// The one shared path rule the product enforces. A governance Change Set may
+// write only a path that is already in canonical `.atlas/` form: no leading
+// slash, no backslash, no `.`/`..`/empty segment, and — the clause a hand-rolled
+// check omitted — none of the control characters or bidirectional overrides
+// normalizeAtlasTextPath refuses, which otherwise pass this pre-mutation gate and
+// are written and committed before Lint catches them. Requiring the input to
+// equal its own normalization keeps one rule instead of two that approximate it.
 function pathIsCanonicalAtlasPath(path: string): boolean {
-  return (
-    path.startsWith(".atlas/") &&
-    !path.startsWith("/") &&
-    !path.includes("\\") &&
-    !path
-      .split("/")
-      .some((segment) => segment === "" || segment === "." || segment === "..")
-  );
+  try {
+    return normalizeAtlasTextPath(path) === path;
+  } catch {
+    return false;
+  }
 }
 
 function evidencePath(reference: string): string | undefined {
@@ -420,14 +428,14 @@ function validateApproval(request: AtlasGovernanceRequest): readonly Finding[] {
   if (request.action === "verify") return Object.freeze([]);
   if (
     (request.approvedBy ?? "").trim() !== "" &&
-    (request.approvedAt ?? "").trim() !== ""
+    dateTimeMilliseconds(request.approvedAt ?? "") !== undefined
   ) {
     return Object.freeze([]);
   }
   return Object.freeze([
     finding(
       "ATLAS_GOVERNANCE_APPROVAL_REQUIRED",
-      "Principle and Atlas Policy maintenance requires explicit Maintainer approval metadata.",
+      "Principle and Atlas Policy maintenance requires an explicit Maintainer approver and a comparable date-time approval instant.",
     ),
   ]);
 }

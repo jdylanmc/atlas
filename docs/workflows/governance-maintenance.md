@@ -19,3 +19,10 @@ Do not delete governance knowledge. To remove force, retire or amend the
 Principle or Atlas Policy, invalidate affected truths, reconcile dependent
 relationships and governance markers, append an operation-identified Atlas
 Changelog entry, run full Lint, and wait for human approval before merge.
+
+The deterministic command seam for this workflow is `atlas govern --machine
+--request PATH [--atlas-host-directory PATH]`. Author the request as JSON with
+the action, subject, the Maintainer approval metadata, the Atlas Change Set, and
+any semantic Policy verdict. The command validates and commits one reviewable
+Atlas Proposal; it never supplies approval or a verdict itself, so an agent may
+propose but never establish a Principle or Atlas Policy autonomously.
