@@ -528,7 +528,10 @@ export function exitCodeForIngestOperationResult(result: AtlasIngestResult): num
   if (result.handoff.unresolvedHumanDecisions.state === "pending") {
     return ingestCommandExitCodes.scopeAwaitingApproval;
   }
-  if (codes.has("ATLAS_INGEST_RUNTIME_FAILED")) {
+  if (
+    codes.has("ATLAS_INGEST_RUNTIME_FAILED") ||
+    codes.has("ATLAS_INGEST_CAPTURE_FAILED")
+  ) {
     return ingestCommandExitCodes.operationNotCompleted;
   }
   return ingestCommandExitCodes.operationFailed;

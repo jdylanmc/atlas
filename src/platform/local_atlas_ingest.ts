@@ -125,6 +125,17 @@ function statePath(repository: string, proposalBranch: string): string {
   return join(workspacePath(repository, proposalBranch), ".atlas-operation-state.json");
 }
 
+function materializeCapturedAtlasFiles(
+  workspace: string,
+  files: readonly CapturedAtlasFile[],
+): void {
+  for (const file of files) {
+    const path = join(workspace, file.path);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, file.bytes);
+  }
+}
+
 function writeStateAtomically(
   repository: string,
   state: AtlasIngestWorkflowState,
@@ -294,6 +305,7 @@ export function runLocalAtlasIngest(
       const gitDirectoryPath = resolve(workspace, gitDirectory);
       mkdirSync(join(gitDirectoryPath, "info"), { recursive: true });
       gitWrite(workspace, ["read-tree", workflowState.targetHead]);
+      materializeCapturedAtlasFiles(workspace, capturedAtlasFiles(root));
       return { receipt: workflowState.proposalBranch };
     },
     currentBaseSnapshotDigest: () =>

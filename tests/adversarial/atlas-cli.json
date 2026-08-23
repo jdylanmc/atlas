@@ -203,6 +203,14 @@
       "forbidPayloadLint": true
     },
     {
+      "name": "reject collapsing Ingest scope-expansion pauses into operation failures",
+      "gate": "atlas-cli",
+      "kind": "source-contract",
+      "path": "src/interfaces/ingest_command.ts",
+      "requiredText": "result.handoff.unresolvedHumanDecisions.state === \"pending\"",
+      "forbiddenText": "return ingestCommandExitCodes.operationFailed;\n  if (result.handoff.unresolvedHumanDecisions.state === \"pending\")"
+    },
+    {
       "name": "reject an Ingest reconcile input that does not type-check",
       "gate": "atlas-cli",
       "kind": "command",
