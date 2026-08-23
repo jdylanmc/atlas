@@ -26,6 +26,15 @@ import {
   usageLintOperationResult,
 } from "../src/interfaces/lint_command.ts";
 import {
+  exitCodeForExploreOperationResult,
+  exploreCommandBudgets,
+  exploreCommandExitCodes,
+  exploreCommandUsage,
+  oversizedQueryExploreOperationResult,
+  serializeExploreMachineResult,
+  usageExploreOperationResult,
+} from "../src/interfaces/explore_command.ts";
+import {
   correspondenceRefusalResult,
   exitCodeForIngestOperationResult,
   exitCodeForIngestPlanOutcome,
@@ -45,6 +54,7 @@ import {
   validateRequestCorrespondence,
 } from "../src/interfaces/ingest_command.ts";
 import { runLocalAtlasIngest } from "../src/platform/local_atlas_ingest.ts";
+import { runLocalAtlasExplore } from "../src/platform/local_atlas_explore.ts";
 
 interface ParsedLintCommand {
   readonly atlasHostDirectory: string;
@@ -55,6 +65,12 @@ interface ParsedInitializeCommand {
   readonly atlasHostDirectory: string;
   readonly machine: true;
   readonly resumeProposalBranch?: string;
+}
+
+interface ParsedExploreCommand {
+  readonly atlasHostDirectory: string;
+  readonly machine: true;
+  readonly query: string;
 }
 
 interface ParsedIngestPlanCommand {
@@ -356,6 +372,70 @@ function mainInitialize(arguments_: readonly string[]): number {
   return exitCodeForInitializeOperationResult(result);
 }
 
+function parseExploreCommand(arguments_: readonly string[]): ParsedExploreCommand {
+  let machine = false;
+  let atlasHostDirectory = ".";
+  let query: string | undefined;
+  let machineSeen = false;
+  let atlasHostDirectorySeen = false;
+  for (let index = 1; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === undefined) throw new UsageError(exploreCommandUsage);
+    if (argument === "--machine") {
+      if (machineSeen) throw new UsageError(exploreCommandUsage);
+      machine = true;
+      machineSeen = true;
+      continue;
+    }
+    if (argument === "--atlas-host-directory") {
+      if (atlasHostDirectorySeen) throw new UsageError(exploreCommandUsage);
+      const value = arguments_[index + 1];
+      if (value === undefined || value.startsWith("--")) {
+        throw new UsageError(exploreCommandUsage);
+      }
+      atlasHostDirectory = value;
+      atlasHostDirectorySeen = true;
+      index += 1;
+      continue;
+    }
+    if (argument.startsWith("--") || query !== undefined) {
+      throw new UsageError(exploreCommandUsage);
+    }
+    query = argument;
+  }
+  if (!machine || query === undefined || query.trim() === "") {
+    throw new UsageError(exploreCommandUsage);
+  }
+  return { atlasHostDirectory, machine: true, query };
+}
+
+function mainExplore(arguments_: readonly string[]): number {
+  let command: ParsedExploreCommand;
+  try {
+    command = parseExploreCommand(arguments_);
+  } catch (error: unknown) {
+    if (!(error instanceof UsageError)) throw error;
+    const result = usageExploreOperationResult(error.message);
+    process.stdout.write(serializeExploreMachineResult(result));
+    console.error(error.message);
+    return exploreCommandExitCodes.usage;
+  }
+  if (command.query.length > exploreCommandBudgets.maxQueryCharacters) {
+    const result = oversizedQueryExploreOperationResult(
+      "Explore query exceeds the declared character budget.",
+    );
+    process.stdout.write(serializeExploreMachineResult(result));
+    return exitCodeForExploreOperationResult(result);
+  }
+  const result = runLocalAtlasExplore(
+    command.atlasHostDirectory,
+    command.query,
+    exploreCommandBudgets,
+  );
+  process.stdout.write(serializeExploreMachineResult(result));
+  return exitCodeForExploreOperationResult(result);
+}
+
 function parseIngestCommand(arguments_: readonly string[]): ParsedIngestCommand {
   const subcommand = arguments_[1];
   if (subcommand === "plan") return parseIngestPlanCommand(arguments_);
@@ -552,6 +632,7 @@ function mainIngest(arguments_: readonly string[]): number {
 export function main(arguments_: readonly string[]): number {
   if (arguments_[0] === "lint") return mainLint(arguments_);
   if (arguments_[0] === "initialize") return mainInitialize(arguments_);
+  if (arguments_[0] === "explore") return mainExplore(arguments_);
   if (arguments_[0] === "ingest") return mainIngest(arguments_);
   console.error(lintCommandUsage);
   return lintCommandExitCodes.usage;

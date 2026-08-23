@@ -18,6 +18,13 @@ export type TrustedGitResult =
       readonly state: "succeeded";
     };
 
+export type TrustedGitBytesResult =
+  | { readonly reason: string; readonly state: "failed" }
+  | {
+      readonly stdout: Uint8Array;
+      readonly state: "succeeded";
+    };
+
 function trustedGitEnvironment(repository: string): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {
     GIT_CONFIG: "/dev/null",
@@ -39,40 +46,63 @@ function trustedGitEnvironment(repository: string): NodeJS.ProcessEnv {
   return environment;
 }
 
+function failedGitResult(): { readonly reason: string; readonly state: "failed" } {
+  return Object.freeze({
+    reason: "Git failed while running in the trusted platform adapter.",
+    state: "failed" as const,
+  });
+}
+
 function runGit(repository: string, args: readonly string[]): TrustedGitResult {
   const result = spawnSync(trustedGitExecutable, ["-C", repository, ...args], {
     encoding: "utf8",
     env: trustedGitEnvironment(repository),
     maxBuffer: 16 * 1024 * 1024,
   });
-  if (result.status !== 0) {
-    return Object.freeze({
-      reason: "Git failed while running in the trusted platform adapter.",
-      state: "failed" as const,
-    });
-  }
+  if (result.status !== 0) return failedGitResult();
+  return Object.freeze({ state: "succeeded" as const, stdout: result.stdout });
+}
+
+function runGitWithInput(
+  repository: string,
+  args: readonly string[],
+  input: string,
+  maxBuffer: number,
+): TrustedGitResult {
+  const result = spawnSync(trustedGitExecutable, ["-C", repository, ...args], {
+    encoding: "utf8",
+    env: trustedGitEnvironment(repository),
+    input,
+    maxBuffer,
+  });
+  if (result.status !== 0 || result.error !== undefined) return failedGitResult();
   return Object.freeze({ state: "succeeded" as const, stdout: result.stdout });
 }
 
 function runGitBytes(
   repository: string,
   args: readonly string[],
-):
-  | { readonly reason: string; readonly state: "failed" }
-  | {
-      readonly stdout: Uint8Array;
-      readonly state: "succeeded";
-    } {
+): TrustedGitBytesResult {
   const result = spawnSync(trustedGitExecutable, ["-C", repository, ...args], {
     env: trustedGitEnvironment(repository),
     maxBuffer: 16 * 1024 * 1024,
   });
-  if (result.status !== 0) {
-    return Object.freeze({
-      reason: "Git failed while running in the trusted platform adapter.",
-      state: "failed" as const,
-    });
-  }
+  if (result.status !== 0) return failedGitResult();
+  return Object.freeze({ state: "succeeded" as const, stdout: result.stdout });
+}
+
+function runGitBytesWithInput(
+  repository: string,
+  args: readonly string[],
+  input: string,
+  maxBuffer: number,
+): TrustedGitBytesResult {
+  const result = spawnSync(trustedGitExecutable, ["-C", repository, ...args], {
+    env: trustedGitEnvironment(repository),
+    input,
+    maxBuffer,
+  });
+  if (result.status !== 0 || result.error !== undefined) return failedGitResult();
   return Object.freeze({ state: "succeeded" as const, stdout: result.stdout });
 }
 
@@ -88,6 +118,24 @@ export function runTrustedGitBytes(
   args: readonly string[],
 ): ReturnType<typeof runGitBytes> {
   return runGitBytes(repository, args);
+}
+
+export function runTrustedGitWithInput(
+  repository: string,
+  args: readonly string[],
+  input: string,
+  maxBuffer: number,
+): TrustedGitResult {
+  return runGitWithInput(repository, args, input, maxBuffer);
+}
+
+export function runTrustedGitBytesWithInput(
+  repository: string,
+  args: readonly string[],
+  input: string,
+  maxBuffer: number,
+): TrustedGitBytesResult {
+  return runGitBytesWithInput(repository, args, input, maxBuffer);
 }
 
 export function runTrustedGitForWrite(

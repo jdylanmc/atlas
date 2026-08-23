@@ -27,6 +27,18 @@ export {
   usageInitializeOperationResult,
 } from "./interfaces/initialize_command.ts";
 export {
+  exitCodeForExploreOperationResult,
+  exploreCommandBudgets,
+  exploreCommandExitCodes,
+  exploreCommandUsage,
+  missingAtlasExploreOperationResult,
+  oversizedAtlasExploreOperationResult,
+  oversizedQueryExploreOperationResult,
+  serializeExploreMachineResult,
+  unreadableAtlasExploreOperationResult,
+  usageExploreOperationResult,
+} from "./interfaces/explore_command.ts";
+export {
   exitCodeForLintOperationResult,
   lintCommandBudgets,
   lintCommandCaptureBudgets,

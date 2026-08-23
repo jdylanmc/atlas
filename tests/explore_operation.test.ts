@@ -160,7 +160,7 @@ function graphAtlas(): CapturedAtlasFile[] {
       "principle:one",
       "principle",
       "One",
-      "# One\n\n## Active truths\n\n- `truth:one` Use deterministic routing.\n- `truth:two` Preserve cited evidence.",
+      "# One\n\n## Active truths\n\n- `truth:one` Use deterministic routing\n  with wrapped Markdown continuation.\nnot a continuation\n- `truth:two` Preserve cited evidence.",
     ),
     page(
       ".atlas/concepts/target.md",
@@ -250,7 +250,11 @@ test("every reached Anchor re-anchors with directly connected active Principles"
         objective: "needle",
         principles: ["principle:one"],
         truths: [
-          ["principle:one", "truth:one", "Use deterministic routing."],
+          [
+            "principle:one",
+            "truth:one",
+            "Use deterministic routing with wrapped Markdown continuation.",
+          ],
           ["principle:one", "truth:two", "Preserve cited evidence."],
         ],
       },
