@@ -1,0 +1,61 @@
+{
+  "ingest-request-schema": "1.0.0",
+  "scope": {
+    "ingest-scope-schema": "1.0.0",
+    "approvedAt": "2026-08-22T00:00:00Z",
+    "approvedBy": "Fixture Maintainer",
+    "asOf": "2026-08-22T00:00:00Z",
+    "authority": "official",
+    "entryPoint": "docs",
+    "excludedPaths": ["docs/private"],
+    "freshnessWindowDays": 30,
+    "includedPaths": ["docs"],
+    "maxDepth": 4,
+    "sourceId": "source:readme"
+  },
+  "candidateGraph": {
+    "candidate-graph-schema": "1.0.0",
+    "sources": [
+      {
+        "authority": "official",
+        "content": "Atlas SDK is a deterministic library. The Lint gate runs with no network access.",
+        "id": "source:readme",
+        "locator": "docs/readme.md",
+        "refreshWindowDays": 30,
+        "revisionTime": "2026-08-20",
+        "title": "Readme"
+      }
+    ],
+    "concepts": [
+      {
+        "citations": [
+          {
+            "sourceClaim": "Atlas SDK is a deterministic library.",
+            "sourceId": "source:readme"
+          }
+        ],
+        "claim": "Atlas SDK is a deterministic library.",
+        "id": "concept:determinism",
+        "locator": "docs/readme.md",
+        "title": "Determinism"
+      }
+    ],
+    "edges": [
+      {
+        "citations": [
+          {
+            "sourceClaim": "runs with no network access",
+            "sourceId": "source:readme"
+          }
+        ],
+        "context": "Entering the Home Atlas leads to the determinism Concept.",
+        "from": "anchor:root",
+        "id": "edge:root-covers-determinism",
+        "semantics": ["covers"],
+        "title": "Root Covers Determinism",
+        "to": "concept:determinism"
+      }
+    ],
+    "disputes": []
+  }
+}

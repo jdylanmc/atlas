@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** Atlas command-line interface. */
 
-import { lstatSync, readdirSync, readFileSync, type Dirent } from "node:fs";
+import { lstatSync, readFileSync, readdirSync, statSync, type Dirent } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -25,6 +25,26 @@ import {
   unreadableAtlasLintOperationResult,
   usageLintOperationResult,
 } from "../src/interfaces/lint_command.ts";
+import {
+  correspondenceRefusalResult,
+  exitCodeForIngestOperationResult,
+  exitCodeForIngestPlanOutcome,
+  ingestCommandExitCodes,
+  ingestCommandInputBudgets,
+  ingestCommandUsage,
+  ingestPlanCommandUsage,
+  ingestReconcileCommandUsage,
+  invalidInputIngestOperationResult,
+  parseIngestRequest,
+  oversizedInputIngestOperationResult,
+  parseIngestScope,
+  planCrawlAssignment,
+  serializeCrawlAssignmentMachineResult,
+  serializeIngestMachineResult,
+  usageIngestOperationResult,
+  validateRequestCorrespondence,
+} from "../src/interfaces/ingest_command.ts";
+import { runLocalAtlasIngest } from "../src/platform/local_atlas_ingest.ts";
 
 interface ParsedLintCommand {
   readonly atlasHostDirectory: string;
@@ -37,9 +57,25 @@ interface ParsedInitializeCommand {
   readonly resumeProposalBranch?: string;
 }
 
+interface ParsedIngestPlanCommand {
+  readonly ingestScopePath: string;
+  readonly machine: true;
+  readonly subcommand: "plan";
+}
+
+interface ParsedIngestReconcileCommand {
+  readonly atlasHostDirectory: string;
+  readonly ingestRequestPath: string;
+  readonly machine: true;
+  readonly subcommand: "reconcile";
+}
+
+type ParsedIngestCommand = ParsedIngestPlanCommand | ParsedIngestReconcileCommand;
+
 class UsageError extends Error {}
 class MissingAtlasError extends Error {}
 class UnreadableAtlasError extends Error {}
+class IngestInputBudgetError extends Error {}
 export class CaptureBudgetError extends Error {
   readonly capturedFiles: readonly LintCommandCapturedFile[];
 
@@ -320,9 +356,203 @@ function mainInitialize(arguments_: readonly string[]): number {
   return exitCodeForInitializeOperationResult(result);
 }
 
+function parseIngestCommand(arguments_: readonly string[]): ParsedIngestCommand {
+  const subcommand = arguments_[1];
+  if (subcommand === "plan") return parseIngestPlanCommand(arguments_);
+  if (subcommand === "reconcile") return parseIngestReconcileCommand(arguments_);
+  throw new UsageError(ingestCommandUsage);
+}
+
+function parseIngestPlanCommand(
+  arguments_: readonly string[],
+): ParsedIngestPlanCommand {
+  let machine = false;
+  let ingestScopePath: string | undefined;
+  let machineSeen = false;
+  let ingestScopeSeen = false;
+  for (let index = 2; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === "--machine") {
+      if (machineSeen) throw new UsageError(ingestPlanCommandUsage);
+      machine = true;
+      machineSeen = true;
+      continue;
+    }
+    if (argument === "--ingest-scope") {
+      if (ingestScopeSeen) throw new UsageError(ingestPlanCommandUsage);
+      const value = arguments_[index + 1];
+      if (value === undefined || value.startsWith("--")) {
+        throw new UsageError(ingestPlanCommandUsage);
+      }
+      ingestScopePath = value;
+      ingestScopeSeen = true;
+      index += 1;
+      continue;
+    }
+    throw new UsageError(ingestPlanCommandUsage);
+  }
+  if (!machine || ingestScopePath === undefined) {
+    throw new UsageError(ingestPlanCommandUsage);
+  }
+  return { ingestScopePath, machine: true, subcommand: "plan" };
+}
+
+function parseIngestReconcileCommand(
+  arguments_: readonly string[],
+): ParsedIngestReconcileCommand {
+  let machine = false;
+  let ingestRequestPath: string | undefined;
+  let atlasHostDirectory = ".";
+  let machineSeen = false;
+  let ingestRequestSeen = false;
+  let atlasHostDirectorySeen = false;
+  for (let index = 2; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === "--machine") {
+      if (machineSeen) throw new UsageError(ingestReconcileCommandUsage);
+      machine = true;
+      machineSeen = true;
+      continue;
+    }
+    if (argument === "--ingest-request") {
+      if (ingestRequestSeen) throw new UsageError(ingestReconcileCommandUsage);
+      const value = arguments_[index + 1];
+      if (value === undefined || value.startsWith("--")) {
+        throw new UsageError(ingestReconcileCommandUsage);
+      }
+      ingestRequestPath = value;
+      ingestRequestSeen = true;
+      index += 1;
+      continue;
+    }
+    if (argument === "--atlas-host-directory") {
+      if (atlasHostDirectorySeen) throw new UsageError(ingestReconcileCommandUsage);
+      const value = arguments_[index + 1];
+      if (value === undefined || value.startsWith("--")) {
+        throw new UsageError(ingestReconcileCommandUsage);
+      }
+      atlasHostDirectory = value;
+      atlasHostDirectorySeen = true;
+      index += 1;
+      continue;
+    }
+    throw new UsageError(ingestReconcileCommandUsage);
+  }
+  if (!machine || ingestRequestPath === undefined) {
+    throw new UsageError(ingestReconcileCommandUsage);
+  }
+  return {
+    atlasHostDirectory,
+    ingestRequestPath,
+    machine: true,
+    subcommand: "reconcile",
+  };
+}
+
+function readJsonFile(path: string, maxFileBytes?: number): unknown {
+  const absolutePath = resolve(path);
+  if (maxFileBytes !== undefined) {
+    const stat = statSync(absolutePath);
+    if (!stat.isFile() || stat.size > maxFileBytes) {
+      throw new IngestInputBudgetError(
+        `Ingest input exceeds the ${String(maxFileBytes)} byte budget.`,
+      );
+    }
+    const bytes = readFileSync(absolutePath);
+    if (bytes.byteLength > maxFileBytes) {
+      throw new IngestInputBudgetError(
+        `Ingest input exceeds the ${String(maxFileBytes)} byte budget.`,
+      );
+    }
+    return JSON.parse(bytes.toString("utf8")) as unknown;
+  }
+  return JSON.parse(readFileSync(absolutePath, "utf8")) as unknown;
+}
+
+function mainIngestPlan(command: ParsedIngestPlanCommand): number {
+  let input: unknown;
+  try {
+    input = readJsonFile(
+      command.ingestScopePath,
+      ingestCommandInputBudgets.maxFileBytes,
+    );
+  } catch (error: unknown) {
+    const result =
+      error instanceof IngestInputBudgetError
+        ? oversizedInputIngestOperationResult(error.message)
+        : invalidInputIngestOperationResult(
+            "The Ingest Scope file could not be read as JSON.",
+          );
+    process.stdout.write(serializeIngestMachineResult(result));
+    return exitCodeForIngestOperationResult(result);
+  }
+  const parsed = parseIngestScope(input);
+  if (!parsed.ok) {
+    process.stdout.write(serializeIngestMachineResult(parsed.result));
+    return exitCodeForIngestOperationResult(parsed.result);
+  }
+  const outcome = planCrawlAssignment(parsed.value);
+  if (outcome.state === "refused") {
+    process.stdout.write(serializeIngestMachineResult(outcome.result));
+    return exitCodeForIngestPlanOutcome(outcome);
+  }
+  process.stdout.write(serializeCrawlAssignmentMachineResult(outcome.assignment));
+  return exitCodeForIngestPlanOutcome(outcome);
+}
+
+function mainIngestReconcile(command: ParsedIngestReconcileCommand): number {
+  let input: unknown;
+  try {
+    input = readJsonFile(
+      command.ingestRequestPath,
+      ingestCommandInputBudgets.maxFileBytes,
+    );
+  } catch (error: unknown) {
+    const result =
+      error instanceof IngestInputBudgetError
+        ? oversizedInputIngestOperationResult(error.message)
+        : invalidInputIngestOperationResult(
+            "The Ingest request file could not be read as JSON.",
+          );
+    process.stdout.write(serializeIngestMachineResult(result));
+    return exitCodeForIngestOperationResult(result);
+  }
+  const parsed = parseIngestRequest(input);
+  if (!parsed.ok) {
+    process.stdout.write(serializeIngestMachineResult(parsed.result));
+    return exitCodeForIngestOperationResult(parsed.result);
+  }
+  const correspondence = validateRequestCorrespondence(parsed.value);
+  if (correspondence.length > 0) {
+    const result = correspondenceRefusalResult(correspondence);
+    process.stdout.write(serializeIngestMachineResult(result));
+    return exitCodeForIngestOperationResult(result);
+  }
+  const result = runLocalAtlasIngest(command.atlasHostDirectory, parsed.value);
+  process.stdout.write(serializeIngestMachineResult(result));
+  return exitCodeForIngestOperationResult(result);
+}
+
+function mainIngest(arguments_: readonly string[]): number {
+  let command: ParsedIngestCommand;
+  try {
+    command = parseIngestCommand(arguments_);
+  } catch (error: unknown) {
+    if (!(error instanceof UsageError)) throw error;
+    const result = usageIngestOperationResult(error.message);
+    process.stdout.write(serializeIngestMachineResult(result));
+    console.error(error.message);
+    return ingestCommandExitCodes.usage;
+  }
+  return command.subcommand === "plan"
+    ? mainIngestPlan(command)
+    : mainIngestReconcile(command);
+}
+
 export function main(arguments_: readonly string[]): number {
   if (arguments_[0] === "lint") return mainLint(arguments_);
   if (arguments_[0] === "initialize") return mainInitialize(arguments_);
+  if (arguments_[0] === "ingest") return mainIngest(arguments_);
   console.error(lintCommandUsage);
   return lintCommandExitCodes.usage;
 }

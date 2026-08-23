@@ -12,10 +12,12 @@ const ActorSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const AtlasDateTimeSchema = Type.String({ format: "date-time" });
+
 const SdkPageMetadataSchema = Type.Object(
   {
     "atlas-sdk-schema": Type.Readonly(Type.String({ minLength: 1, pattern: nonBlank })),
-    "created-at": Type.Readonly(Type.String({ format: "date-time" })),
+    "created-at": Type.Readonly(AtlasDateTimeSchema),
     "created-by": Type.Readonly(ActorSchema),
     id: Type.Readonly(Type.String({ minLength: 1, pattern: nonBlank })),
     "originating-operation": Type.Readonly(
@@ -31,7 +33,7 @@ const SdkPageMetadataSchema = Type.Object(
     ),
     title: Type.Readonly(Type.String({ minLength: 1, pattern: nonBlank })),
     type: Type.Readonly(Type.String({ minLength: 1, pattern: nonBlank })),
-    "updated-at": Type.Readonly(Type.String({ format: "date-time" })),
+    "updated-at": Type.Readonly(AtlasDateTimeSchema),
     "updated-by": Type.Readonly(ActorSchema),
   },
   { additionalProperties: false },
@@ -82,6 +84,7 @@ const addFormats = addFormatsModule.default;
 const ajv = new Ajv2020({ strict: true });
 addFormats(ajv);
 const validateAtlasPageEnvelope = ajv.compile(AtlasPageEnvelopeSchema);
+const validateAtlasDateTime = ajv.compile(AtlasDateTimeSchema);
 
 function isJsonCompatible(value: unknown): boolean {
   if (
@@ -99,6 +102,10 @@ function isJsonCompatible(value: unknown): boolean {
     return false;
   }
   return Object.values(value as Record<string, unknown>).every(isJsonCompatible);
+}
+
+export function checkAtlasDateTime(value: unknown): value is string {
+  return typeof value === "string" && validateAtlasDateTime(value);
 }
 
 export function checkAtlasPageEnvelope(value: unknown): value is AtlasPageEnvelope {

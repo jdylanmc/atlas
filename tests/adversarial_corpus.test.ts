@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test, { after } from "node:test";
 import { captureAtlasHostDirectory, CaptureBudgetError } from "../scripts/atlas.ts";
+import { ingestCommandInputBudgets } from "../src/interfaces/ingest_command.ts";
 import { buildAtlasView } from "../src/atlas/atlas_view.ts";
 import { parseAtlasPage } from "../src/atlas/parse_atlas_pages.ts";
 import type { CapturedAtlasFile } from "../src/atlas/load_atlas_text.ts";
@@ -117,8 +118,10 @@ interface AtlasCliCommandCase {
   readonly expectedCode: string;
   readonly expectedDegradationState?: "degraded" | "not-degraded";
   readonly expectedExit: number;
+  readonly fixtureAtlasHostRepository?: true;
   readonly forbidPayloadLint?: true;
   readonly gate: "atlas-cli";
+  readonly generatedOversizedIngestRequest?: true;
   readonly kind: "command";
   readonly name: string;
   readonly recommendedNextActionExcludes?: string;
@@ -398,7 +401,9 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
         };
         const optional: {
           expectedDegradationState?: "degraded" | "not-degraded";
+          fixtureAtlasHostRepository?: true;
           forbidPayloadLint?: true;
+          generatedOversizedIngestRequest?: true;
           recommendedNextActionExcludes?: string;
           stderrIncludes?: string;
         } = {};
@@ -408,9 +413,23 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
             `${path}.expectedDegradationState`,
           ) as "degraded" | "not-degraded";
         }
+        if (entry["fixtureAtlasHostRepository"] !== undefined) {
+          assertBoolean(
+            entry["fixtureAtlasHostRepository"],
+            `${path}.fixtureAtlasHostRepository`,
+          );
+          optional.fixtureAtlasHostRepository = true;
+        }
         if (entry["forbidPayloadLint"] !== undefined) {
           assertBoolean(entry["forbidPayloadLint"], `${path}.forbidPayloadLint`);
           optional.forbidPayloadLint = true;
+        }
+        if (entry["generatedOversizedIngestRequest"] !== undefined) {
+          assertBoolean(
+            entry["generatedOversizedIngestRequest"],
+            `${path}.generatedOversizedIngestRequest`,
+          );
+          optional.generatedOversizedIngestRequest = true;
         }
         if (entry["recommendedNextActionExcludes"] !== undefined) {
           optional.recommendedNextActionExcludes = assertString(
@@ -867,6 +886,27 @@ function adversarialCaptured(path: string, content: string): CapturedAtlasFile {
   return { bytes: adversarialEncoder.encode(content), path };
 }
 
+function adversarialGit(repository: string, args: readonly string[]): void {
+  const result = spawnSync("git", ["-C", repository, ...args], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+}
+
+function createAdversarialAtlasRepository(repository: string): void {
+  rmSync(repository, { force: true, recursive: true });
+  mkdirSync(repository, { recursive: true });
+  adversarialGit(repository, ["init", "-b", "main"]);
+  adversarialGit(repository, ["config", "user.name", "Fixture"]);
+  adversarialGit(repository, ["config", "user.email", "fixture@example.invalid"]);
+  cpSync(
+    resolve(ROOT, "tests", "fixtures", "complete-atlas", ".atlas"),
+    resolve(repository, ".atlas"),
+    { recursive: true },
+  );
+  writeFileSync(resolve(repository, "README.md"), "# host\n", "utf8");
+  adversarialGit(repository, ["add", ".atlas", "README.md"]);
+  adversarialGit(repository, ["commit", "-m", "Initial Atlas"]);
+}
+
 function adversarialPage(): CapturedAtlasFile {
   return adversarialCaptured(
     ".atlas/index.md",
@@ -972,9 +1012,37 @@ for (const entry of atlasCliCorpus.cases) {
       return;
     }
 
+    const workspace = resolve(
+      ROOT,
+      ".test-workspaces",
+      "adversarial-atlas-cli-command",
+      entry.name.replace(/[^a-z0-9]+/giu, "-"),
+    );
+    rmSync(workspace, { force: true, recursive: true });
+    mkdirSync(workspace, { recursive: true });
+    const arguments_ = [...entry.arguments];
+    if (entry.fixtureAtlasHostRepository === true) {
+      const repository = resolve(workspace, "repository");
+      createAdversarialAtlasRepository(repository);
+      for (const [index, argument] of arguments_.entries()) {
+        if (argument === "{atlasHostDirectory}") arguments_[index] = repository;
+      }
+    }
+    if (entry.generatedOversizedIngestRequest === true) {
+      const requestPath = resolve(workspace, "oversized-request.json");
+      writeFileSync(
+        requestPath,
+        `{"padding":"${"x".repeat(ingestCommandInputBudgets.maxFileBytes)}"}`,
+        "utf8",
+      );
+      for (const [index, argument] of arguments_.entries()) {
+        if (argument === "{oversizedIngestRequest}") arguments_[index] = requestPath;
+      }
+    }
+
     const command = spawnSync(
       process.execPath,
-      [resolve(ROOT, "scripts", "atlas.ts"), ...entry.arguments],
+      [resolve(ROOT, "scripts", "atlas.ts"), ...arguments_],
       { cwd: ROOT, encoding: "buffer" },
     );
     assert.equal(command.error, undefined);
@@ -1580,6 +1648,12 @@ function ingestMutatedGraph(mutation: string): AtlasIngestCandidateGraph {
       ],
     };
   }
+  if (mutation === "revision-time-date-only") {
+    return {
+      ...ingestBaselineGraph(),
+      sources: [ingestSource({ revisionTime: "2026-08-20" })],
+    };
+  }
   if (mutation === "excluded-path-case-variant") {
     return {
       ...ingestBaselineGraph(),
@@ -1644,6 +1718,12 @@ function ingestMutatedGraph(mutation: string): AtlasIngestCandidateGraph {
 function ingestMutatedScope(mutation: string): AtlasIngestRequest["scope"] {
   if (mutation === "approval-missing") {
     return { ...ingestScope(), approvedAt: "", approvedBy: "" };
+  }
+  if (mutation === "approved-at-date-only") {
+    return { ...ingestScope(), approvedAt: "2026-08-20" };
+  }
+  if (mutation === "as-of-date-only") {
+    return { ...ingestScope(), asOf: "2026-08-20" };
   }
   if (mutation === "source-authority-exceeds-scope") {
     return { ...ingestScope(), authority: "community" };

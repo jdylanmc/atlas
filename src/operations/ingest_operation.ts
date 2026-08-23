@@ -3,7 +3,11 @@ import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import { resolvedCitationSourcePaths } from "../atlas/resolve_citations.ts";
 import { serializeAtlasPages } from "../atlas/serialize_atlas_pages.ts";
 import type { ParsedAtlasPage } from "../atlas/parse_atlas_pages.ts";
-import type { AtlasPageEnvelope, ReadonlyJsonValue } from "../domain/atlas_page.ts";
+import {
+  checkAtlasDateTime,
+  type AtlasPageEnvelope,
+  type ReadonlyJsonValue,
+} from "../domain/atlas_page.ts";
 import type { Finding } from "../domain/finding.ts";
 import type { LintOperationResult } from "./lint_operation.ts";
 import {
@@ -47,7 +51,7 @@ const authorityRank: Readonly<Record<SourceAuthority, number>> = Object.freeze({
   opinion: 1,
 });
 
-function isSourceAuthority(value: string): value is SourceAuthority {
+export function isSourceAuthority(value: string): value is SourceAuthority {
   return value === "official" || value === "first-party" || value === "community"
     ? true
     : value === "opinion";
@@ -228,6 +232,18 @@ function finding(
     path,
     severity,
   });
+}
+
+// A Source Revision Time must be comparable, not merely well-formed. RFC 3339
+// admits leap seconds such as 1990-12-31T23:59:60Z, which the schema accepts but
+// Date.parse cannot represent. Returning the raw parse would hand NaN to the
+// freshness comparison, where every comparison is false and Stale Knowledge
+// would pass silently. Anything that does not parse to a finite instant is
+// refused here so the caller fails closed.
+function dateTimeMilliseconds(value: string): number | undefined {
+  if (!checkAtlasDateTime(value)) return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function pendingDecisions(findings: readonly Finding[]): readonly string[] {
@@ -584,15 +600,6 @@ function validateSources(
         ),
       );
     }
-    if (Number.isNaN(Date.parse(source.revisionTime))) {
-      findings.push(
-        finding(
-          "ATLAS_INGEST_SOURCE_REVISION_TIME_INVALID",
-          "A Source Revision Time must be a comparable date-time asserted by the cited revision.",
-          path,
-        ),
-      );
-    }
     if (!isCanonicalLocator(source.locator)) {
       findings.push(
         finding(
@@ -867,9 +874,9 @@ function validateDisputes(
     if (authorityRank[leftSource.authority] !== authorityRank[rightSource.authority]) {
       continue;
     }
-    const leftTime = Date.parse(leftSource.revisionTime);
-    const rightTime = Date.parse(rightSource.revisionTime);
-    if (Number.isNaN(leftTime) || Number.isNaN(rightTime) || leftTime === rightTime) {
+    const leftTime = dateTimeMilliseconds(leftSource.revisionTime);
+    const rightTime = dateTimeMilliseconds(rightSource.revisionTime);
+    if (leftTime === undefined || rightTime === undefined || leftTime === rightTime) {
       findings.push(
         finding(
           "ATLAS_INGEST_DISPUTE_UNRESOLVED",
@@ -888,11 +895,28 @@ function staleFindings(
   scope: AtlasIngestScope,
 ): readonly Finding[] {
   const findings: Finding[] = [];
-  const asOf = Date.parse(scope.asOf);
-  if (Number.isNaN(asOf)) return findings;
+  const asOf = dateTimeMilliseconds(scope.asOf);
+  if (asOf === undefined) {
+    findings.push(
+      finding(
+        "ATLAS_INGEST_SCOPE_AS_OF_INVALID",
+        "An Ingest Scope asOf value must be a date-time so Stale Knowledge checks and emitted Atlas page timestamps are deterministic.",
+      ),
+    );
+    return findings;
+  }
   for (const source of graph.sources) {
-    const revised = Date.parse(source.revisionTime);
-    if (Number.isNaN(revised)) continue;
+    const revised = dateTimeMilliseconds(source.revisionTime);
+    if (revised === undefined) {
+      findings.push(
+        finding(
+          "ATLAS_INGEST_SOURCE_REVISION_TIME_INVALID",
+          "A Source Revision Time must be a comparable date-time asserted by the cited revision.",
+          `.atlas/sources/${slugForId(source.id, "source") ?? "unknown"}.md`,
+        ),
+      );
+      continue;
+    }
     const elapsedDays = (asOf - revised) / 86_400_000;
     // The approved Ingest Scope caps freshness: a crawler-asserted refresh
     // window may be shorter but never outlast the window the human approved.
@@ -1047,14 +1071,27 @@ function reachableEndpoints(
 // stamps that its material was ingested within it. That claim is only true if a
 // Maintainer actually approved: approval identity and time are required, exactly
 // as the sibling governance operation requires them before it mutates.
-function validateApproval(scope: AtlasIngestScope): readonly Finding[] {
-  if (scope.approvedBy.trim() !== "" && scope.approvedAt.trim() !== "") {
+export function validateApproval(scope: AtlasIngestScope): readonly Finding[] {
+  if (
+    scope.approvedBy.trim() !== "" &&
+    dateTimeMilliseconds(scope.approvedAt) !== undefined
+  ) {
     return [];
   }
   return [
     finding(
       "ATLAS_INGEST_APPROVAL_REQUIRED",
-      "Ingest requires explicit Maintainer approval identity and time before it derives knowledge within the approved Ingest Scope.",
+      "Ingest requires explicit Maintainer approval identity and date-time before it derives knowledge within the approved Ingest Scope.",
+    ),
+  ];
+}
+
+export function validateIngestScopeTime(scope: AtlasIngestScope): readonly Finding[] {
+  if (dateTimeMilliseconds(scope.asOf) !== undefined) return [];
+  return [
+    finding(
+      "ATLAS_INGEST_SCOPE_AS_OF_INVALID",
+      "An Ingest Scope asOf value must be a date-time so Stale Knowledge checks and emitted Atlas page timestamps are deterministic.",
     ),
   ];
 }
@@ -1069,6 +1106,7 @@ export function validateCandidateGraph(
   const reachable = reachableEndpoints(graph, existing);
   const findings: Finding[] = [];
   findings.push(...validateApproval(scope));
+  findings.push(...staleFindings(graph, scope));
   findings.push(...collisionFindings(graph, scope, existing));
   if (!isSourceAuthority(scope.authority)) {
     findings.push(
@@ -1090,7 +1128,6 @@ export function validateCandidateGraph(
   findings.push(...validateConcepts(graph, scope, sources, existing, reachable));
   findings.push(...validateEdges(graph, scope, sources, existing));
   findings.push(...validateDisputes(graph, sources));
-  findings.push(...staleFindings(graph, scope));
   return Object.freeze(
     findings.toSorted((left, right) => {
       const path = compareCodePoints(left.path, right.path);
