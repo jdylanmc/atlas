@@ -3,7 +3,11 @@ import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import { resolvedCitationSourcePaths } from "../atlas/resolve_citations.ts";
 import { serializeAtlasPages } from "../atlas/serialize_atlas_pages.ts";
 import type { ParsedAtlasPage } from "../atlas/parse_atlas_pages.ts";
-import type { AtlasPageEnvelope, ReadonlyJsonValue } from "../domain/atlas_page.ts";
+import {
+  checkAtlasDateTime,
+  type AtlasPageEnvelope,
+  type ReadonlyJsonValue,
+} from "../domain/atlas_page.ts";
 import type { Finding } from "../domain/finding.ts";
 import type { LintOperationResult } from "./lint_operation.ts";
 import {
@@ -230,8 +234,8 @@ function finding(
   });
 }
 
-function isDateTime(value: string): boolean {
-  return value.trim() !== "" && !Number.isNaN(Date.parse(value));
+function dateTimeMilliseconds(value: string): number | undefined {
+  return checkAtlasDateTime(value) ? Date.parse(value) : undefined;
 }
 
 function pendingDecisions(findings: readonly Finding[]): readonly string[] {
@@ -862,9 +866,9 @@ function validateDisputes(
     if (authorityRank[leftSource.authority] !== authorityRank[rightSource.authority]) {
       continue;
     }
-    const leftTime = Date.parse(leftSource.revisionTime);
-    const rightTime = Date.parse(rightSource.revisionTime);
-    if (Number.isNaN(leftTime) || Number.isNaN(rightTime) || leftTime === rightTime) {
+    const leftTime = dateTimeMilliseconds(leftSource.revisionTime);
+    const rightTime = dateTimeMilliseconds(rightSource.revisionTime);
+    if (leftTime === undefined || rightTime === undefined || leftTime === rightTime) {
       findings.push(
         finding(
           "ATLAS_INGEST_DISPUTE_UNRESOLVED",
@@ -883,8 +887,8 @@ function staleFindings(
   scope: AtlasIngestScope,
 ): readonly Finding[] {
   const findings: Finding[] = [];
-  const asOf = Date.parse(scope.asOf);
-  if (Number.isNaN(asOf)) {
+  const asOf = dateTimeMilliseconds(scope.asOf);
+  if (asOf === undefined) {
     findings.push(
       finding(
         "ATLAS_INGEST_SCOPE_AS_OF_INVALID",
@@ -894,8 +898,8 @@ function staleFindings(
     return findings;
   }
   for (const source of graph.sources) {
-    const revised = Date.parse(source.revisionTime);
-    if (Number.isNaN(revised)) {
+    const revised = dateTimeMilliseconds(source.revisionTime);
+    if (revised === undefined) {
       findings.push(
         finding(
           "ATLAS_INGEST_SOURCE_REVISION_TIME_INVALID",
@@ -1060,7 +1064,7 @@ function reachableEndpoints(
 // Maintainer actually approved: approval identity and time are required, exactly
 // as the sibling governance operation requires them before it mutates.
 export function validateApproval(scope: AtlasIngestScope): readonly Finding[] {
-  if (scope.approvedBy.trim() !== "" && isDateTime(scope.approvedAt)) {
+  if (scope.approvedBy.trim() !== "" && checkAtlasDateTime(scope.approvedAt)) {
     return [];
   }
   return [
@@ -1072,7 +1076,7 @@ export function validateApproval(scope: AtlasIngestScope): readonly Finding[] {
 }
 
 export function validateIngestScopeTime(scope: AtlasIngestScope): readonly Finding[] {
-  if (isDateTime(scope.asOf)) return [];
+  if (checkAtlasDateTime(scope.asOf)) return [];
   return [
     finding(
       "ATLAS_INGEST_SCOPE_AS_OF_INVALID",

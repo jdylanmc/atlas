@@ -201,6 +201,36 @@
       "forbidPayloadLint": true
     },
     {
+      "name": "reject an Ingest plan whose approval time is date-only",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "ingest",
+        "plan",
+        "--machine",
+        "--ingest-scope",
+        "tests/fixtures/ingest/scope-date-only-approved-at.json"
+      ],
+      "expectedExit": 4,
+      "expectedCode": "ATLAS_INGEST_APPROVAL_REQUIRED",
+      "forbidPayloadLint": true
+    },
+    {
+      "name": "reject an Ingest plan whose Ingest Scope asOf is date-only",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "ingest",
+        "plan",
+        "--machine",
+        "--ingest-scope",
+        "tests/fixtures/ingest/scope-date-only-asof.json"
+      ],
+      "expectedExit": 1,
+      "expectedCode": "ATLAS_INGEST_SCOPE_AS_OF_INVALID",
+      "forbidPayloadLint": true
+    },
+    {
       "name": "reject an Ingest reconcile whose Ingest Scope asOf is not a date-time",
       "gate": "atlas-cli",
       "kind": "command",
@@ -219,6 +249,24 @@
       "forbidPayloadLint": true
     },
     {
+      "name": "reject an Ingest reconcile whose Ingest Scope asOf is date-only",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "ingest",
+        "reconcile",
+        "--machine",
+        "--ingest-request",
+        "tests/fixtures/ingest/request-date-only-asof.json",
+        "--atlas-host-directory",
+        "{atlasHostDirectory}"
+      ],
+      "fixtureAtlasHostRepository": true,
+      "expectedExit": 1,
+      "expectedCode": "ATLAS_INGEST_SCOPE_AS_OF_INVALID",
+      "forbidPayloadLint": true
+    },
+    {
       "name": "reject an Ingest reconcile whose Source Revision Time is not a date-time",
       "gate": "atlas-cli",
       "kind": "command",
@@ -228,6 +276,24 @@
         "--machine",
         "--ingest-request",
         "tests/fixtures/ingest/request-bad-revision-time.json",
+        "--atlas-host-directory",
+        "{atlasHostDirectory}"
+      ],
+      "fixtureAtlasHostRepository": true,
+      "expectedExit": 1,
+      "expectedCode": "ATLAS_INGEST_SOURCE_REVISION_TIME_INVALID",
+      "forbidPayloadLint": true
+    },
+    {
+      "name": "reject an Ingest reconcile whose Source Revision Time is date-only",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "ingest",
+        "reconcile",
+        "--machine",
+        "--ingest-request",
+        "tests/fixtures/ingest/request-date-only-revision-time.json",
         "--atlas-host-directory",
         "{atlasHostDirectory}"
       ],

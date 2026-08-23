@@ -145,6 +145,30 @@
       "expectedCode": "ATLAS_INGEST_APPROVAL_REQUIRED"
     },
     {
+      "name": "H5-date-only-approval-time-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "approved-at-date-only",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_APPROVAL_REQUIRED"
+    },
+    {
+      "name": "H5-date-only-as-of-time-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "as-of-date-only",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_SCOPE_AS_OF_INVALID"
+    },
+    {
+      "name": "H5-date-only-source-revision-time-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "revision-time-date-only",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_SOURCE_REVISION_TIME_INVALID"
+    },
+    {
       "name": "H6-forged-body-footnote-fails-citation-correspondence",
       "gate": "ingest",
       "kind": "workflow",

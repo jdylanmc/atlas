@@ -134,6 +134,20 @@ test("atlas ingest plan refuses invalid approval and Ingest Scope timestamps", (
     "ATLAS_INGEST_APPROVAL_REQUIRED",
   );
 
+  const dateOnlyApproval = runAtlas([
+    "ingest",
+    "plan",
+    "--machine",
+    "--ingest-scope",
+    fixtureJson("scope-date-only-approved-at.json"),
+  ]);
+  assert.equal(dateOnlyApproval.status, ingestCommandExitCodes.approvalRequired);
+  assert.equal(
+    parseIngestResult(dateOnlyApproval.stdout).handoff.validationState.findings[0]
+      ?.code,
+    "ATLAS_INGEST_APPROVAL_REQUIRED",
+  );
+
   const badAsOf = runAtlas([
     "ingest",
     "plan",
@@ -144,6 +158,19 @@ test("atlas ingest plan refuses invalid approval and Ingest Scope timestamps", (
   assert.equal(badAsOf.status, ingestCommandExitCodes.operationFailed);
   assert.equal(
     parseIngestResult(badAsOf.stdout).handoff.validationState.findings[0]?.code,
+    "ATLAS_INGEST_SCOPE_AS_OF_INVALID",
+  );
+
+  const dateOnlyAsOf = runAtlas([
+    "ingest",
+    "plan",
+    "--machine",
+    "--ingest-scope",
+    fixtureJson("scope-date-only-asof.json"),
+  ]);
+  assert.equal(dateOnlyAsOf.status, ingestCommandExitCodes.operationFailed);
+  assert.equal(
+    parseIngestResult(dateOnlyAsOf.stdout).handoff.validationState.findings[0]?.code,
     "ATLAS_INGEST_SCOPE_AS_OF_INVALID",
   );
 });
@@ -166,6 +193,23 @@ test("atlas ingest reconcile refuses invalid Ingest Scope and Source timestamps"
     "ATLAS_INGEST_SCOPE_AS_OF_INVALID",
   );
 
+  const dateOnlyAsOfRepository = resolve(WORKSPACE, "date-only-asof");
+  initAtlasRepository(dateOnlyAsOfRepository);
+  const dateOnlyAsOf = runAtlas([
+    "ingest",
+    "reconcile",
+    "--machine",
+    "--ingest-request",
+    fixtureJson("request-date-only-asof.json"),
+    "--atlas-host-directory",
+    dateOnlyAsOfRepository,
+  ]);
+  assert.equal(dateOnlyAsOf.status, ingestCommandExitCodes.operationFailed);
+  assert.equal(
+    parseIngestResult(dateOnlyAsOf.stdout).handoff.validationState.findings[0]?.code,
+    "ATLAS_INGEST_SCOPE_AS_OF_INVALID",
+  );
+
   const badRevisionRepository = resolve(WORKSPACE, "bad-revision-time");
   initAtlasRepository(badRevisionRepository);
   const badRevisionTime = runAtlas([
@@ -180,6 +224,24 @@ test("atlas ingest reconcile refuses invalid Ingest Scope and Source timestamps"
   assert.equal(badRevisionTime.status, ingestCommandExitCodes.operationFailed);
   assert.equal(
     parseIngestResult(badRevisionTime.stdout).handoff.validationState.findings[0]?.code,
+    "ATLAS_INGEST_SOURCE_REVISION_TIME_INVALID",
+  );
+
+  const dateOnlyRevisionRepository = resolve(WORKSPACE, "date-only-revision-time");
+  initAtlasRepository(dateOnlyRevisionRepository);
+  const dateOnlyRevisionTime = runAtlas([
+    "ingest",
+    "reconcile",
+    "--machine",
+    "--ingest-request",
+    fixtureJson("request-date-only-revision-time.json"),
+    "--atlas-host-directory",
+    dateOnlyRevisionRepository,
+  ]);
+  assert.equal(dateOnlyRevisionTime.status, ingestCommandExitCodes.operationFailed);
+  assert.equal(
+    parseIngestResult(dateOnlyRevisionTime.stdout).handoff.validationState.findings[0]
+      ?.code,
     "ATLAS_INGEST_SOURCE_REVISION_TIME_INVALID",
   );
 });

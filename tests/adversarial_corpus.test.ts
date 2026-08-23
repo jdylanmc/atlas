@@ -1648,6 +1648,12 @@ function ingestMutatedGraph(mutation: string): AtlasIngestCandidateGraph {
       ],
     };
   }
+  if (mutation === "revision-time-date-only") {
+    return {
+      ...ingestBaselineGraph(),
+      sources: [ingestSource({ revisionTime: "2026-08-20" })],
+    };
+  }
   if (mutation === "excluded-path-case-variant") {
     return {
       ...ingestBaselineGraph(),
@@ -1712,6 +1718,12 @@ function ingestMutatedGraph(mutation: string): AtlasIngestCandidateGraph {
 function ingestMutatedScope(mutation: string): AtlasIngestRequest["scope"] {
   if (mutation === "approval-missing") {
     return { ...ingestScope(), approvedAt: "", approvedBy: "" };
+  }
+  if (mutation === "approved-at-date-only") {
+    return { ...ingestScope(), approvedAt: "2026-08-20" };
+  }
+  if (mutation === "as-of-date-only") {
+    return { ...ingestScope(), asOf: "2026-08-20" };
   }
   if (mutation === "source-authority-exceeds-scope") {
     return { ...ingestScope(), authority: "community" };

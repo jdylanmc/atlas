@@ -531,11 +531,23 @@ test("Invalid Ingest Scope timestamps are rejected before emission", () => {
   );
   assert.ok(codes(badApproval).includes("ATLAS_INGEST_APPROVAL_REQUIRED"));
 
+  const dateOnlyApproval = validateCandidateGraph(
+    request({ scope: scope({ approvedAt: "2026-08-20" }) }),
+    baseFilesDefault,
+  );
+  assert.ok(codes(dateOnlyApproval).includes("ATLAS_INGEST_APPROVAL_REQUIRED"));
+
   const badAsOf = validateCandidateGraph(
     request({ scope: scope({ asOf: "not-a-date" }) }),
     baseFilesDefault,
   );
   assert.ok(codes(badAsOf).includes("ATLAS_INGEST_SCOPE_AS_OF_INVALID"));
+
+  const dateOnlyAsOf = validateCandidateGraph(
+    request({ scope: scope({ asOf: "2026-08-20" }) }),
+    baseFilesDefault,
+  );
+  assert.ok(codes(dateOnlyAsOf).includes("ATLAS_INGEST_SCOPE_AS_OF_INVALID"));
 });
 
 test("An unrecognized Source Authority class in the Ingest Scope is rejected", () => {
@@ -1063,6 +1075,18 @@ test("Stale detection fails closed when timestamps are not comparable", () => {
     baseFilesDefault,
   );
   assert.ok(codes(badRevision).includes("ATLAS_INGEST_SOURCE_REVISION_TIME_INVALID"));
+
+  const dateOnlyRevision = validateCandidateGraph(
+    request({
+      candidateGraph: graph({
+        sources: Object.freeze([source({ revisionTime: "2026-08-20" })]),
+      }),
+    }),
+    baseFilesDefault,
+  );
+  assert.ok(
+    codes(dateOnlyRevision).includes("ATLAS_INGEST_SOURCE_REVISION_TIME_INVALID"),
+  );
 
   const badRevisionAndId = validateCandidateGraph(
     request({
