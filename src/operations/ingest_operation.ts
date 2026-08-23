@@ -47,7 +47,7 @@ const authorityRank: Readonly<Record<SourceAuthority, number>> = Object.freeze({
   opinion: 1,
 });
 
-function isSourceAuthority(value: string): value is SourceAuthority {
+export function isSourceAuthority(value: string): value is SourceAuthority {
   return value === "official" || value === "first-party" || value === "community"
     ? true
     : value === "opinion";
@@ -1047,7 +1047,7 @@ function reachableEndpoints(
 // stamps that its material was ingested within it. That claim is only true if a
 // Maintainer actually approved: approval identity and time are required, exactly
 // as the sibling governance operation requires them before it mutates.
-function validateApproval(scope: AtlasIngestScope): readonly Finding[] {
+export function validateApproval(scope: AtlasIngestScope): readonly Finding[] {
   if (scope.approvedBy.trim() !== "" && scope.approvedAt.trim() !== "") {
     return [];
   }

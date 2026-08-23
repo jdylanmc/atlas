@@ -133,6 +133,99 @@
       },
       "maxBytesRead": 10,
       "expectedCode": "ATLAS_LOAD_TOTAL_TOO_LARGE"
+    },
+    {
+      "name": "reject an Ingest command seam that reaches for the network or a model",
+      "gate": "atlas-cli",
+      "kind": "source-boundary",
+      "path": "src/interfaces/ingest_command.ts",
+      "forbiddenImports": [
+        "node:http",
+        "node:https",
+        "node:net",
+        "node:tls",
+        "node:dgram",
+        "node:child_process",
+        "child_process",
+        "undici",
+        "openai",
+        "anthropic",
+        "fetch("
+      ]
+    },
+    {
+      "name": "reject an Ingest platform adapter that reaches for the network or a model",
+      "gate": "atlas-cli",
+      "kind": "source-boundary",
+      "path": "src/platform/local_atlas_ingest.ts",
+      "forbiddenImports": [
+        "node:http",
+        "node:https",
+        "node:net",
+        "node:tls",
+        "node:dgram",
+        "undici",
+        "openai",
+        "anthropic",
+        "fetch("
+      ]
+    },
+    {
+      "name": "reject an Ingest plan that hands out a Crawl Assignment without approval",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "ingest",
+        "plan",
+        "--machine",
+        "--ingest-scope",
+        "tests/fixtures/ingest/scope-unapproved.json"
+      ],
+      "expectedExit": 4,
+      "expectedCode": "ATLAS_INGEST_APPROVAL_REQUIRED",
+      "forbidPayloadLint": true
+    },
+    {
+      "name": "reject an Ingest reconcile whose Candidate Graph omits the approved Source",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "ingest",
+        "reconcile",
+        "--machine",
+        "--ingest-request",
+        "tests/fixtures/ingest/request-wrong-source.json",
+        "--atlas-host-directory",
+        "tests/fixtures/complete-atlas"
+      ],
+      "expectedExit": 1,
+      "expectedCode": "ATLAS_INGEST_SOURCE_CORRESPONDENCE",
+      "forbidPayloadLint": true
+    },
+    {
+      "name": "reject an Ingest reconcile input that does not type-check",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "ingest",
+        "reconcile",
+        "--machine",
+        "--ingest-request",
+        "tests/fixtures/ingest/request-malformed.json"
+      ],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_INGEST_INPUT_INVALID",
+      "forbidPayloadLint": true
+    },
+    {
+      "name": "reject an Ingest command with no subcommand as machine JSON usage",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["ingest", "--machine"],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_INGEST_USAGE",
+      "stderrIncludes": "usage: atlas ingest",
+      "forbidPayloadLint": true
     }
   ]
 }
