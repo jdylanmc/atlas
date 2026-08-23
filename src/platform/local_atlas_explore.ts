@@ -22,6 +22,7 @@ interface LocalAtlasExploreBudgets {
   readonly maxContextCharacters: number;
   readonly maxEdges: number;
   readonly maxFileBytes: number;
+  readonly maxFiles: number;
   readonly maxObjects: number;
   readonly maxQueryCharacters: number;
   readonly maxResults: number;
@@ -51,7 +52,7 @@ export type LocalExploreCaptureResult =
     }
   | {
       readonly reason: string;
-      readonly state: "missing" | "oversized" | "unreadable";
+      readonly state: "missing" | "oversized" | "too-many-files" | "unreadable";
     };
 
 interface TreeEntry {
@@ -170,6 +171,21 @@ function oversizedAtlasResult(message: string): ExploreOperationResult {
       baseSnapshotReason: "Explore refused an oversized Git-backed Atlas Snapshot.",
       degraded: false,
       homeAtlasReason: "Explore refused an oversized Atlas Host Directory.",
+    },
+  );
+}
+
+function tooManyAtlasFilesResult(message: string): ExploreOperationResult {
+  return notCompletedLocalExploreResult(
+    "ATLAS_EXPLORE_ATLAS_TOO_MANY_FILES",
+    message,
+    "Explore command input exceeded its file-count budget before file reads.",
+    "Reduce the committed Atlas Snapshot to the supported file-count budget, then retry Explore.",
+    {
+      baseSnapshotReason:
+        "Explore refused a Git-backed Atlas Snapshot with too many files.",
+      degraded: false,
+      homeAtlasReason: "Explore refused an Atlas Host Directory with too many files.",
     },
   );
 }
@@ -300,6 +316,12 @@ export function captureLocalAtlasExploreSnapshot(
       state: "missing" as const,
     });
   }
+  if (entries.length > budgets.maxFiles) {
+    return Object.freeze({
+      reason: "The local Atlas Snapshot exceeded the declared file-count budget.",
+      state: "too-many-files" as const,
+    });
+  }
   const capturedFiles: CapturedAtlasFile[] = [];
   let totalBytes = 0;
   for (const entry of entries) {
@@ -383,6 +405,8 @@ export function runLocalAtlasExplore(
       return missingAtlasResult(capture.reason);
     case "oversized":
       return oversizedAtlasResult(capture.reason);
+    case "too-many-files":
+      return tooManyAtlasFilesResult(capture.reason);
     case "unreadable":
       return unreadableAtlasResult(capture.reason);
   }

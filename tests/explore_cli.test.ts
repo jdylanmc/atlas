@@ -157,13 +157,13 @@ test("atlas explore --machine reports missing Atlas as determinate usage", () =>
   );
 });
 
-test("atlas explore --machine refuses oversized queries as machine JSON", () => {
+test("atlas explore --machine refuses oversized queries before Atlas capture", () => {
   const command = runAtlas([
     "explore",
     "--machine",
     "x".repeat(exploreCommandBudgets.maxQueryCharacters + 1),
     "--atlas-host-directory",
-    resolve(ROOT, "tests", "fixtures", "complete-atlas"),
+    resolve(ROOT, "tests", "fixtures", "no-such-atlas"),
   ]);
 
   assert.equal(command.status, exploreCommandExitCodes.usage);
@@ -174,6 +174,42 @@ test("atlas explore --machine refuses oversized queries as machine JSON", () => 
     "ATLAS_EXPLORE_QUERY_TOO_LARGE",
   );
   assert.equal(result.payload.degradation.level, "blocked");
+});
+
+test("atlas explore --machine refuses too many committed Atlas files before per-file reads", () => {
+  const repository = resolve(WORKSPACE, "too-many-files-atlas");
+  initAtlasRepository(repository);
+  mkdirSync(resolve(repository, ".atlas", "many"), { recursive: true });
+  for (let index = 0; index <= exploreCommandBudgets.maxFiles; index += 1) {
+    writeFileSync(resolve(repository, ".atlas", "many", `${String(index)}.md`), "");
+  }
+  git(repository, ["add", ".atlas/many"]);
+  git(repository, [
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    "commit",
+    "-m",
+    "Add many Atlas files",
+  ]);
+
+  const started = performance.now();
+  const command = runAtlas([
+    "explore",
+    "--machine",
+    "canonical bytes",
+    "--atlas-host-directory",
+    repository,
+  ]);
+  const elapsedMs = performance.now() - started;
+
+  assert.equal(command.status, exploreCommandExitCodes.usage);
+  assert.ok(elapsedMs < 5000, `Explore file-count refusal took ${String(elapsedMs)}ms`);
+  assert.equal(
+    parseExploreResult(command.stdout).handoff.validationState.findings[0]?.code,
+    "ATLAS_EXPLORE_ATLAS_TOO_MANY_FILES",
+  );
 });
 
 test("atlas explore --machine refuses oversized committed Atlas files before reading them", () => {

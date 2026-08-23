@@ -112,6 +112,29 @@
       "forbiddenImports": ["parse_atlas_pages"]
     },
     {
+      "name": "reject Explore truncating wrapped governing truths",
+      "gate": "atlas-cli",
+      "kind": "source-contract",
+      "path": "src/graph/explore_atlas.ts",
+      "requiredText": "textParts.join(\" \")",
+      "forbiddenText": "text: match[2] as string"
+    },
+    {
+      "name": "reject an Explore Atlas exceeding the file-count budget before file reads",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "explore",
+        "--machine",
+        "anything",
+        "--atlas-host-directory",
+        "{atlasHostDirectory}"
+      ],
+      "generatedExploreAtlasOverFileBudget": true,
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_EXPLORE_ATLAS_TOO_MANY_FILES"
+    },
+    {
       "name": "reject an Explore command with invalid arguments as machine JSON",
       "gate": "atlas-cli",
       "kind": "command",

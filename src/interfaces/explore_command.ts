@@ -19,6 +19,7 @@ export const exploreCommandBudgets = Object.freeze({
   maxContextCharacters: 4096,
   maxEdges: 2048,
   maxFileBytes: 1024 * 1024,
+  maxFiles: 4096,
   maxObjects: 2048,
   maxQueryCharacters: 1024,
   maxResults: 5,
@@ -157,6 +158,23 @@ export function unreadableAtlasExploreOperationResult(
   );
 }
 
+export function oversizedQueryExploreOperationResult(
+  message: string,
+): ExploreOperationResult {
+  return notCompletedExploreResult(
+    [exploreFinding("ATLAS_EXPLORE_QUERY_TOO_LARGE", message)],
+    "Explore command input exceeded its query budget before Atlas capture.",
+    "Shorten the Explore request and run Explore again.",
+    {
+      baseSnapshotReason:
+        "Explore refused an oversized query before reading a Git-backed Atlas Snapshot.",
+      degraded: false,
+      homeAtlasReason:
+        "Explore refused an oversized query before selecting an Atlas Host Directory.",
+    },
+  );
+}
+
 export function oversizedAtlasExploreOperationResult(
   message: string,
 ): ExploreOperationResult {
@@ -185,6 +203,7 @@ export function exitCodeForExploreOperationResult(
     codes.has("ATLAS_EXPLORE_USAGE") ||
     codes.has("ATLAS_EXPLORE_ATLAS_NOT_FOUND") ||
     codes.has("ATLAS_EXPLORE_ATLAS_TOO_LARGE") ||
+    codes.has("ATLAS_EXPLORE_ATLAS_TOO_MANY_FILES") ||
     codes.has("ATLAS_EXPLORE_QUERY_TOO_LARGE")
   ) {
     return exploreCommandExitCodes.usage;

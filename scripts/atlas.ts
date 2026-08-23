@@ -30,6 +30,7 @@ import {
   exploreCommandBudgets,
   exploreCommandExitCodes,
   exploreCommandUsage,
+  oversizedQueryExploreOperationResult,
   serializeExploreMachineResult,
   usageExploreOperationResult,
 } from "../src/interfaces/explore_command.ts";
@@ -418,6 +419,13 @@ function mainExplore(arguments_: readonly string[]): number {
     process.stdout.write(serializeExploreMachineResult(result));
     console.error(error.message);
     return exploreCommandExitCodes.usage;
+  }
+  if (command.query.length > exploreCommandBudgets.maxQueryCharacters) {
+    const result = oversizedQueryExploreOperationResult(
+      "Explore query exceeds the declared character budget.",
+    );
+    process.stdout.write(serializeExploreMachineResult(result));
+    return exitCodeForExploreOperationResult(result);
   }
   const result = runLocalAtlasExplore(
     command.atlasHostDirectory,

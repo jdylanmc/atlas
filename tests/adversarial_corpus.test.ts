@@ -122,6 +122,7 @@ interface AtlasCliCommandCase {
   readonly fixtureAtlasHostRepository?: true;
   readonly forbidPayloadLint?: true;
   readonly gate: "atlas-cli";
+  readonly generatedExploreAtlasOverFileBudget?: true;
   readonly generatedOversizedExploreQuery?: true;
   readonly generatedOversizedIngestRequest?: true;
   readonly kind: "command";
@@ -405,6 +406,7 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
           expectedDegradationState?: "degraded" | "not-degraded";
           fixtureAtlasHostRepository?: true;
           forbidPayloadLint?: true;
+          generatedExploreAtlasOverFileBudget?: true;
           generatedOversizedExploreQuery?: true;
           generatedOversizedIngestRequest?: true;
           recommendedNextActionExcludes?: string;
@@ -426,6 +428,13 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
         if (entry["forbidPayloadLint"] !== undefined) {
           assertBoolean(entry["forbidPayloadLint"], `${path}.forbidPayloadLint`);
           optional.forbidPayloadLint = true;
+        }
+        if (entry["generatedExploreAtlasOverFileBudget"] !== undefined) {
+          assertBoolean(
+            entry["generatedExploreAtlasOverFileBudget"],
+            `${path}.generatedExploreAtlasOverFileBudget`,
+          );
+          optional.generatedExploreAtlasOverFileBudget = true;
         }
         if (entry["generatedOversizedExploreQuery"] !== undefined) {
           assertBoolean(
@@ -1034,6 +1043,19 @@ for (const entry of atlasCliCorpus.cases) {
     if (entry.fixtureAtlasHostRepository === true) {
       const repository = resolve(workspace, "repository");
       createAdversarialAtlasRepository(repository);
+      for (const [index, argument] of arguments_.entries()) {
+        if (argument === "{atlasHostDirectory}") arguments_[index] = repository;
+      }
+    }
+    if (entry.generatedExploreAtlasOverFileBudget === true) {
+      const repository = resolve(workspace, "repository");
+      createAdversarialAtlasRepository(repository);
+      mkdirSync(resolve(repository, ".atlas", "many"), { recursive: true });
+      for (let index = 0; index <= exploreCommandBudgets.maxFiles; index += 1) {
+        writeFileSync(resolve(repository, ".atlas", "many", `${String(index)}.md`), "");
+      }
+      adversarialGit(repository, ["add", ".atlas/many"]);
+      adversarialGit(repository, ["commit", "-m", "Add many Atlas files"]);
       for (const [index, argument] of arguments_.entries()) {
         if (argument === "{atlasHostDirectory}") arguments_[index] = repository;
       }

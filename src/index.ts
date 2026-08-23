@@ -33,6 +33,7 @@ export {
   exploreCommandUsage,
   missingAtlasExploreOperationResult,
   oversizedAtlasExploreOperationResult,
+  oversizedQueryExploreOperationResult,
   serializeExploreMachineResult,
   unreadableAtlasExploreOperationResult,
   usageExploreOperationResult,
