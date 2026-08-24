@@ -671,22 +671,42 @@ test("Governance proves every deterministic input gate can fail with specific co
     assert.ok(principleGates.includes(code), code);
   }
 
-  // A retire that empties active truths is permitted, where amend is not.
-  const retireGates = runAtlasGovernanceWorkflow(
+  const malformedHeadingGates = runAtlasGovernanceWorkflow(
     workflowState,
     request({
-      action: "retire",
       changes: [
         {
-          content: principleContent("").replace(
-            "  id: principle:determinism",
-            "  id: principle:retired",
+          content: principleContent("- `truth:one` A truth.\n").replace(
+            "## Active truths",
+            "## Active truths ",
           ),
-          path: ".atlas/principles/retired.md",
+          path: ".atlas/principles/determinism.md",
         },
       ],
     }),
-    runtime(workflowState, request({ action: "retire" })),
+    runtime(workflowState, request()),
+  ).handoff.validationState.findings.map((entry) => entry.code);
+  assert.ok(
+    malformedHeadingGates.includes("ATLAS_GOVERNANCE_PRINCIPLE_TRUTH_REQUIRED"),
+  );
+
+  // A retire that empties active truths is permitted, where amend is not.
+  const retireRequest = request({
+    action: "retire",
+    changes: [
+      {
+        content: principleContent("").replace(
+          "  id: principle:determinism",
+          "  id: principle:retired",
+        ),
+        path: ".atlas/principles/retired.md",
+      },
+    ],
+  });
+  const retireGates = runAtlasGovernanceWorkflow(
+    workflowState,
+    retireRequest,
+    runtime(workflowState, retireRequest),
   );
   assert.equal(retireGates.completion, "completed");
 

@@ -5,7 +5,10 @@ import {
 } from "../domain/atlas_page.ts";
 import { corePageDirectories } from "../domain/core_archetype.ts";
 import { compareCodePoints } from "./compare_code_points.ts";
-import type { AtlasTextFile } from "./load_atlas_text.ts";
+import {
+  containsNonCanonicalLineTerminator,
+  type AtlasTextFile,
+} from "./load_atlas_text.ts";
 
 export type AtlasTextClassification = "page" | "opaque";
 
@@ -35,7 +38,8 @@ export type AtlasPageParseErrorCode =
   | "FRONTMATTER_TOO_LARGE"
   | "INVALID_PAGE_ENVELOPE"
   | "MALFORMED_FRONTMATTER"
-  | "MISSING_FRONTMATTER";
+  | "MISSING_FRONTMATTER"
+  | "NON_CANONICAL_LINE_TERMINATOR";
 
 const errorMessages: Readonly<Record<AtlasPageParseErrorCode, string>> = Object.freeze({
   FRONTMATTER_TOO_DEEP: "Atlas page frontmatter nests deeper than Atlas SDK reads.",
@@ -43,6 +47,7 @@ const errorMessages: Readonly<Record<AtlasPageParseErrorCode, string>> = Object.
   INVALID_PAGE_ENVELOPE: "Atlas page frontmatter does not satisfy the page envelope.",
   MALFORMED_FRONTMATTER: "Atlas page frontmatter is malformed.",
   MISSING_FRONTMATTER: "Atlas page frontmatter is missing.",
+  NON_CANONICAL_LINE_TERMINATOR: "Atlas page contains a non-canonical line terminator.",
 });
 
 export class AtlasPageParseError extends Error {
@@ -191,10 +196,9 @@ export function classifyAtlasTextPath(path: string): AtlasTextClassification {
 }
 
 // Only the document start or a position immediately after an actual LF begins a
-// line, so separators JavaScript regular expressions treat as line starts - a
-// lone carriage return under the multiline flag, and U+2028 and U+2029, which
-// YAML emits literally inside scalars - are not read as the closing frontmatter
-// delimiter. "only an LF starts a closing delimiter line" pins this.
+// line. Atlas text rejects lone carriage returns, U+2028, and U+2029 before
+// parsing, so every accepted page reaches this delimiter scan with the same
+// canonical line rule its Markdown consumers use.
 function findClosingDelimiter(
   content: string,
   from: number,
@@ -231,6 +235,9 @@ function findClosingDelimiter(
 export function parseAtlasPage(
   file: AtlasTextFile,
 ): ParsedAtlasPage | AtlasPageParseError {
+  if (containsNonCanonicalLineTerminator(file.content)) {
+    return new AtlasPageParseError("NON_CANONICAL_LINE_TERMINATOR", file.path, 1);
+  }
   const openingLength = openingLengthOf(file.content);
   if (openingLength === 0) {
     return new AtlasPageParseError("MISSING_FRONTMATTER", file.path, 1);

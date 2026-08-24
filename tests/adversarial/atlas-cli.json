@@ -116,7 +116,7 @@
       "gate": "atlas-cli",
       "kind": "source-contract",
       "path": "src/graph/explore_atlas.ts",
-      "requiredText": "textParts.join(\" \")",
+      "requiredText": "extractAtlasPrincipleActiveTruths",
       "forbiddenText": "text: match[2] as string"
     },
     {

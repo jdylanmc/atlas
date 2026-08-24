@@ -22,8 +22,15 @@ export type AtlasLoadErrorCode =
   | "INVALID_BUDGET"
   | "INVALID_PATH"
   | "INVALID_UTF8"
+  | "NON_CANONICAL_LINE_TERMINATOR"
   | "SHARED_BYTES_NOT_ALLOWED"
   | "TOTAL_TOO_LARGE";
+
+const nonCanonicalLineTerminator = /\r(?!\n)|[\u2028\u2029]/u;
+
+export function containsNonCanonicalLineTerminator(content: string): boolean {
+  return nonCanonicalLineTerminator.test(content);
+}
 
 const messages: Readonly<Record<AtlasLoadErrorCode, string>> = Object.freeze({
   DUPLICATE_PATH: "Captured Atlas files contain a duplicate normalized path.",
@@ -31,6 +38,8 @@ const messages: Readonly<Record<AtlasLoadErrorCode, string>> = Object.freeze({
   INVALID_BUDGET: "Atlas byte budgets must be non-negative safe integers.",
   INVALID_PATH: "A captured Atlas file has an invalid path.",
   INVALID_UTF8: "A captured Atlas file is not valid UTF-8.",
+  NON_CANONICAL_LINE_TERMINATOR:
+    "A captured Atlas file contains a non-canonical line terminator.",
   SHARED_BYTES_NOT_ALLOWED: "Captured Atlas file bytes must not use shared memory.",
   TOTAL_TOO_LARGE: "Captured Atlas files exceed the total byte budget.",
 });
@@ -155,6 +164,9 @@ export function loadAtlasText(
     } catch (error: unknown) {
       rethrowProcessLimit(error);
       throw new AtlasLoadError("INVALID_UTF8");
+    }
+    if (containsNonCanonicalLineTerminator(content)) {
+      throw new AtlasLoadError("NON_CANONICAL_LINE_TERMINATOR");
     }
     files.push(Object.freeze({ content, path: file.path }));
   }

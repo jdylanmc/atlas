@@ -12,6 +12,7 @@ import type { CapturedAtlasFile } from "../src/atlas/load_atlas_text.ts";
 import type { Finding } from "../src/domain/finding.ts";
 import type { CoreArchetypeBindings } from "../src/domain/core_archetype.ts";
 import { loadAndValidateAtlasInput } from "../src/lint/validate_atlas_input.ts";
+import { validateAtlasStructure } from "../src/lint/validate_atlas_structure.ts";
 import {
   atlasInitializationFiles,
   canonicalFrameworkPageByBundleState,
@@ -71,6 +72,14 @@ const frameworkBundleCorpus = parseFrameworkBundleCorpus(
   JSON.parse(
     readFileSync(
       resolve(ROOT, "tests", "adversarial", "framework-bundle.json"),
+      "utf8",
+    ),
+  ),
+);
+const structuralValidationCorpus = parseStructuralValidationCorpus(
+  JSON.parse(
+    readFileSync(
+      resolve(ROOT, "tests", "adversarial", "structural-validation.json"),
       "utf8",
     ),
   ),
@@ -249,6 +258,21 @@ interface FrameworkBundleCorpus {
   readonly schema: 1;
 }
 
+interface StructuralValidationCase {
+  readonly body: string;
+  readonly expectation: "accept" | "reject";
+  readonly expectedCode?: string;
+  readonly gate: "structural-validation";
+  readonly kind: "principle-active-truths";
+  readonly name: string;
+}
+
+interface StructuralValidationCorpus {
+  readonly cases: readonly StructuralValidationCase[];
+  readonly reviewResolutionRule: string;
+  readonly schema: 1;
+}
+
 const adversarialEncoder = new TextEncoder();
 
 const binding: CoreArchetypeBindings = Object.freeze({
@@ -373,6 +397,82 @@ function parseFrameworkBundleCorpus(value: unknown): FrameworkBundleCorpus {
   assert.notEqual(accepts, 0, "framework-bundle corpus must include an accept case");
   assert.notEqual(rejects, 0, "framework-bundle corpus must include a reject case");
   return { canonical, cases, reviewResolutionRule, schema: 1 };
+}
+
+function parseStructuralValidationCorpus(value: unknown): StructuralValidationCorpus {
+  assert.ok(isRecord(value), "structural-validation corpus must be an object");
+  assert.equal(value["schema"], 1, "structural-validation corpus schema must be 1");
+  const reviewResolutionRule = assertString(
+    value["reviewResolutionRule"],
+    "structural-validation.reviewResolutionRule",
+  );
+  assert.ok(
+    Array.isArray(value["cases"]),
+    "structural-validation cases must be an array",
+  );
+  assert.notEqual(
+    value["cases"].length,
+    0,
+    "structural-validation cases must not be empty",
+  );
+  const names = new Set<string>();
+  let accepts = 0;
+  let rejects = 0;
+  const cases = (value["cases"] as readonly unknown[]).map(
+    (entry, index): StructuralValidationCase => {
+      const path = `structural-validation.cases[${String(index)}]`;
+      assert.ok(isRecord(entry), `${path} must be an object`);
+      const name = assertString(entry["name"], `${path}.name`);
+      assert.equal(names.has(name), false, `${path}.name must be unique`);
+      names.add(name);
+      assert.equal(
+        entry["gate"],
+        "structural-validation",
+        `${path}.gate is unsupported`,
+      );
+      assert.equal(
+        entry["kind"],
+        "principle-active-truths",
+        `${path}.kind is unsupported`,
+      );
+      const expectation = entry["expectation"];
+      assert.ok(
+        expectation === "accept" || expectation === "reject",
+        `${path}.expectation is unsupported`,
+      );
+      if (expectation === "accept") {
+        accepts += 1;
+        assert.equal(entry["expectedCode"], undefined, `${path}.expectedCode`);
+        return {
+          body: assertString(entry["body"], `${path}.body`),
+          expectation,
+          gate: "structural-validation",
+          kind: "principle-active-truths",
+          name,
+        };
+      }
+      rejects += 1;
+      return {
+        body: assertString(entry["body"], `${path}.body`),
+        expectation,
+        expectedCode: assertString(entry["expectedCode"], `${path}.expectedCode`),
+        gate: "structural-validation",
+        kind: "principle-active-truths",
+        name,
+      };
+    },
+  );
+  assert.notEqual(
+    accepts,
+    0,
+    "structural-validation corpus must include an accept case",
+  );
+  assert.notEqual(
+    rejects,
+    0,
+    "structural-validation corpus must include a reject case",
+  );
+  return { cases, reviewResolutionRule, schema: 1 };
 }
 
 function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
@@ -833,6 +933,7 @@ after(() => {
       atlasCliCorpus.cases.length +
       lintStampCorpus.cases.length +
       frameworkBundleCorpus.cases.length +
+      structuralValidationCorpus.cases.length +
       ingestCorpus.cases.length,
   );
 });
@@ -900,6 +1001,58 @@ test("the adversarial framework-bundle corpus is structurally valid", () => {
     frameworkBundleCorpus.canonical,
   );
 });
+
+test("the adversarial structural-validation corpus is structurally valid", () => {
+  assert.match(structuralValidationCorpus.reviewResolutionRule, /review finding/u);
+  assert.equal(structuralValidationCorpus.schema, 1);
+  assert.equal(
+    new Set(structuralValidationCorpus.cases.map((entry) => entry.name)).size,
+    structuralValidationCorpus.cases.length,
+  );
+  assert.ok(
+    structuralValidationCorpus.cases.some((entry) => entry.expectation === "accept"),
+  );
+  assert.ok(
+    structuralValidationCorpus.cases.some((entry) => entry.expectation === "reject"),
+  );
+});
+
+function structuralAtlasPage(
+  path: string,
+  id: string,
+  type: string,
+  title: string,
+  body: string,
+) {
+  return Object.freeze({
+    content: [
+      "---",
+      "sdk:",
+      "  atlas-sdk-schema: 1.0.0",
+      "  local-atlas-schema: 1.0.0",
+      `  id: ${id}`,
+      `  type: ${type}`,
+      `  title: ${title}`,
+      '  created-at: "2026-08-24T00:00:00Z"',
+      '  updated-at: "2026-08-24T00:00:00Z"',
+      "  created-by: { kind: human, name: Fixture Maintainer }",
+      "  updated-by: { kind: human, name: Fixture Maintainer }",
+      "  tags: []",
+      "atlas: {}",
+      "---",
+      body,
+    ].join("\n"),
+    path,
+  });
+}
+
+const structuralRoot = structuralAtlasPage(
+  ".atlas/index.md",
+  "anchor:root",
+  "anchor",
+  "Root",
+  "# Root\n",
+);
 
 function adversarialCaptured(path: string, content: string): CapturedAtlasFile {
   return { bytes: adversarialEncoder.encode(content), path };
@@ -982,6 +1135,31 @@ function exerciseAtlasViewMutation(entry: AtlasCliAtlasViewMutationCase): void {
   assert.equal(Object.isFrozen(snapshot), true);
   assert.equal(Object.isFrozen(snapshot.snapshot), true);
   assert.equal(Object.isFrozen(object.page.sdk), true);
+}
+
+for (const entry of structuralValidationCorpus.cases) {
+  test(`adversarial structural-validation corpus: ${entry.name}`, () => {
+    executedCases += 1;
+    assert.equal(entry.gate, "structural-validation");
+    const findings = validateAtlasStructure([
+      structuralRoot,
+      structuralAtlasPage(
+        ".atlas/principles/principle.md",
+        "principle:principle",
+        "principle",
+        "Principle",
+        entry.body,
+      ),
+    ]);
+    if (entry.expectation === "accept") {
+      assert.deepEqual(findings, []);
+      return;
+    }
+    assert.ok(
+      findings.some((finding) => finding.code === entry.expectedCode),
+      findings.map((finding) => finding.code).join(", "),
+    );
+  });
 }
 
 for (const entry of atlasCliCorpus.cases) {
@@ -1334,7 +1512,9 @@ const ingestRoot = ingestPage(
   "# Home\n",
 );
 const ingestChangelog: CapturedAtlasFile = {
-  bytes: ingestEncoder.encode("# Changelog\n\n## 2026-08-17\n\n- Base.\n"),
+  bytes: ingestEncoder.encode(
+    "# Changelog\n\n## 2026-08-17\n\n- Existing ingest entry.\n",
+  ),
   path: ".atlas/CHANGELOG.md",
 };
 const ingestPrinciple = ingestPage(
@@ -1928,6 +2108,24 @@ function assertIngestEmission(entry: IngestCorpusCase, scenario: IngestScenario)
       parsed as { readonly page: { readonly atlas: Record<string, unknown> } }
     ).page.atlas;
     assert.match(String(atlas["revision"]), /^[0-9a-f]{64}$/u);
+    return;
+  }
+  if (entry.mutation === "changelog-preserves-existing-history") {
+    const changeSet = reconcileCandidateGraph(
+      scenario.workflowState,
+      scenario.request,
+      scenario.baseFiles,
+    );
+    const changelogChange = changeSet.changes.find(
+      (change) => change.path === ".atlas/CHANGELOG.md",
+    );
+    assert.ok(changelogChange);
+    assert.match(changelogChange.content, /- Existing ingest entry\./u);
+    assert.match(changelogChange.content, /- ingest-op-81: Ingested source:readme/u);
+    assert.ok(
+      changelogChange.content.indexOf("Existing ingest entry") <
+        changelogChange.content.indexOf("ingest-op-81"),
+    );
     return;
   }
   assert.fail(`unhandled emission mutation ${entry.mutation}`);

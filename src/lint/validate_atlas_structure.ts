@@ -20,6 +20,7 @@ import {
   corePageTypesByDirectory,
   rootAnchorPageId,
 } from "../domain/core_archetype.ts";
+import { malformedAtlasPrincipleTruthLines } from "../domain/atlas_principle.ts";
 import type { Finding, FindingLocation } from "../domain/finding.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import type { AtlasTextFile } from "../atlas/load_atlas_text.ts";
@@ -56,6 +57,7 @@ const parseCodes = Object.freeze({
   INVALID_PAGE_ENVELOPE: "ATLAS_PAGE_INVALID_ENVELOPE",
   MALFORMED_FRONTMATTER: "ATLAS_PAGE_MALFORMED_FRONTMATTER",
   MISSING_FRONTMATTER: "ATLAS_PAGE_MISSING_FRONTMATTER",
+  NON_CANONICAL_LINE_TERMINATOR: "ATLAS_PAGE_NON_CANONICAL_LINE_TERMINATOR",
 });
 
 const parseMessages = Object.freeze({
@@ -64,6 +66,7 @@ const parseMessages = Object.freeze({
   INVALID_PAGE_ENVELOPE: "Atlas page frontmatter does not satisfy the page envelope.",
   MALFORMED_FRONTMATTER: "Atlas page frontmatter is malformed.",
   MISSING_FRONTMATTER: "Atlas page frontmatter is missing.",
+  NON_CANONICAL_LINE_TERMINATOR: "Atlas page contains a non-canonical line terminator.",
 });
 
 const sourcePrefix = `.atlas/${coreArchetypes.Source.directory}/`;
@@ -739,6 +742,19 @@ function validatePage(
 
   const heading = markdownHeadingFinding(parsed, file.content, tree);
   if (heading !== undefined) findings.push(heading);
+
+  if (parsed.page.sdk.type === coreArchetypes.Principle.pageType) {
+    for (const malformed of malformedAtlasPrincipleTruthLines(parsed.page.body)) {
+      findings.push(
+        finding(
+          "ATLAS_PRINCIPLE_TRUTH_MALFORMED",
+          "A Principle truth-shaped bullet must be inside the canonical Active truths block and carry a stable truth identity with same-line text.",
+          file.path,
+          lineLocation(file.content, parsed.source.body.startLine + malformed.line - 1),
+        ),
+      );
+    }
+  }
 
   if (
     Date.parse(parsed.page.sdk["created-at"]) >

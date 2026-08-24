@@ -722,6 +722,30 @@ test("A Contradiction blocks until accepted and must name a real Principle truth
   assert.ok(codes(unresolved).includes("ATLAS_INGEST_CONTRADICTION_UNRESOLVED"));
 });
 
+test("Ingest uses the shared Principle parser when resolving Contradictions", () => {
+  const malformedPrinciple: CapturedAtlasFile = {
+    bytes: encoder.encode(
+      new TextDecoder()
+        .decode(determinismPrinciple.bytes)
+        .replace("## Active truths", "## Active truths "),
+    ),
+    path: determinismPrinciple.path,
+  };
+  const findings = validateCandidateGraph(
+    request({
+      candidateGraph: graph({
+        concepts: Object.freeze([
+          concept({
+            contradiction: { acceptedBy: "M", principleTruthId: "truth:no-model" },
+          }),
+        ]),
+      }),
+    }),
+    [rootAnchor, changelog, malformedPrinciple],
+  );
+  assert.ok(codes(findings).includes("ATLAS_INGEST_CONTRADICTION_UNRESOLVED"));
+});
+
 test("A Contradiction may name an Atlas Policy, but not both governors or none", () => {
   const acceptedPolicy = validateCandidateGraph(
     request({
@@ -1161,6 +1185,35 @@ test("An equal-authority Dispute escalates through the workflow as a pending hum
   assert.match(result.handoff.recommendedNextAction, /unresolved human decisions/u);
 });
 
+test("Ingest appends to the existing Atlas Changelog instead of replacing history", () => {
+  const workflowState = state();
+  const ingestRequest = request();
+  const first = reconcileCandidateGraph(workflowState, ingestRequest, [rootAnchor]);
+  const firstChangelog = first.changes.find(
+    (change) => change.path === ".atlas/CHANGELOG.md",
+  );
+  assert.ok(firstChangelog);
+  const secondBase = [
+    rootAnchor,
+    { bytes: encoder.encode(firstChangelog.content), path: ".atlas/CHANGELOG.md" },
+  ];
+  const second = reconcileCandidateGraph(
+    { ...workflowState, operationId: "ingest-op-82" },
+    ingestRequest,
+    secondBase,
+  );
+  const secondChangelog = second.changes.find(
+    (change) => change.path === ".atlas/CHANGELOG.md",
+  );
+  assert.ok(secondChangelog);
+  assert.match(secondChangelog.content, /- ingest-op-81: Ingested source:readme/u);
+  assert.match(secondChangelog.content, /- ingest-op-82: Ingested source:readme/u);
+  assert.ok(
+    secondChangelog.content.indexOf("ingest-op-81") <
+      secondChangelog.content.indexOf("ingest-op-82"),
+  );
+});
+
 test("Change set validation enforces base freshness, canonical paths, and Changelog", () => {
   const workflowState = state();
   assert.deepEqual(
@@ -1274,7 +1327,11 @@ test("Ingest refuses existing workspaces and escaping workspace paths", () => {
 test("Ingest resumes content-addressed receipts without replaying writes", () => {
   const workflowState = state();
   const ingestRequest = request();
-  const changeSet = reconcileCandidateGraph(workflowState, ingestRequest);
+  const changeSet = reconcileCandidateGraph(
+    workflowState,
+    ingestRequest,
+    baseFilesDefault,
+  );
   const commit = "cccccccccccccccccccccccccccccccccccccccc";
   const digestReceipts = state([
     { effect: "create-proposal-worktree", receipt: "created" },
@@ -1327,7 +1384,7 @@ test("Ingest rejects crafted resume receipts not bound to the change set content
 
 test("Ingest rejects resumed commit and lint receipts that drift from the change set", () => {
   const workflowState = state();
-  const changeSet = reconcileCandidateGraph(workflowState, request());
+  const changeSet = reconcileCandidateGraph(workflowState, request(), baseFilesDefault);
   const commitDrift = state([
     { effect: "create-proposal-worktree", receipt: "created" },
     {

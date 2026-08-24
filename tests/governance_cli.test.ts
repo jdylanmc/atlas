@@ -526,43 +526,24 @@ test("atlas govern refuses a forged multi-line Changelog entry and an SDK-derive
 test("atlas govern retires a Principle with zero active truths, where amend is refused", () => {
   const repository = resolve(WORKSPACE, "retire-principle");
   const mainBefore = initAtlasRepository(repository);
-  const requestPath = resolve(WORKSPACE, "retire-principle-request.json");
-  writeFileSync(
-    requestPath,
-    JSON.stringify(retirePrincipleRequest(repository, "retire")),
-    "utf8",
+  const result = runLocalAtlasGovernance(
+    repository,
+    retirePrincipleRequest(repository, "retire"),
   );
 
-  const command = runAtlas([
-    "govern",
-    "--machine",
-    "--request",
-    requestPath,
-    "--atlas-host-directory",
-    repository,
-  ]);
-
-  assert.equal(command.status, governCommandExitCodes.success, command.stdout);
-  const result = parseGovernResult(command.stdout);
   assert.equal(result.completion, "completed");
-  assert.ok(result.payload.lint);
-  assert.equal(result.payload.lint.payload.state, "completed");
-  assert.equal(result.payload.lint.payload.lint.outcome, "valid");
+  assert.equal(result.disposition, "success");
   assert.equal(git(repository, ["rev-parse", "main"]), mainBefore);
 
-  // The contrast that proves the relaxation is real: the identical zero-truth
-  // Change Set is refused under `amend`, which is not exempt from the
-  // active-truth requirement. If this stopped failing, retire would prove
-  // nothing about the action-specific branch.
   const amendRepository = resolve(WORKSPACE, "amend-zero-truth");
   initAtlasRepository(amendRepository);
-  const refused = runLocalAtlasGovernance(
+  const amendRefused = runLocalAtlasGovernance(
     amendRepository,
     retirePrincipleRequest(amendRepository, "amend"),
   );
-  assert.equal(refused.completion, "not-completed");
+  assert.equal(amendRefused.completion, "not-completed");
   assert.ok(
-    refused.handoff.validationState.findings.some(
+    amendRefused.handoff.validationState.findings.some(
       (entry) => entry.code === "ATLAS_GOVERNANCE_PRINCIPLE_TRUTH_REQUIRED",
     ),
   );

@@ -40,6 +40,19 @@ function parseError(file: AtlasTextFile): AtlasPageParseError {
   assert.fail("Expected AtlasPageParseError.");
 }
 
+test("direct page parsing rejects non-canonical line terminators", () => {
+  for (const character of ["\r", "\u2028", "\u2029"]) {
+    const error = parseError(
+      text(
+        ".atlas/concepts/page.md",
+        `${validPage("concept:page")}\n# Page${character}`,
+      ),
+    );
+    assert.equal(error.code, "NON_CANONICAL_LINE_TERMINATOR");
+    assert.equal(error.sourceLine, 1);
+  }
+});
+
 test("classifies only settled core Atlas page locations", () => {
   for (const path of [
     ".atlas/index.md",
@@ -293,22 +306,16 @@ test("preserves body bytes and stable source lines", () => {
   });
 });
 
-test("only an LF starts a closing delimiter line", () => {
-  for (const separator of ["\u2028", "\u2029"]) {
+test("non-canonical separators cannot hide frontmatter delimiters", () => {
+  for (const separator of ["\r", "\u2028", "\u2029"]) {
     const frontmatter = validPage("concept:separators").replace(
       "atlas: {}",
       `atlas:\n  note: "a${separator}---${separator}b"\n  zebra: last`,
     );
-    const [parsed] = parseAtlasPages([
+    const error = parseError(
       text(".atlas/concepts/separators.md", `${frontmatter}\nbody\n`),
-    ]);
-
-    assert.ok(parsed);
-    assert.deepEqual(parsed.page.atlas, {
-      note: `a${separator}---${separator}b`,
-      zebra: "last",
-    });
-    assert.equal(parsed.page.body, "body\n");
+    );
+    assert.equal(error.code, "NON_CANONICAL_LINE_TERMINATOR");
   }
 });
 

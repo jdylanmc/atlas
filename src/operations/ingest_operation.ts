@@ -1,5 +1,7 @@
 import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
+import { atlasChangelogPath, renderAtlasChangelog } from "../domain/atlas_changelog.ts";
+import { atlasPrincipleActiveTruthIds } from "../domain/atlas_principle.ts";
 import { resolvedCitationSourcePaths } from "../atlas/resolve_citations.ts";
 import { serializeAtlasPages } from "../atlas/serialize_atlas_pages.ts";
 import type { ParsedAtlasPage } from "../atlas/parse_atlas_pages.ts";
@@ -429,18 +431,6 @@ function frontmatterField(content: string, key: string): string | undefined {
   return match?.[1];
 }
 
-function activePrincipleTruthIds(content: string): readonly string[] {
-  const ids: string[] = [];
-  let active = false;
-  for (const line of content.split(/\r?\n/u)) {
-    if (/^## /u.test(line)) active = line.trim() === "## Active truths";
-    if (!active) continue;
-    const match = /^- `([^`]+)` /u.exec(line);
-    if (match !== null) ids.push(match[1] as string);
-  }
-  return ids;
-}
-
 function readExistingAtlas(files: readonly CapturedAtlasFile[]): ExistingAtlas {
   const decoder = new TextDecoder();
   const principleTruthIds = new Set<string>();
@@ -458,7 +448,8 @@ function readExistingAtlas(files: readonly CapturedAtlasFile[]): ExistingAtlas {
       continue;
     }
     if (file.path.startsWith(".atlas/principles/")) {
-      for (const truth of activePrincipleTruthIds(text)) principleTruthIds.add(truth);
+      for (const truth of atlasPrincipleActiveTruthIds(text))
+        principleTruthIds.add(truth);
     }
     if (file.path.startsWith(".atlas/types/policy/")) {
       if (id !== undefined) atlasPolicyIds.add(id);
@@ -1273,23 +1264,30 @@ function edgePage(
   );
 }
 
+function capturedText(file: CapturedAtlasFile | undefined): string | undefined {
+  if (file === undefined) return undefined;
+  return new TextDecoder().decode(file.bytes);
+}
+
 function changelogEntry(
   graph: AtlasIngestCandidateGraph,
   scope: AtlasIngestScope,
   operationId: string,
   refresh: boolean,
+  existingFiles: readonly CapturedAtlasFile[],
 ): AtlasIngestChange {
   const verb = refresh ? "Refreshed" : "Ingested";
+  const existingContent = capturedText(
+    existingFiles.find((file) => file.path === atlasChangelogPath),
+  );
   return Object.freeze({
-    content: [
-      "# Changelog",
-      "",
-      `## ${scope.asOf}`,
-      "",
-      `- ${operationId}: ${verb} ${scope.sourceId} approved by ${scope.approvedBy} at ${scope.approvedAt} into ${String(graph.concepts.length)} Concept(s) with cited Source and Edges.`,
-      "",
-    ].join("\n"),
-    path: ".atlas/CHANGELOG.md",
+    content: renderAtlasChangelog(
+      existingContent,
+      scope.asOf,
+      operationId,
+      `${verb} ${scope.sourceId} approved by ${scope.approvedBy} at ${scope.approvedAt} into ${String(graph.concepts.length)} Concept(s) with cited Source and Edges.`,
+    ),
+    path: atlasChangelogPath,
   });
 }
 
@@ -1337,7 +1335,7 @@ export function reconcileCandidateGraph(
     pages.push(edgePage(edge, scope, state.operationId));
   }
   const changes: AtlasIngestChange[] = [
-    changelogEntry(graph, scope, state.operationId, refresh),
+    changelogEntry(graph, scope, state.operationId, refresh, existingFiles),
     ...serializeAtlasPages(pages).map((file) =>
       Object.freeze({ content: file.content, path: file.path }),
     ),

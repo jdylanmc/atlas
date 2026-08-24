@@ -3,6 +3,7 @@ import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import type { AtlasView, AtlasViewEdge } from "../atlas/atlas_view.ts";
 import { resolvedCitationSourcePaths } from "../atlas/resolve_citations.ts";
 import { rootAnchorPageId } from "../domain/core_archetype.ts";
+import { extractAtlasPrincipleActiveTruths } from "../domain/atlas_principle.ts";
 import type { Finding } from "../domain/finding.ts";
 
 const attribution = Object.freeze({
@@ -423,29 +424,12 @@ function governingTruths(
 ): readonly ExploreGoverningTruth[] {
   const truths: ExploreGoverningTruth[] = [];
   for (const principle of principles) {
-    const lines = principle.body.split(/\r?\n/u);
-    let active = false;
-    for (let index = 0; index < lines.length; index += 1) {
-      const line = lines[index] as string;
-      if (/^## /u.test(line)) active = line === "## Active truths";
-      if (!active) continue;
-      const match = /^- `([^`]+)` (.+)$/u.exec(line);
-      if (match === null) continue;
-      const textParts = [match[2] as string];
-      for (let nextIndex = index + 1; nextIndex < lines.length; nextIndex += 1) {
-        const nextLine = lines[nextIndex] as string;
-        if (nextLine === "" || /^## /u.test(nextLine) || /^- /u.test(nextLine)) {
-          break;
-        }
-        if (!/^\s+\S/u.test(nextLine)) break;
-        textParts.push(nextLine.trim());
-        index = nextIndex;
-      }
+    for (const truth of extractAtlasPrincipleActiveTruths(principle.body)) {
       truths.push(
         Object.freeze({
           principleId: principle.id,
-          text: textParts.join(" "),
-          truthId: match[1] as string,
+          text: truth.text,
+          truthId: truth.truthId,
         }),
       );
     }
