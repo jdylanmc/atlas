@@ -132,7 +132,7 @@ test("SDK Atlas lint gate accepts the committed SDK Atlas", () => {
   assert.equal(result.exitCode, 0);
   assert.deepEqual(result.stderr, []);
   assert.deepEqual(result.stdout, [
-    "validated SDK Atlas Lint: 7 page(s), 2 opaque record(s), 0 error Findings",
+    "validated SDK Atlas Lint: 18 page(s), 2 opaque record(s), 0 error Findings",
   ]);
 });
 
@@ -446,7 +446,7 @@ test("SDK Atlas lint script is directly executable for the committed SDK Atlas",
   assert.equal(result.stderr, "");
   assert.equal(
     result.stdout,
-    "validated SDK Atlas Lint: 7 page(s), 2 opaque record(s), 0 error Findings\n",
+    "validated SDK Atlas Lint: 18 page(s), 2 opaque record(s), 0 error Findings\n",
   );
 });
 
