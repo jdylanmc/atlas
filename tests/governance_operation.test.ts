@@ -690,8 +690,7 @@ test("Governance proves every deterministic input gate can fail with specific co
     malformedHeadingGates.includes("ATLAS_GOVERNANCE_PRINCIPLE_TRUTH_REQUIRED"),
   );
 
-  // A retire that empties active truths is permitted at the governance precheck,
-  // where amend is not. Structural Lint still rejects a retained zero-truth page.
+  // A retire that empties active truths is permitted, where amend is not.
   const retireRequest = request({
     action: "retire",
     changes: [
@@ -709,12 +708,7 @@ test("Governance proves every deterministic input gate can fail with specific co
     retireRequest,
     runtime(workflowState, retireRequest),
   );
-  assert.equal(retireGates.completion, "not-completed");
-  assert.ok(
-    retireGates.handoff.validationState.findings.some(
-      (entry) => entry.code === "ATLAS_PRINCIPLE_ACTIVE_TRUTH_REQUIRED",
-    ),
-  );
+  assert.equal(retireGates.completion, "completed");
 
   // Atlas Policy identity gates.
   const policyGates = runAtlasGovernanceWorkflow(

@@ -166,6 +166,18 @@ test("rejects cross-context shared memory", () => {
   );
 });
 
+test("rejects non-canonical line terminators before text reaches consumers", () => {
+  for (const character of ["\r", "\u2028", "\u2029"]) {
+    assert.equal(
+      errorCode(() =>
+        loadAtlasText([captured(".atlas/page.md", `a${character}b`)], BUDGETS),
+      ),
+      "NON_CANONICAL_LINE_TERMINATOR",
+      JSON.stringify(character),
+    );
+  }
+});
+
 test("strictly rejects invalid UTF-8", () => {
   assert.equal(
     errorCode(() =>

@@ -558,17 +558,14 @@ test("keeps doubling cost below 2.5x as Atlas body bytes double", () => {
   });
 });
 
-test("locates a value in frontmatter no reader would end early", () => {
-  // A lone carriage return starts a line for a JavaScript regular expression
-  // under the multiline flag but not for the YAML reader, so a comment holding
-  // one used to end the frontmatter early for the stage locating a value, and
-  // the Lint answered that it could not complete instead of reporting the page.
-  const backdated = fixtureText(".atlas/concepts/canonical-serialization.md")
-    .replace("sdk:\n", "sdk:\n  # note\r---\r\n")
-    .replace(/updated-at: "[^"]+"/u, 'updated-at: "2020-01-01T00:00:00Z"');
+test("rejects non-canonical line terminators before readers can disagree", () => {
+  const hostile = fixtureText(".atlas/concepts/canonical-serialization.md").replace(
+    "sdk:\n",
+    "sdk:\n  # note\r---\r\n",
+  );
   const atlas = completeAtlas("valid").map((file) =>
     file.path === ".atlas/concepts/canonical-serialization.md"
-      ? { bytes: encoder.encode(backdated), path: file.path }
+      ? { bytes: encoder.encode(hostile), path: file.path }
       : file,
   );
 
@@ -579,8 +576,8 @@ test("locates a value in frontmatter no reader would end early", () => {
     result.findings.map(({ code, path }) => ({ code, path })),
     [
       {
-        code: "ATLAS_PAGE_UPDATED_BEFORE_CREATED",
-        path: ".atlas/concepts/canonical-serialization.md",
+        code: "ATLAS_LOAD_NON_CANONICAL_LINE_TERMINATOR",
+        path: ".atlas",
       },
     ],
   );

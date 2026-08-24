@@ -10,11 +10,26 @@
       "body": "# Principle\n\n## Active truths\n\n- `truth:one` Text.\n\n## Amendments\n"
     },
     {
+      "name": "retired-zero-active-truths-block-is-accepted",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "accept",
+      "body": "# Principle\n\n## Active truths\n\n## Amendments\n\n### 2 - 2026-08-24\n\nRetired all active truths.\n"
+    },
+    {
+      "name": "valid-truth-beside-missing-same-line-text-is-rejected",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PRINCIPLE_TRUTH_MALFORMED",
+      "body": "# Principle\n\n## Active truths\n\n- `truth:ok` Enforced.\n- `truth:inert`\n  Intended but not parsed.\n\n## Amendments\n"
+    },
+    {
       "name": "trailing-whitespace-active-truths-heading-is-rejected",
       "gate": "structural-validation",
       "kind": "principle-active-truths",
       "expectation": "reject",
-      "expectedCode": "ATLAS_PRINCIPLE_ACTIVE_TRUTH_REQUIRED",
+      "expectedCode": "ATLAS_PRINCIPLE_TRUTH_MALFORMED",
       "body": "# Principle\n\n## Active truths \n\n- `truth:one` Text.\n\n## Amendments\n"
     },
     {
@@ -22,7 +37,7 @@
       "gate": "structural-validation",
       "kind": "principle-active-truths",
       "expectation": "reject",
-      "expectedCode": "ATLAS_PRINCIPLE_ACTIVE_TRUTH_REQUIRED",
+      "expectedCode": "ATLAS_PRINCIPLE_TRUTH_MALFORMED",
       "body": "# Principle\n\n### Active truths\n\n- `truth:one` Text.\n\n## Amendments\n"
     },
     {
@@ -30,7 +45,7 @@
       "gate": "structural-validation",
       "kind": "principle-active-truths",
       "expectation": "reject",
-      "expectedCode": "ATLAS_PRINCIPLE_ACTIVE_TRUTH_REQUIRED",
+      "expectedCode": "ATLAS_PRINCIPLE_TRUTH_MALFORMED",
       "body": "# Principle\n\n## Active Truths\n\n- `truth:one` Text.\n\n## Amendments\n"
     },
     {
@@ -38,16 +53,56 @@
       "gate": "structural-validation",
       "kind": "principle-active-truths",
       "expectation": "reject",
-      "expectedCode": "ATLAS_PRINCIPLE_ACTIVE_TRUTH_REQUIRED",
+      "expectedCode": "ATLAS_PRINCIPLE_TRUTH_MALFORMED",
       "body": "# Principle\n\n## Active truths\n\n  - `truth:one` Text.\n\n## Amendments\n"
     },
     {
-      "name": "active-truth-id-without-same-line-text-is-rejected",
+      "name": "tab-indented-active-truth-bullet-is-rejected",
       "gate": "structural-validation",
       "kind": "principle-active-truths",
       "expectation": "reject",
-      "expectedCode": "ATLAS_PRINCIPLE_ACTIVE_TRUTH_REQUIRED",
-      "body": "# Principle\n\n## Active truths\n\n- `truth:one`\n\n## Amendments\n"
+      "expectedCode": "ATLAS_PRINCIPLE_TRUTH_MALFORMED",
+      "body": "# Principle\n\n## Active truths\n\n\t- `truth:one` Text.\n\n## Amendments\n"
+    },
+    {
+      "name": "active-truth-id-with-empty-same-line-text-is-rejected",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PRINCIPLE_TRUTH_MALFORMED",
+      "body": "# Principle\n\n## Active truths\n\n- `truth:one`   \n\n## Amendments\n"
+    },
+    {
+      "name": "empty-active-truth-id-is-rejected",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PRINCIPLE_TRUTH_MALFORMED",
+      "body": "# Principle\n\n## Active truths\n\n- `` Text.\n\n## Amendments\n"
+    },
+    {
+      "name": "active-truth-bullet-after-block-ended-is-rejected",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PRINCIPLE_TRUTH_MALFORMED",
+      "body": "# Principle\n\n## Active truths\n\n## Amendments\n\n- `truth:late` Text.\n"
+    },
+    {
+      "name": "line-separator-between-truth-bullets-is-rejected",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PAGE_NON_CANONICAL_LINE_TERMINATOR",
+      "body": "# Principle\n\n## Active truths\n\n- `truth:review` Every change requires Maintainer approval.\u2028- `truth:audit` All writes are audited.\n"
+    },
+    {
+      "name": "paragraph-separator-between-truth-bullets-is-rejected",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PAGE_NON_CANONICAL_LINE_TERMINATOR",
+      "body": "# Principle\n\n## Active truths\n\n- `truth:review` Every change requires Maintainer approval.\u2029- `truth:audit` All writes are audited.\n"
     }
   ]
 }

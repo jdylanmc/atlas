@@ -861,7 +861,7 @@ test("emits fold prone multiline strings as single line scalars", () => {
   assert.equal(again.content, file.content);
 });
 
-test("round trips line and paragraph separators inside values and keys", () => {
+test("serialized line and paragraph separators are rejected at the parse boundary", () => {
   for (const separator of ["\u2028", "\u2029"]) {
     const longKey = `${"k".repeat(1100)}${separator}---`;
     const atlas = {
@@ -873,15 +873,12 @@ test("round trips line and paragraph separators inside values and keys", () => {
 
     const [file] = serializeAtlasPages([fabricatedPage(path, atlas)]);
     assert.ok(file);
-
-    const [reparsed] = parseAtlasPages([text(path, file.content)]);
-    assert.ok(reparsed);
-    assert.deepEqual(reparsed.page.atlas, atlas);
-    assert.equal(reparsed.page.body, "");
-
-    const [again] = serializeAtlasPages([reparsed]);
-    assert.ok(again);
-    assert.equal(again.content, file.content);
+    assert.throws(
+      () => parseAtlasPages([text(path, file.content)]),
+      (error: unknown) =>
+        error instanceof AtlasPageParseError &&
+        error.code === "NON_CANONICAL_LINE_TERMINATOR",
+    );
   }
 });
 

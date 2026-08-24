@@ -523,20 +523,16 @@ test("atlas govern refuses a forged multi-line Changelog entry and an SDK-derive
   assert.equal(git(repository, ["branch", "--list", "atlas-governance-*"]), "");
 });
 
-test("atlas govern cannot retain a retired Principle with zero parsed active truths", () => {
+test("atlas govern retires a Principle with zero active truths, where amend is refused", () => {
   const repository = resolve(WORKSPACE, "retire-principle");
   const mainBefore = initAtlasRepository(repository);
-  const refused = runLocalAtlasGovernance(
+  const result = runLocalAtlasGovernance(
     repository,
     retirePrincipleRequest(repository, "retire"),
   );
 
-  assert.equal(refused.completion, "not-completed");
-  assert.ok(
-    refused.handoff.validationState.findings.some(
-      (entry) => entry.code === "ATLAS_PRINCIPLE_ACTIVE_TRUTH_REQUIRED",
-    ),
-  );
+  assert.equal(result.completion, "completed");
+  assert.equal(result.disposition, "success");
   assert.equal(git(repository, ["rev-parse", "main"]), mainBefore);
 
   const amendRepository = resolve(WORKSPACE, "amend-zero-truth");

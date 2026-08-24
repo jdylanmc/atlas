@@ -263,26 +263,6 @@ test("every reached Anchor re-anchors with directly connected active Principles"
   );
 });
 
-test("Explore uses the shared Principle parser and ignores malformed active truths", () => {
-  const malformed = graphAtlas().map((file) => {
-    if (file.path !== ".atlas/principles/one.md") return file;
-    return captured(
-      file.path,
-      new TextDecoder()
-        .decode(file.bytes)
-        .replace("## Active truths", "## Active truths "),
-    );
-  });
-  const result = exploreCaptured(malformed, "needle", lexicalSearchProvider, budgets);
-  const anchored = result.reanchors.find((entry) => entry.anchor.id === "anchor:a");
-  assert.ok(anchored);
-  assert.deepEqual(
-    anchored.activePrinciples.map((principle) => principle.id),
-    ["principle:one"],
-  );
-  assert.deepEqual(anchored.governingTruths, []);
-});
-
 test("cyclic Edges terminate and preserve independently reachable results", () => {
   const result = exploreCaptured(
     graphAtlas(),

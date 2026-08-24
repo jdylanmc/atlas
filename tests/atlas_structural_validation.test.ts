@@ -150,12 +150,16 @@ test("aggregates exact sanitized structural Findings", () => {
   assert.equal(JSON.stringify(findings).includes("secret parser stack"), false);
 });
 
-test("Principle pages must expose canonical active truths for Re-anchor", () => {
+test("Principle pages report malformed truth-shaped bullets without requiring active truths", () => {
   for (const [name, body] of [
     ["canonical", "# Principle\n\n## Active truths\n\n- `truth:one` Text."],
     [
       "canonical with continuation",
       "# Principle\n\n## Active truths\n\n- `truth:one` Text\n  continued.",
+    ],
+    [
+      "retired zero-truth Principle",
+      "# Principle\n\n## Active truths\n\n## Amendments\n",
     ],
   ] as const) {
     assert.deepEqual(
@@ -172,15 +176,36 @@ test("Principle pages must expose canonical active truths for Re-anchor", () => 
     );
   }
 
-  for (const [name, body] of [
+  for (const [name, body, line] of [
+    [
+      "valid plus missing same-line text",
+      "# Principle\n\n## Active truths\n\n- `truth:ok` Text.\n- `truth:inert`\n  Intended but not parsed.",
+      20,
+    ],
     [
       "trailing-whitespace heading",
       "# Principle\n\n## Active truths \n\n- `truth:one` Text.",
+      19,
     ],
-    ["H3 heading", "# Principle\n\n### Active truths\n\n- `truth:one` Text."],
-    ["case-changed heading", "# Principle\n\n## Active Truths\n\n- `truth:one` Text."],
-    ["indented bullet", "# Principle\n\n## Active truths\n\n  - `truth:one` Text."],
-    ["missing same-line text", "# Principle\n\n## Active truths\n\n- `truth:one`"],
+    ["H3 heading", "# Principle\n\n### Active truths\n\n- `truth:one` Text.", 19],
+    [
+      "case-changed heading",
+      "# Principle\n\n## Active Truths\n\n- `truth:one` Text.",
+      19,
+    ],
+    ["indented bullet", "# Principle\n\n## Active truths\n\n  - `truth:one` Text.", 19],
+    [
+      "tab-indented bullet",
+      "# Principle\n\n## Active truths\n\n\t- `truth:one` Text.",
+      19,
+    ],
+    ["missing same-line text", "# Principle\n\n## Active truths\n\n- `truth:one`", 19],
+    ["empty truth identity", "# Principle\n\n## Active truths\n\n- `` Text.", 19],
+    [
+      "after active block",
+      "# Principle\n\n## Active truths\n\n## Amendments\n\n- `truth:late` Text.",
+      21,
+    ],
   ] as const) {
     const findings = validateAtlasStructure([
       validFiles[2] as AtlasTextFile,
@@ -190,9 +215,9 @@ test("Principle pages must expose canonical active truths for Re-anchor", () => 
         type: "principle",
       }),
     ]);
-    assert.equal(
-      findings.some((entry) => entry.code === "ATLAS_PRINCIPLE_ACTIVE_TRUTH_REQUIRED"),
-      true,
+    assert.deepEqual(
+      findings.map(({ code, location }) => ({ code, line: location?.start.line })),
+      [{ code: "ATLAS_PRINCIPLE_TRUTH_MALFORMED", line }],
       name,
     );
   }
