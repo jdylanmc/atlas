@@ -45,7 +45,13 @@ Each authored change is `{ path, content }` against a canonical `.atlas/` path.
 A new Principle page uses the deterministic path-derived identity, and Principle
 maintenance preserves the `## Amendments` history. The `changelog` field is
 prose only: Atlas SDK stamps it with the stable operation ID, heads it with the
-approval date, and appends it to the existing Atlas Changelog. If the Atlas Head
+approval date, and appends it to the existing Atlas Changelog. That prose must
+be a single line — a Changelog entry body is one line, so a `changelog`
+containing any line break is refused with `ATLAS_GOVERNANCE_INPUT_INVALID`
+rather than allowed to forge additional entries and operation IDs. Atlas SDK
+also derives the `.atlas/CHANGELOG.md` entry itself, so an authored change may
+not target that path, nor any path that names the same file on a
+case-insensitive or Win32 filesystem. If the Atlas Head
 advances while the operation runs, Atlas SDK detects the drift against its own
 captured snapshot and refuses before writing, so a stale proposal is never
 committed.

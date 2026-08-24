@@ -7,7 +7,11 @@
 // restating it and drifting. An entry is a single dated heading and a single
 // operation bullet by construction: a Changelog entry body is one line, so any
 // multi-line prose that would forge extra headings or bullets — and thus forge
-// provenance and operation IDs — is not a well-formed entry and must be refused.
+// provenance and operation IDs — cannot be rendered into an entry here.
+//
+// The recognizer below checks what this module renders. It is not a structural
+// contract on the archetype: CONTEXT.md:105 defines the Atlas Changelog
+// without fixing an entry's shape.
 
 export const atlasChangelogPath = ".atlas/CHANGELOG.md";
 
@@ -57,8 +61,14 @@ export function renderAtlasChangelogEntryBlock(
 }
 
 /** True iff the block is exactly one dated heading and one operation bullet with
- * no other non-empty lines — the shape a single entry must have. Multi-line
- * prose breaks this, which is how a forged entry is caught. */
+ * no other non-empty lines — the shape `renderAtlasChangelogEntryBlock` must
+ * produce. Multi-line prose breaks this, which is how a forged entry is caught.
+ *
+ * This is a self-check over bytes Atlas SDK just rendered, not a validator for
+ * caller-authored or historical Changelog content. CONTEXT.md:105 defines the
+ * Atlas Changelog without fixing an entry's structure, so applying this to any
+ * Changelog Atlas SDK did not render would impose a contract the glossary does
+ * not state. */
 export function isSingleAtlasChangelogEntry(block: string): boolean {
   const nonEmpty = splitLines(block).filter((line) => line.trim() !== "");
   const headings = nonEmpty.filter((line) => line.startsWith("## "));
