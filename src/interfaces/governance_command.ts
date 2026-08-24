@@ -1,7 +1,7 @@
 import type { Finding } from "../domain/finding.ts";
+import { containsLineBreak } from "../domain/atlas_changelog.ts";
 import type {
   AtlasGovernanceChange,
-  AtlasGovernanceChangeSet,
   AtlasGovernanceRequest,
   AtlasGovernanceResult,
   AtlasGovernanceSemanticVerdict,
@@ -36,21 +36,27 @@ export const governCommandExitCodes = Object.freeze({
 } as const);
 
 // Every axis a caller controls is bounded. The axis the 32-change cap controls
-// is the governance change: the platform adapter spends two Git subprocesses
-// (one `git hash-object -w`, one `git update-index`) per change, ~38ms per
-// change measured on the development host. A full worst-case proposal at this
-// cap — 32 changes totaling ~790 KiB, driven end to end through the command
-// (base-snapshot capture, the 64 Git subprocesses, one commit, and one
-// whole-Atlas Lint) — measured ~3.3-4.0s of wall time across repeated runs;
-// a real Principle or Atlas Policy proposal touches a handful of pages plus the
-// Changelog. Byte, element, and string caps below keep validation and the JSON
-// read linear, and the accepted request shape is non-recursive, so nesting
-// depth is fixed by the parser rather than by caller input. One caveat the
-// caller must size for: the machine Operation Result echoes the accepted Change
-// Set, so worst-case stdout (~1.6 MiB measured) exceeds the 1 MiB input budget;
-// a consumer reading the result must allow a read buffer larger than the input.
+// is the authored governance change: the platform adapter spends two Git
+// subprocesses (one `git hash-object -w`, one `git update-index`) per change,
+// ~38ms per change measured on the development host. Atlas SDK derives one
+// additional change — the stamped Atlas Changelog entry — so a worst-case
+// proposal writes 33 changes. That derived entry is bounded too: its authored
+// input is the `changelog` prose, a single line capped at maxChangelogBytes. A
+// full
+// worst-case proposal at this cap — 32 authored changes totaling ~790 KiB plus
+// the derived Changelog, driven end to end through the command (base-snapshot
+// capture, the Git subprocesses, one commit, and one whole-Atlas Lint) —
+// measured ~3.3-4.0s of wall time across repeated runs; a real Principle or
+// Atlas Policy proposal touches a handful of pages plus the drafted prose. Byte,
+// element, and string caps below keep validation and the JSON read linear, and
+// the accepted request shape is non-recursive, so nesting depth is fixed by the
+// parser rather than by caller input. One caveat the caller must size for: the
+// machine Operation Result echoes the derived Atlas Change Set, so worst-case
+// stdout (~1.6 MiB measured) exceeds the 1 MiB input budget; a consumer reading
+// the result must allow a read buffer larger than the input.
 export const governCommandInputBudgets = Object.freeze({
   maxChangeContentBytes: 256 * 1024,
+  maxChangelogBytes: 8192,
   maxChanges: 32,
   maxEvidencePerList: 64,
   maxFileBytes: 1024 * 1024,
@@ -197,6 +203,22 @@ function asBoundedString(value: unknown, path: string, maxBytes: number): string
   return value;
 }
 
+// A single-line string: one whose bytes cannot begin a new line. The drafted
+// Atlas Changelog prose is rendered mid-bullet, so bounding it to one line here
+// makes a forged extra Changelog heading or bullet — and thus a forged operation
+// ID — unrepresentable rather than something a downstream check must strip.
+function asSingleLineBoundedString(
+  value: unknown,
+  path: string,
+  maxBytes: number,
+): string {
+  const text = asBoundedString(value, path, maxBytes);
+  if (containsLineBreak(text)) {
+    throw new GovernInputError(`${path} must be a single line`);
+  }
+  return text;
+}
+
 function asArray(value: unknown, path: string): readonly unknown[] {
   if (!Array.isArray(value)) throw new GovernInputError(`${path} must be an array`);
   return value as readonly unknown[];
@@ -320,33 +342,18 @@ function parseChange(value: unknown, path: string): AtlasGovernanceChange {
   });
 }
 
-function parseChangeSet(value: unknown, path: string): AtlasGovernanceChangeSet {
-  const record = asRecord(value, path);
-  const changes = asArray(record["changes"], `${path}.changes`);
+function parseChanges(value: unknown, path: string): readonly AtlasGovernanceChange[] {
+  const changes = asArray(value, path);
   if (changes.length > governCommandInputBudgets.maxChanges) {
     throw new GovernInputError(
-      `${path}.changes exceeds the ${String(
+      `${path} exceeds the ${String(
         governCommandInputBudgets.maxChanges,
       )} change budget`,
     );
   }
-  return Object.freeze({
-    baseSnapshotDigest: asBoundedString(
-      record["baseSnapshotDigest"],
-      `${path}.baseSnapshotDigest`,
-      governCommandInputBudgets.maxStringBytes,
-    ),
-    changes: Object.freeze(
-      changes.map((entry, index) =>
-        parseChange(entry, `${path}.changes[${String(index)}]`),
-      ),
-    ),
-    targetHead: asBoundedString(
-      record["targetHead"],
-      `${path}.targetHead`,
-      governCommandInputBudgets.maxStringBytes,
-    ),
-  });
+  return Object.freeze(
+    changes.map((entry, index) => parseChange(entry, `${path}[${String(index)}]`)),
+  );
 }
 
 function parseSemanticVerdict(
@@ -391,7 +398,8 @@ interface MutableGovernanceRequest {
   action: AtlasGovernanceRequest["action"];
   approvedAt?: string;
   approvedBy?: string;
-  changeSet?: AtlasGovernanceChangeSet;
+  changelog?: string;
+  changes?: readonly AtlasGovernanceChange[];
   semanticVerdicts?: readonly AtlasGovernanceSemanticVerdict[];
   subject: AtlasGovernanceSubject;
 }
@@ -425,8 +433,15 @@ function parseRequestRecord(
       governCommandInputBudgets.maxStringBytes,
     );
   }
-  if (record["changeSet"] !== undefined) {
-    request.changeSet = parseChangeSet(record["changeSet"], "request.changeSet");
+  if (record["changelog"] !== undefined) {
+    request.changelog = asSingleLineBoundedString(
+      record["changelog"],
+      "request.changelog",
+      governCommandInputBudgets.maxChangelogBytes,
+    );
+  }
+  if (record["changes"] !== undefined) {
+    request.changes = parseChanges(record["changes"], "request.changes");
   }
   if (record["semanticVerdicts"] !== undefined) {
     const verdicts = asArray(record["semanticVerdicts"], "request.semanticVerdicts");

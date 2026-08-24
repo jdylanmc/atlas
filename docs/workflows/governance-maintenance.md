@@ -22,7 +22,30 @@ Changelog entry, run full Lint, and wait for human approval before merge.
 
 The deterministic command seam for this workflow is `atlas govern --machine
 --request PATH [--atlas-host-directory PATH]`. Author the request as JSON with
-the action, subject, the Maintainer approval metadata, the Atlas Change Set, and
-any semantic Policy verdict. The command validates and commits one reviewable
-Atlas Proposal; it never supplies approval or a verdict itself, so an agent may
-propose but never establish a Principle or Atlas Policy autonomously.
+the `action`, `subject`, the Maintainer approval metadata (`approvedBy`,
+`approvedAt`), the authored `changes`, the drafted `changelog` prose, and any
+semantic Policy verdict. The command validates and commits one reviewable Atlas
+Proposal; it never supplies approval or a verdict itself, so an agent may propose
+but never establish a Principle or Atlas Policy autonomously.
+
+## Who authors what
+
+The request carries only knowledge and judgment; Atlas SDK derives all
+bookkeeping. Do not attempt to supply a base snapshot digest, a target head, or
+the operation ID — there is no field for them, and Atlas SDK reserves the
+`.atlas/CHANGELOG.md` entry for itself.
+
+| Who | Supplies |
+|---|---|
+| Maintainer (human) | the truth or rule itself, the intent, and approval (`approvedBy`, `approvedAt`) |
+| Agent | the authored `changes` — the Principle or Atlas Policy page, including a Principle's amendment history — and the drafted `changelog` prose |
+| Atlas SDK | the base snapshot digest, the target head, the Atlas Changelog entry's stable operation ID, identity derivation, and validation |
+
+Each authored change is `{ path, content }` against a canonical `.atlas/` path.
+A new Principle page uses the deterministic path-derived identity, and Principle
+maintenance preserves the `## Amendments` history. The `changelog` field is
+prose only: Atlas SDK stamps it with the stable operation ID, heads it with the
+approval date, and appends it to the existing Atlas Changelog. If the Atlas Head
+advances while the operation runs, Atlas SDK detects the drift against its own
+captured snapshot and refuses before writing, so a stale proposal is never
+committed.
