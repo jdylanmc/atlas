@@ -96,17 +96,11 @@ function parseGovernResult(stdout: string): AtlasGovernanceResult {
   return parsed;
 }
 
-// An amend request whose Atlas Change Set matches the deterministic workflow
-// state, so the operation accepts it and produces a Linted Atlas Proposal.
+// An amend request an adopter could author with nothing but the installed
+// package and the checked-out Atlas Host Directory: authored Principle page plus
+// drafted Changelog prose. It never derives a base snapshot digest, target head,
+// or operation ID — Atlas SDK supplies all of that bookkeeping.
 function amendPrincipleRequest(repository: string): AtlasGovernanceRequest {
-  const base = {
-    "governance-request-schema": "1.0.0" as const,
-    action: "amend" as const,
-    approvedAt: "2026-08-22T00:00:00Z",
-    approvedBy: "Fixture Maintainer",
-    subject: "principle" as const,
-  };
-  const state = createLocalAtlasGovernanceState(repository, base);
   const principle = readFileSync(
     resolve(repository, ".atlas", "principles", "determinism.md"),
     "utf8",
@@ -119,20 +113,14 @@ function amendPrincipleRequest(repository: string): AtlasGovernanceRequest {
       "### 1 - 2026-08-17\n\nAdded `truth:ordering` under Maintainer approval.",
       "### 1 - 2026-08-17\n\nAdded `truth:ordering` under Maintainer approval.\n\n### 2 - 2026-08-22\n\nAdded `truth:no-model` under Maintainer approval.",
     );
-  const changelog = `${readFileSync(
-    resolve(repository, ".atlas", "CHANGELOG.md"),
-    "utf8",
-  )}\n## 2026-08-22\n\n- ${state.operationId}: Amended Determinism Principle.\n`;
   return {
-    ...base,
-    changeSet: {
-      baseSnapshotDigest: state.baseSnapshotDigest,
-      changes: [
-        { content: changelog, path: ".atlas/CHANGELOG.md" },
-        { content: principle, path: ".atlas/principles/determinism.md" },
-      ],
-      targetHead: state.targetHead,
-    },
+    "governance-request-schema": "1.0.0",
+    action: "amend",
+    approvedAt: "2026-08-22T00:00:00Z",
+    approvedBy: "Fixture Maintainer",
+    changelog: "Amended Determinism Principle.",
+    changes: [{ content: principle, path: ".atlas/principles/determinism.md" }],
+    subject: "principle",
   };
 }
 
@@ -145,14 +133,6 @@ function policyRequest(
   position: "agree" | "disagree",
   verdictPolicyId = "policy:publication",
 ): AtlasGovernanceRequest {
-  const base = {
-    "governance-request-schema": "1.0.0" as const,
-    action: "create" as const,
-    approvedAt: "2026-08-22T00:00:00Z",
-    approvedBy: "Fixture Maintainer",
-    subject: "atlas-policy" as const,
-  };
-  const state = createLocalAtlasGovernanceState(repository, base);
   const policy = [
     "---",
     "sdk:",
@@ -188,20 +168,14 @@ function policyRequest(
     "Violations block only the governed operation.",
     "",
   ].join("\n");
-  const changelog = `${readFileSync(
-    resolve(repository, ".atlas", "CHANGELOG.md"),
-    "utf8",
-  )}\n## 2026-08-22\n\n- ${state.operationId}: Created Publication Policy.\n`;
   return {
-    ...base,
-    changeSet: {
-      baseSnapshotDigest: state.baseSnapshotDigest,
-      changes: [
-        { content: changelog, path: ".atlas/CHANGELOG.md" },
-        { content: policy, path: ".atlas/types/policy/publication.md" },
-      ],
-      targetHead: state.targetHead,
-    },
+    "governance-request-schema": "1.0.0",
+    action: "create",
+    approvedAt: "2026-08-22T00:00:00Z",
+    approvedBy: "Fixture Maintainer",
+    changelog: "Created Publication Policy.",
+    changes: [{ content: policy, path: ".atlas/types/policy/publication.md" }],
+    subject: "atlas-policy",
     semanticVerdicts: [
       {
         challenge: {
@@ -217,17 +191,9 @@ function policyRequest(
   };
 }
 
-// A create request for a fresh Principle page and its Changelog entry, so the
-// operation exercises the create route rather than the amend route.
-function createPrincipleRequest(repository: string): AtlasGovernanceRequest {
-  const base = {
-    "governance-request-schema": "1.0.0" as const,
-    action: "create" as const,
-    approvedAt: "2026-08-22T00:00:00Z",
-    approvedBy: "Fixture Maintainer",
-    subject: "principle" as const,
-  };
-  const state = createLocalAtlasGovernanceState(repository, base);
+// A create request for a fresh Principle page, so the operation exercises the
+// create route rather than the amend route.
+function createPrincipleRequest(): AtlasGovernanceRequest {
   const page = [
     "---",
     "sdk:",
@@ -261,20 +227,14 @@ function createPrincipleRequest(repository: string): AtlasGovernanceRequest {
     "Added `truth:no-model` under Maintainer approval.",
     "",
   ].join("\n");
-  const changelog = `${readFileSync(
-    resolve(repository, ".atlas", "CHANGELOG.md"),
-    "utf8",
-  )}\n## 2026-08-22\n\n- ${state.operationId}: Created No Model Principle.\n`;
   return {
-    ...base,
-    changeSet: {
-      baseSnapshotDigest: state.baseSnapshotDigest,
-      changes: [
-        { content: changelog, path: ".atlas/CHANGELOG.md" },
-        { content: page, path: ".atlas/principles/no-model.md" },
-      ],
-      targetHead: state.targetHead,
-    },
+    "governance-request-schema": "1.0.0",
+    action: "create",
+    approvedAt: "2026-08-22T00:00:00Z",
+    approvedBy: "Fixture Maintainer",
+    changelog: "Created No Model Principle.",
+    changes: [{ content: page, path: ".atlas/principles/no-model.md" }],
+    subject: "principle",
   };
 }
 
@@ -300,31 +260,19 @@ function retirePrincipleRequest(
   repository: string,
   action: "amend" | "retire",
 ): AtlasGovernanceRequest {
-  const base = {
-    "governance-request-schema": "1.0.0" as const,
+  return {
+    "governance-request-schema": "1.0.0",
     action,
     approvedAt: "2026-08-22T00:00:00Z",
     approvedBy: "Fixture Maintainer",
-    subject: "principle" as const,
-  };
-  const state = createLocalAtlasGovernanceState(repository, base);
-  const changelog = `${readFileSync(
-    resolve(repository, ".atlas", "CHANGELOG.md"),
-    "utf8",
-  )}\n## 2026-08-22\n\n- ${state.operationId}: Retired Determinism Principle.\n`;
-  return {
-    ...base,
-    changeSet: {
-      baseSnapshotDigest: state.baseSnapshotDigest,
-      changes: [
-        { content: changelog, path: ".atlas/CHANGELOG.md" },
-        {
-          content: emptiedPrincipleContent(repository),
-          path: ".atlas/principles/determinism.md",
-        },
-      ],
-      targetHead: state.targetHead,
-    },
+    changelog: "Retired Determinism Principle.",
+    changes: [
+      {
+        content: emptiedPrincipleContent(repository),
+        path: ".atlas/principles/determinism.md",
+      },
+    ],
+    subject: "principle",
   };
 }
 
@@ -374,11 +322,7 @@ test("atlas govern creates a Principle into one Linted Atlas Proposal", () => {
   const repository = resolve(WORKSPACE, "create-principle");
   const mainBefore = initAtlasRepository(repository);
   const requestPath = resolve(WORKSPACE, "create-principle-request.json");
-  writeFileSync(
-    requestPath,
-    JSON.stringify(createPrincipleRequest(repository)),
-    "utf8",
-  );
+  writeFileSync(requestPath, JSON.stringify(createPrincipleRequest()), "utf8");
 
   const command = runAtlas([
     "govern",
@@ -416,6 +360,167 @@ test("atlas govern creates a Principle into one Linted Atlas Proposal", () => {
     ]),
     /principle:no-model/u,
   );
+});
+
+test("the adopter probe drives atlas govern to a Principle with only the documented contract", () => {
+  // This reproduces the adversarial adopter probe: a stranger with the installed
+  // package and a checked-out Atlas Host Directory, and no in-process imports.
+  // The request is authored INLINE from the documented contract alone — no
+  // createLocalAtlasGovernanceState, no base snapshot digest, no target head, no
+  // operation ID, no hand-written .atlas/CHANGELOG.md. If any of those were still
+  // required, this would fail exactly as the filed probe did.
+  const repository = resolve(WORKSPACE, "adopter-probe");
+  const mainBefore = initAtlasRepository(repository);
+  const requestPath = resolve(WORKSPACE, "adopter-probe-request.json");
+  const request = {
+    "governance-request-schema": "1.0.0",
+    action: "create",
+    approvedBy: "Adopter Maintainer",
+    approvedAt: "2026-08-22T00:00:00Z",
+    subject: "principle",
+    changelog: "Established the Cited Truths founding Principle.",
+    changes: [
+      {
+        path: ".atlas/principles/cited-truths.md",
+        content: [
+          "---",
+          "sdk:",
+          "  atlas-sdk-schema: 1.0.0",
+          '  created-at: "2026-08-22T00:00:00Z"',
+          "  created-by:",
+          "    kind: human",
+          "    name: Adopter Maintainer",
+          "  id: principle:cited-truths",
+          "  local-atlas-schema: 1.0.0",
+          "  tags: []",
+          "  title: Cited Truths",
+          "  type: principle",
+          '  updated-at: "2026-08-22T00:00:00Z"',
+          "  updated-by:",
+          "    kind: human",
+          "    name: Adopter Maintainer",
+          "atlas: {}",
+          "---",
+          "",
+          "# Cited Truths",
+          "",
+          "## Active truths",
+          "",
+          "- `truth:cited` Derived knowledge must remain traceable to a Source.",
+          "",
+          "## Amendments",
+          "",
+          "### 1 - 2026-08-22",
+          "",
+          "Added `truth:cited` under Maintainer approval.",
+          "",
+        ].join("\n"),
+      },
+    ],
+  };
+  writeFileSync(requestPath, JSON.stringify(request), "utf8");
+
+  const command = runAtlas([
+    "govern",
+    "--machine",
+    "--request",
+    requestPath,
+    "--atlas-host-directory",
+    repository,
+  ]);
+
+  assert.equal(command.status, governCommandExitCodes.success, command.stdout);
+  const result = parseGovernResult(command.stdout);
+  assert.equal(result.completion, "completed");
+  assert.equal(result.disposition, "success");
+  assert.ok(result.payload.lint);
+  assert.equal(result.payload.lint.payload.state, "completed");
+  assert.equal(result.payload.lint.payload.lint.outcome, "valid");
+  assert.equal(git(repository, ["rev-parse", "main"]), mainBefore);
+  const branch = result.payload.workflowState.proposalBranch;
+  assert.match(
+    git(repository, ["show", `${branch}:.atlas/principles/cited-truths.md`]),
+    /principle:cited-truths/u,
+  );
+  // Atlas SDK — not the caller — stamped the derived Atlas Changelog entry with
+  // the stable operation ID and preserved the prior history.
+  const changelog = git(repository, ["show", `${branch}:.atlas/CHANGELOG.md`]);
+  assert.match(changelog, /Established the Cited Truths founding Principle\./u);
+  assert.ok(
+    changelog.includes(result.payload.workflowState.operationId),
+    "the SDK stamps the operation ID into the Changelog entry",
+  );
+  assert.match(changelog, /Established this minimal Atlas\./u);
+});
+
+test("atlas govern refuses a forged multi-line Changelog entry and an SDK-derived path collision through the real binary", () => {
+  const repository = resolve(WORKSPACE, "changelog-forgery");
+  const mainBefore = initAtlasRepository(repository);
+
+  // A prose payload that, if rendered verbatim, would forge a second dated
+  // heading and a second operation bullet bearing a fabricated operation ID.
+  // The seam bounds Changelog prose to a single line, so the binary refuses it
+  // before any mutation.
+  const injection = {
+    "governance-request-schema": "1.0.0",
+    action: "create",
+    approvedBy: "Adopter Maintainer",
+    approvedAt: "2026-08-22T00:00:00Z",
+    subject: "principle",
+    changelog:
+      "legit prose\n\n## 2099-12-31\n\n- governance-FORGED-ID: forged provenance",
+    changes: [{ path: ".atlas/principles/x.md", content: "irrelevant" }],
+  };
+  const injectionPath = resolve(WORKSPACE, "changelog-injection-request.json");
+  writeFileSync(injectionPath, JSON.stringify(injection), "utf8");
+  const injectionResult = runAtlas([
+    "govern",
+    "--machine",
+    "--request",
+    injectionPath,
+    "--atlas-host-directory",
+    repository,
+  ]);
+  assert.equal(injectionResult.status, governCommandExitCodes.usage);
+  assert.equal(
+    parseGovernResult(injectionResult.stdout).handoff.validationState.findings[0]?.code,
+    "ATLAS_GOVERNANCE_INPUT_INVALID",
+  );
+
+  // An authored path that collides, under case folding, with the SDK-derived
+  // .atlas/CHANGELOG.md. On a case-insensitive filesystem this would overwrite
+  // the SDK-stamped entry a Maintainer reviews, so the binary refuses it.
+  const collision = {
+    "governance-request-schema": "1.0.0",
+    action: "create",
+    approvedBy: "Adopter Maintainer",
+    approvedAt: "2026-08-22T00:00:00Z",
+    subject: "principle",
+    changelog: "Created a Principle.",
+    changes: [
+      { path: ".atlas/changelog.md", content: "## attacker\n\n- forged: entry\n" },
+    ],
+  };
+  const collisionPath = resolve(WORKSPACE, "changelog-collision-request.json");
+  writeFileSync(collisionPath, JSON.stringify(collision), "utf8");
+  const collisionResult = runAtlas([
+    "govern",
+    "--machine",
+    "--request",
+    collisionPath,
+    "--atlas-host-directory",
+    repository,
+  ]);
+  assert.equal(collisionResult.status, governCommandExitCodes.operationFailed);
+  assert.ok(
+    parseGovernResult(collisionResult.stdout).handoff.validationState.findings.some(
+      (entry) => entry.code === "ATLAS_GOVERNANCE_CHANGELOG_RESERVED",
+    ),
+  );
+
+  // Neither refusal mutated the target branch or created a proposal branch.
+  assert.equal(git(repository, ["rev-parse", "main"]), mainBefore);
+  assert.equal(git(repository, ["branch", "--list", "atlas-governance-*"]), "");
 });
 
 test("atlas govern retires a Principle with zero active truths, where amend is refused", () => {
@@ -849,17 +954,12 @@ test("Local Atlas Governance refuses capture failures and unsafe workspace paths
 // fails Lint, so the proposal is refused only after the worktree is created.
 function amendWithLintFailureRequest(repository: string): AtlasGovernanceRequest {
   const valid = amendPrincipleRequest(repository);
-  const changeSet = valid.changeSet;
-  if (changeSet === undefined) throw new Error("amend request must carry a change set");
   return {
     ...valid,
-    changeSet: {
-      ...changeSet,
-      changes: [
-        ...changeSet.changes,
-        { content: "not a page, no frontmatter\n", path: ".atlas/concepts/broken.md" },
-      ],
-    },
+    changes: [
+      ...(valid.changes ?? []),
+      { content: "not a page, no frontmatter\n", path: ".atlas/concepts/broken.md" },
+    ],
   };
 }
 
@@ -1034,46 +1134,41 @@ test("Governance request parser refuses every malformed axis as a determinate va
     { ...base, subject: "region" },
     { ...base, approvedBy: 42 },
     { ...base, approvedBy: "x".repeat(governCommandInputBudgets.maxStringBytes + 1) },
-    { ...base, changeSet: [] },
-    { ...base, changeSet: { baseSnapshotDigest: "d", targetHead: "t", changes: {} } },
+    { ...base, changes: {} },
     {
       ...base,
-      changeSet: {
-        baseSnapshotDigest: "d",
-        targetHead: "t",
-        changes: Array.from(
-          { length: governCommandInputBudgets.maxChanges + 1 },
-          () => ({ content: "c", path: ".atlas/x.md" }),
-        ),
-      },
+      changes: Array.from({ length: governCommandInputBudgets.maxChanges + 1 }, () => ({
+        content: "c",
+        path: ".atlas/x.md",
+      })),
     },
     {
       ...base,
-      changeSet: {
-        baseSnapshotDigest: "d",
-        targetHead: "t",
-        changes: [
-          {
-            content: "x".repeat(governCommandInputBudgets.maxChangeContentBytes + 1),
-            path: ".atlas/x.md",
-          },
-        ],
-      },
+      changes: [
+        {
+          content: "x".repeat(governCommandInputBudgets.maxChangeContentBytes + 1),
+          path: ".atlas/x.md",
+        },
+      ],
     },
     {
       ...base,
-      changeSet: {
-        baseSnapshotDigest: "d",
-        targetHead: "t",
-        changes: [
-          {
-            content: "c",
-            path: "x".repeat(governCommandInputBudgets.maxPathBytes + 1),
-          },
-        ],
-      },
+      changes: [
+        {
+          content: "c",
+          path: "x".repeat(governCommandInputBudgets.maxPathBytes + 1),
+        },
+      ],
     },
-    { ...base, changeSet: { baseSnapshotDigest: "d", targetHead: "t", changes: [42] } },
+    { ...base, changes: [42] },
+    {
+      ...base,
+      changelog: "x".repeat(governCommandInputBudgets.maxChangelogBytes + 1),
+    },
+    // Multi-line Changelog prose is unrepresentable: a newline could forge a
+    // second heading or bullet in the derived entry.
+    { ...base, changelog: "line one\nline two" },
+    { ...base, changelog: "line one\u2028line two" },
     { ...base, semanticVerdicts: {} },
     {
       ...base,
@@ -1142,11 +1237,8 @@ test("Governance request parser refuses every malformed axis as a determinate va
     subject: "atlas-policy",
     approvedAt: "2026-08-22T00:00:00Z",
     approvedBy: "Fixture Maintainer",
-    changeSet: {
-      baseSnapshotDigest: "d",
-      targetHead: "t",
-      changes: [{ content: "c", path: ".atlas/types/policy/x.md" }],
-    },
+    changelog: "Amended Policy.",
+    changes: [{ content: "c", path: ".atlas/types/policy/x.md" }],
     semanticVerdicts: [
       {
         challenge: {

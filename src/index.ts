@@ -131,9 +131,10 @@ export type {
   SourceAuthority,
 } from "./operations/ingest_operation.ts";
 export {
+  buildAtlasGovernanceChangeSet,
   mergeGovernanceFindings,
   runAtlasGovernanceWorkflow,
-  validateAtlasGovernanceChangeSet,
+  validateAtlasGovernanceRequest,
 } from "./operations/governance_operation.ts";
 export type {
   AtlasGovernanceChange,

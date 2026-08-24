@@ -91,6 +91,30 @@
       "gate": "governance",
       "kind": "semantic",
       "expectedCode": "ATLAS_GOVERNANCE_POLICY_DOCTRINE_UNSUPPORTED"
+    },
+    {
+      "name": "caller-authored-changelog-path-is-reserved-to-the-sdk",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_CHANGELOG_RESERVED"
+    },
+    {
+      "name": "case-folded-changelog-path-collision-is-reserved",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_CHANGELOG_RESERVED"
+    },
+    {
+      "name": "changelog-prose-newline-injection-is-refused",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_CHANGELOG_MALFORMED"
+    },
+    {
+      "name": "concurrent-atlas-head-advancement-is-refused",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_BASE_SNAPSHOT_STALE"
     }
   ]
 }
