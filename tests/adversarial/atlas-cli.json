@@ -537,6 +537,175 @@
       "expectedCode": "ATLAS_INGEST_USAGE",
       "stderrIncludes": "usage: atlas ingest",
       "forbidPayloadLint": true
+    },
+    {
+      "name": "reject a governance command seam that reaches for the network or a model",
+      "gate": "atlas-cli",
+      "kind": "source-boundary",
+      "path": "src/interfaces/governance_command.ts",
+      "forbiddenImports": [
+        "node:http",
+        "node:https",
+        "node:net",
+        "node:tls",
+        "node:dgram",
+        "node:child_process",
+        "child_process",
+        "undici",
+        "openai",
+        "anthropic",
+        "fetch("
+      ]
+    },
+    {
+      "name": "reject a governance platform adapter that reaches for the network or a model",
+      "gate": "atlas-cli",
+      "kind": "source-boundary",
+      "path": "src/platform/local_atlas_governance.ts",
+      "forbiddenImports": [
+        "node:http",
+        "node:https",
+        "node:net",
+        "node:tls",
+        "node:dgram",
+        "undici",
+        "openai",
+        "anthropic",
+        "fetch("
+      ]
+    },
+    {
+      "name": "reject a governance command seam that self-approves Maintainer direction",
+      "gate": "atlas-cli",
+      "kind": "source-contract",
+      "path": "src/interfaces/governance_command.ts",
+      "requiredText": "if (record[\"approvedBy\"] !== undefined) {",
+      "forbiddenText": "approvedBy = \""
+    },
+    {
+      "name": "reject a governance command seam that defaults a Maintainer approver literal",
+      "gate": "atlas-cli",
+      "kind": "source-contract",
+      "path": "src/interfaces/governance_command.ts",
+      "requiredText": "request.approvedBy = asBoundedString(",
+      "forbiddenText": "approvedBy: \""
+    },
+    {
+      "name": "reject a governance dispatch that offers a self-approval flag",
+      "gate": "atlas-cli",
+      "kind": "source-contract",
+      "path": "scripts/atlas.ts",
+      "requiredText": "if (arguments_[0] === \"govern\") return mainGovern(arguments_);",
+      "forbiddenText": "--approve"
+    },
+    {
+      "name": "reject a governance create that omits Maintainer approval metadata",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "govern",
+        "--machine",
+        "--request",
+        "tests/fixtures/governance/request-blank-approver.json",
+        "--atlas-host-directory",
+        "{atlasHostDirectory}"
+      ],
+      "fixtureAtlasHostRepository": true,
+      "expectedExit": 4,
+      "expectedCode": "ATLAS_GOVERNANCE_APPROVAL_REQUIRED",
+      "forbidPayloadLint": true
+    },
+    {
+      "name": "reject a governance create whose Maintainer approver is whitespace only",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "govern",
+        "--machine",
+        "--request",
+        "tests/fixtures/governance/request-whitespace-approver.json",
+        "--atlas-host-directory",
+        "{atlasHostDirectory}"
+      ],
+      "fixtureAtlasHostRepository": true,
+      "expectedExit": 4,
+      "expectedCode": "ATLAS_GOVERNANCE_APPROVAL_REQUIRED",
+      "forbidPayloadLint": true
+    },
+    {
+      "name": "reject a governance create whose approval instant is an uncomparable leap second",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "govern",
+        "--machine",
+        "--request",
+        "tests/fixtures/governance/request-leap-second-approver.json",
+        "--atlas-host-directory",
+        "{atlasHostDirectory}"
+      ],
+      "fixtureAtlasHostRepository": true,
+      "expectedExit": 4,
+      "expectedCode": "ATLAS_GOVERNANCE_APPROVAL_REQUIRED",
+      "forbidPayloadLint": true
+    },
+    {
+      "name": "reject a governance create whose approval instant is date-only",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "govern",
+        "--machine",
+        "--request",
+        "tests/fixtures/governance/request-date-only-approver.json",
+        "--atlas-host-directory",
+        "{atlasHostDirectory}"
+      ],
+      "fixtureAtlasHostRepository": true,
+      "expectedExit": 4,
+      "expectedCode": "ATLAS_GOVERNANCE_APPROVAL_REQUIRED",
+      "forbidPayloadLint": true
+    },
+    {
+      "name": "reject a governance delete that bypasses retire-and-reconcile",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "govern",
+        "--machine",
+        "--request",
+        "tests/fixtures/governance/request-delete.json",
+        "--atlas-host-directory",
+        "{atlasHostDirectory}"
+      ],
+      "fixtureAtlasHostRepository": true,
+      "expectedExit": 1,
+      "expectedCode": "ATLAS_GOVERNANCE_DELETE_RETIRES_TRUTHS",
+      "forbidPayloadLint": true
+    },
+    {
+      "name": "reject a governance command with no request as machine JSON usage",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["govern", "--machine"],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_GOVERNANCE_USAGE",
+      "stderrIncludes": "usage: atlas govern",
+      "forbidPayloadLint": true
+    },
+    {
+      "name": "reject a governance request that does not type-check as machine JSON",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "govern",
+        "--machine",
+        "--request",
+        "tests/fixtures/governance/request-malformed.json"
+      ],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_GOVERNANCE_INPUT_INVALID",
+      "forbidPayloadLint": true
     }
   ]
 }

@@ -4,7 +4,7 @@ import { resolvedCitationSourcePaths } from "../atlas/resolve_citations.ts";
 import { serializeAtlasPages } from "../atlas/serialize_atlas_pages.ts";
 import type { ParsedAtlasPage } from "../atlas/parse_atlas_pages.ts";
 import {
-  checkAtlasDateTime,
+  dateTimeMilliseconds,
   type AtlasPageEnvelope,
   type ReadonlyJsonValue,
 } from "../domain/atlas_page.ts";
@@ -232,18 +232,6 @@ function finding(
     path,
     severity,
   });
-}
-
-// A Source Revision Time must be comparable, not merely well-formed. RFC 3339
-// admits leap seconds such as 1990-12-31T23:59:60Z, which the schema accepts but
-// Date.parse cannot represent. Returning the raw parse would hand NaN to the
-// freshness comparison, where every comparison is false and Stale Knowledge
-// would pass silently. Anything that does not parse to a finite instant is
-// refused here so the caller fails closed.
-function dateTimeMilliseconds(value: string): number | undefined {
-  if (!checkAtlasDateTime(value)) return undefined;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function pendingDecisions(findings: readonly Finding[]): readonly string[] {

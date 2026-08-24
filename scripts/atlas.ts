@@ -53,7 +53,19 @@ import {
   usageIngestOperationResult,
   validateRequestCorrespondence,
 } from "../src/interfaces/ingest_command.ts";
+import {
+  exitCodeForGovernOperationResult,
+  governCommandExitCodes,
+  governCommandInputBudgets,
+  governCommandUsage,
+  invalidInputGovernOperationResult,
+  oversizedInputGovernOperationResult,
+  parseGovernRequest,
+  serializeGovernMachineResult,
+  usageGovernOperationResult,
+} from "../src/interfaces/governance_command.ts";
 import { runLocalAtlasIngest } from "../src/platform/local_atlas_ingest.ts";
+import { runLocalAtlasGovernance } from "../src/platform/local_atlas_governance.ts";
 import { runLocalAtlasExplore } from "../src/platform/local_atlas_explore.ts";
 
 interface ParsedLintCommand {
@@ -88,10 +100,16 @@ interface ParsedIngestReconcileCommand {
 
 type ParsedIngestCommand = ParsedIngestPlanCommand | ParsedIngestReconcileCommand;
 
+interface ParsedGovernCommand {
+  readonly atlasHostDirectory: string;
+  readonly machine: true;
+  readonly requestPath: string;
+}
+
 class UsageError extends Error {}
 class MissingAtlasError extends Error {}
 class UnreadableAtlasError extends Error {}
-class IngestInputBudgetError extends Error {}
+class InputBudgetError extends Error {}
 export class CaptureBudgetError extends Error {
   readonly capturedFiles: readonly LintCommandCapturedFile[];
 
@@ -534,13 +552,13 @@ function readJsonFile(path: string, maxFileBytes?: number): unknown {
   if (maxFileBytes !== undefined) {
     const stat = statSync(absolutePath);
     if (!stat.isFile() || stat.size > maxFileBytes) {
-      throw new IngestInputBudgetError(
+      throw new InputBudgetError(
         `Ingest input exceeds the ${String(maxFileBytes)} byte budget.`,
       );
     }
     const bytes = readFileSync(absolutePath);
     if (bytes.byteLength > maxFileBytes) {
-      throw new IngestInputBudgetError(
+      throw new InputBudgetError(
         `Ingest input exceeds the ${String(maxFileBytes)} byte budget.`,
       );
     }
@@ -558,7 +576,7 @@ function mainIngestPlan(command: ParsedIngestPlanCommand): number {
     );
   } catch (error: unknown) {
     const result =
-      error instanceof IngestInputBudgetError
+      error instanceof InputBudgetError
         ? oversizedInputIngestOperationResult(error.message)
         : invalidInputIngestOperationResult(
             "The Ingest Scope file could not be read as JSON.",
@@ -589,7 +607,7 @@ function mainIngestReconcile(command: ParsedIngestReconcileCommand): number {
     );
   } catch (error: unknown) {
     const result =
-      error instanceof IngestInputBudgetError
+      error instanceof InputBudgetError
         ? oversizedInputIngestOperationResult(error.message)
         : invalidInputIngestOperationResult(
             "The Ingest request file could not be read as JSON.",
@@ -629,11 +647,91 @@ function mainIngest(arguments_: readonly string[]): number {
     : mainIngestReconcile(command);
 }
 
+function parseGovernCommand(arguments_: readonly string[]): ParsedGovernCommand {
+  let machine = false;
+  let requestPath: string | undefined;
+  let atlasHostDirectory = ".";
+  let machineSeen = false;
+  let requestSeen = false;
+  let atlasHostDirectorySeen = false;
+  for (let index = 1; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument === "--machine") {
+      if (machineSeen) throw new UsageError(governCommandUsage);
+      machine = true;
+      machineSeen = true;
+      continue;
+    }
+    if (argument === "--request") {
+      if (requestSeen) throw new UsageError(governCommandUsage);
+      const value = arguments_[index + 1];
+      if (value === undefined || value.startsWith("--")) {
+        throw new UsageError(governCommandUsage);
+      }
+      requestPath = value;
+      requestSeen = true;
+      index += 1;
+      continue;
+    }
+    if (argument === "--atlas-host-directory") {
+      if (atlasHostDirectorySeen) throw new UsageError(governCommandUsage);
+      const value = arguments_[index + 1];
+      if (value === undefined || value.startsWith("--")) {
+        throw new UsageError(governCommandUsage);
+      }
+      atlasHostDirectory = value;
+      atlasHostDirectorySeen = true;
+      index += 1;
+      continue;
+    }
+    throw new UsageError(governCommandUsage);
+  }
+  if (!machine || requestPath === undefined) {
+    throw new UsageError(governCommandUsage);
+  }
+  return { atlasHostDirectory, machine: true, requestPath };
+}
+
+function mainGovern(arguments_: readonly string[]): number {
+  let command: ParsedGovernCommand;
+  try {
+    command = parseGovernCommand(arguments_);
+  } catch (error: unknown) {
+    if (!(error instanceof UsageError)) throw error;
+    const result = usageGovernOperationResult(error.message);
+    process.stdout.write(serializeGovernMachineResult(result));
+    console.error(error.message);
+    return governCommandExitCodes.usage;
+  }
+  let input: unknown;
+  try {
+    input = readJsonFile(command.requestPath, governCommandInputBudgets.maxFileBytes);
+  } catch (error: unknown) {
+    const result =
+      error instanceof InputBudgetError
+        ? oversizedInputGovernOperationResult(error.message)
+        : invalidInputGovernOperationResult(
+            "The governance request file could not be read as JSON.",
+          );
+    process.stdout.write(serializeGovernMachineResult(result));
+    return exitCodeForGovernOperationResult(result);
+  }
+  const parsed = parseGovernRequest(input);
+  if (!parsed.ok) {
+    process.stdout.write(serializeGovernMachineResult(parsed.result));
+    return exitCodeForGovernOperationResult(parsed.result);
+  }
+  const result = runLocalAtlasGovernance(command.atlasHostDirectory, parsed.value);
+  process.stdout.write(serializeGovernMachineResult(result));
+  return exitCodeForGovernOperationResult(result);
+}
+
 export function main(arguments_: readonly string[]): number {
   if (arguments_[0] === "lint") return mainLint(arguments_);
   if (arguments_[0] === "initialize") return mainInitialize(arguments_);
   if (arguments_[0] === "explore") return mainExplore(arguments_);
   if (arguments_[0] === "ingest") return mainIngest(arguments_);
+  if (arguments_[0] === "govern") return mainGovern(arguments_);
   console.error(lintCommandUsage);
   return lintCommandExitCodes.usage;
 }

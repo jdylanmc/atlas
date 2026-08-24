@@ -1,0 +1,7 @@
+{
+  "governance-request-schema": "1.0.0",
+  "action": "create",
+  "subject": "principle",
+  "approvedBy": "Fixture Maintainer",
+  "approvedAt": "9999-12-31"
+}

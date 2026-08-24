@@ -108,6 +108,20 @@ export function checkAtlasDateTime(value: unknown): value is string {
   return typeof value === "string" && validateAtlasDateTime(value);
 }
 
+// A date-time must be comparable, not merely well-formed. RFC 3339 admits leap
+// seconds such as 1990-12-31T23:59:60Z, which the schema accepts but Date.parse
+// cannot represent, and the schema's date-time format rejects date-only strings.
+// Returning the raw parse would hand NaN to any freshness, ordering, or audit
+// comparison, where every comparison is false and the check passes silently.
+// Anything that does not parse to a finite instant is refused here so callers
+// fail closed. This is the one shared rule; operations consume it rather than
+// restating it.
+export function dateTimeMilliseconds(value: string): number | undefined {
+  if (!checkAtlasDateTime(value)) return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 export function checkAtlasPageEnvelope(value: unknown): value is AtlasPageEnvelope {
   return isJsonCompatible(value) && validateAtlasPageEnvelope(value);
 }

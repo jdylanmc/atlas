@@ -2,12 +2,13 @@
 
 Atlas SDK is a deterministic TypeScript package for working with an Atlas: a bounded knowledge domain rooted in an Atlas Host Directory with its records under `.atlas/`.
 
-Today the package has two reachable command-line workflows:
+Today the package has these reachable command-line workflows:
 
 - `atlas lint --machine [--atlas-host-directory PATH]` validates a Home Atlas and prints an Operation Result as JSON.
 - `atlas initialize --machine [--atlas-host-directory PATH] [--resume-proposal-branch NAME]` creates or resumes an Atlas Initialization proposal in a Git-backed host directory.
-
-Explore, Ingest, and governance workflows are available as deterministic library APIs. Their command-line seams are still being wired up.
+- `atlas explore --machine QUERY [--atlas-host-directory PATH]` reads a Home Atlas and returns routed Explore results as JSON.
+- `atlas ingest plan|reconcile --machine ...` hands out a Crawl Assignment for an approved Ingest Scope, then reconciles a returned Candidate Graph into one proposal.
+- `atlas govern --machine --request PATH [--atlas-host-directory PATH]` maintains a Principle or Atlas Policy through one reviewable Atlas Proposal. The request carries explicit Maintainer approval and any semantic Policy verdict as validated input; the command never supplies approval itself, so an agent may propose but never establish governance autonomously.
 
 Atlas SDK does not invoke a model, call a network service, or require an API key at runtime. Agentic judgment belongs to the calling agent workflow; Atlas SDK validates inputs, writes deterministic proposals, and returns Operation Results.
 
@@ -26,6 +27,7 @@ Atlas SDK currently supports Node.js 24.x and npm 11.6.2.
 ```sh
 atlas lint --machine --atlas-host-directory /path/to/home-atlas
 atlas initialize --machine --atlas-host-directory /path/to/home-atlas
+atlas govern --machine --request /path/to/governance-request.json --atlas-host-directory /path/to/home-atlas
 ```
 
 `--machine` is required. Command output is newline-terminated JSON so agents and scripts can parse it directly.
