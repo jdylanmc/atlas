@@ -10,6 +10,7 @@ import {
   renderAtlasChangelogEntryBlock,
 } from "../domain/atlas_changelog.ts";
 import { dateTimeMilliseconds } from "../domain/atlas_page.ts";
+import { atlasPrincipleActiveTruthIds } from "../domain/atlas_principle.ts";
 import {
   addReceipt,
   canContinue,
@@ -461,18 +462,6 @@ function validateApproval(request: AtlasGovernanceRequest): readonly Finding[] {
   ]);
 }
 
-function activeTruthIds(content: string): readonly string[] {
-  const ids: string[] = [];
-  let active = false;
-  for (const line of content.split(/\r?\n/u)) {
-    if (/^## /u.test(line)) active = line === "## Active truths";
-    if (!active) continue;
-    const match = /^- `([^`]+)` /u.exec(line);
-    if (match !== null) ids.push(match[1] as string);
-  }
-  return Object.freeze(ids);
-}
-
 function validatePrincipleChangeSet(
   request: AtlasGovernanceRequest,
   changes: readonly AtlasGovernanceChange[],
@@ -483,7 +472,7 @@ function validatePrincipleChangeSet(
   const existingByPath = new Map(existing.map((file) => [file.path, file]));
   for (const change of changes) {
     if (!change.path.startsWith(".atlas/principles/")) continue;
-    const ids = activeTruthIds(change.content);
+    const ids = atlasPrincipleActiveTruthIds(change.content);
     const baseContent = capturedText(existingByPath.get(change.path));
     const baseId = frontmatterId(baseContent ?? "");
     const changedId = frontmatterId(change.content);
@@ -510,7 +499,7 @@ function validatePrincipleChangeSet(
       );
     }
     if (baseContent !== undefined && request.action === "amend") {
-      const oldIds = new Set(activeTruthIds(baseContent));
+      const oldIds = new Set(atlasPrincipleActiveTruthIds(baseContent));
       const nextIds = new Set(ids);
       const removed = [...oldIds].filter((id) => !nextIds.has(id));
       const added = ids.filter((id) => !oldIds.has(id));

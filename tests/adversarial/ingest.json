@@ -184,6 +184,13 @@
       "expectation": "accept"
     },
     {
+      "name": "H7-second-ingest-preserves-the-first-changelog-entry",
+      "gate": "ingest",
+      "kind": "emission",
+      "mutation": "changelog-preserves-existing-history",
+      "expectation": "accept"
+    },
+    {
       "name": "H8-excluded-directory-case-variant-pauses-for-approval",
       "gate": "ingest",
       "kind": "graph",

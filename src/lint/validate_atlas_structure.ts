@@ -20,6 +20,7 @@ import {
   corePageTypesByDirectory,
   rootAnchorPageId,
 } from "../domain/core_archetype.ts";
+import { atlasPrincipleActiveTruthIds } from "../domain/atlas_principle.ts";
 import type { Finding, FindingLocation } from "../domain/finding.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import type { AtlasTextFile } from "../atlas/load_atlas_text.ts";
@@ -739,6 +740,19 @@ function validatePage(
 
   const heading = markdownHeadingFinding(parsed, file.content, tree);
   if (heading !== undefined) findings.push(heading);
+
+  if (
+    parsed.page.sdk.type === coreArchetypes.Principle.pageType &&
+    atlasPrincipleActiveTruthIds(parsed.page.body).length === 0
+  ) {
+    findings.push(
+      finding(
+        "ATLAS_PRINCIPLE_ACTIVE_TRUTH_REQUIRED",
+        "A Principle page must expose at least one canonical active truth for Re-anchor.",
+        file.path,
+      ),
+    );
+  }
 
   if (
     Date.parse(parsed.page.sdk["created-at"]) >

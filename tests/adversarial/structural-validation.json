@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "reviewResolutionRule": "A review finding is resolved only after tests/adversarial has a case exercising the structural validation gate.",
+  "cases": [
+    {
+      "name": "canonical-active-truths-block-is-accepted",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "accept",
+      "body": "# Principle\n\n## Active truths\n\n- `truth:one` Text.\n\n## Amendments\n"
+    },
+    {
+      "name": "trailing-whitespace-active-truths-heading-is-rejected",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PRINCIPLE_ACTIVE_TRUTH_REQUIRED",
+      "body": "# Principle\n\n## Active truths \n\n- `truth:one` Text.\n\n## Amendments\n"
+    },
+    {
+      "name": "h3-active-truths-heading-is-rejected",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PRINCIPLE_ACTIVE_TRUTH_REQUIRED",
+      "body": "# Principle\n\n### Active truths\n\n- `truth:one` Text.\n\n## Amendments\n"
+    },
+    {
+      "name": "case-changed-active-truths-heading-is-rejected",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PRINCIPLE_ACTIVE_TRUTH_REQUIRED",
+      "body": "# Principle\n\n## Active Truths\n\n- `truth:one` Text.\n\n## Amendments\n"
+    },
+    {
+      "name": "indented-active-truth-bullet-is-rejected",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PRINCIPLE_ACTIVE_TRUTH_REQUIRED",
+      "body": "# Principle\n\n## Active truths\n\n  - `truth:one` Text.\n\n## Amendments\n"
+    },
+    {
+      "name": "active-truth-id-without-same-line-text-is-rejected",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PRINCIPLE_ACTIVE_TRUTH_REQUIRED",
+      "body": "# Principle\n\n## Active truths\n\n- `truth:one`\n\n## Amendments\n"
+    }
+  ]
+}

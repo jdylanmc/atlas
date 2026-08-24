@@ -150,6 +150,54 @@ test("aggregates exact sanitized structural Findings", () => {
   assert.equal(JSON.stringify(findings).includes("secret parser stack"), false);
 });
 
+test("Principle pages must expose canonical active truths for Re-anchor", () => {
+  for (const [name, body] of [
+    ["canonical", "# Principle\n\n## Active truths\n\n- `truth:one` Text."],
+    [
+      "canonical with continuation",
+      "# Principle\n\n## Active truths\n\n- `truth:one` Text\n  continued.",
+    ],
+  ] as const) {
+    assert.deepEqual(
+      validateAtlasStructure([
+        validFiles[2] as AtlasTextFile,
+        page(".atlas/principles/principle.md", body, {
+          id: "principle:principle",
+          title: "Principle",
+          type: "principle",
+        }),
+      ]),
+      [],
+      name,
+    );
+  }
+
+  for (const [name, body] of [
+    [
+      "trailing-whitespace heading",
+      "# Principle\n\n## Active truths \n\n- `truth:one` Text.",
+    ],
+    ["H3 heading", "# Principle\n\n### Active truths\n\n- `truth:one` Text."],
+    ["case-changed heading", "# Principle\n\n## Active Truths\n\n- `truth:one` Text."],
+    ["indented bullet", "# Principle\n\n## Active truths\n\n  - `truth:one` Text."],
+    ["missing same-line text", "# Principle\n\n## Active truths\n\n- `truth:one`"],
+  ] as const) {
+    const findings = validateAtlasStructure([
+      validFiles[2] as AtlasTextFile,
+      page(".atlas/principles/principle.md", body, {
+        id: "principle:principle",
+        title: "Principle",
+        type: "principle",
+      }),
+    ]);
+    assert.equal(
+      findings.some((entry) => entry.code === "ATLAS_PRINCIPLE_ACTIVE_TRUTH_REQUIRED"),
+      true,
+      name,
+    );
+  }
+});
+
 test("requires the first CommonMark block to be the matching H1", () => {
   for (const body of [
     "",

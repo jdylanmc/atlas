@@ -671,24 +671,50 @@ test("Governance proves every deterministic input gate can fail with specific co
     assert.ok(principleGates.includes(code), code);
   }
 
-  // A retire that empties active truths is permitted, where amend is not.
-  const retireGates = runAtlasGovernanceWorkflow(
+  const malformedHeadingGates = runAtlasGovernanceWorkflow(
     workflowState,
     request({
-      action: "retire",
       changes: [
         {
-          content: principleContent("").replace(
-            "  id: principle:determinism",
-            "  id: principle:retired",
+          content: principleContent("- `truth:one` A truth.\n").replace(
+            "## Active truths",
+            "## Active truths ",
           ),
-          path: ".atlas/principles/retired.md",
+          path: ".atlas/principles/determinism.md",
         },
       ],
     }),
-    runtime(workflowState, request({ action: "retire" })),
+    runtime(workflowState, request()),
+  ).handoff.validationState.findings.map((entry) => entry.code);
+  assert.ok(
+    malformedHeadingGates.includes("ATLAS_GOVERNANCE_PRINCIPLE_TRUTH_REQUIRED"),
   );
-  assert.equal(retireGates.completion, "completed");
+
+  // A retire that empties active truths is permitted at the governance precheck,
+  // where amend is not. Structural Lint still rejects a retained zero-truth page.
+  const retireRequest = request({
+    action: "retire",
+    changes: [
+      {
+        content: principleContent("").replace(
+          "  id: principle:determinism",
+          "  id: principle:retired",
+        ),
+        path: ".atlas/principles/retired.md",
+      },
+    ],
+  });
+  const retireGates = runAtlasGovernanceWorkflow(
+    workflowState,
+    retireRequest,
+    runtime(workflowState, retireRequest),
+  );
+  assert.equal(retireGates.completion, "not-completed");
+  assert.ok(
+    retireGates.handoff.validationState.findings.some(
+      (entry) => entry.code === "ATLAS_PRINCIPLE_ACTIVE_TRUTH_REQUIRED",
+    ),
+  );
 
   // Atlas Policy identity gates.
   const policyGates = runAtlasGovernanceWorkflow(
