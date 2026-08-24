@@ -88,10 +88,22 @@ function emittedAtlasFiles(): Map<string, string> {
 // emits, so a page cannot drift into claiming something the workflow never
 // produced. A committed Atlas page asserting a provenance it does not have is
 // the defect this guard exists to prevent.
+//
+// .atlas/CHANGELOG.md is the one exception: governance and Ingest legitimately
+// append their own stamped entries after Initialization, so its committed
+// content only needs to retain the exact Initialization prefix, not equal it.
 test("the committed SDK Atlas is byte-identical to what Initialization emits", () => {
   for (const [path, content] of emittedAtlasFiles()) {
+    const committed = readFileSync(join(ROOT, path), "utf8");
+    if (path === ".atlas/CHANGELOG.md") {
+      assert.ok(
+        committed.startsWith(content),
+        `${path} has drifted from the Initialization prefix Atlas Changelog entries must extend`,
+      );
+      continue;
+    }
     assert.equal(
-      readFileSync(join(ROOT, path), "utf8"),
+      committed,
       content,
       `${path} has drifted from the content Atlas Initialization emits`,
     );
