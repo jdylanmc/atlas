@@ -72,6 +72,10 @@ export const corePageDirectories: ReadonlySet<string> = new Set(
  */
 export const reservedPageDirectories: ReadonlySet<string> = new Set([
   "atlas-cache",
+  // Retiring the Framework Bundle removed the glossary terms that named this
+  // directory, but the directory itself still exists and is still SDK-reserved.
+  // Issue #162 removes it and this entry with it.
+  "framework",
   "types",
 ]);
 

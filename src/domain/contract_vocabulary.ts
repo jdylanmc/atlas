@@ -42,18 +42,6 @@ export const contractVocabularyBindings = Object.freeze([
     term: "Atlas Snapshot",
   }),
   Object.freeze({
-    exportedIdentifiers: Object.freeze(["FrameworkBundle"]),
-    term: "Framework Bundle",
-  }),
-  Object.freeze({
-    exportedIdentifiers: Object.freeze(["FrameworkRelease"]),
-    term: "Framework Release",
-  }),
-  Object.freeze({
-    exportedIdentifiers: Object.freeze(["FrameworkReleaseManifest"]),
-    term: "Framework Release Manifest",
-  }),
-  Object.freeze({
     exportedIdentifiers: Object.freeze(["AtlasInitializationResult"]),
     term: "Atlas Initialization",
   }),
@@ -216,10 +204,6 @@ export const unboundGlossaryTerms = Object.freeze([
   Object.freeze({
     reason: "A specific instance (this repository's own Atlas), not a type.",
     term: "SDK Atlas",
-  }),
-  Object.freeze({
-    reason: "Not yet implemented.",
-    term: "Framework Upgrade",
   }),
   Object.freeze({
     reason: "Not yet implemented.",

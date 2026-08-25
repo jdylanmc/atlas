@@ -15,8 +15,7 @@ const fixtures = [
       ["lint", "../operations/example.ts"],
       ["operations", "../platform/example.ts"],
       ["platform", "../adapters/example.ts"],
-      ["adapters", "../framework/example.ts"],
-      ["framework", "../interfaces/example.ts"],
+      ["adapters", "../interfaces/example.ts"],
     ] as const
   ).map(([layer, specifier]) => ({
     name: `outward-${layer}.ts`,
