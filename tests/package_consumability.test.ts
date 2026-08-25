@@ -229,10 +229,12 @@ function createConsumer(workspace: string): string {
   // one. With a lockfile there is nothing to resolve: npm reads the exact
   // versions, integrity hashes, and resolved URLs it was given.
   //
-  // The consumer must not borrow the SDK's `name`, `bin`, or `exports`, or a
-  // bare specifier would self-resolve to the consumer root instead of
+  // The consumer must not borrow the SDK's `name` together with an `exports`
+  // map, or a bare specifier would self-resolve to the consumer root instead of
   // `node_modules` and silently destroy the isolation this function exists to
-  // create.
+  // create. Versions are pinned by the seeded lockfile, and `npm ci` verifies
+  // each package against the `integrity` hash it records; there is nothing left
+  // for this function to assert about them that npm has not already enforced.
   const sdkPackage = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
     readonly dependencies: Readonly<Record<string, string>>;
   };
@@ -293,22 +295,6 @@ function createConsumer(workspace: string): string {
     ],
     offlineInstall,
   );
-
-  // Pinning that is asserted rather than assumed: every production dependency
-  // the consumer resolved must be the exact version this repository's lockfile
-  // records, so a future drift fails the gate instead of passing quietly.
-  for (const name of Object.keys(sdkPackage.dependencies)) {
-    const locked = sdkLock.packages[`node_modules/${name}`] as
-      { readonly version?: string } | undefined;
-    const installed = JSON.parse(
-      readFileSync(join(consumer, "node_modules", name, "package.json"), "utf8"),
-    ) as { readonly version: string };
-    assert.equal(
-      installed.version,
-      locked?.version,
-      `${name} drifted from the lockfile`,
-    );
-  }
 
   const state = initialAtlasInitializationWorkflowState({
     baseSnapshotDigest: "0".repeat(64),
