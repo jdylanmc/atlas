@@ -29,7 +29,7 @@ import {
   type TrustedGitResult,
 } from "./trusted_git.ts";
 
-// Atlas SDK never invokes a model (docs/adr/0001-sdk-is-a-deterministic-library.md).
+// Atlas SDK does not invoke a model (docs/adr/0001-sdk-is-a-deterministic-library.md).
 // This platform adapter drives the deterministic governance workflow against a
 // local Git repository: it captures the base snapshot, creates an isolated
 // Operation Workspace, writes the human-authored Atlas Change Set, commits it,
@@ -381,7 +381,7 @@ export function runLocalAtlasGovernance(
   // A worktree this invocation created but could not carry to a completed
   // proposal is torn down so a corrected retry at the same target HEAD is not
   // wedged. A completed proposal is kept for review; a pre-existing workspace
-  // (created === false) is never touched.
+  // (created === false) is left untouched.
   if (progress.created && result.completion !== "completed") {
     discardProposalWorktree(root, workspace, workflowState.proposalBranch);
   }

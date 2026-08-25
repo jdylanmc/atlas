@@ -36,7 +36,7 @@ export class AtlasPageSerializeError extends Error {
   }
 }
 
-// Canonical frontmatter emission is pinned so that identical values always produce
+// Canonical frontmatter emission is pinned so that identical values produce
 // identical bytes: the parser's tag set (so timestamp-shaped strings stay quoted),
 // YAML 1.2 core resolution, no anchors or aliases, no directives, no line wrapping,
 // and no emitter-side reordering. Every non-plain scalar is a single-line JSON style
@@ -70,7 +70,7 @@ const canonicalYamlOptions: CreateNodeOptions &
 // Canonical serialization reaches mapping entries through `Object.keys` and array
 // entries through their indices, so own properties outside that reach - symbols,
 // non-enumerable mapping keys, and named properties hung off an array - would be
-// dropped silently. The envelope contract cannot see any of them, so the page root
+// dropped silently. The envelope contract does not see any of them, so the page root
 // and every object or array descendant is scanned before any bytes exist. That is
 // the one serializer-specific rejection.
 // Only ECMAScript array indices - 0 through 2^32 - 2 - participate in an array's
@@ -151,7 +151,7 @@ export function serializeAtlasPages(
 
   // Every page is checked against the parser's envelope contract, and scanned for
   // values the emitter would drop, before any bytes are produced, so a page the
-  // parser would reject can never be half emitted.
+  // parser would reject is not half emitted.
   let previousPath: string | undefined;
   for (const parsed of ordered) {
     const path = parsed.source.path;

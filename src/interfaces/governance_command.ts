@@ -13,13 +13,13 @@ import {
   operationResultSchemaVersion,
 } from "../operations/operation_result.ts";
 
-// Atlas SDK never invokes a model (docs/adr/0001-sdk-is-a-deterministic-library.md).
+// Atlas SDK does not invoke a model (docs/adr/0001-sdk-is-a-deterministic-library.md).
 // This command is the deterministic half of the governance seam. It accepts one
 // human-authored Atlas Governance request as validated input, bounds it on every
 // axis, and delegates the single deterministic maintenance workflow to the
 // governance operation. No model, network, subagent dispatch, semantic judgment,
 // or self-approval lives here: a Maintainer's approval and every semantic Policy
-// verdict re-enter only through the request the human authored, never through a
+// verdict re-enter only through the request the human authored, rather than through a
 // flag, default, or environment value this seam could supply on its own.
 
 export const governCommandUsage =
@@ -99,8 +99,8 @@ function governFinding(code: string, message: string, path = ".atlas"): Finding 
 
 // A determinate refusal the command reaches before any mutation: bad arguments,
 // input that does not type-check, or input past a declared budget. It is a
-// VALUE carrying a stable code and a full versioned Operation Result, never a
-// thrown exception and never empty stdout.
+// VALUE carrying a stable code and a full versioned Operation Result, rather than a
+// thrown exception or empty stdout.
 function notCompletedGovernResult(
   findings: readonly Finding[],
   summary: string,
@@ -180,7 +180,7 @@ export function oversizedInputGovernOperationResult(
 
 // The Atlas Governance request is only constructible through this parser, so
 // downstream code derives the request's validity from a validator rather than
-// trusting a caller's assertion. Each guard is a determinate refusal, never a
+// trusting a caller's assertion. Each guard is a determinate refusal, rather than a
 // thrown exception that escapes the command.
 class GovernInputError extends Error {}
 
@@ -203,7 +203,7 @@ function asBoundedString(value: unknown, path: string, maxBytes: number): string
   return value;
 }
 
-// A single-line string: one whose bytes cannot begin a new line. The drafted
+// A single-line string: one whose bytes do not begin a new line. The drafted
 // Atlas Changelog prose is rendered mid-bullet, so bounding it to one line here
 // makes a forged extra Changelog heading or bullet — and thus a forged operation
 // ID — unrepresentable rather than something a downstream check must strip.
@@ -261,7 +261,7 @@ function asSchema<Version extends string>(
 
 // `satisfies Record<…, true>` forces this map to list every governance action
 // the operation accepts. If that union grows, this stops compiling until the new
-// member is added here, so the parser can never silently reject a valid action —
+// member is added here, so the parser does not silently reject a valid action —
 // the drift a hand-copied string list would hide.
 const governanceActionSet = {
   amend: true,
@@ -417,7 +417,7 @@ function parseRequestRecord(
     subject: asSubject(record["subject"], "request.subject"),
   };
   // Approval is read ONLY from the human-authored request. There is no flag,
-  // default, or environment value that supplies it, so the seam cannot
+  // default, or environment value that supplies it, so the seam does not
   // self-approve a Principle or Atlas Policy on an agent's behalf.
   if (record["approvedBy"] !== undefined) {
     request.approvedBy = asBoundedString(
@@ -465,7 +465,7 @@ export type GovernParseOutcome =
   | { readonly ok: false; readonly result: AtlasGovernanceResult }
   | { readonly ok: true; readonly value: AtlasGovernanceRequest };
 
-// Every guard above throws GovernInputError, so a failed parse is always a
+// Every guard above throws GovernInputError, so a failed parse yields a
 // determinate, message-bearing refusal rather than an exception that escapes.
 export function parseGovernRequest(value: unknown): GovernParseOutcome {
   try {

@@ -27,7 +27,7 @@ import {
   type TrustedGitResult,
 } from "./trusted_git.ts";
 
-// Atlas SDK never invokes a model (docs/adr/0001-sdk-is-a-deterministic-library.md).
+// Atlas SDK does not invoke a model (docs/adr/0001-sdk-is-a-deterministic-library.md).
 // This platform adapter drives the deterministic Ingest workflow against a local
 // Git repository: it captures the base snapshot, creates an isolated Operation
 // Workspace, writes the reconciled Atlas Change Set, commits it, and Lints the

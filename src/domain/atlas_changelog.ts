@@ -7,7 +7,7 @@
 // restating it and drifting. An entry is a single dated heading and a single
 // operation bullet by construction: a Changelog entry body is one line, so any
 // multi-line prose that would forge extra headings or bullets — and thus forge
-// provenance and operation IDs — cannot be rendered into an entry here.
+// provenance and operation IDs — is not rendered into an entry here.
 //
 // The recognizer below checks what this module renders. It is not a structural
 // contract on the archetype: CONTEXT.md:105 defines the Atlas Changelog
@@ -51,7 +51,7 @@ function splitLines(value: string): readonly string[] {
 
 /** Render one Changelog entry block: a single dated heading and a single
  * operation bullet. `prose` is placed mid-line after the operation ID, so a
- * single-line prose can never begin a heading or bullet of its own. */
+ * single-line prose does not begin a heading or bullet of its own. */
 export function renderAtlasChangelogEntryBlock(
   date: string,
   operationId: string,

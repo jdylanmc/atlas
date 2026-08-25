@@ -41,7 +41,7 @@ const directoryPattern = /\\?\.atlas\\?\/([A-Za-z0-9_.-]+)\\?\//dgu;
 const specifierPattern =
   /(?<![.\w$])(?:from|import(?:\.meta\.resolve)?|require)\s{0,64}(?:\(\s{0,64})?(["'])((?:[^"'\n\\]|\\.)*)\1/gu;
 /** A single-line string or template literal. The opening quote follows no
- * backslash and the body cannot backtrack, so each literal is read once and a
+ * backslash and the body does not backtrack, so each literal is read once and a
  * line of escaped quotes costs one pass rather than one pass for each quote. */
 const literalPattern = /(?<!\\)"(?=((?:[^"\\\n]|\\.)*))\1"|(?<!\\)`(?=([^`\n]*))\2`/dgu;
 /** A template-literal substitution, whose value is not literal text. Blanking it
@@ -95,7 +95,7 @@ function pluralOf(word: string): string {
  * Reads CONTEXT.md as the authoritative glossary: every defined term, and every
  * unconditionally avoided term in singular and plural form. An avoidance entry
  * that begins in lower case opens a human qualifier, which scopes the one entry
- * before it to a condition validation cannot judge, so that entry stays
+ * before it to a condition validation does not judge, so that entry stays
  * advisory. A qualifier that scopes no entry, or that hides an entry behind it,
  * leaves an avoidance no reader can rely on, and its line is reported malformed.
  * An empty entry, which a stray comma leaves behind, is neither a term nor a
@@ -313,7 +313,7 @@ function validateBindings(
  * by whoever last touched the glossary or its contracts; a term that is more
  * than one is a stale `unboundGlossaryTerms` entry left behind after binding
  * it. Both are reported rather than silently resolved, so the omission this
- * check exists to catch cannot itself be guessed away.
+ * check exists to catch is not itself guessed away.
  */
 function validateTermClassification(
   bindings: CoreArchetypeBindings,
@@ -545,7 +545,7 @@ function scanDirectories(
  * carries and which a Markdown code span in a comment does not. Its capitalized
  * words are read singly and in adjacent runs, so a term of several words is read
  * as one name. Every surface reads the literal with each substitution blanked at
- * its own length, so locations stay exact and a substituted value is never read
+ * its own length, so locations stay exact and a substituted value is not read
  * as literal text.
  */
 function scanLiterals(

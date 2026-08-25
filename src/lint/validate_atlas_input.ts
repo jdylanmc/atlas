@@ -31,7 +31,7 @@ const loadCodes: Readonly<Record<AtlasLoadErrorCode, string>> = Object.freeze({
 // A loading failure concerns the captured Atlas tree as a whole rather than one
 // resolved page, and AtlasLoadError deliberately withholds the offending raw
 // path so an unsafe caller path does not leak into a sanitized Finding.
-// "sanitizes loading failures and never leaks the offending raw path" pins it.
+// "sanitizes loading failures without leaking the offending raw path" pins it.
 const atlasSubjectPath = ".atlas";
 
 function loadFinding(code: string, message: string): Finding {
@@ -129,8 +129,8 @@ function validationState(findings: readonly Finding[]): "invalid" | "valid" {
  * loading failure, and every parsing failure the parser describes, into a
  * stable, sdk-core attributed Finding so invalid input escapes as neither an
  * uncaught exception nor a success-shaped result. A loading failure
- * short-circuits with one Finding, since the text it would parse cannot be
- * trusted; otherwise the loaded text flows through structural validation, whose
+ * short-circuits with one Finding, since the text it would parse is not
+ * trustworthy; otherwise the loaded text flows through structural validation, whose
  * deterministic ordering, sanitization, and source evidence contracts are
  * preserved. Identical input bytes yield identical ordered Findings.
  *

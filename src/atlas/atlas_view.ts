@@ -1,7 +1,7 @@
 import { compareCodePoints } from "./compare_code_points.ts";
 import { sha256Bytes } from "./sha256.ts";
 import type { AtlasTextFile } from "./load_atlas_text.ts";
-// Atlas View only names Lint output as an opaque type; it never runs Lint.
+// Atlas View only names Lint output as an opaque type; it does not run Lint.
 // eslint-disable-next-line atlas/inward-imports
 import type { AtlasInputValidation } from "../lint/validate_atlas_input.ts";
 import type { ParsedAtlasPage } from "./parse_atlas_pages.ts";

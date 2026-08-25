@@ -110,7 +110,7 @@ export function checkAtlasDateTime(value: unknown): value is string {
 
 // A date-time must be comparable, not merely well-formed. RFC 3339 admits leap
 // seconds such as 1990-12-31T23:59:60Z, which the schema accepts but Date.parse
-// cannot represent, and the schema's date-time format rejects date-only strings.
+// does not represent, and the schema's date-time format rejects date-only strings.
 // Returning the raw parse would hand NaN to any freshness, ordering, or audit
 // comparison, where every comparison is false and the check passes silently.
 // Anything that does not parse to a finite instant is refused here so callers
