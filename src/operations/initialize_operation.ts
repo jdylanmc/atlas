@@ -752,8 +752,7 @@ function updateCheckpointCompletion(
   input: unknown,
   changes: readonly AtlasInitializationChange[],
 ): readonly FoundingCheckpoint[] {
-  const existing = checkpoints.find((checkpoint) => checkpoint.id === id);
-  const dependsOn = existing?.dependsOn ?? foundingCheckpointDependencies[id];
+  const dependsOn = foundingCheckpointDependencies[id];
   return replaceCheckpoint(
     checkpoints,
     Object.freeze({

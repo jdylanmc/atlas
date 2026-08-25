@@ -648,6 +648,14 @@ test("raw founding input rejects injected persona authority before typing", () =
           orientation: "ok",
           title: "ok",
         },
+        {
+          anchorId: "anchor:no-named-paths",
+          approvedAt: "2026-08-24T12:00:00Z",
+          approvedBy: "Reviewer",
+          citedSources: [],
+          orientation: "ok",
+          title: "ok",
+        },
       ],
     },
     {
