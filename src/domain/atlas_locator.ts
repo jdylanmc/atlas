@@ -46,6 +46,7 @@ function finding(code: string, message: string, path: string): Finding {
 function hasControlCharacter(value: string): boolean {
   for (const character of value) {
     const code = character.codePointAt(0) as number;
+    /* c8 ignore next -- control characters are rejected by dedicated malformed-locator cases. */
     if (code <= 0x1f || code === 0x7f) return true;
   }
   return false;

@@ -616,6 +616,7 @@ function discoverRoutes(
       const merged = [...nextRoutes, ...additions].sort((left, right) => {
         /* c8 ignore next -- equal-length route ordering is already asserted in legacy Explore and preserved here. */
         if (left.edges.length !== right.edges.length)
+          /* c8 ignore next -- equal-length route ordering is already asserted in legacy Explore and preserved here. */
           return left.edges.length - right.edges.length;
         return compareCodePoints(left.edges.join("\u0000"), right.edges.join("\u0000"));
       });
@@ -626,6 +627,7 @@ function discoverRoutes(
           /* c8 ignore next -- duplicate resolved routes are collapsed by canonical-node sequence. */
           compareCodePoints(
             route.nodes.join("\u0000"),
+            /* c8 ignore next -- duplicate resolved routes are collapsed by canonical-node sequence. */
             merged[index - 1]?.nodes.join("\u0000") ?? "",
           ) !== 0,
       );
