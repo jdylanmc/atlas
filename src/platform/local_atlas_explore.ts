@@ -1,26 +1,24 @@
 import { lstatSync, type Stats } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
-import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import type { Finding } from "../domain/finding.ts";
 import {
   runExploreOperation,
   type ExploreOperationResult,
 } from "../operations/explore_operation.ts";
+import type { AtlasCacheResolverRequest } from "../operations/connected_atlas_explore.ts";
 import {
   operationHandoffSchemaVersion,
   operationResultSchemaVersion,
   type OperationReference,
 } from "../operations/operation_result.ts";
+import { resolveAtlasCache } from "./atlas_cache.ts";
+import { captureAtlasTree } from "./atlas_tree_capture.ts";
 import {
   runTrustedGit,
   runTrustedGitBytesWithInput,
   runTrustedGitWithInput,
 } from "./trusted_git.ts";
-
-// Explore is the read-only local platform seam. It captures an exact committed
-// Atlas Snapshot from Git and delegates traversal to the deterministic operation.
-// It does not write, create a worktree, invoke a model, or rank semantically.
 
 interface LocalAtlasExploreBudgets {
   readonly maxContextCharacters: number;
@@ -60,19 +58,6 @@ export type LocalExploreCaptureResult =
       readonly reason: string;
       readonly state: "missing" | "oversized" | "too-many-files" | "unreadable";
     };
-
-interface TreeEntry {
-  readonly mode: string;
-  readonly object: string;
-  readonly path: string;
-  readonly type: string;
-}
-
-interface CheckedBlob {
-  readonly object: string;
-  readonly path: string;
-  readonly size: number;
-}
 
 const exploreOperationIdentity = Object.freeze({
   kind: "explore" as const,
@@ -238,39 +223,6 @@ function findGitRoot(
   }
 }
 
-function parseTreeEntries(output: string): readonly TreeEntry[] {
-  const entries: TreeEntry[] = [];
-  for (const raw of output.split("\0")) {
-    if (raw === "") continue;
-    const separator = raw.indexOf("\t");
-    if (separator < 0) return Object.freeze([]);
-    const [mode, type, object] = raw.slice(0, separator).split(" ");
-    const path = raw.slice(separator + 1);
-    if (
-      mode === undefined ||
-      type === undefined ||
-      object === undefined ||
-      path === ""
-    ) {
-      return Object.freeze([]);
-    }
-    entries.push(Object.freeze({ mode, object, path, type }));
-  }
-  return Object.freeze(
-    entries.toSorted((left, right) => compareCodePoints(left.path, right.path)),
-  );
-}
-
-function atlasRelativePath(
-  root: string,
-  atlasHostDirectory: string,
-  gitPath: string,
-): string {
-  const hostPath = repositoryPath(root, atlasHostDirectory);
-  if (hostPath === ".") return gitPath;
-  return gitPath.slice(hostPath.length + 1);
-}
-
 function git(
   run: LocalExploreTextGitRunner,
   repository: string,
@@ -278,184 +230,6 @@ function git(
 ): string | undefined {
   const result = run(repository, args);
   return result.state === "succeeded" ? result.stdout.trim() : undefined;
-}
-
-function batchInput(entries: readonly TreeEntry[]): string {
-  return `${entries.map((entry) => entry.object).join("\n")}\n`;
-}
-
-function batchBufferBudget(
-  entries: readonly TreeEntry[],
-  maxTotalBytes: number,
-): number {
-  return maxTotalBytes + entries.length * 128 + 1;
-}
-
-function parseBatchCheckLine(
-  line: string,
-):
-  | { readonly object: string; readonly size: number; readonly type: string }
-  | undefined {
-  const [object, type, sizeText, extra] = line.split(" ");
-  if (
-    object === undefined ||
-    type === undefined ||
-    sizeText === undefined ||
-    extra !== undefined
-  ) {
-    return undefined;
-  }
-  const size = Number(sizeText);
-  if (!Number.isSafeInteger(size) || size < 0) return undefined;
-  return Object.freeze({ object, size, type });
-}
-
-function checkedBlobs(
-  repository: string,
-  entries: readonly TreeEntry[],
-  budgets: LocalAtlasExploreBudgets,
-  readBatchText: LocalExploreBatchTextGitRunner,
-):
-  | { readonly blobs: readonly CheckedBlob[]; readonly state: "checked" }
-  | { readonly reason: string; readonly state: "oversized" | "unreadable" } {
-  const result = readBatchText(
-    repository,
-    ["cat-file", "--batch-check"],
-    batchInput(entries),
-    entries.length * 128 + 1,
-  );
-  if (result.state === "failed") {
-    return Object.freeze({
-      reason: "Git failed while checking the local Atlas Snapshot objects.",
-      state: "unreadable" as const,
-    });
-  }
-  const lines = result.stdout.split(/\n/u);
-  if (lines.at(-1) === "") lines.pop();
-  if (lines.length !== entries.length) {
-    return Object.freeze({
-      reason: "Git returned an incomplete Atlas Snapshot object check.",
-      state: "unreadable" as const,
-    });
-  }
-  const blobs: CheckedBlob[] = [];
-  let totalBytes = 0;
-  for (const [index, line] of lines.entries()) {
-    const entry = entries[index] as TreeEntry;
-    const checked = parseBatchCheckLine(line);
-    if (
-      checked === undefined ||
-      checked.object !== entry.object ||
-      checked.type !== "blob" ||
-      entry.type !== "blob" ||
-      entry.mode !== "100644"
-    ) {
-      return Object.freeze({
-        reason: "Git returned an unusable Atlas Snapshot object check.",
-        state: "unreadable" as const,
-      });
-    }
-    if (checked.size > budgets.maxFileBytes) {
-      return Object.freeze({
-        reason: "The local Atlas Snapshot exceeded the declared per-file byte budget.",
-        state: "oversized" as const,
-      });
-    }
-    if (totalBytes + checked.size > budgets.maxTotalBytes) {
-      return Object.freeze({
-        reason: "The local Atlas Snapshot exceeded the declared total byte budget.",
-        state: "oversized" as const,
-      });
-    }
-    totalBytes += checked.size;
-    blobs.push(
-      Object.freeze({ object: entry.object, path: entry.path, size: checked.size }),
-    );
-  }
-  return Object.freeze({ blobs: Object.freeze(blobs), state: "checked" as const });
-}
-
-function readBatchLine(
-  bytes: Uint8Array,
-  offset: number,
-): { readonly line: string; readonly nextOffset: number } | undefined {
-  const newline = bytes.indexOf(0x0a, offset);
-  if (newline < 0) return undefined;
-  return Object.freeze({
-    line: new TextDecoder().decode(bytes.subarray(offset, newline)),
-    nextOffset: newline + 1,
-  });
-}
-
-function capturedBlobs(
-  repository: string,
-  blobs: readonly CheckedBlob[],
-  atlasHostDirectory: string,
-  readBatchBytes: LocalExploreBatchBytesGitRunner,
-  maxTotalBytes: number,
-):
-  | { readonly files: readonly CapturedAtlasFile[]; readonly state: "captured" }
-  | { readonly reason: string; readonly state: "unreadable" } {
-  const result = readBatchBytes(
-    repository,
-    ["cat-file", "--batch"],
-    `${blobs.map((blob) => blob.object).join("\n")}\n`,
-    batchBufferBudget(
-      blobs.map((blob) => ({ ...blob, mode: "100644", type: "blob" })),
-      maxTotalBytes,
-    ),
-  );
-  if (result.state === "failed") {
-    return Object.freeze({
-      reason: "Git failed while reading the local Atlas Snapshot objects.",
-      state: "unreadable" as const,
-    });
-  }
-  const files: CapturedAtlasFile[] = [];
-  let offset = 0;
-  for (const blob of blobs) {
-    const header = readBatchLine(result.stdout, offset);
-    if (header === undefined) {
-      return Object.freeze({
-        reason: "Git returned a truncated Atlas Snapshot object header.",
-        state: "unreadable" as const,
-      });
-    }
-    const checked = parseBatchCheckLine(header.line);
-    if (
-      checked === undefined ||
-      checked.object !== blob.object ||
-      checked.type !== "blob" ||
-      checked.size !== blob.size
-    ) {
-      return Object.freeze({
-        reason: "Git returned an unexpected Atlas Snapshot object header.",
-        state: "unreadable" as const,
-      });
-    }
-    const contentStart = header.nextOffset;
-    const contentEnd = contentStart + blob.size;
-    if (contentEnd >= result.stdout.byteLength || result.stdout[contentEnd] !== 0x0a) {
-      return Object.freeze({
-        reason: "Git returned truncated Atlas Snapshot object content.",
-        state: "unreadable" as const,
-      });
-    }
-    files.push(
-      Object.freeze({
-        bytes: result.stdout.subarray(contentStart, contentEnd),
-        path: atlasRelativePath(repository, atlasHostDirectory, blob.path),
-      }),
-    );
-    offset = contentEnd + 1;
-  }
-  if (offset !== result.stdout.byteLength) {
-    return Object.freeze({
-      reason: "Git returned trailing Atlas Snapshot object data.",
-      state: "unreadable" as const,
-    });
-  }
-  return Object.freeze({ files: Object.freeze(files), state: "captured" as const });
 }
 
 export function captureLocalAtlasExploreSnapshot(
@@ -498,52 +272,30 @@ export function captureLocalAtlasExploreSnapshot(
       state: "unreadable" as const,
     });
   }
-
   const hostPath = repositoryPath(root, host);
   const atlasPath = hostPath === "." ? ".atlas" : `${hostPath}/.atlas`;
-  const listed = readText(root, ["ls-tree", "-rz", "-r", revision, atlasPath]);
-  if (listed.state === "failed") {
-    return Object.freeze({
-      reason: "Git failed while listing the local Atlas Snapshot.",
-      state: "unreadable" as const,
-    });
-  }
-  const entries = parseTreeEntries(listed.stdout);
-  if (entries.length === 0) {
-    return Object.freeze({
-      reason: "Atlas Host Directory does not contain a committed .atlas directory.",
-      state: "missing" as const,
-    });
-  }
-  if (entries.length > budgets.maxFiles) {
-    return Object.freeze({
-      reason: "The local Atlas Snapshot exceeded the declared file-count budget.",
-      state: "too-many-files" as const,
-    });
-  }
-  const checked = checkedBlobs(root, entries, budgets, readBatchText);
-  switch (checked.state) {
-    case "oversized":
-      return Object.freeze({ reason: checked.reason, state: "oversized" as const });
-    case "unreadable":
-      return Object.freeze({ reason: checked.reason, state: "unreadable" as const });
-    case "checked":
-      break;
-  }
-  const captured = capturedBlobs(
-    root,
-    checked.blobs,
-    host,
+  const captured = captureAtlasTree(root, revision, atlasPath, hostPath, budgets, {
     readBatchBytes,
-    budgets.maxTotalBytes,
-  );
-  if (captured.state === "unreadable") {
-    return Object.freeze({ reason: captured.reason, state: "unreadable" as const });
-  }
+    readBatchText,
+    readText,
+  });
+  if (captured.state !== "captured") return captured;
   return Object.freeze({
     baseSnapshot: revision,
-    capturedFiles: captured.files,
+    capturedFiles: captured.capturedFiles,
     state: "captured" as const,
+  });
+}
+
+export function localAtlasCacheResolver(atlasHostDirectory: string) {
+  return Object.freeze({
+    resolve: (request: AtlasCacheResolverRequest) =>
+      resolveAtlasCache({
+        homeAtlasDirectory: atlasHostDirectory,
+        introducedByAnchorId: request.introducedByAnchorId,
+        introducedByEdgeId: request.introducedByEdgeId,
+        trackedAtlas: request.trackedAtlas,
+      }),
   });
 }
 
@@ -556,6 +308,7 @@ export function runLocalAtlasExplore(
   switch (capture.state) {
     case "captured":
       return runExploreOperation({
+        atlasCacheResolver: localAtlasCacheResolver(atlasHostDirectory),
         baseSnapshot: Object.freeze({
           reference: capture.baseSnapshot,
           state: "known",

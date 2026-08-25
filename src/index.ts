@@ -29,6 +29,24 @@ export {
   foundingCheckpointDependencies,
   invalidateDependentCheckpoints,
 } from "./domain/founding_checkpoint.ts";
+export {
+  atlasLocatorCredentialMessage,
+  atlasLocatorFromParts,
+  parseAtlasLocator,
+} from "./domain/atlas_locator.ts";
+export type {
+  AtlasLocator,
+  AtlasLocatorInput,
+  AtlasLocatorParseResult,
+} from "./domain/atlas_locator.ts";
+export { deriveAtlasSlug } from "./domain/atlas_slug.ts";
+export type { AtlasSlug } from "./domain/atlas_slug.ts";
+export { atlasCacheKey, createAtlasCache } from "./domain/atlas_cache.ts";
+export type { AtlasCache } from "./domain/atlas_cache.ts";
+export { createAtlasLock } from "./domain/atlas_lock.ts";
+export type { AtlasLock, AtlasLockDependency } from "./domain/atlas_lock.ts";
+export { parseTrackedAtlas } from "./domain/tracked_atlas.ts";
+export type { TrackedAtlas, TrackedAtlasParseResult } from "./domain/tracked_atlas.ts";
 export type {
   FoundingCheckpoint,
   FoundingCheckpointId,
@@ -152,10 +170,19 @@ export type {
   ExploreOperationResult,
   ExploreSnapshotCaptureResult,
 } from "./operations/explore_operation.ts";
+export type {
+  AtlasCacheResolver,
+  AtlasCacheResolverRequest,
+  AtlasCacheResolverResult,
+  ResolvedAtlasNodeId,
+  ResolvedTrackedAtlasSnapshot,
+} from "./operations/connected_atlas_explore.ts";
+export { resolveAtlasCache } from "./platform/atlas_cache.ts";
 export {
   atlasIngestChangeSetDigest,
   isSafeGitBranchName as isSafeIngestProposalBranchName,
   prepareIngestFragment,
+  probeAtlasIngestSource,
   reconcileCandidateGraph,
   runAtlasIngestWorkflow,
   sourceRevisionDigest,
@@ -181,6 +208,8 @@ export type {
   AtlasIngestResult,
   AtlasIngestRuntime,
   AtlasIngestScope,
+  AtlasIngestSourceProbeOutcome,
+  AtlasIngestSourceProbeRequest,
   AtlasIngestWorkflowState,
   SourceAuthority,
 } from "./operations/ingest_operation.ts";

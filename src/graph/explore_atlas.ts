@@ -44,10 +44,18 @@ export interface SearchProvider {
   ) => readonly ExploreCandidate[];
 }
 
+export interface ExploreSnapshotContext {
+  readonly atlas: string | undefined;
+  readonly role: "home" | "tracked";
+  readonly slug: string;
+  readonly snapshot: string | undefined;
+}
+
 export interface ExploreSourceContext {
   readonly body: string;
   readonly id: string;
   readonly path: string;
+  readonly snapshot?: ExploreSnapshotContext;
   readonly title: string;
 }
 
@@ -55,6 +63,7 @@ export interface ExploreRouteStep {
   readonly edgeId: string | undefined;
   readonly objectId: string;
   readonly path: string;
+  readonly snapshot?: ExploreSnapshotContext;
   readonly title: string;
   readonly type: string;
 }

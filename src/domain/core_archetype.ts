@@ -44,6 +44,12 @@ export const coreArchetypes = Object.freeze({
     idPrefix: "edge",
     pageType: "edge",
   }),
+  TrackedAtlas: Object.freeze({
+    diagnosticStem: "TRACKED_ATLAS",
+    directory: "tracked-atlases",
+    idPrefix: "tracked-atlas",
+    pageType: "tracked-atlas",
+  }),
 }) satisfies CoreArchetypeBindings;
 
 const archetypes: readonly CoreArchetypeIdentifiers[] = Object.values(coreArchetypes);
@@ -64,6 +70,9 @@ export const corePageDirectories: ReadonlySet<string> = new Set(
  * Atlas-relative `.atlas/` directory names Atlas SDK reserves without naming a
  * Core Archetype, so vocabulary validation accepts them without a glossary term.
  */
-export const reservedPageDirectories: ReadonlySet<string> = new Set(["types"]);
+export const reservedPageDirectories: ReadonlySet<string> = new Set([
+  "atlas-cache",
+  "types",
+]);
 
 export const rootAnchorPageId = `${coreArchetypes.Anchor.idPrefix}:root`;

@@ -5,6 +5,10 @@ import {
   type ExplorePayload,
   type SearchProvider,
 } from "../graph/explore_atlas.ts";
+import {
+  exploreConnectedAtlas,
+  type AtlasCacheResolver,
+} from "./connected_atlas_explore.ts";
 import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
 import { buildAtlasView } from "../atlas/atlas_view.ts";
 import { loadAndValidateAtlasInput } from "../lint/validate_atlas_input.ts";
@@ -26,6 +30,7 @@ export interface ExploreOperationIdentity extends OperationIdentity {
 }
 
 export interface ExploreOperationRequest {
+  readonly atlasCacheResolver?: AtlasCacheResolver;
   readonly baseSnapshot: OperationReference;
   readonly budgets?: Partial<ExploreBudgets>;
   readonly capturedFiles: readonly CapturedAtlasFile[];
@@ -187,13 +192,25 @@ export function runExploreOperation(
     }),
     validation: validated,
   });
-  const payload = exploreAtlas(
-    atlasView,
-    request.query,
-    request.provider ?? lexicalSearchProvider,
-    budgets,
-  );
-  const operationHandoff = handoff(request, payload);
+  const payload =
+    request.atlasCacheResolver === undefined
+      ? undefined
+      : exploreConnectedAtlas(
+          atlasView,
+          request.query,
+          request.provider ?? lexicalSearchProvider,
+          budgets,
+          request.atlasCacheResolver,
+        );
+  const resolvedPayload =
+    payload ??
+    exploreAtlas(
+      atlasView,
+      request.query,
+      request.provider ?? lexicalSearchProvider,
+      budgets,
+    );
+  const operationHandoff = handoff(request, resolvedPayload);
   return Object.freeze({
     "operation-result-schema": operationResultSchemaVersion,
     completion:
@@ -203,7 +220,7 @@ export function runExploreOperation(
     disposition: operationHandoff.result.disposition,
     handoff: operationHandoff,
     operation: exploreOperation,
-    payload,
+    payload: resolvedPayload,
   });
 }
 

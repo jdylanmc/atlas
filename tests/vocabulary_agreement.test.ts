@@ -649,6 +649,7 @@ test("the repository binds every declared Core Archetype", () => {
     "Source",
     "Principle",
     "Edge",
+    "TrackedAtlas",
   ]);
 });
 
