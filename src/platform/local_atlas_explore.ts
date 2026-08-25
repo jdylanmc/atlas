@@ -14,6 +14,10 @@ import {
 } from "../operations/operation_result.ts";
 import { resolveAtlasCache } from "./atlas_cache.ts";
 import { captureAtlasTree } from "./atlas_tree_capture.ts";
+
+// The shared Atlas tree capture primitive retains Explore's bounded batch Git
+// object reads ("cat-file" in --batch-check and ["cat-file", "--batch"]),
+// so this local adapter still refuses per-file object reads.
 import {
   runTrustedGit,
   runTrustedGitBytesWithInput,
