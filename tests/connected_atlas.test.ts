@@ -497,6 +497,7 @@ test("Atlas cache resolves first contact, records Atlas Lock, and degrades to ca
   );
   assert.equal(offline.state, "resolved");
   assert.equal(offline.snapshot.findings[0]?.code, "ATLAS_CROSS_ATLAS_CACHED_OFFLINE");
+  assert.equal(offline.snapshot.findings[0].severity, "warning");
 });
 
 test("Atlas cache reports first-contact unreachable without cache", () => {
@@ -515,6 +516,11 @@ test("Atlas cache reports first-contact unreachable without cache", () => {
   );
   assert.equal(result.state, "unreachable");
   assert.equal(result.findings[0]?.code, "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE");
+  assert.equal(
+    result.findings[0].severity,
+    "inconclusive",
+    "first contact with a never-cached, unreachable tracked Atlas pauses for a human decision rather than merely warning",
+  );
 });
 
 test("Atlas cache reports bare repository bootstrap failure", () => {
@@ -1464,6 +1470,64 @@ test("Explore reports unreachable tracked Atlases and provider failures as degra
   });
   assert.equal(result.payload.degradation.level, "partial-structure");
   assert.deepEqual(result.payload.results, []);
+});
+
+test("Explore surfaces a pending human decision for an inconclusive first-contact-unreachable Finding", () => {
+  const tracked = trackedAtlasDeclaration("github.com", "owner", "pending-remote");
+  const trackedSlug = tracked.slug.value;
+  const homeFiles = [
+    captured(
+      page(".atlas/index.md", "anchor:root", "anchor", "Home", "atlas: {}", "# Home"),
+    ),
+    captured(
+      page(
+        `.atlas/tracked-atlases/${trackedSlug}.md`,
+        `tracked-atlas:${trackedSlug}`,
+        "tracked-atlas",
+        "Remote Atlas",
+        `atlas:\n  branch: main\n  default-branch: main\n  locator: https://github.com/owner/pending-remote.git\n  path: .`,
+        "# Remote Atlas\n\nTrackedAtlas declaration.",
+      ),
+    ),
+    captured(
+      page(
+        ".atlas/edges/root-track-pending.md",
+        "edge:root-track-pending",
+        "edge",
+        "Root Tracks Pending",
+        `atlas:\n  from: anchor:root\n  semantics: [tracks-atlas]\n  to: tracked-atlas:${trackedSlug}`,
+        "# Root Tracks Pending\n\nCross-Atlas route.",
+      ),
+    ),
+  ];
+  const result = runExploreOperation({
+    atlasCacheResolver: Object.freeze({
+      resolve: () =>
+        Object.freeze({
+          findings: Object.freeze([
+            {
+              attribution: {
+                checkId: "test",
+                kind: "sdk-core" as const,
+                trusted: true as const,
+              },
+              code: "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE",
+              "finding-schema": "1.0.0" as const,
+              message: "first contact failed",
+              path: ".atlas",
+              severity: "inconclusive" as const,
+            },
+          ]),
+          state: "unreachable" as const,
+        }),
+    }),
+    baseSnapshot: { reference: "home-sha", state: "known" },
+    budgets,
+    capturedFiles: Object.freeze(homeFiles),
+    homeAtlas: { reference: "local-home-atlas", state: "known" },
+    query: "none",
+  });
+  assert.equal(result.handoff.unresolvedHumanDecisions.state, "pending");
 });
 
 test("Atlas cache reports first-contact resolution failures after fetch", () => {

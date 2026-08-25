@@ -96,6 +96,21 @@ function budgetsOf(request: ExploreOperationRequest): ExploreBudgets {
   });
 }
 
+function pendingDecisions(findings: readonly Finding[]): readonly string[] {
+  const decisions: string[] = [];
+  for (const entry of findings) {
+    if (entry.severity !== "inconclusive") continue;
+    if (entry.code === "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE") {
+      decisions.push(
+        "A human must decide how to proceed with a tracked Atlas that has never been cached and is not reachable for first contact.",
+      );
+    } else {
+      decisions.push("A human must adjudicate an unresolved Explore Finding.");
+    }
+  }
+  return Object.freeze([...new Set(decisions)]);
+}
+
 function handoff(
   request: ExploreOperationRequest,
   payload: ExplorePayload,
@@ -106,6 +121,7 @@ function handoff(
     (finding) => finding.severity === "error",
   );
   const succeeded = !blocked && !validationFailed && payload.results.length > 0;
+  const decisions = pendingDecisions(payload.degradation.diagnostics);
   return Object.freeze({
     "operation-handoff-schema": operationHandoffSchemaVersion,
     baseSnapshot: request.baseSnapshot,
@@ -135,10 +151,16 @@ function handoff(
           : "Explore found no reachable result.",
     }),
     reviewLink: noReviewLink,
-    unresolvedHumanDecisions: Object.freeze({
-      state: "none" as const,
-      summary: "No human decision is required to interpret this Explore result.",
-    }),
+    unresolvedHumanDecisions:
+      decisions.length > 0
+        ? Object.freeze({
+            decisions: Object.freeze(decisions),
+            state: "pending" as const,
+          })
+        : Object.freeze({
+            state: "none" as const,
+            summary: "No human decision is required to interpret this Explore result.",
+          }),
     validationState: Object.freeze({
       findings: payload.degradation.diagnostics,
       state: blocked
