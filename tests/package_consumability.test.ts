@@ -75,6 +75,8 @@ function packDryRun(): PackDryRun {
     {
       cwd: ROOT,
       encoding: "utf8",
+      killSignal: "SIGKILL",
+      timeout: 180_000,
     },
   );
   const [pack] = JSON.parse(output) as readonly PackDryRun[];
@@ -217,22 +219,66 @@ function packArtifact(destination: string): string {
 function createConsumer(workspace: string): string {
   const consumer = join(workspace, "consumer");
   mkdirSync(consumer, { recursive: true });
+
+  // The consumer is seeded with this repository's own verified lockfile, and
+  // that is what makes an offline install possible at all. `npm ci` populates
+  // the cache with tarballs keyed by resolved URL; it never caches a packument.
+  // `npm install <tarball>` into a directory with no lockfile has to build an
+  // ideal tree, which needs a packument for every dependency, so under
+  // `--offline` it fails with ENOTCACHED on any cache but a developer's warm
+  // one. With a lockfile there is nothing to resolve: npm reads the exact
+  // versions, integrity hashes, and resolved URLs it was given.
+  //
+  // The consumer must not borrow the SDK's `name`, `bin`, or `exports`, or a
+  // bare specifier would self-resolve to the consumer root instead of
+  // `node_modules` and silently destroy the isolation this function exists to
+  // create.
+  const sdkPackage = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as {
+    readonly dependencies: Readonly<Record<string, string>>;
+  };
+  const sdkLock = JSON.parse(readFileSync(join(ROOT, "package-lock.json"), "utf8")) as {
+    packages: Record<string, Record<string, unknown>>;
+    [key: string]: unknown;
+  };
+  const consumerPackage = {
+    dependencies: sdkPackage.dependencies,
+    name: "atlas-consumer",
+    private: true,
+    version: "0.0.0",
+  };
   writeFileSync(
     join(consumer, "package.json"),
-    `${JSON.stringify({ name: "atlas-consumer", private: true, version: "0.0.0" }, null, 2)}\n`,
+    `${JSON.stringify(consumerPackage, null, 2)}\n`,
   );
-  // `--offline` is a correctness requirement, not an optimization. The gate must
-  // pass with no network, and this install runs with the consumer as its working
-  // directory, so this repository's .npmrc does not apply to it - only the
-  // operator's user-level one does. Without this the consumer would resolve
-  // Atlas SDK's whole production tree from whatever registry that file names,
-  // with no lockfile and therefore no integrity hashes, and then execute it.
-  // Offline, npm contacts no registry at all and serves the bytes `npm ci`
-  // already cached under this repository's verified lockfile.
-  //
-  // The registry is deliberately not pinned here: npm keys its cache by registry
-  // URL, so naming a different one than the cache was filled from turns every
-  // entry into ENOTCACHED and forces the network back open.
+  const consumerLock = {
+    ...sdkLock,
+    name: consumerPackage.name,
+    packages: {
+      ...sdkLock.packages,
+      "": {
+        dependencies: sdkPackage.dependencies,
+        name: consumerPackage.name,
+        version: consumerPackage.version,
+      },
+    },
+    version: consumerPackage.version,
+  };
+  writeFileSync(
+    join(consumer, "package-lock.json"),
+    `${JSON.stringify(consumerLock, null, 2)}\n`,
+  );
+
+  const offlineInstall = {
+    cwd: consumer,
+    killSignal: "SIGKILL" as const,
+    stdio: "ignore" as const,
+    timeout: 180_000,
+  };
+  execFileSync(
+    "npm",
+    ["ci", "--omit=dev", "--ignore-scripts", "--offline", "--no-audit", "--no-fund"],
+    offlineInstall,
+  );
   execFileSync(
     "npm",
     [
@@ -245,13 +291,24 @@ function createConsumer(workspace: string): string {
       "--no-fund",
       "--silent",
     ],
-    {
-      cwd: consumer,
-      killSignal: "SIGKILL",
-      stdio: "ignore",
-      timeout: 180_000,
-    },
+    offlineInstall,
   );
+
+  // Pinning that is asserted rather than assumed: every production dependency
+  // the consumer resolved must be the exact version this repository's lockfile
+  // records, so a future drift fails the gate instead of passing quietly.
+  for (const name of Object.keys(sdkPackage.dependencies)) {
+    const locked = sdkLock.packages[`node_modules/${name}`] as
+      { readonly version?: string } | undefined;
+    const installed = JSON.parse(
+      readFileSync(join(consumer, "node_modules", name, "package.json"), "utf8"),
+    ) as { readonly version: string };
+    assert.equal(
+      installed.version,
+      locked?.version,
+      `${name} drifted from the lockfile`,
+    );
+  }
 
   const state = initialAtlasInitializationWorkflowState({
     baseSnapshotDigest: "0".repeat(64),
@@ -266,7 +323,21 @@ function createConsumer(workspace: string): string {
   }
 
   // Atlas Snapshot capture reads committed bytes, so the Atlas must be a real
-  // commit rather than a working-tree file.
+  // commit rather than a working-tree file. Global and system Git configuration
+  // are neutralized: an operator with `commit.gpgsign` would otherwise send this
+  // into a `pinentry` prompt that blocks forever, and a synchronous test body
+  // has nothing above it that can interrupt.
+  const git = {
+    cwd: consumer,
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_SYSTEM: "/dev/null",
+    },
+    killSignal: "SIGKILL" as const,
+    stdio: "ignore" as const,
+    timeout: 30_000,
+  };
   for (const argv of [
     ["init", "--quiet", "--initial-branch=main"],
     ["config", "user.email", "atlas@example.invalid"],
@@ -274,7 +345,7 @@ function createConsumer(workspace: string): string {
     ["add", "--all"],
     ["commit", "--quiet", "-m", "initialize atlas"],
   ]) {
-    execFileSync("git", argv, { cwd: consumer, stdio: "ignore" });
+    execFileSync("git", argv, git);
   }
   return consumer;
 }
@@ -352,6 +423,8 @@ test("the installed package lints and explores an Atlas with production dependen
         ...process.env,
         NODE_OPTIONS: `${process.env["NODE_OPTIONS"] ?? ""} --import=${guard}`.trim(),
       },
+      killSignal: "SIGKILL",
+      timeout: 30_000,
     });
     assert.notEqual(armed.status, 0, "the network guard did not arm");
     assert.match(armed.stderr, /network access blocked/u);
