@@ -1,6 +1,7 @@
 import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
 import { isSafeGitBranchName as isSafeGitBranchNameShared } from "./operation_support.ts";
 import type { Finding } from "../domain/finding.ts";
+import { atlasChangelogPath, renderAtlasChangelog } from "../domain/atlas_changelog.ts";
 import {
   operationHandoffSchemaVersion,
   operationResultSchemaVersion,
@@ -280,13 +281,24 @@ function result(
   });
 }
 
+// The stable operation ID Initialization stamps on every file it emits,
+// matching the Root Anchor's `originating-operation` literal above. Minimal
+// Initialization is otherwise fully hardcoded (tracked separately by #159 and
+// #161), so this identity is a fixed constant rather than derived per run.
+const minimalAtlasInitializationOperationId = "atlas-initialization";
+
 function minimalAtlasChangeSet(
   state: AtlasInitializationWorkflowState,
 ): AtlasInitializationChangeSet {
   const rootAnchor = `---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  created-at: "2026-01-01T00:00:00Z"\n  created-by:\n    kind: agent\n    name: Atlas SDK\n  id: anchor:root\n  local-atlas-schema: 1.0.0\n  originating-operation: atlas-initialization\n  tags: []\n  title: Home Atlas\n  type: anchor\n  updated-at: "2026-01-01T00:00:00Z"\n  updated-by:\n    kind: agent\n    name: Atlas SDK\natlas: {}\n---\n\n# Home Atlas\n\nThis Root Anchor starts a minimal Home Atlas with no Guide Persona, founding knowledge, or Atlas Site.\n`;
   const changelog = Object.freeze({
-    content: "# Changelog\n\n- Initialized minimal Home Atlas.\n",
-    path: ".atlas/CHANGELOG.md",
+    content: renderAtlasChangelog(
+      undefined,
+      "2026-01-01",
+      minimalAtlasInitializationOperationId,
+      "Initialized minimal Home Atlas.",
+    ),
+    path: atlasChangelogPath,
   });
   const root = Object.freeze({ content: rootAnchor, path: ".atlas/index.md" });
   const frameworkBundleState = frameworkBundleStateFromEvidence({
