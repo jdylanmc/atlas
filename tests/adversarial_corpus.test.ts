@@ -45,7 +45,9 @@ interface CorpusCase {
   readonly gate: "vocabulary-agreement";
   readonly input: {
     readonly glossaryAvoidance: string;
+    readonly glossaryTerm?: string;
     readonly source: string;
+    readonly unboundTerms?: readonly string[];
   };
   readonly messages?: readonly string[];
   readonly name: string;
@@ -284,7 +286,7 @@ const binding: CoreArchetypeBindings = Object.freeze({
   }),
 });
 
-function glossary(avoidance: string): VocabularyTextFile {
+function glossary(avoidance: string, extraTerm?: string): VocabularyTextFile {
   return {
     content: [
       "# Atlas SDK",
@@ -293,6 +295,7 @@ function glossary(avoidance: string): VocabularyTextFile {
       "A page through which an agent enters a region of knowledge.",
       avoidance,
       "",
+      ...(extraTerm === undefined ? [] : [extraTerm, ""]),
     ].join("\n"),
     path: "CONTEXT.md",
   };
@@ -806,7 +809,23 @@ function parseCorpus(value: unknown): Corpus {
           entry["input"]["glossaryAvoidance"],
           `${path}.input.glossaryAvoidance`,
         ),
+        ...(entry["input"]["glossaryTerm"] === undefined
+          ? {}
+          : {
+              glossaryTerm: assertString(
+                entry["input"]["glossaryTerm"],
+                `${path}.input.glossaryTerm`,
+              ),
+            }),
         source: assertString(entry["input"]["source"], `${path}.input.source`),
+        ...(entry["input"]["unboundTerms"] === undefined
+          ? {}
+          : {
+              unboundTerms: assertStringArray(
+                entry["input"]["unboundTerms"],
+                `${path}.input.unboundTerms`,
+              ),
+            }),
       };
       if (entry["expectation"] === "accept") {
         accepts += 1;
@@ -1441,7 +1460,11 @@ for (const entry of corpus.cases) {
     const findings = validateVocabularyAgreement(
       binding,
       [],
-      glossary(entry.input.glossaryAvoidance),
+      (entry.input.unboundTerms ?? []).map((term) => ({
+        reason: "adversarial corpus",
+        term,
+      })),
+      glossary(entry.input.glossaryAvoidance, entry.input.glossaryTerm),
       [{ content: entry.input.source, path: "src/lint/adversarial.ts" }],
     );
     const summary = findings.map((finding) => `${finding.code} ${finding.message}`);
