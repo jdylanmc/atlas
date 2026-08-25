@@ -8,8 +8,8 @@ import type { Finding } from "../domain/finding.ts";
 
 /**
  * One Git branch name a proposal may create. The set is intentionally narrow:
- * only unreserved path characters, never a leading dash the shell would read as
- * an option, and never a segment Git resolves specially.
+ * only unreserved path characters, no leading dash the shell would read as
+ * an option, and no segment Git resolves specially.
  */
 export function isSafeGitBranchName(name: string): boolean {
   return (
@@ -45,7 +45,7 @@ export interface DigestChangeSet {
 /**
  * The replay-protection digest of one Atlas Change Set. Each field is framed by
  * its own length before its text, so no field value can reproduce another
- * field's boundary: a path can never impersonate the separator between two
+ * field's boundary: a path does not impersonate the separator between two
  * changes, which a delimiter-joined encoding allowed. Change content is hashed
  * to a fixed-width digest before framing, and changes are ordered by path, so
  * the digest is a deterministic function of the set rather than its arrangement.
@@ -69,7 +69,7 @@ export function changeSetDigest(changeSet: DigestChangeSet): string {
 }
 
 /** A repository-relative change path may carry no control character, so a null
- * byte or newline can never smuggle a second field boundary past the digest. */
+ * byte or newline does not smuggle a second field boundary past the digest. */
 export function hasControlCharacter(value: string): boolean {
   return /\p{Cc}/u.test(value);
 }

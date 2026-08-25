@@ -334,9 +334,9 @@ function advanceCursor(source: string, cursor: SourceCursor, count: number): voi
 /**
  * Mirrors the parser's footnote call label grammar at one source offset: `[^`,
  * then at most 999 label characters carrying no line ending, space, tab, or
- * unescaped bracket, then `]`. Shapes the parser could never resolve to a
- * Citation reference are not markers and are never reported: a label carrying
- * whitespace is ordinary bracketed Markdown, never a footnote Citation.
+ * unescaped bracket, then `]`. Shapes the parser does not resolve to a
+ * Citation reference are not markers and are not reported: a label carrying
+ * whitespace is ordinary bracketed Markdown, not a footnote Citation.
  */
 function citationMarkerLabel(source: string, from: number): string | undefined {
   if (source[from] !== "[" || source[from + 1] !== "^") return undefined;
@@ -404,7 +404,7 @@ function citationMarkers(
 /**
  * Keeps visible source around excluded descendants as separate ordered parts.
  * Formatting delimiters remain in those exact source slices, while each
- * excluded node becomes a boundary that the caller cannot bridge.
+ * excluded node becomes a boundary that the caller does not bridge.
  */
 function citationVisibleParts(
   node: PhrasingContent,

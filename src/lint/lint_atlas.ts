@@ -109,7 +109,7 @@ function decideAtlasLint(
  * is not representable as a completed Lint - "returns stable Findings without
  * partial or success-shaped output" pins that. Lint is a boundary over
  * untrusted content, so it answers every caller with a verdict: content it
- * cannot read becomes a Finding rather than an exception its caller must
+ * does not read becomes a Finding rather than an exception its caller must
  * survive, pinned by "answers every nesting depth with a verdict rather than an
  * exception".
  *

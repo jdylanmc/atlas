@@ -36,7 +36,7 @@ import {
 // contract keeps the identifier while its definition stays single-sourced.
 export const isSafeGitBranchName = isSafeGitBranchNameShared;
 
-// Atlas SDK never invokes a model (docs/adr/0001-sdk-is-a-deterministic-library.md).
+// Atlas SDK does not invoke a model (docs/adr/0001-sdk-is-a-deterministic-library.md).
 // Ingest hands a typed Ingest Scope out to a Markdown workflow, which dispatches
 // read-only Crawlers, and accepts one Candidate Graph back as validated input.
 // This module owns only the deterministic half: the input it hands out, the
@@ -356,8 +356,8 @@ function pathSegments(path: string): readonly string[] {
 function isCanonicalLocator(locator: string): boolean {
   if (locator.length === 0) return false;
   if (locator.startsWith("/") || locator.includes("\\")) return false;
-  // A repository-relative path holds no control character, so a newline can
-  // never reach a value the crawler asserts as a locator.
+  // A repository-relative path holds no control character, so a newline does not
+  // reach a value the crawler asserts as a locator.
   if (hasControlCharacter(locator)) return false;
   return !locator.split("/").some(
     (segment) =>
@@ -898,7 +898,7 @@ function staleFindings(
     }
     const elapsedDays = (asOf - revised) / 86_400_000;
     // The approved Ingest Scope caps freshness: a crawler-asserted refresh
-    // window may be shorter but never outlast the window the human approved.
+    // window may be shorter but does not outlast the window the human approved.
     const effectiveWindow = Math.min(
       source.refreshWindowDays,
       scope.freshnessWindowDays,
@@ -1023,7 +1023,7 @@ function validateEdges(
 
 // Reachability is decided from Edges that would actually be written: an Edge to
 // a Source, a self-loop, an endpoint that resolves to no page, or an Edge with
-// no canonical identity is never written, so it cannot make a Concept reachable.
+// no canonical identity is not written, so it does not make a Concept reachable.
 function reachableEndpoints(
   graph: AtlasIngestCandidateGraph,
   existing: ExistingAtlas,
@@ -1118,9 +1118,9 @@ export function validateCandidateGraph(
 type AtlasBlock = Readonly<Record<string, ReadonlyJsonValue>>;
 
 // Every page's frontmatter is a typed value emitted through the house
-// serializer, never string interpolation. The serializer quotes any non-plain
-// scalar, so a newline or a colon in a crawled title, locator, or semantic can
-// never open a sibling key in the `sdk` or `atlas` block: the injection class is
+// serializer, not string interpolation. The serializer quotes any non-plain
+// scalar, so a newline or a colon in a crawled title, locator, or semantic does
+// not open a sibling key in the `sdk` or `atlas` block: the injection class is
 // unrepresentable rather than guarded form by form.
 function sdkMetadata(
   id: string,
@@ -1163,7 +1163,7 @@ function pageEnvelope(
 // A citation footnote names its Source with a resolvable `[[.atlas/sources/...]]`
 // target and records the quoted span verbatim, so Lint can re-derive the same
 // deterministic binding the Candidate Graph asserted. The span is written as a
-// JSON string so a control character cannot break the footnote, and the
+// JSON string so a control character does not break the footnote, and the
 // correspondence gate rejects any span that smuggles a second citation target.
 function citationBody(citations: readonly AtlasIngestCandidateCitation[]): {
   readonly markers: string;
@@ -1313,7 +1313,7 @@ function structuredCitationPaths(
  * Atlas Change Set, reconciled against the Home Atlas it will modify: an
  * identity the Atlas already holds is recorded as a Source Refresh rather than a
  * new page. Frontmatter is emitted through the house serializer, so the same
- * validated graph always reconciles to the same bytes and no crawled value can
+ * validated graph reconciles to the same bytes and no crawled value is
  * be interpolated into structured YAML.
  */
 export function reconcileCandidateGraph(
@@ -1571,7 +1571,7 @@ export function runAtlasIngestWorkflow(
     const graphFindings = validateCandidateGraph(request, existingFiles);
     // A page whose frontmatter values are structurally sound is emitted, and its
     // change set, citation correspondence, and resume receipts are cross-checked.
-    // A graph with a structural error is never emitted, so no invalid page and no
+    // A graph with a structural error is not emitted, so no invalid page and no
     // adversarial worktree churn precedes the blocking Findings.
     const emittable = graphFindings.every((entry) => entry.severity !== "error");
     let changeSet: AtlasIngestChangeSet | undefined;

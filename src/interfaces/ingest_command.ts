@@ -22,7 +22,7 @@ import {
   operationResultSchemaVersion,
 } from "../operations/operation_result.ts";
 
-// Atlas SDK never invokes a model (docs/adr/0001-sdk-is-a-deterministic-library.md).
+// Atlas SDK does not invoke a model (docs/adr/0001-sdk-is-a-deterministic-library.md).
 // This command is the deterministic half of the Ingest seam. It hands out a
 // Crawl Assignment derived from a human-approved Ingest Scope, accepts one
 // Candidate Graph back as validated input, and delegates the single
@@ -84,7 +84,7 @@ const ingestOperationIdentity = Object.freeze({
 
 // A determinate refusal the command reaches before any mutation: bad arguments,
 // input that does not type-check, or a Candidate Graph that does not correspond
-// to the approved Source. It is a VALUE with a stable code, never an exception.
+// to the approved Source. It is a VALUE with a stable code, rather than an exception.
 function notCompletedIngestResult(
   findings: readonly Finding[],
   summary: string,
@@ -162,7 +162,7 @@ export function oversizedInputIngestOperationResult(
 
 // The Ingest Scope is only constructible through this parser, so downstream code
 // derives the scope's validity from a validator rather than trusting a caller's
-// assertion. Each guard is a stable refusal, never a thrown exception.
+// assertion. Each guard is a stable refusal, rather than a thrown exception.
 class IngestInputError extends Error {}
 
 function asRecord(value: unknown, path: string): Readonly<Record<string, unknown>> {
@@ -384,8 +384,8 @@ export type IngestParseOutcome<Value> =
   | { readonly ok: false; readonly result: AtlasIngestResult }
   | { readonly ok: true; readonly value: Value };
 
-// Every guard in the parsers above throws IngestInputError, so a failed parse is
-// always a determinate, message-bearing refusal rather than a thrown exception
+// Every guard in the parsers above throws IngestInputError, so a failed parse yields a
+// determinate, message-bearing refusal rather than a thrown exception
 // that escapes the command.
 function invalidIngestInput(error: unknown): {
   readonly ok: false;
@@ -426,8 +426,8 @@ export function parseIngestRequest(
 }
 
 // The Crawl Assignment the SDK hands out. The brand is a non-exported symbol, so
-// a caller cannot forge an assignment that claims human approval: the only way
-// to obtain one is through planCrawlAssignment, which refuses without approval.
+// a caller does not forge an assignment that claims human approval: obtaining
+// one goes through planCrawlAssignment, which refuses without approval.
 const crawlAssignmentBrand: unique symbol = Symbol("atlas-ingest-crawl-assignment");
 
 export interface AtlasIngestCrawlAssignment {

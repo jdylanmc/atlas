@@ -128,7 +128,7 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// A value YAML can hold but JSON cannot is answered rather than raised, so
+// A value YAML can hold but JSON does not admit is answered rather than raised, so
 // reading a page does not depend on catching an exception. "rejects non-JSON
 // and unresolved YAML tags" pins the answer.
 const notJson = Symbol("not-json");
@@ -230,7 +230,7 @@ function findClosingDelimiter(
  * Reads one captured Atlas page, answering with the parse failure rather than
  * raising it, so a caller does not have to tell a failure of the page from a
  * failure of the process running the read. "a failure of the running process is
- * never answered for as a page failure" pins the difference.
+ * not answered for as a page failure" pins the difference.
  */
 export function parseAtlasPage(
   file: AtlasTextFile,

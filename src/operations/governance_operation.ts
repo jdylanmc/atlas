@@ -65,11 +65,11 @@ export interface AtlasGovernanceChange {
   readonly path: string;
 }
 
-// The bookkeeping half of a governance operation, derived by Atlas SDK — never
+// The bookkeeping half of a governance operation, derived by Atlas SDK rather than
 // supplied by the caller. Its base snapshot digest and target head are the
 // operation's own record of the Atlas Head it read, and its changes are the
 // caller's authored pages plus the SDK-stamped Atlas Changelog entry. Because
-// the caller cannot author these fields, a stale base or a missing operation ID
+// the caller does not author these fields, a stale base or a missing operation ID
 // is structurally unrepresentable rather than a Finding to guard against; the
 // only staleness that survives is the Atlas Head advancing mid-operation, which
 // the workflow detects against its own snapshot before it mutates.
@@ -97,11 +97,11 @@ export interface AtlasGovernanceRequest {
   readonly approvedBy?: string;
   // The agent drafts the Atlas Changelog entry prose; Atlas SDK stamps it with
   // the stable operation ID and heads it with the approval date. The caller
-  // never supplies the operation ID, base snapshot digest, or target head — the
+  // does not supply the operation ID, base snapshot digest, or target head — the
   // SDK derives all bookkeeping.
   readonly changelog?: string;
   // The knowledge the agent authored: Principle or Atlas Policy pages, including
-  // a Principle's amendment history. A caller cannot author the derived
+  // a Principle's amendment history. A caller does not author the derived
   // .atlas/CHANGELOG.md here; that entry is the SDK's to stamp.
   readonly changes?: readonly AtlasGovernanceChange[];
   readonly semanticVerdicts?: readonly AtlasGovernanceSemanticVerdict[];
@@ -665,8 +665,8 @@ function governanceChangelogDate(approvedAt: string | undefined): string {
 // The agent authors the prose (judgment); the SDK stamps the stable operation ID
 // from the workflow state and heads the entry with the approval date, then
 // appends it to the existing Changelog so history is preserved. The operation ID
-// is never a caller-embedded string: the caller supplies only prose, which is
-// bounded to a single line at the seam and placed mid-bullet here, so it cannot
+// is not a caller-embedded string: the caller supplies only prose, which is
+// bounded to a single line at the seam and placed mid-bullet here, so it does not
 // begin a heading or bullet of its own. The workflow additionally asserts the
 // derived entry is a single heading and bullet before writing, so a forged extra
 // entry or operation ID reaching this renderer fails closed rather than being
@@ -716,7 +716,7 @@ export function buildAtlasGovernanceChangeSet(
 
 // The paths Atlas SDK derives and writes itself for one governance operation.
 // The reserved check refuses any authored change that collides with a member of
-// this set, so a caller can never author a page the SDK will also write. It is
+// this set, so a caller does not author a page the SDK will also write. It is
 // the single source of truth: adding a derived path here protects it
 // automatically, rather than requiring a second literal to be kept in sync.
 function governanceDerivedPaths(): readonly string[] {
@@ -744,7 +744,7 @@ const reservedGovernanceCollisionKeys: ReadonlySet<string> = new Set(
 );
 
 // Defence in depth against Changelog prose injection. The seam bounds `changelog`
-// to a single line, so a newline cannot reach the renderer; this asserts the
+// to a single line, so a newline does not reach the renderer; this asserts the
 // derived entry actually is a single dated heading and a single operation bullet
 // before it is written. If a forged multi-line entry reaches this check — for
 // example through a programmatic caller that bypassed the seam — the operation
@@ -774,7 +774,7 @@ function validateDerivedChangelog(
 // authored change, holds every authored path to canonical .atlas form, reserves
 // every SDK-derived path (the derived Atlas Changelog) against collision, and
 // requires the drafted Changelog prose the SDK will stamp. A stale base snapshot
-// digest or a missing operation ID cannot appear here because the caller has no
+// digest or a missing operation ID do not appear here because the caller has no
 // field to carry them.
 export function validateAtlasGovernanceRequest(
   request: AtlasGovernanceRequest,
@@ -984,9 +984,9 @@ export function runAtlasGovernanceWorkflow(
     const paths = capturedPathSet(existing, authoredChanges);
     const policyTargets = changedPolicyTargets(existing, authoredChanges);
     const isMutation = request.action !== "verify" && request.action !== "delete";
-    // The internal Atlas Change Set is derived here — never supplied by the
-    // caller — so its base snapshot digest and target head always match the
-    // state this operation read. Staleness cannot enter through it; it is caught
+    // The internal Atlas Change Set is derived here rather than supplied by the
+    // caller — so its base snapshot digest and target head match the
+    // state this operation read. Staleness does not enter through it; it is caught
     // only by the base-snapshot check above, against the SDK's own snapshot. It
     // is derived only once the caller has authored changes, so a pure approval or
     // shape refusal echoes no empty Change Set.

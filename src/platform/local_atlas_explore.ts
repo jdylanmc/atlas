@@ -20,7 +20,7 @@ import {
 
 // Explore is the read-only local platform seam. It captures an exact committed
 // Atlas Snapshot from Git and delegates traversal to the deterministic operation.
-// It never writes, creates a worktree, invokes a model, or ranks semantically.
+// It does not write, create a worktree, invoke a model, or rank semantically.
 
 interface LocalAtlasExploreBudgets {
   readonly maxContextCharacters: number;
