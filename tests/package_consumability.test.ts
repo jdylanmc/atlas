@@ -194,7 +194,7 @@ function packArtifact(destination: string): string {
   execFileSync(
     "npm",
     ["pack", "--ignore-scripts=false", "--pack-destination", destination, "--silent"],
-    { cwd: ROOT, stdio: "ignore" },
+    { cwd: ROOT, killSignal: "SIGKILL", stdio: "ignore", timeout: 180_000 },
   );
   const [tarball] = readdirSync(destination).filter((name) => name.endsWith(".tgz"));
   assert.ok(tarball !== undefined, "npm pack produced no tarball");
@@ -221,6 +221,18 @@ function createConsumer(workspace: string): string {
     join(consumer, "package.json"),
     `${JSON.stringify({ name: "atlas-consumer", private: true, version: "0.0.0" }, null, 2)}\n`,
   );
+  // `--offline` is a correctness requirement, not an optimization. The gate must
+  // pass with no network, and this install runs with the consumer as its working
+  // directory, so this repository's .npmrc does not apply to it - only the
+  // operator's user-level one does. Without this the consumer would resolve
+  // Atlas SDK's whole production tree from whatever registry that file names,
+  // with no lockfile and therefore no integrity hashes, and then execute it.
+  // Offline, npm contacts no registry at all and serves the bytes `npm ci`
+  // already cached under this repository's verified lockfile.
+  //
+  // The registry is deliberately not pinned here: npm keys its cache by registry
+  // URL, so naming a different one than the cache was filled from turns every
+  // entry into ENOTCACHED and forces the network back open.
   execFileSync(
     "npm",
     [
@@ -228,9 +240,17 @@ function createConsumer(workspace: string): string {
       packArtifact(join(workspace, "artifact")),
       "--omit=dev",
       "--ignore-scripts",
+      "--offline",
+      "--no-audit",
+      "--no-fund",
       "--silent",
     ],
-    { cwd: consumer, stdio: "ignore" },
+    {
+      cwd: consumer,
+      killSignal: "SIGKILL",
+      stdio: "ignore",
+      timeout: 180_000,
+    },
   );
 
   const state = initialAtlasInitializationWorkflowState({
@@ -259,76 +279,130 @@ function createConsumer(workspace: string): string {
   return consumer;
 }
 
+/**
+ * Blocks outbound sockets in the child process. Only the network half of the
+ * guard the retired clean-clone test carried is restored: its filesystem half
+ * wrapped `node:fs`, which the module loader does not read through, so it could
+ * never have blocked the resolution it advertised. Patching
+ * `net.Socket.prototype.connect` does work, and it is the only executable check
+ * behind the runtime contract in `README.md` that an Atlas command never calls
+ * a network service.
+ */
+function writeNetworkGuard(path: string): void {
+  writeFileSync(
+    path,
+    `import net from "node:net";
+import { syncBuiltinESMExports } from "node:module";
+net.Socket.prototype.connect = function blockedConnect() {
+  throw new Error("network access blocked");
+};
+syncBuiltinESMExports();
+`,
+  );
+}
+
 function runInstalled(
   consumer: string,
+  guard: string,
   arguments_: readonly string[],
 ): InstalledCommandResult {
   const result = spawnSync(
     process.execPath,
     [join(consumer, "node_modules", ".bin", "atlas"), ...arguments_],
-    { cwd: consumer, encoding: "utf8" },
+    {
+      cwd: consumer,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        NODE_OPTIONS: `${process.env["NODE_OPTIONS"] ?? ""} --import=${guard}`.trim(),
+      },
+      killSignal: "SIGKILL",
+      timeout: 120_000,
+    },
   );
   assert.equal(result.error, undefined);
   return { status: result.status, stderr: result.stderr, stdout: result.stdout };
 }
 
-test(
-  "the installed package lints and explores an Atlas with production dependencies only",
-  { timeout: 180_000 },
-  () => {
-    const workspace = mkdtempSync(join(tmpdir(), "atlas-installed-"));
-    try {
-      const consumer = createConsumer(workspace);
-      assert.ok(!consumer.startsWith(ROOT));
+// No `{ timeout }` on this test on purpose. Its body is synchronous, so it never
+// yields to the runner's event loop and a declared test timeout can never fire -
+// it would read as a guarantee while bounding nothing. Every child process
+// carries its own timeout and SIGKILL instead, which is a bound that actually
+// holds and keeps the cleanup in `finally` reachable.
+test("the installed package lints and explores an Atlas with production dependencies only", () => {
+  const workspace = mkdtempSync(join(tmpdir(), "atlas-installed-"));
+  try {
+    const consumer = createConsumer(workspace);
+    assert.ok(!consumer.startsWith(ROOT));
 
-      const lint = runInstalled(consumer, [
-        "lint",
-        "--machine",
-        "--atlas-host-directory",
-        consumer,
-      ]);
-      assert.equal(lint.status, lintCommandExitCodes.success, lint.stderr);
-      assert.equal(lint.stderr, "");
-      const lintResult = JSON.parse(lint.stdout) as {
-        readonly completion: string;
-        readonly disposition: string;
-        readonly payload: { readonly lint: { readonly findings: readonly unknown[] } };
-      };
-      assert.equal(lintResult.completion, "completed");
-      assert.equal(lintResult.disposition, "success");
-      assert.deepEqual(lintResult.payload.lint.findings, []);
+    const guard = join(workspace, "network_guard.mjs");
+    writeNetworkGuard(guard);
 
-      const explore = runInstalled(consumer, [
-        "explore",
-        "--machine",
-        "Home Atlas",
-        "--atlas-host-directory",
-        consumer,
-      ]);
-      assert.equal(explore.status, exploreCommandExitCodes.success, explore.stderr);
-      assert.equal(explore.stderr, "");
-      const exploreResult = JSON.parse(explore.stdout) as {
-        readonly completion: string;
-        readonly disposition: string;
-        readonly handoff: { readonly homeAtlas: { readonly state: string } };
-        readonly payload: {
-          readonly results: readonly {
-            readonly route: readonly { readonly objectId: string }[];
-          }[];
-        };
+    // Positive control. A guard nothing can trip is indistinguishable from a
+    // guard that is not armed, and the previous version of this test shipped
+    // exactly that. Prove the injection works before trusting what it permits.
+    const control = join(workspace, "control.mjs");
+    writeFileSync(
+      control,
+      'import net from "node:net";\nnet.connect(1, "127.0.0.1");\n',
+    );
+    const armed = spawnSync(process.execPath, [control], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        NODE_OPTIONS: `${process.env["NODE_OPTIONS"] ?? ""} --import=${guard}`.trim(),
+      },
+    });
+    assert.notEqual(armed.status, 0, "the network guard did not arm");
+    assert.match(armed.stderr, /network access blocked/u);
+
+    const lint = runInstalled(consumer, guard, [
+      "lint",
+      "--machine",
+      "--atlas-host-directory",
+      consumer,
+    ]);
+    assert.equal(lint.status, lintCommandExitCodes.success, lint.stderr);
+    assert.equal(lint.stderr, "");
+    const lintResult = JSON.parse(lint.stdout) as {
+      readonly completion: string;
+      readonly disposition: string;
+      readonly payload: { readonly lint: { readonly findings: readonly unknown[] } };
+    };
+    assert.equal(lintResult.completion, "completed");
+    assert.equal(lintResult.disposition, "success");
+    assert.deepEqual(lintResult.payload.lint.findings, []);
+
+    const explore = runInstalled(consumer, guard, [
+      "explore",
+      "--machine",
+      "Home Atlas",
+      "--atlas-host-directory",
+      consumer,
+    ]);
+    assert.equal(explore.status, exploreCommandExitCodes.success, explore.stderr);
+    assert.equal(explore.stderr, "");
+    const exploreResult = JSON.parse(explore.stdout) as {
+      readonly completion: string;
+      readonly disposition: string;
+      readonly handoff: { readonly homeAtlas: { readonly state: string } };
+      readonly payload: {
+        readonly results: readonly {
+          readonly route: readonly { readonly objectId: string }[];
+        }[];
       };
-      assert.equal(exploreResult.completion, "completed");
-      assert.equal(exploreResult.disposition, "success");
-      assert.equal(exploreResult.handoff.homeAtlas.state, "known");
-      // Reachability is not function: an installed build whose search provider
-      // returned nothing would still complete, still classify the Home Atlas,
-      // and still exit zero.
-      assert.ok(exploreResult.payload.results.length > 0);
-      const [firstResult] = exploreResult.payload.results;
-      assert.ok(firstResult !== undefined);
-      assert.equal(firstResult.route[0]?.objectId, "anchor:root");
-    } finally {
-      rmSync(workspace, { force: true, recursive: true });
-    }
-  },
-);
+    };
+    assert.equal(exploreResult.completion, "completed");
+    assert.equal(exploreResult.disposition, "success");
+    assert.equal(exploreResult.handoff.homeAtlas.state, "known");
+    // Reachability is not function: an installed build whose search provider
+    // returned nothing would still complete, still classify the Home Atlas,
+    // and still exit zero.
+    assert.ok(exploreResult.payload.results.length > 0);
+    const [firstResult] = exploreResult.payload.results;
+    assert.ok(firstResult !== undefined);
+    assert.equal(firstResult.route[0]?.objectId, "anchor:root");
+  } finally {
+    rmSync(workspace, { force: true, recursive: true });
+  }
+});

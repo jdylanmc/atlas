@@ -130,14 +130,10 @@ function inDirectory<T>(directory: string, run: () => T): T {
 // Every reserved directory is a name the vocabulary check accepts without a
 // glossary term, so the set is an allowlist and silence is how one grows. An
 // exact-membership assertion is the only thing that makes an addition a
-// decision rather than an edit: "framework" is here solely until issue #162
-// deletes `.atlas/framework/`, and this test is what will notice if it stays.
+// decision rather than an edit, because the check is global: one entry excuses
+// that directory in every contract source, forever.
 test("the reserved page directories are exactly the ones Atlas SDK claims", () => {
-  assert.deepEqual([...reservedPageDirectories].toSorted(), [
-    "atlas-cache",
-    "framework",
-    "types",
-  ]);
+  assert.deepEqual([...reservedPageDirectories].toSorted(), ["atlas-cache", "types"]);
 });
 
 test("Atlas SDK contracts and the glossary bind one vocabulary", () => {

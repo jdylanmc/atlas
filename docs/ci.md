@@ -98,9 +98,10 @@ Focused commands are `npm run format:check`, `npm run lint`,
 `npm run cacophony:sync` only after editing a Persona, Directive, or composition
 reference.
 
-Atlas SDK is installed as the public scoped npm package `@jdylanmc/atlas`. It is
+Atlas SDK is distributed as the public scoped npm package `@jdylanmc/atlas` and
 installed on an operator's machine rather than copied into the Atlases it
-manages, which is the single supported way a Home Atlas obtains it. See
+manages. Until a release is published, a packed tarball or Git dependency built
+from this repository is how it is obtained. See
 [ADR-0002](./adr/0002-atlas-sdk-is-installed-on-the-machine.md).
 
 Review findings that describe a gate miss are resolved only after
