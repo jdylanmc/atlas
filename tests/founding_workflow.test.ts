@@ -259,6 +259,47 @@ test("composed founding workflow succeeds while leaving the legacy minimal path 
     result.payload.atlasReadinessReport.lintStamp.atlasCommit,
     "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   );
+  const hostIntegrationCheckpoint = (
+    result.payload.workflowState.foundingCheckpoints as readonly FoundingCheckpoint[]
+  ).find((checkpoint) => checkpoint.id === "host-integration");
+  assert.deepEqual(hostIntegrationCheckpoint?.dependsOn, ["directive", "persona"]);
+});
+
+test("host-integration depends on persona only when a persona pointer is actually emitted", () => {
+  const initial = state();
+  const noPersonaRequest: AtlasFoundingRequest = {
+    directiveSpecialization: { role: "atlas-guide" },
+    hostIntegration: { skills: ["atlas-entry"] },
+  };
+  let writtenChangeSet: AtlasInitializationChangeSet | undefined;
+  const result = runComposedAtlasInitializationWorkflow(initial, noPersonaRequest, {
+    commitProposal: () => ({
+      commit: "cccccccccccccccccccccccccccccccccccccccc",
+      receipt: "cccccccccccccccccccccccccccccccccccccccc",
+    }),
+    createProposalWorktree: () => ({ receipt: "created" }),
+    currentTargetHead: () => initial.targetHead,
+    currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
+    lintProposal: () => {
+      assert.ok(writtenChangeSet);
+      return {
+        lint: runLintOperation(captured(writtenChangeSet), {
+          maxFileBytes: 4096,
+          maxTotalBytes: 65536,
+        }),
+        receipt: "cccccccccccccccccccccccccccccccccccccccc",
+      };
+    },
+    writeChangeSet: (changeSet) => {
+      writtenChangeSet = changeSet;
+      return { receipt: "written" };
+    },
+  });
+  assert.equal(result.completion, "completed");
+  const hostIntegrationCheckpoint = (
+    result.payload.workflowState.foundingCheckpoints as readonly FoundingCheckpoint[]
+  ).find((checkpoint) => checkpoint.id === "host-integration");
+  assert.deepEqual(hostIntegrationCheckpoint?.dependsOn, ["directive"]);
 });
 
 test("prepareGovernanceFragment allows an empty verify request without deriving a changelog", () => {

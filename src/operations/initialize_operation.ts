@@ -751,8 +751,11 @@ function updateCheckpointCompletion(
   id: FoundingCheckpointId,
   input: unknown,
   changes: readonly AtlasInitializationChange[],
+  dependsOnOverride?: readonly FoundingCheckpointId[],
 ): readonly FoundingCheckpoint[] {
-  const dependsOn = foundingCheckpointDependencies[id];
+  const existing = checkpoints.find((checkpoint) => checkpoint.id === id);
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- baseCheckpoints seeds every id from foundingCapabilityIds before this lookup runs.
+  const dependsOn = dependsOnOverride ?? existing!.dependsOn;
   return replaceCheckpoint(
     checkpoints,
     Object.freeze({
@@ -1582,11 +1585,18 @@ export function runComposedAtlasInitializationWorkflow(
     findings.push(...prepared.findings);
     if (prepared.findings.length === 0) {
       fragmentChanges.push(...prepared.changes);
+      const emitsPersonaPointer = prepared.pointers.some(
+        (pointer) => pointer.kind === "persona",
+      );
       checkpoints = updateCheckpointCompletion(
         checkpoints,
         "host-integration",
         request.hostIntegration,
         prepared.changes,
+        Object.freeze([
+          ...foundingCheckpointDependencies["host-integration"],
+          ...(emitsPersonaPointer ? (["persona"] as const) : []),
+        ]),
       );
     }
   }
