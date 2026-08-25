@@ -5,7 +5,10 @@ import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import type { CoreArchetypeBindings } from "../src/domain/core_archetype.ts";
-import { coreArchetypes } from "../src/domain/core_archetype.ts";
+import {
+  coreArchetypes,
+  reservedPageDirectories,
+} from "../src/domain/core_archetype.ts";
 import type {
   ContractVocabularyBinding,
   UnboundGlossaryTerm,
@@ -123,6 +126,19 @@ function inDirectory<T>(directory: string, run: () => T): T {
     process.chdir(previous);
   }
 }
+
+// Every reserved directory is a name the vocabulary check accepts without a
+// glossary term, so the set is an allowlist and silence is how one grows. An
+// exact-membership assertion is the only thing that makes an addition a
+// decision rather than an edit: "framework" is here solely until issue #162
+// deletes `.atlas/framework/`, and this test is what will notice if it stays.
+test("the reserved page directories are exactly the ones Atlas SDK claims", () => {
+  assert.deepEqual([...reservedPageDirectories].toSorted(), [
+    "atlas-cache",
+    "framework",
+    "types",
+  ]);
+});
 
 test("Atlas SDK contracts and the glossary bind one vocabulary", () => {
   assert.deepEqual(validateRepository(ROOT), []);

@@ -36,7 +36,7 @@ The Atlas-owned caretaker and Atlas Site chief marketing officer that guides nav
 The shared preflight through which an Atlas SDK skill identifies the Home Atlas for the current Atlas Host Directory, verifies tooling and schema compatibility, and loads only the instructions and context required by that operation. Entry classifies the Home Atlas as ready, degraded, or blocked before the skill proceeds.
 
 **Host Integration**:
-The optional host-owned thin discovery and loading layer that points an agent harness to canonical skills, Directives, Personas, and compositions under `.atlas/`. It contains no duplicated Atlas SDK behavior and is owned by the host rather than by Atlas SDK.
+The optional host-owned thin discovery and loading layer that points an agent harness to canonical skills, Directives, Personas, and compositions under `.atlas/`. It contains no duplicated Atlas SDK behavior, and no Atlas SDK workflow writes to it: it is created and maintained by the host alone.
 
 **Home Atlas**:
 The Atlas owned by the current Atlas Host Directory and identified by Atlas Entry. Its committed maintenance code is trusted at the same level as its host repository; every other Atlas is connected through cross-Atlas Edges and remains read-only cached data.
@@ -69,7 +69,7 @@ The exact Git commit of an Atlas used during one operation. A snapshot records o
 The human-authored declaration of an Atlas's intended knowledge contract and local configuration.
 
 **Atlas Schema**:
-The versioned extension contract that adds Atlas-specific page types, fields, relationship semantics, and validation while inheriting and preserving Atlas SDK core archetype behavior. Every page declares two versions because two owners evolve on independent lifecycles: `atlas-sdk-schema` names the SDK-owned page contract the page targets, which advances only when Atlas SDK releases a new one, and `local-atlas-schema` pins the Atlas's own extensions built on top of it, which the Atlas may change at any time. Both declarations live in the page's SDK-owned block, because the Atlas SDK must read which local contract applies before it can interpret the Atlas-owned block that contract governs.
+The versioned extension contract that adds Atlas-specific page types, fields, relationship semantics, and validation while inheriting and preserving Atlas SDK core archetype behavior. Every page declares two versions because two owners evolve on independent lifecycles: `atlas-sdk-schema` pins the SDK-owned page contract that page was written against, and `local-atlas-schema` pins the Atlas's own extensions built on top of it, which the Atlas may change at any time. Both are committed declarations, so either advances only when a knowledge-changing operation rewrites the page through an Atlas Proposal. Both live in the page's SDK-owned block, because the Atlas SDK must read which local contract applies before it can interpret the Atlas-owned block that contract governs.
 
 **Atlas Lock**:
 The generated, local record of resolved schema versions, tracked Atlas Snapshots, fetch times, and the lazily materialized Atlas dependency graph. It records which Anchor gateway and cross-Atlas Edge introduced each dependency. Atlas Lock is replaceable cache state rather than committed Atlas knowledge.
@@ -200,7 +200,7 @@ The human-facing workflow for validating an Atlas. Trusted deterministic validat
 _Avoid_: Weave
 
 **Lint Stamp**:
-A deterministic machine-readable attestation that one exact Atlas commit completed a full Lint with matching evidence. It is reproducible validation evidence rather than committed Atlas knowledge, and any change to the stamped commit invalidates it. Atlas SDK, schema, check, and Policy revisions belong in the stamp only when Atlas SDK has authoritative revision sources for them.
+A deterministic machine-readable attestation that one exact Atlas commit completed a full Lint with matching evidence. It is reproducible validation evidence rather than committed Atlas knowledge, and any change to the stamped commit invalidates it. A stamp does not yet identify which Atlas SDK produced it, so its reproducibility holds within one Atlas SDK version and not across versions. Schema, check, and Policy revisions belong in the stamp only when Atlas SDK has authoritative revision sources for them.
 
 **Finding**:
 One result reported by a Lint, attributed to the check that raised it and to whether that check is trusted Atlas SDK validation or Atlas-owned. A finding is an error, a warning, a suggestion, an inconclusive semantic verdict, or a check skipped because one it depended on failed. An Atlas-owned check may add findings; it may never suppress or downgrade a trusted one.

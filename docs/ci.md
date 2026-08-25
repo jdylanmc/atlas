@@ -42,7 +42,7 @@ Guide sources under `docs/agents/atlas-sdk/`. Those sources define presentation
 and reference metadata only; they do not initialize or activate an Atlas. The
 standalone `node scripts/atlas_sdk_agents.ts validate` command is a local
 repository check, not a trusted runtime or Continuous Integration schema
-loader; canonical Framework validation remains deferred with activation.
+loader; canonical Atlas SDK validation remains deferred with activation.
 
 ## Node.js and repository quality contract
 
