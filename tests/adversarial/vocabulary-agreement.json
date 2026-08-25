@@ -139,6 +139,29 @@
         "glossaryAvoidance": "_Avoid_: Bonfire",
         "source": "import { readFileSync } from \"node:fs\";"
       }
+    },
+    {
+      "name": "reject a glossary term neither bound to a contract nor recorded as unbound",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_TERM_UNCLASSIFIED"],
+      "messages": ["Explore"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "glossaryTerm": "**Explore**:\nThe human-facing workflow for traversing knowledge.",
+        "source": "const ok = \"anchor\";"
+      }
+    },
+    {
+      "name": "accept the same term once recorded as not bound to a contract",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "glossaryTerm": "**Explore**:\nThe human-facing workflow for traversing knowledge.",
+        "source": "const ok = \"anchor\";",
+        "unboundTerms": ["Explore"]
+      }
     }
   ]
 }

@@ -6,9 +6,13 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import type { CoreArchetypeBindings } from "../src/domain/core_archetype.ts";
 import { coreArchetypes } from "../src/domain/core_archetype.ts";
-import type { ContractVocabularyBinding } from "../src/domain/contract_vocabulary.ts";
+import type {
+  ContractVocabularyBinding,
+  UnboundGlossaryTerm,
+} from "../src/domain/contract_vocabulary.ts";
 import { checkFinding, type Finding } from "../src/domain/finding.ts";
 import {
+  parseGlossary,
   validateVocabularyAgreement,
   type VocabularyTextFile,
 } from "../src/lint/validate_vocabulary_agreement.ts";
@@ -67,11 +71,29 @@ function validate(
   contracts: readonly VocabularyTextFile[],
   lines?: readonly string[],
   contractTerms: readonly ContractVocabularyBinding[] = [],
+  unboundTerms?: readonly UnboundGlossaryTerm[],
 ): readonly Finding[] {
+  const glossaryFile = glossary(lines);
+  // Callers that are not exercising term-classification itself do not want
+  // to hand-maintain a not-a-contract list for their fixture glossary, so an
+  // omitted list is derived permissively: every defined term the fixture's
+  // own `bindings`/`contractTerms` do not already cover is treated as
+  // deliberately unbound. Production code never takes this default; it
+  // always passes the real, hand-maintained `unboundGlossaryTerms`.
+  const resolvedUnboundTerms =
+    unboundTerms ??
+    [...parseGlossary(glossaryFile.content).terms.keys()]
+      .filter(
+        (term) =>
+          !Object.hasOwn(bindings, term) &&
+          !contractTerms.some((binding) => binding.term === term),
+      )
+      .map((term) => ({ reason: "test default", term }));
   const findings = validateVocabularyAgreement(
     bindings,
     contractTerms,
-    glossary(lines),
+    resolvedUnboundTerms,
+    glossaryFile,
     contracts,
   );
   for (const finding of findings) assert.equal(checkFinding(finding), true);
@@ -628,6 +650,66 @@ test("the repository binds every declared Core Archetype", () => {
     "Principle",
     "Edge",
   ]);
+});
+
+test("every CONTEXT.md glossary term is classified exactly once", () => {
+  // Real registries, real glossary: this is the coverage guard issue #143
+  // exists for. It fails the moment a term is added to CONTEXT.md without a
+  // contract binding or an explicit not-a-contract decision, and it fails
+  // the moment a term is both bound and recorded as unbound.
+  assert.deepEqual(validateRepository(ROOT), []);
+});
+
+test("a glossary term bound to no contract and recorded as no contract is unclassified", () => {
+  const findings = validate(
+    anchorBinding,
+    [],
+    [...glossaryLines, "**Finding**:", "One result reported by a Lint.", ""],
+    [],
+    [],
+  );
+  assert.deepEqual(
+    findings.map((finding) => finding.code),
+    [
+      "ATLAS_VOCABULARY_TERM_UNCLASSIFIED",
+      "ATLAS_VOCABULARY_TERM_UNCLASSIFIED",
+      "ATLAS_VOCABULARY_TERM_UNCLASSIFIED",
+    ],
+  );
+  const messages = findings.map((finding) => finding.message);
+  assert.ok(messages.some((message) => message.includes('"Atlas SDK"')));
+  assert.ok(messages.some((message) => message.includes('"Explore"')));
+  assert.ok(messages.some((message) => message.includes('"Finding"')));
+});
+
+test("a term recorded as not bound to a contract that CONTEXT.md never defines is reported", () => {
+  const findings = validate(
+    anchorBinding,
+    [],
+    ["**Anchor**:", "A page.", ""],
+    [],
+    [{ reason: "test", term: "Nonexistent Term" }],
+  );
+  assert.deepEqual(
+    findings.map((finding) => finding.code),
+    ["ATLAS_VOCABULARY_UNBOUND_TERM_UNDEFINED"],
+  );
+  assert.ok(findings[0]?.message.includes('"Nonexistent Term"'));
+});
+
+test("a term both bound and recorded as not bound to a contract is double-classified", () => {
+  const findings = validate(
+    anchorBinding,
+    [],
+    ["**Anchor**:", "A page.", ""],
+    [],
+    [{ reason: "test", term: "Anchor" }],
+  );
+  assert.deepEqual(
+    findings.map((finding) => finding.code),
+    ["ATLAS_VOCABULARY_TERM_DOUBLE_CLASSIFIED"],
+  );
+  assert.ok(findings[0]?.message.includes('"Anchor"'));
 });
 
 test("vocabulary scanning cost follows input growth", () => {

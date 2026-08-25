@@ -3,7 +3,10 @@ import {
   reservedPageDirectories,
   type CoreArchetypeBindings,
 } from "../domain/core_archetype.ts";
-import type { ContractVocabularyBinding } from "../domain/contract_vocabulary.ts";
+import type {
+  ContractVocabularyBinding,
+  UnboundGlossaryTerm,
+} from "../domain/contract_vocabulary.ts";
 import type { Finding, FindingLocation } from "../domain/finding.ts";
 import { sdkFindings } from "./sdk_finding.ts";
 import { positionIndex, type PositionIndex } from "./source_position.ts";
@@ -303,6 +306,66 @@ function validateBindings(
   }
 }
 
+/**
+ * Requires every glossary term to be classified exactly once: bound as a Core
+ * Archetype, bound as a contract vocabulary term, or explicitly recorded as
+ * not bound to a contract today. A term that is none of these went unnoticed
+ * by whoever last touched the glossary or its contracts; a term that is more
+ * than one is a stale `unboundGlossaryTerms` entry left behind after binding
+ * it. Both are reported rather than silently resolved, so the omission this
+ * check exists to catch cannot itself be guessed away.
+ */
+function validateTermClassification(
+  bindings: CoreArchetypeBindings,
+  contractTerms: readonly ContractVocabularyBinding[],
+  unboundTerms: readonly UnboundGlossaryTerm[],
+  glossary: Glossary,
+  glossaryPath: string,
+  findings: Finding[],
+): void {
+  const classified = new Set<string>([
+    ...Object.keys(bindings),
+    ...contractTerms.map((binding) => binding.term),
+  ]);
+  const unbound = new Set<string>();
+  for (const { term } of unboundTerms) {
+    if (!glossary.terms.has(term)) {
+      findings.push(
+        finding(
+          "ATLAS_VOCABULARY_UNBOUND_TERM_UNDEFINED",
+          `Atlas SDK records the term ${JSON.stringify(term)} as not bound to a contract, which ${glossaryPath} does not define.`,
+          glossaryPath,
+        ),
+      );
+      continue;
+    }
+    if (classified.has(term)) {
+      findings.push(
+        finding(
+          "ATLAS_VOCABULARY_TERM_DOUBLE_CLASSIFIED",
+          `Atlas SDK both binds the term ${JSON.stringify(term)} to a contract and records it as not bound to one; a term must be classified exactly once.`,
+          glossaryPath,
+        ),
+      );
+    }
+    unbound.add(term);
+  }
+  for (const [term, line] of glossary.terms) {
+    if (classified.has(term) || unbound.has(term)) continue;
+    findings.push(
+      finding(
+        "ATLAS_VOCABULARY_TERM_UNCLASSIFIED",
+        `${glossaryPath} defines the term ${JSON.stringify(term)}, which Atlas SDK neither binds to a contract nor records as deliberately unbound.`,
+        glossaryPath,
+        {
+          end: { column: 1, line: line + 1 },
+          start: { column: 1, line },
+        },
+      ),
+    );
+  }
+}
+
 interface ContractVocabulary {
   readonly avoided: ReadonlyMap<string, GlossaryEntry>;
   readonly directories: ReadonlySet<string>;
@@ -580,6 +643,7 @@ function exportedIdentifiersOf(
 export function validateVocabularyAgreement(
   bindings: CoreArchetypeBindings,
   contractTerms: readonly ContractVocabularyBinding[],
+  unboundTerms: readonly UnboundGlossaryTerm[],
   glossary: VocabularyTextFile,
   contracts: readonly VocabularyTextFile[],
 ): readonly Finding[] {
@@ -604,6 +668,14 @@ export function validateVocabularyAgreement(
     parsed,
     glossary.path,
     glossary.content,
+    findings,
+  );
+  validateTermClassification(
+    bindings,
+    contractTerms,
+    unboundTerms,
+    parsed,
+    glossary.path,
     findings,
   );
 
