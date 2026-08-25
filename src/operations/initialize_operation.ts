@@ -752,7 +752,13 @@ function updateCheckpointCompletion(
   input: unknown,
   changes: readonly AtlasInitializationChange[],
 ): readonly FoundingCheckpoint[] {
-  const dependsOn = checkpoints.find((checkpoint) => checkpoint.id === id)!.dependsOn;
+  const existing = checkpoints.find((checkpoint) => checkpoint.id === id);
+  if (existing === undefined) {
+    throw new Error(
+      `updateCheckpointCompletion: unknown founding checkpoint id "${id}".`,
+    );
+  }
+  const dependsOn = existing.dependsOn;
   return replaceCheckpoint(
     checkpoints,
     Object.freeze({
@@ -1632,8 +1638,8 @@ export function runComposedAtlasInitializationWorkflow(
       payload: Object.freeze({
         ...underlying.payload,
         atlasReadinessReport: composedReadinessReport({
-          checkpoints:
-            underlying.payload.workflowState.foundingCheckpoints as readonly FoundingCheckpoint[],
+          checkpoints: underlying.payload.workflowState
+            .foundingCheckpoints as readonly FoundingCheckpoint[],
           lintStamp: underlying.payload.atlasReadinessReport.lintStamp,
           request,
         }),

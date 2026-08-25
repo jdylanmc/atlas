@@ -61,14 +61,17 @@ test("directive validation accepts no specialization and rejects blank additions
   const malformedList = parseAtlasDirectiveSpecialization({
     additionalConstraints: [1],
     role: "atlas-guide",
-  } as unknown);
+  });
   assert.ok(handoffOnly.specialization);
   assert.ok(
     composeDirective(baseline, handoffOnly.specialization).requiredHandoffs.includes(
       "Escalate publication conflicts.",
     ),
   );
-  assert.deepEqual(validateDirectiveComposition(baseline, malformedList.specialization), []);
+  assert.deepEqual(
+    validateDirectiveComposition(baseline, malformedList.specialization),
+    [],
+  );
   assert.equal(
     validateDirectiveComposition(baseline, {
       additionalHandoffs: ["   "],

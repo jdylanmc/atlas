@@ -9,6 +9,7 @@ import {
   validateNoChangePathCollisions,
   type AtlasFoundingRequest,
   type AtlasInitializationChangeSet,
+  type AtlasInitializationEffectReceipt,
   type AtlasInitializationWorkflowState,
 } from "../src/operations/initialize_operation.ts";
 import { prepareGovernanceFragment } from "../src/operations/governance_operation.ts";
@@ -20,7 +21,7 @@ import {
 } from "../src/domain/founding_checkpoint.ts";
 
 function state(
-  receipts = Object.freeze([]),
+  receipts: readonly AtlasInitializationEffectReceipt[] = Object.freeze([]),
   foundingCheckpoints?: readonly FoundingCheckpoint[],
 ): AtlasInitializationWorkflowState {
   return Object.freeze({
@@ -453,7 +454,8 @@ test("governance invalidation affects only true downstream dependents", () => {
           approvedBy: "Reviewer",
           changes: [
             {
-              content: "---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  created-at: \"2026-01-01T00:00:00Z\"\n  created-by:\n    kind: agent\n    name: Atlas SDK\n  id: principle:determinism\n  local-atlas-schema: 1.0.0\n  tags: []\n  title: Determinism\n  type: principle\n  updated-at: \"2026-01-01T00:00:00Z\"\n  updated-by:\n    kind: agent\n    name: Atlas SDK\natlas: {}\n---\n\n# Determinism\n\n## Active truths\n\n- `truth:no-model` Atlas SDK never invokes a model.\n\n## Amendments\n\n### 1 - 2026-08-24\n\nAdded `truth:no-model`.\n",
+              content:
+                '---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  created-at: "2026-01-01T00:00:00Z"\n  created-by:\n    kind: agent\n    name: Atlas SDK\n  id: principle:determinism\n  local-atlas-schema: 1.0.0\n  tags: []\n  title: Determinism\n  type: principle\n  updated-at: "2026-01-01T00:00:00Z"\n  updated-by:\n    kind: agent\n    name: Atlas SDK\natlas: {}\n---\n\n# Determinism\n\n## Active truths\n\n- `truth:no-model` Atlas SDK never invokes a model.\n\n## Amendments\n\n### 1 - 2026-08-24\n\nAdded `truth:no-model`.\n',
               path: ".atlas/principles/determinism.md",
             },
           ],
@@ -670,24 +672,20 @@ test("raw founding input rejects injected persona authority before typing", () =
     ),
   );
 
-  const malformedPrimitive = runComposedAtlasInitializationWorkflow(
-    initial,
-    1,
-    {
-      commitProposal: () => ({ commit: "c", receipt: "c" }),
-      createProposalWorktree: () => ({ receipt: "created" }),
-      currentTargetHead: () => initial.targetHead,
-      currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
-      lintProposal: () => ({
-        lint: runLintOperation(atlasInitializationFiles(initial), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
-        receipt: "c",
+  const malformedPrimitive = runComposedAtlasInitializationWorkflow(initial, 1, {
+    commitProposal: () => ({ commit: "c", receipt: "c" }),
+    createProposalWorktree: () => ({ receipt: "created" }),
+    currentTargetHead: () => initial.targetHead,
+    currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
+    lintProposal: () => ({
+      lint: runLintOperation(atlasInitializationFiles(initial), {
+        maxFileBytes: 4096,
+        maxTotalBytes: 65536,
       }),
-      writeChangeSet: () => ({ receipt: "written" }),
-    },
-  );
+      receipt: "c",
+    }),
+    writeChangeSet: () => ({ receipt: "written" }),
+  });
   assert.equal(malformedPrimitive.completion, "not-completed");
 
   const malformedTopLevel = runComposedAtlasInitializationWorkflow(
