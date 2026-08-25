@@ -1,6 +1,55 @@
 export type { CapturedAtlasFile } from "./atlas/load_atlas_text.ts";
 export type { Finding } from "./domain/finding.ts";
 export {
+  composeDirective,
+  parseAtlasDirectiveSpecialization,
+  sdkBaselineDirectives,
+  validateDirectiveComposition,
+} from "./domain/agent_directive.ts";
+export type {
+  AgentDirective,
+  AgentRole,
+  AtlasDirectiveSpecialization,
+} from "./domain/agent_directive.ts";
+export { validateAgentComposition } from "./domain/agent_composition.ts";
+export type { AgentComposition } from "./domain/agent_composition.ts";
+export {
+  parseAgentPersonaDesignRequest,
+  validateAgentPersona,
+  validatePersonaActivation,
+  validatePersonaApproval,
+} from "./domain/agent_persona.ts";
+export type {
+  AgentPersona,
+  AgentPersonaDesignRequest,
+} from "./domain/agent_persona.ts";
+export {
+  checkpointInputDigest,
+  foundingCapabilityIds,
+  foundingCheckpointDependencies,
+  invalidateDependentCheckpoints,
+} from "./domain/founding_checkpoint.ts";
+export type {
+  FoundingCheckpoint,
+  FoundingCheckpointId,
+} from "./domain/founding_checkpoint.ts";
+export {
+  generateHostIntegrationPointers,
+  validateHostIntegrationChangeSet,
+} from "./domain/host_integration.ts";
+export type { HostIntegrationPointer } from "./domain/host_integration.ts";
+export {
+  applyVirtualAtlasChanges,
+  createVirtualAtlasView,
+  virtualAtlasCapturedFiles,
+  virtualAtlasDigest,
+  virtualAtlasTextFiles,
+} from "./operations/virtual_atlas_view.ts";
+export type {
+  VirtualAtlasChange,
+  VirtualAtlasView,
+} from "./domain/virtual_atlas_view.ts";
+export {
   frameworkReleaseIdentity,
   frameworkReleaseManifestSchemaVersion,
   inventoryPaths,
@@ -60,9 +109,13 @@ export {
   atlasInitializationFiles,
   notCompletedAtlasInitializationResult,
   runAtlasInitializationWorkflow,
+  runComposedAtlasInitializationWorkflow,
   validateAtlasInitializationChangeSet,
+  validateNoChangePathCollisions,
 } from "./operations/initialize_operation.ts";
 export type {
+  AtlasFoundingAnchorRequest,
+  AtlasFoundingRequest,
   AtlasInitializationChange,
   AtlasInitializationChangeSet,
   AtlasInitializationEffectReceipt,
@@ -102,6 +155,7 @@ export type {
 export {
   atlasIngestChangeSetDigest,
   isSafeGitBranchName as isSafeIngestProposalBranchName,
+  prepareIngestFragment,
   reconcileCandidateGraph,
   runAtlasIngestWorkflow,
   sourceRevisionDigest,
@@ -133,6 +187,7 @@ export type {
 export {
   buildAtlasGovernanceChangeSet,
   mergeGovernanceFindings,
+  prepareGovernanceFragment,
   runAtlasGovernanceWorkflow,
   validateAtlasGovernanceRequest,
 } from "./operations/governance_operation.ts";

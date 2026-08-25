@@ -13,13 +13,21 @@ import {
   frameworkReleaseManifestAtlasPath,
   frameworkReleaseManifestDigestAtlasPath,
   initialAtlasInitializationWorkflowState,
+  runAtlasInitializationWorkflow,
 } from "../src/operations/initialize_operation.ts";
+import { runLintOperation } from "../src/operations/lint_operation.ts";
 import {
   inventoryPaths,
   parseFrameworkReleaseManifest,
 } from "../src/framework/framework_release.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const MINIMAL_RESULT_FIXTURE = join(
+  ROOT,
+  "tests",
+  "fixtures",
+  "initialize-operation-minimal-result.json",
+);
 
 function sha256(content: string | Buffer): string {
   return createHash("sha256").update(content).digest("hex");
@@ -143,4 +151,32 @@ test("Framework Bundle page text is selected only from derived states", () => {
     ],
     canonicalFrameworkPageByBundleState.installed,
   );
+});
+
+test("the minimal initialization operation result remains byte-identical to the golden fixture", () => {
+  const state = initialAtlasInitializationWorkflowState({
+    baseSnapshotDigest: "base-digest",
+    proposalBranch: "atlas-initialization-golden",
+    targetBranch: "main",
+    targetHead: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  });
+  const result = runAtlasInitializationWorkflow(state, {
+    commitProposal: () => ({
+      commit: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      receipt: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    }),
+    createProposalWorktree: () => ({ receipt: "atlas-initialization-golden" }),
+    currentTargetHead: () => state.targetHead,
+    currentBaseSnapshotDigest: () => state.baseSnapshotDigest,
+    lintProposal: () => ({
+      lint: runLintOperation(atlasInitializationFiles(state), {
+        maxFileBytes: 4096,
+        maxTotalBytes: 65536,
+      }),
+      receipt: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    }),
+    writeChangeSet: () => ({ receipt: "tree-golden" }),
+  });
+  const fixture: unknown = JSON.parse(readFileSync(MINIMAL_RESULT_FIXTURE, "utf8"));
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), fixture);
 });
