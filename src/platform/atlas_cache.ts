@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
 import { createAtlasCache } from "../domain/atlas_cache.ts";
 import {
@@ -71,6 +72,19 @@ const attribution = Object.freeze({
 
 const lockPath = [".atlas", "atlas-cache", "atlas-lock.json"] as const;
 
+/**
+ * First contact with an unreachable tracked Atlas has no prior cached
+ * Snapshot to fall back to: it pauses for a human decision (`inconclusive`,
+ * matching this repository's `canContinue()` convention) rather than merely
+ * warning. A cached-offline Snapshot is a soft, continuable degradation
+ * (`warning`) since traversal still returns a usable, if stale, result.
+ */
+function findingSeverity(code: string): Finding["severity"] {
+  return code === "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE"
+    ? "inconclusive"
+    : "warning";
+}
+
 function finding(code: string, message: string, path = ".atlas/atlas-cache"): Finding {
   return Object.freeze({
     attribution,
@@ -78,7 +92,7 @@ function finding(code: string, message: string, path = ".atlas/atlas-cache"): Fi
     "finding-schema": "1.0.0",
     message,
     path,
-    severity: "warning" as const,
+    severity: findingSeverity(code),
   });
 }
 
@@ -254,9 +268,15 @@ export function resolveAtlasCache(
   );
   const finalDirectory = cacheDirectory(request.homeAtlasDirectory, cache.cacheKey);
   const finalRepository = bareRepositoryDirectory(finalDirectory);
+  // Unique per invocation (not just per cacheKey): concurrent first-contact
+  // resolutions of the same tracked Atlas each get their own in-flight
+  // bootstrap/fetch directory, so one process's cleanup does not race the
+  // other's in-progress bare repository. Convergence to one final entry is
+  // still guaranteed by publishAtlasCacheDirectory's rename-then-discard-loser
+  // logic below.
   const pendingDirectory = join(
     cacheRoot(request.homeAtlasDirectory),
-    `.pending-${cache.cacheKey}`,
+    `.pending-${cache.cacheKey}-${randomUUID()}`,
   );
   mkdirSync(cacheRoot(request.homeAtlasDirectory), { recursive: true });
 
