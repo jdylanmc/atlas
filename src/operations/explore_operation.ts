@@ -99,13 +99,13 @@ function budgetsOf(request: ExploreOperationRequest): ExploreBudgets {
 function pendingDecisions(findings: readonly Finding[]): readonly string[] {
   const decisions: string[] = [];
   for (const entry of findings) {
-    if (entry.severity !== "inconclusive") continue;
-    if (entry.code === "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE") {
+    if (
+      entry.severity === "inconclusive" &&
+      entry.code === "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE"
+    ) {
       decisions.push(
         "A human must decide how to proceed with a tracked Atlas that has never been cached and is not reachable for first contact.",
       );
-    } else {
-      decisions.push("A human must adjudicate an unresolved Explore Finding.");
     }
   }
   return Object.freeze([...new Set(decisions)]);
