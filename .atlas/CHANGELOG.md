@@ -1,6 +1,8 @@
 # Changelog
 
-- Initialized minimal Home Atlas.
+## 2026-01-01
+
+- atlas-initialization: Initialized minimal Home Atlas.
 
 ## 2026-08-24
 
