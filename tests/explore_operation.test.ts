@@ -36,6 +36,14 @@ declare global {
 
 const encoder = new TextEncoder();
 const fixturesRoot = resolve(import.meta.dirname, "fixtures", "complete-atlas");
+const singleAtlasResultFixture = readFileSync(
+  resolve(
+    import.meta.dirname,
+    "fixtures",
+    "explore-operation-single-atlas-result.json",
+  ),
+  "utf8",
+);
 const workspaceRoot = resolve(import.meta.dirname, "..", ".test-workspaces");
 
 const budgets: ExploreBudgets = Object.freeze({
@@ -192,6 +200,21 @@ function graphAtlas(): CapturedAtlasFile[] {
     edge("other-a", "concept:other", "anchor:a"),
   ];
 }
+
+test("single-Atlas Explore output remains byte-identical for the complete fixture", () => {
+  const result = runExploreOperation({
+    baseSnapshot: {
+      reference: "0123456789abcdef0123456789abcdef01234567",
+      state: "known",
+    },
+    capturedFiles: completeAtlas(),
+    homeAtlas: { reference: "github.com/jdylanmc/atlas", state: "known" },
+    query: "canonical bytes",
+    budgets,
+  });
+
+  assert.equal(`${JSON.stringify(result, null, 2)}\n`, singleAtlasResultFixture);
+});
 
 test("Explore returns shortest Anchor-to-result route with cited context", () => {
   const result = runExploreOperation({

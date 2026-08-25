@@ -63,6 +63,17 @@ function runGit(repository: string, args: readonly string[]): TrustedGitResult {
   return Object.freeze({ state: "succeeded" as const, stdout: result.stdout });
 }
 
+function runGitBootstrap(directory: string, args: readonly string[]): TrustedGitResult {
+  const result = spawnSync(trustedGitExecutable, args, {
+    cwd: directory,
+    encoding: "utf8",
+    env: trustedGitEnvironment(directory),
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.status !== 0) return failedGitResult();
+  return Object.freeze({ state: "succeeded" as const, stdout: result.stdout });
+}
+
 function runGitWithInput(
   repository: string,
   args: readonly string[],
@@ -143,4 +154,11 @@ export function runTrustedGitForWrite(
   args: readonly string[],
 ): TrustedGitResult {
   return runGit(repository, args);
+}
+
+export function runTrustedGitBootstrap(
+  directory: string,
+  args: readonly string[],
+): TrustedGitResult {
+  return runGitBootstrap(directory, args);
 }

@@ -1,0 +1,177 @@
+{
+  "operation-result-schema": "1.0.0",
+  "completion": "completed",
+  "disposition": "success",
+  "handoff": {
+    "operation-handoff-schema": "1.0.0",
+    "baseSnapshot": {
+      "reference": "0123456789abcdef0123456789abcdef01234567",
+      "state": "known"
+    },
+    "degradationState": {
+      "reason": "Explore used valid structured Atlas objects.",
+      "state": "not-degraded"
+    },
+    "homeAtlas": {
+      "reference": "github.com/jdylanmc/atlas",
+      "state": "known"
+    },
+    "operation": {
+      "kind": "explore",
+      "subject": "local-home-atlas"
+    },
+    "proposedChanges": {
+      "reason": "Explore is read-only and proposes no Atlas Change Set.",
+      "state": "not-applicable"
+    },
+    "recommendedNextAction": "Use the returned route, Re-anchoring record, and cited context.",
+    "result": {
+      "disposition": "success",
+      "summary": "Explore returned reachable Atlas context."
+    },
+    "reviewLink": {
+      "reason": "Explore did not create an Atlas Proposal.",
+      "state": "not-applicable"
+    },
+    "unresolvedHumanDecisions": {
+      "state": "none",
+      "summary": "No human decision is required to interpret this Explore result."
+    },
+    "validationState": {
+      "findings": [],
+      "state": "passed"
+    }
+  },
+  "operation": {
+    "kind": "explore",
+    "subject": "local-home-atlas"
+  },
+  "payload": {
+    "degradation": {
+      "diagnostics": [],
+      "level": "valid-structured"
+    },
+    "reanchors": [
+      {
+        "activeObjective": "canonical bytes",
+        "activePrinciples": [
+          {
+            "body": "\n# Determinism\n\n## Active truths\n\n- `truth:ordering` Findings and serialized pages are ordered by Unicode code\n  points alone.\n\n## Amendments\n\n### 1 - 2026-08-17\n\nAdded `truth:ordering` under Maintainer approval.\n",
+            "id": "principle:determinism",
+            "path": ".atlas/principles/determinism.md",
+            "title": "Determinism"
+          }
+        ],
+        "anchor": {
+          "body": "\n# Minimal Atlas\n\nEnter this Atlas here. The Lint Anchor orients an agent to how Atlas SDK\nvalidates one Atlas deterministically.[^sdk-lint]\n\n[^sdk-lint]: [[.atlas/sources/atlas-sdk-lint]] Atlas SDK Lint documentation.\n",
+          "id": "anchor:root",
+          "path": ".atlas/index.md",
+          "title": "Minimal Atlas"
+        },
+        "governingTruths": [
+          {
+            "principleId": "principle:determinism",
+            "text": "Findings and serialized pages are ordered by Unicode code points alone.",
+            "truthId": "truth:ordering"
+          }
+        ]
+      },
+      {
+        "activeObjective": "canonical bytes",
+        "activePrinciples": [],
+        "anchor": {
+          "body": "\n# Lint\n\nLint validates one Atlas and reports Findings without changing its\nknowledge.[^sdk-lint]\n\nCanonical Serialization explains the bytes Lint compares.\n\n[^sdk-lint]: [[.atlas/sources/atlas-sdk-lint]] Atlas SDK Lint documentation.\n",
+          "id": "anchor:lint",
+          "path": ".atlas/anchors/lint.md",
+          "title": "Lint"
+        },
+        "governingTruths": []
+      }
+    ],
+    "results": [
+      {
+        "citedContext": [
+          {
+            "body": "\n# Canonical Serialization\n\nOne Atlas page value serializes to exactly one byte sequence, so reserializing a\nparsed page reproduces the bytes it was parsed from.[^sdk-lint]\n\n[^sdk-lint]: [[.atlas/sources/atlas-sdk-lint]] Atlas SDK Lint documentation.\n",
+            "id": "concept:canonical-serialization",
+            "path": ".atlas/concepts/canonical-serialization.md",
+            "title": "Canonical Serialization"
+          },
+          {
+            "body": "\n# Atlas SDK Lint\n\nAtlas SDK documentation describing the deterministic Lint path.\n",
+            "id": "source:atlas-sdk-lint",
+            "path": ".atlas/sources/atlas-sdk-lint.md",
+            "title": "Atlas SDK Lint"
+          }
+        ],
+        "result": {
+          "body": "\n# Canonical Serialization\n\nOne Atlas page value serializes to exactly one byte sequence, so reserializing a\nparsed page reproduces the bytes it was parsed from.[^sdk-lint]\n\n[^sdk-lint]: [[.atlas/sources/atlas-sdk-lint]] Atlas SDK Lint documentation.\n",
+          "id": "concept:canonical-serialization",
+          "path": ".atlas/concepts/canonical-serialization.md",
+          "title": "Canonical Serialization",
+          "type": "concept"
+        },
+        "route": [
+          {
+            "objectId": "anchor:root",
+            "path": ".atlas/index.md",
+            "title": "Minimal Atlas",
+            "type": "anchor"
+          },
+          {
+            "edgeId": "root-anchor-catalog",
+            "objectId": "anchor:lint",
+            "path": ".atlas/anchors/lint.md",
+            "title": "Lint",
+            "type": "anchor"
+          },
+          {
+            "edgeId": "edge:lint-covers-canonical-serialization",
+            "objectId": "concept:canonical-serialization",
+            "path": ".atlas/concepts/canonical-serialization.md",
+            "title": "Canonical Serialization",
+            "type": "concept"
+          }
+        ]
+      },
+      {
+        "citedContext": [
+          {
+            "body": "\n# Lint\n\nLint validates one Atlas and reports Findings without changing its\nknowledge.[^sdk-lint]\n\nCanonical Serialization explains the bytes Lint compares.\n\n[^sdk-lint]: [[.atlas/sources/atlas-sdk-lint]] Atlas SDK Lint documentation.\n",
+            "id": "anchor:lint",
+            "path": ".atlas/anchors/lint.md",
+            "title": "Lint"
+          },
+          {
+            "body": "\n# Atlas SDK Lint\n\nAtlas SDK documentation describing the deterministic Lint path.\n",
+            "id": "source:atlas-sdk-lint",
+            "path": ".atlas/sources/atlas-sdk-lint.md",
+            "title": "Atlas SDK Lint"
+          }
+        ],
+        "result": {
+          "body": "\n# Lint\n\nLint validates one Atlas and reports Findings without changing its\nknowledge.[^sdk-lint]\n\nCanonical Serialization explains the bytes Lint compares.\n\n[^sdk-lint]: [[.atlas/sources/atlas-sdk-lint]] Atlas SDK Lint documentation.\n",
+          "id": "anchor:lint",
+          "path": ".atlas/anchors/lint.md",
+          "title": "Lint",
+          "type": "anchor"
+        },
+        "route": [
+          {
+            "objectId": "anchor:root",
+            "path": ".atlas/index.md",
+            "title": "Minimal Atlas",
+            "type": "anchor"
+          },
+          {
+            "edgeId": "root-anchor-catalog",
+            "objectId": "anchor:lint",
+            "path": ".atlas/anchors/lint.md",
+            "title": "Lint",
+            "type": "anchor"
+          }
+        ]
+      }
+    ]
+  }
+}

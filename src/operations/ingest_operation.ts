@@ -1,5 +1,6 @@
 import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
+import { sha256Hex } from "../atlas/sha256.ts";
 import { atlasChangelogPath, renderAtlasChangelog } from "../domain/atlas_changelog.ts";
 import type { VirtualAtlasView } from "../domain/virtual_atlas_view.ts";
 import { virtualAtlasCapturedFiles, virtualAtlasDigest } from "./virtual_atlas_view.ts";
@@ -12,6 +13,8 @@ import {
   type AtlasPageEnvelope,
   type ReadonlyJsonValue,
 } from "../domain/atlas_page.ts";
+import { parseAtlasLocator } from "../domain/atlas_locator.ts";
+import { deriveAtlasSlug } from "../domain/atlas_slug.ts";
 import type { Finding } from "../domain/finding.ts";
 import type { LintOperationResult } from "./lint_operation.ts";
 import {
@@ -138,6 +141,29 @@ export interface AtlasIngestRequest {
   readonly candidateGraph: AtlasIngestCandidateGraph;
   readonly scope: AtlasIngestScope;
 }
+
+export interface AtlasIngestSourceProbeRequest {
+  readonly approvedAt: string;
+  readonly approvedBy: string;
+  readonly asOf: string;
+  readonly atlasPath: string;
+  readonly branch: string;
+  readonly defaultBranch?: string;
+  readonly fromAnchorId: string;
+  readonly repositoryLocator: string;
+  readonly title: string;
+}
+
+export type AtlasIngestSourceProbeOutcome =
+  | {
+      readonly changes: readonly AtlasIngestChange[];
+      readonly findings: readonly Finding[];
+      readonly state: "tracked-atlas";
+    }
+  | {
+      readonly findings: readonly Finding[];
+      readonly state: "invalid";
+    };
 
 export interface AtlasIngestChange {
   readonly content: string;
@@ -1179,6 +1205,132 @@ function citationBody(citations: readonly AtlasIngestCandidateCitation[]): {
     )
     .join("\n");
   return { definitions, markers };
+}
+
+function trackedAtlasPages(
+  request: AtlasIngestSourceProbeRequest,
+): readonly ParsedAtlasPage[] | readonly Finding[] {
+  const parsed = parseAtlasLocator(
+    {
+      atlasPath: request.atlasPath,
+      branch: request.branch,
+      repositoryLocator: request.repositoryLocator,
+    },
+    ".atlas/tracked-atlases",
+  );
+  if (parsed.state === "invalid") {
+    return parsed.findings;
+  }
+  const slug = deriveAtlasSlug(parsed.locator, request.defaultBranch ?? request.branch);
+  const trackedAtlasId = `tracked-atlas:${slug.value}`;
+  const trackedAtlasPage = pageEnvelope(
+    `.atlas/tracked-atlases/${slug.value}.md`,
+    sdkMetadata(
+      trackedAtlasId,
+      "tracked-atlas",
+      request.title,
+      request.asOf,
+      "atlas-ingest-source-probe",
+    ),
+    {
+      branch: parsed.locator.branch,
+      "default-branch": request.defaultBranch ?? request.branch,
+      locator: `https://${parsed.locator.canonicalRepository}.git`,
+      path: parsed.locator.atlasPath,
+    },
+    [
+      `# ${request.title}`,
+      "",
+      `TrackedAtlas declaration for ${parsed.locator.canonicalRepository}.`,
+      "",
+    ].join("\n"),
+  );
+  const edgeHash = sha256Hex(`${request.fromAnchorId}\u0000${trackedAtlasId}`).slice(
+    0,
+    16,
+  );
+  const edgeId = `edge:track-${edgeHash}`;
+  const edgePage = pageEnvelope(
+    `.atlas/edges/track-${edgeHash}.md`,
+    sdkMetadata(
+      edgeId,
+      "edge",
+      `Track ${request.title}`,
+      request.asOf,
+      "atlas-ingest-source-probe",
+    ),
+    {
+      from: request.fromAnchorId,
+      semantics: ["tracks-atlas"],
+      to: trackedAtlasId,
+    },
+    [
+      `# Track ${request.title}`,
+      "",
+      `Traverse from ${request.fromAnchorId} to the tracked Atlas declaration ${trackedAtlasId}.`,
+      "",
+    ].join("\n"),
+  );
+  return Object.freeze([trackedAtlasPage, edgePage]);
+}
+
+export function probeAtlasIngestSource(
+  request: AtlasIngestSourceProbeRequest,
+): AtlasIngestSourceProbeOutcome {
+  const scopeFindings = [
+    ...validateApproval(
+      Object.freeze({
+        "ingest-scope-schema": "1.0.0" as const,
+        approvedAt: request.approvedAt,
+        approvedBy: request.approvedBy,
+        asOf: request.asOf,
+        authority: "official" as const,
+        entryPoint: request.atlasPath,
+        excludedPaths: Object.freeze([]),
+        freshnessWindowDays: 30,
+        includedPaths: Object.freeze([]),
+        maxDepth: 1,
+        sourceId: "source:tracked-atlas",
+      }),
+    ),
+    ...validateIngestScopeTime(
+      Object.freeze({
+        "ingest-scope-schema": "1.0.0" as const,
+        approvedAt: request.approvedAt,
+        approvedBy: request.approvedBy,
+        asOf: request.asOf,
+        authority: "official" as const,
+        entryPoint: request.atlasPath,
+        excludedPaths: Object.freeze([]),
+        freshnessWindowDays: 30,
+        includedPaths: Object.freeze([]),
+        maxDepth: 1,
+        sourceId: "source:tracked-atlas",
+      }),
+    ),
+  ];
+  if (scopeFindings.length > 0) {
+    return Object.freeze({
+      findings: Object.freeze(scopeFindings),
+      state: "invalid" as const,
+    });
+  }
+  const pages = trackedAtlasPages(request);
+  if (pages.length === 0 || "code" in (pages[0] as Record<string, unknown>)) {
+    return Object.freeze({
+      findings: Object.freeze(pages as readonly Finding[]),
+      state: "invalid" as const,
+    });
+  }
+  return Object.freeze({
+    changes: Object.freeze(
+      serializeAtlasPages(pages as readonly ParsedAtlasPage[])
+        .map((file) => Object.freeze({ content: file.content, path: file.path }))
+        .toSorted((left, right) => compareCodePoints(left.path, right.path)),
+    ),
+    findings: Object.freeze([]),
+    state: "tracked-atlas" as const,
+  });
 }
 
 function sourcePage(

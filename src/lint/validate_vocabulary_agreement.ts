@@ -22,8 +22,8 @@ const finding = sdkFindings("sdk-core.vocabulary-agreement");
 const definitionPattern = /^\*\*(.+)\*\*:$/u;
 /** A glossary avoidance line, for example `_Avoid_: Bonfire, Landmark, Hub`. */
 const avoidancePattern = /^_Avoid_: (.+)$/u;
-/** A term Atlas SDK can bind: one capitalized word. */
-const termPattern = /^\p{Lu}[\p{Ll}\p{N}]*$/u;
+/** A term Atlas SDK can bind: one capitalized word or one PascalCase compound. */
+const termPattern = /^\p{Lu}[\p{Ll}\p{N}]*(?:\p{Lu}[\p{Ll}\p{N}]*)*$/u;
 /** A contract vocabulary term Atlas SDK can require in the glossary. */
 const contractTermPattern = /^\p{Lu}[\p{L}\p{N}]*(?: \p{Lu}[\p{L}\p{N}]*)*$/u;
 /** A word an avoidance entry names, rather than a human qualifier. */
@@ -88,7 +88,19 @@ function isAvoidedName(entry: string): boolean {
 
 /** The plural Atlas SDK spells a lower-case term with. */
 function pluralOf(word: string): string {
+  if (/[sxz]$/u.test(word) || /(?:ch|sh)$/u.test(word)) return `${word}es`;
   return /[^aeiou]y$/u.test(word) ? `${word.slice(0, -1)}ies` : `${word}s`;
+}
+
+function kebabCaseTerm(term: string): string {
+  return term.replace(/(?!^)([A-Z])/g, "-$1").toLowerCase();
+}
+
+function pluralizedIdentifier(base: string): string {
+  if (!base.includes("-")) return pluralOf(base);
+  const segments = base.split("-");
+  const last = segments.pop() as string;
+  return [...segments, pluralOf(last)].join("-");
 }
 
 /**
@@ -156,16 +168,16 @@ function disagreements(
   bindings: CoreArchetypeBindings,
 ): readonly BindingDisagreement[] {
   const identifiers = bindings[term] as CoreArchetypeBindings[string];
-  const base = term.toLowerCase();
+  const base = kebabCaseTerm(term);
   const expectations: readonly BindingDisagreement[] = [
     {
       actual: identifiers.diagnosticStem,
-      expected: term.toUpperCase(),
+      expected: base.replaceAll("-", "_").toUpperCase(),
       surface: "diagnostic code stem",
     },
     {
       actual: identifiers.directory,
-      expected: pluralOf(base),
+      expected: pluralizedIdentifier(base),
       surface: "page directory",
     },
     { actual: identifiers.idPrefix, expected: base, surface: "page-ID prefix" },

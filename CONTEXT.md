@@ -68,6 +68,9 @@ The normalized Git repository URL, branch, and Atlas-relative path that identifi
 **Atlas Slug**:
 The deterministic reference name of an Atlas, derived from its Atlas Locator rather than chosen by a human. It combines host, owner, repository, and Atlas-relative path, names the branch only when it is not the repository default, and identifies the Atlas in caches, cross-Atlas references, and publication paths.
 
+**TrackedAtlas**:
+The committed declaration page that records one tracked Atlas through its Atlas Locator, repository branch, Atlas-relative path, and deterministic Atlas Slug. Cross-Atlas Edges target a TrackedAtlas declaration in the Home Atlas and resolve through it to the tracked Atlas's Root Anchor.
+
 **Atlas Cache**:
 The generated, Git-ignored store beneath an Atlas's `.atlas/` holding read-only working copies of tracked Atlases, one flat entry per Atlas Locator, materialized on first entry. Atlas Cache entries are disposable data: they are never edited, executed, or used as a place from which an Atlas is maintained.
 

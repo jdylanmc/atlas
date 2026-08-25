@@ -149,6 +149,26 @@ export const contractVocabularyBindings = Object.freeze([
     exportedIdentifiers: Object.freeze(["HostIntegrationPointer"]),
     term: "Host Integration",
   }),
+  Object.freeze({
+    exportedIdentifiers: Object.freeze(["AtlasLocator"]),
+    term: "Atlas Locator",
+  }),
+  Object.freeze({
+    exportedIdentifiers: Object.freeze(["AtlasSlug"]),
+    term: "Atlas Slug",
+  }),
+  Object.freeze({
+    exportedIdentifiers: Object.freeze(["AtlasCache"]),
+    term: "Atlas Cache",
+  }),
+  Object.freeze({
+    exportedIdentifiers: Object.freeze(["AtlasLock"]),
+    term: "Atlas Lock",
+  }),
+  Object.freeze({
+    exportedIdentifiers: Object.freeze(["TrackedAtlas"]),
+    term: "TrackedAtlas",
+  }),
 ] as const) satisfies readonly ContractVocabularyBinding[];
 
 export interface UnboundGlossaryTerm {
@@ -210,18 +230,6 @@ export const unboundGlossaryTerms = Object.freeze([
     term: "Tool Runtime",
   }),
   Object.freeze({
-    reason: "Not yet implemented (connected Atlas feature).",
-    term: "Atlas Locator",
-  }),
-  Object.freeze({
-    reason: "Not yet implemented (connected Atlas feature).",
-    term: "Atlas Slug",
-  }),
-  Object.freeze({
-    reason: "Not yet implemented (connected Atlas feature).",
-    term: "Atlas Cache",
-  }),
-  Object.freeze({
     reason: "Not yet implemented.",
     term: "Atlas Manifest",
   }),
@@ -229,10 +237,6 @@ export const unboundGlossaryTerms = Object.freeze([
     reason:
       "Realized as frontmatter schema-version fields, not a dedicated exported type.",
     term: "Atlas Schema",
-  }),
-  Object.freeze({
-    reason: "Not yet implemented (connected Atlas feature).",
-    term: "Atlas Lock",
   }),
   Object.freeze({
     reason: "Not yet implemented (connected Atlas feature).",

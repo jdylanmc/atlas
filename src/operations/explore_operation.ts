@@ -5,6 +5,10 @@ import {
   type ExplorePayload,
   type SearchProvider,
 } from "../graph/explore_atlas.ts";
+import {
+  exploreConnectedAtlas,
+  type AtlasCacheResolver,
+} from "./connected_atlas_explore.ts";
 import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
 import { buildAtlasView } from "../atlas/atlas_view.ts";
 import { loadAndValidateAtlasInput } from "../lint/validate_atlas_input.ts";
@@ -26,6 +30,7 @@ export interface ExploreOperationIdentity extends OperationIdentity {
 }
 
 export interface ExploreOperationRequest {
+  readonly atlasCacheResolver?: AtlasCacheResolver;
   readonly baseSnapshot: OperationReference;
   readonly budgets?: Partial<ExploreBudgets>;
   readonly capturedFiles: readonly CapturedAtlasFile[];
@@ -91,6 +96,21 @@ function budgetsOf(request: ExploreOperationRequest): ExploreBudgets {
   });
 }
 
+function pendingDecisions(findings: readonly Finding[]): readonly string[] {
+  const decisions: string[] = [];
+  for (const entry of findings) {
+    if (
+      entry.severity === "inconclusive" &&
+      entry.code === "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE"
+    ) {
+      decisions.push(
+        "A human must decide how to proceed with a tracked Atlas that has never been cached and is not reachable for first contact.",
+      );
+    }
+  }
+  return Object.freeze([...new Set(decisions)]);
+}
+
 function handoff(
   request: ExploreOperationRequest,
   payload: ExplorePayload,
@@ -101,6 +121,7 @@ function handoff(
     (finding) => finding.severity === "error",
   );
   const succeeded = !blocked && !validationFailed && payload.results.length > 0;
+  const decisions = pendingDecisions(payload.degradation.diagnostics);
   return Object.freeze({
     "operation-handoff-schema": operationHandoffSchemaVersion,
     baseSnapshot: request.baseSnapshot,
@@ -130,10 +151,16 @@ function handoff(
           : "Explore found no reachable result.",
     }),
     reviewLink: noReviewLink,
-    unresolvedHumanDecisions: Object.freeze({
-      state: "none" as const,
-      summary: "No human decision is required to interpret this Explore result.",
-    }),
+    unresolvedHumanDecisions:
+      decisions.length > 0
+        ? Object.freeze({
+            decisions: Object.freeze(decisions),
+            state: "pending" as const,
+          })
+        : Object.freeze({
+            state: "none" as const,
+            summary: "No human decision is required to interpret this Explore result.",
+          }),
     validationState: Object.freeze({
       findings: payload.degradation.diagnostics,
       state: blocked
@@ -187,13 +214,25 @@ export function runExploreOperation(
     }),
     validation: validated,
   });
-  const payload = exploreAtlas(
-    atlasView,
-    request.query,
-    request.provider ?? lexicalSearchProvider,
-    budgets,
-  );
-  const operationHandoff = handoff(request, payload);
+  const payload =
+    request.atlasCacheResolver === undefined
+      ? undefined
+      : exploreConnectedAtlas(
+          atlasView,
+          request.query,
+          request.provider ?? lexicalSearchProvider,
+          budgets,
+          request.atlasCacheResolver,
+        );
+  const resolvedPayload =
+    payload ??
+    exploreAtlas(
+      atlasView,
+      request.query,
+      request.provider ?? lexicalSearchProvider,
+      budgets,
+    );
+  const operationHandoff = handoff(request, resolvedPayload);
   return Object.freeze({
     "operation-result-schema": operationResultSchemaVersion,
     completion:
@@ -203,7 +242,7 @@ export function runExploreOperation(
     disposition: operationHandoff.result.disposition,
     handoff: operationHandoff,
     operation: exploreOperation,
-    payload,
+    payload: resolvedPayload,
   });
 }
 
