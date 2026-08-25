@@ -122,10 +122,11 @@ function excludeAtlasCache(
   let content = "";
   try {
     content = readFileSync(excludePath, "utf8");
-    /* c8 ignore next -- absence of the local exclude file is an accepted starting state. */
+    /* c8 ignore start -- absence of the local exclude file is an accepted starting state. */
   } catch {
     void 0;
   }
+  /* c8 ignore stop */
   const entry = ".atlas/atlas-cache/";
   if (content.split(/\r?\n/u).includes(entry)) return;
   appendFileSync(excludePath, `\n${entry}\n`, "utf8");
