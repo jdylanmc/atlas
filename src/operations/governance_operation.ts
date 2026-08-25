@@ -2,7 +2,9 @@ import {
   normalizeAtlasTextPath,
   type CapturedAtlasFile,
 } from "../atlas/load_atlas_text.ts";
+import type { VirtualAtlasView } from "../domain/virtual_atlas_view.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
+import { virtualAtlasCapturedFiles } from "./virtual_atlas_view.ts";
 import {
   atlasChangelogPath,
   isSingleAtlasChangelogEntry,
@@ -776,8 +778,9 @@ function validateDerivedChangelog(
 // requires the drafted Changelog prose the SDK will stamp. A stale base snapshot
 // digest or a missing operation ID do not appear here because the caller has no
 // field to carry them.
-export function validateAtlasGovernanceRequest(
+function validateAtlasGovernanceRequestInternal(
   request: AtlasGovernanceRequest,
+  options: { readonly requireChangelog: boolean },
 ): readonly Finding[] {
   const changes = request.changes ?? [];
   if (request.action === "verify") {
@@ -826,7 +829,7 @@ export function validateAtlasGovernanceRequest(
       );
     }
   }
-  if ((request.changelog ?? "").trim() === "") {
+  if (options.requireChangelog && (request.changelog ?? "").trim() === "") {
     findings.push(
       finding(
         "ATLAS_GOVERNANCE_CHANGELOG_REQUIRED",
@@ -835,6 +838,43 @@ export function validateAtlasGovernanceRequest(
     );
   }
   return Object.freeze(findings);
+}
+
+export function validateAtlasGovernanceRequest(
+  request: AtlasGovernanceRequest,
+): readonly Finding[] {
+  return validateAtlasGovernanceRequestInternal(request, {
+    requireChangelog: true,
+  });
+}
+
+export function prepareGovernanceFragment(
+  request: AtlasGovernanceRequest,
+  virtualAtlas: VirtualAtlasView,
+): {
+  readonly changes: readonly AtlasGovernanceChange[];
+  readonly findings: readonly Finding[];
+} {
+  const existing = virtualAtlasCapturedFiles(virtualAtlas);
+  const changes = Object.freeze(
+    (request.changes ?? []).map((change) =>
+      Object.freeze({ content: change.content, path: change.path }),
+    ),
+  );
+  const findings = Object.freeze([
+    ...validateApproval(request),
+    ...validateAtlasGovernanceRequestInternal(request, {
+      requireChangelog: false,
+    }),
+    ...validatePrincipleChangeSet(request, changes, existing),
+    ...validatePolicyChangeSet(request, changes, existing),
+    ...validateSemanticVerdicts(
+      request,
+      capturedPathSet(existing, changes),
+      changedPolicyTargets(existing, changes),
+    ),
+  ]);
+  return Object.freeze({ changes, findings });
 }
 
 export function mergeGovernanceFindings(

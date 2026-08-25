@@ -1,0 +1,184 @@
+{
+  "operation-result-schema": "1.0.0",
+  "completion": "completed",
+  "disposition": "success",
+  "handoff": {
+    "operation-handoff-schema": "1.0.0",
+    "baseSnapshot": {
+      "reference": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "state": "known"
+    },
+    "degradationState": {
+      "reason": "Initialization completed without degraded dependencies.",
+      "state": "not-degraded"
+    },
+    "homeAtlas": {
+      "reason": "Initialization proposes the first Home Atlas; it is not merged yet.",
+      "state": "not-applicable"
+    },
+    "operation": {
+      "kind": "initialization",
+      "subject": "atlas-host-directory"
+    },
+    "proposedChanges": {
+      "state": "available",
+      "summary": "Local Atlas Proposal branch atlas-initialization-golden contains the minimal Atlas Change Set."
+    },
+    "recommendedNextAction": "Review the local Atlas Proposal and publish it to the forge when ready.",
+    "result": {
+      "disposition": "success",
+      "summary": "Initialization produced a Linted local Atlas Proposal."
+    },
+    "reviewLink": {
+      "reason": "Forge publication was not requested; the Atlas Proposal remains local.",
+      "state": "not-applicable"
+    },
+    "unresolvedHumanDecisions": {
+      "state": "none",
+      "summary": "Minimal Initialization chose no Guide Persona, founding knowledge, site, or forge publication."
+    },
+    "validationState": {
+      "findings": [],
+      "state": "passed"
+    }
+  },
+  "operation": {
+    "kind": "initialization",
+    "subject": "atlas-host-directory"
+  },
+  "payload": {
+    "atlasReadinessReport": {
+      "boundary": "The Home Atlas boundary is the repository root Atlas Host Directory.",
+      "degradation": "No degraded dependency was needed for local, non-forge Initialization.",
+      "evidence": "No founding knowledge was imported; Lint evidence is the proposal commit snapshot.",
+      "foundingGraph": "None: minimal Initialization imports no founding knowledge.",
+      "governance": "The minimal Atlas proposes no Atlas Manifest; human-authored declaration is pending review.",
+      "guide": "None: minimal Initialization records no Guide Persona.",
+      "integration": "The Operation Workspace produced a local proposal branch and no forge publication.",
+      "lintStamp": {
+        "lint-stamp-schema": "1.0.0",
+        "atlasCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "evidenceRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "nextAction": "Review and publish the local proposal branch, then merge through Git governance.",
+      "publicationHandoff": "Forge publication was not requested; push the proposal branch and open a pull request with the readiness report.",
+      "uninspectedAreas": "No external sources, tracked Atlases, forge remotes, Atlas Site, or governance policies were inspected."
+    },
+    "changeSet": {
+      "baseSnapshotDigest": "base-digest",
+      "changes": [
+        {
+          "content": "# Changelog\n\n## 2026-01-01\n\n- atlas-initialization: Initialized minimal Home Atlas.\n",
+          "path": ".atlas/CHANGELOG.md"
+        },
+        {
+          "content": "# Framework\n\nNo Framework Bundle is installed in this Atlas yet.\nFramework Bundle files, once installed, are opaque to Atlas page parsing.\n",
+          "path": ".atlas/framework/README.md"
+        },
+        {
+          "content": "---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  created-at: \"2026-01-01T00:00:00Z\"\n  created-by:\n    kind: agent\n    name: Atlas SDK\n  id: anchor:root\n  local-atlas-schema: 1.0.0\n  originating-operation: atlas-initialization\n  tags: []\n  title: Home Atlas\n  type: anchor\n  updated-at: \"2026-01-01T00:00:00Z\"\n  updated-by:\n    kind: agent\n    name: Atlas SDK\natlas: {}\n---\n\n# Home Atlas\n\nThis Root Anchor starts a minimal Home Atlas with no Guide Persona, founding knowledge, or Atlas Site.\n",
+          "path": ".atlas/index.md"
+        }
+      ],
+      "targetHead": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "lint": {
+      "operation-result-schema": "1.0.0",
+      "completion": "completed",
+      "disposition": "success",
+      "handoff": {
+        "operation-handoff-schema": "1.0.0",
+        "baseSnapshot": {
+          "reason": "Lint received captured Atlas files without a Git-backed Atlas Snapshot.",
+          "state": "unknown"
+        },
+        "degradationState": {
+          "reason": "The operation completed through deterministic Lint.",
+          "state": "not-degraded"
+        },
+        "homeAtlas": {
+          "reason": "Lint received captured Atlas files without a resolved Atlas Locator.",
+          "state": "unknown"
+        },
+        "operation": {
+          "kind": "lint",
+          "subject": "captured-home-atlas"
+        },
+        "proposedChanges": {
+          "reason": "Lint is read-only and proposes no Atlas Change Set.",
+          "state": "not-applicable"
+        },
+        "recommendedNextAction": "Use the validated Atlas records returned by Lint.",
+        "result": {
+          "disposition": "success",
+          "summary": "Lint passed."
+        },
+        "reviewLink": {
+          "reason": "Lint did not create an Atlas Proposal.",
+          "state": "not-applicable"
+        },
+        "unresolvedHumanDecisions": {
+          "state": "none",
+          "summary": "No human decision is required to interpret this Lint result."
+        },
+        "validationState": {
+          "findings": [],
+          "state": "passed"
+        }
+      },
+      "operation": {
+        "kind": "lint",
+        "subject": "captured-home-atlas"
+      },
+      "payload": {
+        "lint": {
+          "findings": [],
+          "opaque": [
+            {
+              "content": "# Changelog\n\n## 2026-01-01\n\n- atlas-initialization: Initialized minimal Home Atlas.\n",
+              "path": ".atlas/CHANGELOG.md"
+            },
+            {
+              "content": "# Framework\n\nNo Framework Bundle is installed in this Atlas yet.\nFramework Bundle files, once installed, are opaque to Atlas page parsing.\n",
+              "path": ".atlas/framework/README.md"
+            }
+          ],
+          "outcome": "valid",
+          "pages": [
+            {
+              "content": "---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  created-at: \"2026-01-01T00:00:00Z\"\n  created-by:\n    kind: agent\n    name: Atlas SDK\n  id: anchor:root\n  local-atlas-schema: 1.0.0\n  originating-operation: atlas-initialization\n  tags: []\n  title: Home Atlas\n  type: anchor\n  updated-at: \"2026-01-01T00:00:00Z\"\n  updated-by:\n    kind: agent\n    name: Atlas SDK\natlas: {}\n---\n\n# Home Atlas\n\nThis Root Anchor starts a minimal Home Atlas with no Guide Persona, founding knowledge, or Atlas Site.\n",
+              "path": ".atlas/index.md"
+            }
+          ]
+        },
+        "state": "completed"
+      }
+    },
+    "state": "completed",
+    "workflowState": {
+      "operation-workflow-schema": "1.0.0",
+      "baseSnapshotDigest": "base-digest",
+      "effectReceipts": [
+        {
+          "effect": "create-proposal-worktree",
+          "receipt": "atlas-initialization-golden"
+        },
+        {
+          "effect": "write-change-set",
+          "receipt": "tree-golden"
+        },
+        {
+          "effect": "commit-proposal",
+          "receipt": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "effect": "lint-proposal",
+          "receipt": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "proposalBranch": "atlas-initialization-golden",
+      "targetBranch": "main",
+      "targetHead": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  }
+}

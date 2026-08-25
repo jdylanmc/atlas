@@ -129,6 +129,26 @@ export const contractVocabularyBindings = Object.freeze([
     exportedIdentifiers: Object.freeze(["AtlasIngestCrawlAssignment"]),
     term: "Crawlers",
   }),
+  Object.freeze({
+    exportedIdentifiers: Object.freeze(["AgentPersona"]),
+    term: "Agent Persona",
+  }),
+  Object.freeze({
+    exportedIdentifiers: Object.freeze(["AgentDirective"]),
+    term: "Agent Directive",
+  }),
+  Object.freeze({
+    exportedIdentifiers: Object.freeze(["AgentComposition"]),
+    term: "Agent Composition",
+  }),
+  Object.freeze({
+    exportedIdentifiers: Object.freeze(["AgentPersonaDesignRequest"]),
+    term: "Persona Design",
+  }),
+  Object.freeze({
+    exportedIdentifiers: Object.freeze(["HostIntegrationPointer"]),
+    term: "Host Integration",
+  }),
 ] as const) satisfies readonly ContractVocabularyBinding[];
 
 export interface UnboundGlossaryTerm {
@@ -161,22 +181,6 @@ export const unboundGlossaryTerms = Object.freeze([
     term: "Atlas Host Directory",
   }),
   Object.freeze({
-    reason: "Not yet implemented.",
-    term: "Agent Persona",
-  }),
-  Object.freeze({
-    reason: "Not yet implemented.",
-    term: "Agent Directive",
-  }),
-  Object.freeze({
-    reason: "Not yet implemented.",
-    term: "Agent Composition",
-  }),
-  Object.freeze({
-    reason: "Not yet implemented.",
-    term: "Persona Design",
-  }),
-  Object.freeze({
     reason: "A conceptual role; not yet implemented.",
     term: "Atlas Guide",
   }),
@@ -184,10 +188,6 @@ export const unboundGlossaryTerms = Object.freeze([
     reason:
       "The shared preflight is folded into each operation's own Home Atlas resolution rather than a dedicated exported contract (see #158).",
     term: "Atlas Entry",
-  }),
-  Object.freeze({
-    reason: "Not yet implemented.",
-    term: "Host Integration",
   }),
   Object.freeze({
     reason: "A designation of which Atlas is home, not itself a type.",

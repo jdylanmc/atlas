@@ -1,6 +1,8 @@
 import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import { atlasChangelogPath, renderAtlasChangelog } from "../domain/atlas_changelog.ts";
+import type { VirtualAtlasView } from "../domain/virtual_atlas_view.ts";
+import { virtualAtlasCapturedFiles, virtualAtlasDigest } from "./virtual_atlas_view.ts";
 import { atlasPrincipleActiveTruthIds } from "../domain/atlas_principle.ts";
 import { resolvedCitationSourcePaths } from "../atlas/resolve_citations.ts";
 import { serializeAtlasPages } from "../atlas/serialize_atlas_pages.ts";
@@ -1316,11 +1318,12 @@ function structuredCitationPaths(
  * validated graph reconciles to the same bytes and no crawled value is
  * be interpolated into structured YAML.
  */
-export function reconcileCandidateGraph(
+function candidateGraphChanges(
   state: AtlasIngestWorkflowState,
   request: AtlasIngestRequest,
-  existingFiles: readonly CapturedAtlasFile[] = [],
-): AtlasIngestChangeSet {
+  existingFiles: readonly CapturedAtlasFile[],
+  options: { readonly includeChangelog: boolean },
+): readonly AtlasIngestChange[] {
   const { candidateGraph: graph, scope } = request;
   const existing = readExistingAtlas(existingFiles);
   const refresh = existing.sourceText.has(scope.sourceId);
@@ -1335,16 +1338,28 @@ export function reconcileCandidateGraph(
     pages.push(edgePage(edge, scope, state.operationId));
   }
   const changes: AtlasIngestChange[] = [
-    changelogEntry(graph, scope, state.operationId, refresh, existingFiles),
+    ...(options.includeChangelog
+      ? [changelogEntry(graph, scope, state.operationId, refresh, existingFiles)]
+      : []),
     ...serializeAtlasPages(pages).map((file) =>
       Object.freeze({ content: file.content, path: file.path }),
     ),
   ];
+  return Object.freeze(
+    changes.toSorted((left, right) => compareCodePoints(left.path, right.path)),
+  );
+}
+
+export function reconcileCandidateGraph(
+  state: AtlasIngestWorkflowState,
+  request: AtlasIngestRequest,
+  existingFiles: readonly CapturedAtlasFile[] = [],
+): AtlasIngestChangeSet {
   return Object.freeze({
     baseSnapshotDigest: state.baseSnapshotDigest,
-    changes: Object.freeze(
-      changes.toSorted((left, right) => compareCodePoints(left.path, right.path)),
-    ),
+    changes: candidateGraphChanges(state, request, existingFiles, {
+      includeChangelog: true,
+    }),
     targetHead: state.targetHead,
   });
 }
@@ -1400,9 +1415,10 @@ export function validateCitationCorrespondence(
   return Object.freeze(findings);
 }
 
-export function validateAtlasIngestChangeSet(
+function validateAtlasIngestChangeSetInternal(
   state: AtlasIngestWorkflowState,
   changeSet: AtlasIngestChangeSet,
+  options: { readonly requireChangelog: boolean },
 ): readonly Finding[] {
   const findings: Finding[] = [];
   if (
@@ -1434,26 +1450,73 @@ export function validateAtlasIngestChangeSet(
       );
     }
   }
-  const changelog = changeSet.changes.find(
-    (change) => change.path === ".atlas/CHANGELOG.md",
-  );
-  if (changelog === undefined) {
-    findings.push(
-      finding(
-        "ATLAS_INGEST_CHANGELOG_REQUIRED",
-        "A successful Ingest proposal must append an operation-identified Atlas Changelog entry.",
-      ),
+  if (options.requireChangelog) {
+    const changelog = changeSet.changes.find(
+      (change) => change.path === ".atlas/CHANGELOG.md",
     );
-  } else if (!changelog.content.includes(state.operationId)) {
-    findings.push(
-      finding(
-        "ATLAS_INGEST_CHANGELOG_OPERATION_ID_REQUIRED",
-        "The Atlas Changelog entry for an Ingest proposal must name the stable operation ID.",
-        ".atlas/CHANGELOG.md",
-      ),
-    );
+    if (changelog === undefined) {
+      findings.push(
+        finding(
+          "ATLAS_INGEST_CHANGELOG_REQUIRED",
+          "A successful Ingest proposal must append an operation-identified Atlas Changelog entry.",
+        ),
+      );
+    } else if (!changelog.content.includes(state.operationId)) {
+      findings.push(
+        finding(
+          "ATLAS_INGEST_CHANGELOG_OPERATION_ID_REQUIRED",
+          "The Atlas Changelog entry for an Ingest proposal must name the stable operation ID.",
+          ".atlas/CHANGELOG.md",
+        ),
+      );
+    }
   }
   return Object.freeze(findings);
+}
+
+export function validateAtlasIngestChangeSet(
+  state: AtlasIngestWorkflowState,
+  changeSet: AtlasIngestChangeSet,
+): readonly Finding[] {
+  return validateAtlasIngestChangeSetInternal(state, changeSet, {
+    requireChangelog: true,
+  });
+}
+
+export function prepareIngestFragment(
+  request: AtlasIngestRequest,
+  virtualAtlas: VirtualAtlasView,
+): {
+  readonly changes: readonly AtlasIngestChange[];
+  readonly findings: readonly Finding[];
+} {
+  const existingFiles = virtualAtlasCapturedFiles(virtualAtlas);
+  const virtualDigest = virtualAtlasDigest(virtualAtlas);
+  const state: AtlasIngestWorkflowState = Object.freeze({
+    "operation-workflow-schema": "1.0.0",
+    baseSnapshotDigest: virtualDigest,
+    effectReceipts: Object.freeze([]),
+    operationId: "atlas-initialization",
+    proposalBranch: "atlas-initialization-virtual",
+    targetBranch: "virtual",
+    targetHead: virtualDigest,
+  });
+  const graphFindings = validateCandidateGraph(request, existingFiles);
+  const changeSet = Object.freeze({
+    baseSnapshotDigest: state.baseSnapshotDigest,
+    changes: candidateGraphChanges(state, request, existingFiles, {
+      includeChangelog: false,
+    }),
+    targetHead: state.targetHead,
+  });
+  const findings = Object.freeze([
+    ...graphFindings,
+    ...validateAtlasIngestChangeSetInternal(state, changeSet, {
+      requireChangelog: false,
+    }),
+    ...validateCitationCorrespondence(request, changeSet),
+  ]);
+  return Object.freeze({ changes: changeSet.changes, findings });
 }
 
 function validateResumeReceipts(
