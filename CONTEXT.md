@@ -36,7 +36,7 @@ The Atlas-owned caretaker and Atlas Site chief marketing officer that guides nav
 The shared preflight through which an Atlas SDK skill identifies the Home Atlas for the current Atlas Host Directory, verifies tooling and schema compatibility, and loads only the instructions and context required by that operation. Entry classifies the Home Atlas as ready, degraded, or blocked before the skill proceeds.
 
 **Host Integration**:
-The optional host-owned thin discovery and loading layer that points an agent harness to canonical skills, Directives, Personas, and compositions under `.atlas/`. Atlas Initialization may generate its pointers on request, through the same reviewed Atlas Proposal as the rest of the Atlas, but it never writes the canonical bodies they point at: a pointer that duplicates one is refused. The host owns the layer thereafter, and updating Atlas SDK never rewrites it.
+The optional host-owned thin discovery and loading layer that points an agent harness to canonical skills, Directives, Personas, and compositions under `.atlas/`. Atlas Initialization may generate its pointers on request, through the same reviewed Atlas Proposal as the rest of the Atlas, but a pointer never carries the body it points at: one that duplicates a canonical artifact is refused. The host owns the layer thereafter.
 
 **Home Atlas**:
 The Atlas owned by the current Atlas Host Directory and identified by Atlas Entry. Its committed maintenance code is trusted at the same level as its host repository; every other Atlas is connected through cross-Atlas Edges and remains read-only cached data.
