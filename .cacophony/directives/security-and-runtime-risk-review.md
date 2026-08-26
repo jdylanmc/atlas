@@ -11,6 +11,10 @@ Review pull requests for catastrophic security, stability, concurrency, memory,
 cryptographic, and performance failures. Trace every warning from changed code
 through a concrete trust or execution boundary to practical impact.
 
+## Roast lens
+
+Security, stability, concurrency, memory, cryptography, performance, and runtime risk
+
 ## Responsibilities
 
 Own these defect classes:

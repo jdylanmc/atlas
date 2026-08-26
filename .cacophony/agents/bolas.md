@@ -58,6 +58,10 @@ Review pull requests through Domain-Driven Design, SOLID principles, structural
 decoupling, and Clean Architecture. Identify concrete architecture defects while
 keeping every conclusion evidence-bound and actionable.
 
+## Roast lens
+
+Domain-Driven Design, SOLID, structural decoupling, and Clean Architecture boundaries
+
 ## Responsibilities
 
 Own these defect classes:

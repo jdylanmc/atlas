@@ -52,8 +52,13 @@ repository roasters:
 node scripts/cacophony_agents.ts sync
 ```
 
-Do not edit generated prompts or roaster files directly. The reusable review worker invokes the
-validator from the trusted base revision, proves that the base prompt is the
+Do not edit generated prompts or roaster files directly. Repository roaster
+agent files and their sibling roaster directories under `agents/` and
+`.github/agents/` are generator-owned in this repository. Hand-authored
+repository roasters are not supported because they would create ungoverned
+reviewers outside `.cacophony`'s source of truth; `cacophony:validate` fails
+closed when one is present. The reusable review worker invokes the validator
+from the trusted base revision, proves that the base prompt is the
 exact deterministic composition of its base Persona and Directives, and then
 stages those verified base bytes over the relative workspace prompt before
 passing that path to Cacophony. The pinned action independently reads the path

@@ -22,6 +22,8 @@ export const COMPOSITION_SCHEMA = "atlas.agent-compositions/v1";
 export const COMPOSITION_MAP_PATH = ".cacophony/compositions.json";
 export const MAX_COMPONENT_BYTES = 128 * 1024;
 export const ROASTER_OUTPUT_DIRECTORY = "agents";
+export const ROASTER_DISCOVERY_ROOTS = ["agents", ".github/agents"] as const;
+export const ROASTER_LENS_SECTION = "Roast lens";
 export const ROASTER_TOOL_SET = ["read", "search"] as const;
 export const ROASTER_MODEL = "gpt-5.6-sol";
 export const ROASTER_FALLBACK_MODELS = [
@@ -221,9 +223,6 @@ export class RoasterContract {
   readonly instructionsPath: string;
   readonly personaPath: string;
   readonly directivePath: string;
-  readonly description: string;
-  readonly purpose: string;
-  readonly roastLens: string;
   readonly agentFile: string;
   readonly instructionsFile: string;
   readonly personaFile: string;
@@ -237,9 +236,6 @@ export class RoasterContract {
     instructionsPath: string;
     personaPath: string;
     directivePath: string;
-    description: string;
-    purpose: string;
-    roastLens: string;
     agentFile: string;
     instructionsFile: string;
     personaFile: string;
@@ -252,9 +248,6 @@ export class RoasterContract {
     this.instructionsPath = options.instructionsPath;
     this.personaPath = options.personaPath;
     this.directivePath = options.directivePath;
-    this.description = options.description;
-    this.purpose = options.purpose;
-    this.roastLens = options.roastLens;
     this.agentFile = options.agentFile;
     this.instructionsFile = options.instructionsFile;
     this.personaFile = options.personaFile;
@@ -716,7 +709,7 @@ export function validateDirective(
       }
     }
   }
-  const sections = splitSections(component, DIRECTIVE_SECTIONS);
+  const sections = directiveSections(component);
   for (const [section, content] of sections) {
     if (!content.some((line) => line.trim().length > 0)) {
       throw new ContractError(
@@ -834,32 +827,46 @@ function frontmatterArray(values: readonly string[]): string {
   return `[${values.map((value) => yamlString(value)).join(", ")}]`;
 }
 
-function extractSection(component: Component, sectionName: string): string {
-  const sections = splitSections(component, DIRECTIVE_SECTIONS);
-  const lines = sections.get(sectionName);
+function directiveSections(
+  component: Component,
+): ReadonlyMap<string, readonly string[]> {
+  try {
+    return splitSections(component, [
+      DIRECTIVE_SECTIONS[0],
+      ROASTER_LENS_SECTION,
+      ...DIRECTIVE_SECTIONS.slice(1),
+    ]);
+  } catch (error: unknown) {
+    if (!(error instanceof ContractError)) {
+      throw error;
+    }
+    return splitSections(component, DIRECTIVE_SECTIONS);
+  }
+}
+
+function extractRoastLens(component: Component): string {
+  const lines = directiveSections(component).get(ROASTER_LENS_SECTION);
   if (lines === undefined) {
-    throw new ContractError(`${component.path} is missing ${sectionName}`);
+    throw new ContractError(
+      `${component.path} must declare ## ${ROASTER_LENS_SECTION} for repository roaster generation`,
+    );
   }
-  return lines.join("\n").trim();
-}
-
-function firstSentence(text: string): string {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  const match = /^(.+?\.)($|\s)/.exec(normalized);
-  return (match?.[1] ?? normalized).trim();
-}
-
-function lensFromObjective(objective: string): string {
-  const sentence = firstSentence(objective);
-  const prefix = "Review pull requests through ";
-  if (sentence.startsWith(prefix)) {
-    return sentence.slice(prefix.length).replace(/\.$/, "");
+  const content = lines.filter((line) => line.trim().length > 0);
+  if (content.length !== 1) {
+    throw new ContractError(
+      `${component.path} ## ${ROASTER_LENS_SECTION} must contain exactly one non-empty line`,
+    );
   }
-  const riskPrefix = "Review pull requests for ";
-  if (sentence.startsWith(riskPrefix)) {
-    return sentence.slice(riskPrefix.length).replace(/\.$/, "");
+  const lens = content[0]?.trim();
+  if (
+    lens === undefined ||
+    lens.length === 0 ||
+    lens.startsWith("-") ||
+    lens.includes("\n")
+  ) {
+    throw new ContractError(`${component.path} ## ${ROASTER_LENS_SECTION} is invalid`);
   }
-  return sentence.replace(/\.$/, "");
+  return lens;
 }
 
 export function assertRoasterName(name: string): void {
@@ -974,15 +981,11 @@ export function composeRoaster(contract: AgentContract): RoasterContract {
   }
   const name = `${contract.compatibilityAgent}-roaster`;
   const paths = roasterPaths(name);
-  const objective = extractSection(contract.directive, "Objective");
-  const purpose = firstSentence(objective);
-  const roastLens = lensFromObjective(objective);
+  const roastLens = extractRoastLens(contract.directive);
   const description = `Reviews ${roastLens} in Atlas SDK changes.`;
+  const purpose = description;
   return new RoasterContract({
     compatibilityAgent: contract.compatibilityAgent,
-    description,
-    purpose,
-    roastLens,
     ...paths,
     name,
     agentFile: roasterAgentFile({ description, name, roastLens }),
@@ -1005,9 +1008,6 @@ export function buildRoasterContracts(
       continue;
     }
     const roaster = composeRoaster(contract);
-    if (roasters[roaster.name] !== undefined) {
-      throw new ContractError(`duplicate roaster name ${JSON.stringify(roaster.name)}`);
-    }
     roasters[agent] = roaster;
   }
   return roasters;
@@ -1026,10 +1026,56 @@ function expectedRoasterFiles(
   );
 }
 
-function roasterAgentPaths(source: Source): string[] {
-  return source
-    .listFiles(ROASTER_OUTPUT_DIRECTORY)
-    .filter((path) => /(^|\/)agents\/[^/]*roaster[^/]*\.agent\.md$/i.test(path));
+function basename(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
+}
+
+function isRoasterAgentPath(path: string): boolean {
+  const name = basename(path).toLowerCase();
+  return name.includes("roaster") && name.endsWith(".agent.md");
+}
+
+function roasterDirectoryPrefixes(path: string): string[] {
+  const prefixes: string[] = [];
+  for (const root of ROASTER_DISCOVERY_ROOTS) {
+    const prefix = `${root}/`;
+    if (!path.startsWith(prefix)) {
+      continue;
+    }
+    const parts = path.slice(prefix.length).split("/");
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      const part = parts[index];
+      if (part !== undefined && part.toLowerCase().includes("roaster")) {
+        prefixes.push(`${prefix}${parts.slice(0, index + 1).join("/")}`);
+      }
+    }
+  }
+  return prefixes;
+}
+
+function discoveredRoasterPaths(source: Source): string[] {
+  const paths = new Set<string>();
+  for (const root of ROASTER_DISCOVERY_ROOTS) {
+    for (const path of source.listFiles(root)) {
+      if (isRoasterAgentPath(path)) {
+        paths.add(path);
+      }
+      for (const directory of roasterDirectoryPrefixes(path)) {
+        paths.add(path);
+        paths.add(directory);
+      }
+    }
+  }
+  return [...paths].sort();
+}
+
+function knownRoasterOutputPaths(): string[] {
+  return Object.keys(COMPATIBILITY_DIRECTIVE_SETS)
+    .flatMap((agent) => {
+      const paths = roasterPaths(`${agent}-roaster`);
+      return [paths.agentPath, paths.directory];
+    })
+    .sort();
 }
 
 export function validateRoasterContracts(
@@ -1037,13 +1083,20 @@ export function validateRoasterContracts(
   roasters: Readonly<Record<string, RoasterContract>>,
 ): void {
   const expected = expectedRoasterFiles(roasters);
-  const expectedAgentPaths = new Set(
-    Object.values(roasters).map((roaster) => roaster.agentPath),
-  );
-  const actualAgentPaths = new Set(roasterAgentPaths(source));
-  if (!setsEqual(actualAgentPaths, expectedAgentPaths)) {
+  const expectedPaths = new Set([
+    ...Object.keys(expected),
+    ...Object.values(roasters).map((roaster) => roaster.directory),
+  ]);
+  const actualPaths = new Set(discoveredRoasterPaths(source));
+  if (!setsEqual(actualPaths, expectedPaths)) {
+    const unexpected = sortedSet(
+      new Set([...actualPaths].filter((path) => !expectedPaths.has(path))),
+    );
+    const missing = sortedSet(
+      new Set([...expectedPaths].filter((path) => !actualPaths.has(path))),
+    );
     throw new ContractError(
-      `generated roaster agent files must match eligible compositions: expected=${JSON.stringify(sortedSet(expectedAgentPaths))}, actual=${JSON.stringify(sortedSet(actualAgentPaths))}`,
+      `repository roasters are generator-owned; expected=${JSON.stringify(sortedSet(expectedPaths))}, unexpected=${JSON.stringify(unexpected)}, missing=${JSON.stringify(missing)}`,
     );
   }
   for (const [path, content] of Object.entries(expected)) {
@@ -1055,21 +1108,62 @@ export function validateRoasterContracts(
   }
 }
 
-function removeGeneratedRoasterOutputs(
-  root: string,
+function assertNoUnexpectedRoasterOutputs(
+  source: Source,
   roasters: Readonly<Record<string, RoasterContract>>,
+  allowedDeletionPaths: ReadonlySet<string>,
 ): void {
-  const source = new LocalSource(root);
-  const expectedAgentPaths = new Set(
-    Object.values(roasters).map((roaster) => roaster.agentPath),
+  const expectedPaths = new Set([
+    ...Object.keys(expectedRoasterFiles(roasters)),
+    ...Object.values(roasters).map((roaster) => roaster.directory),
+    ...allowedDeletionPaths,
+  ]);
+  const unexpected = discoveredRoasterPaths(source).filter(
+    (path) =>
+      !expectedPaths.has(path) &&
+      ![...allowedDeletionPaths].some((allowed) => path.startsWith(`${allowed}/`)),
   );
-  for (const path of roasterAgentPaths(source)) {
-    if (!expectedAgentPaths.has(path)) {
-      rmSync(repositoryPath(root, path), { force: true });
-    }
+  if (unexpected.length > 0) {
+    throw new ContractError(
+      `repository roasters are generator-owned; remove hand-authored roaster files before syncing: ${JSON.stringify(unexpected)}`,
+    );
   }
-  for (const roaster of Object.values(roasters)) {
-    rmSync(repositoryPath(root, roaster.directory), { force: true, recursive: true });
+}
+
+function pathExists(root: string, path: string): boolean {
+  try {
+    lstatSync(repositoryPath(root, path));
+    return true;
+  } catch (error: unknown) {
+    if (errorCode(error) === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+}
+
+function removeKnownRoasterOutputs(root: string): void {
+  const source = new LocalSource(root);
+  for (const path of knownRoasterOutputPaths()) {
+    if (!pathExists(root, path)) {
+      continue;
+    }
+    const resolvedPath = repositoryPath(root, path);
+    const stat = lstatSync(resolvedPath);
+    if (stat.isSymbolicLink()) {
+      throw new ContractError(`${path} must not be a symlink`);
+    }
+    if (stat.isDirectory()) {
+      source.listFiles(path);
+      rmSync(resolvedPath, { force: true, recursive: true });
+      console.log(`deleted ${path}`);
+      continue;
+    }
+    if (!stat.isFile()) {
+      throw new ContractError(`${path} must be a regular file or directory`);
+    }
+    rmSync(resolvedPath, { force: true });
+    console.log(`deleted ${path}`);
   }
 }
 
@@ -1458,7 +1552,9 @@ export function commandSync(root: string): void {
   if (roasterRootStat.isSymbolicLink() || !roasterRootStat.isDirectory()) {
     throw new ContractError(`${ROASTER_OUTPUT_DIRECTORY} must be a regular directory`);
   }
-  removeGeneratedRoasterOutputs(resolvedRoot, roasters);
+  const allowedDeletionPaths = new Set(knownRoasterOutputPaths());
+  assertNoUnexpectedRoasterOutputs(source, roasters, allowedDeletionPaths);
+  removeKnownRoasterOutputs(resolvedRoot);
   for (const roaster of Object.values(roasters)) {
     mkdirSync(repositoryPath(resolvedRoot, roaster.directory), { recursive: true });
     for (const [path, content] of Object.entries(

@@ -25,6 +25,37 @@
       "kind": "tools",
       "tools": ["read", "search", "bash"],
       "messageIncludes": "read and search"
+    },
+    {
+      "name": "reject-nested-discovered-roaster",
+      "gate": "cacophony-roasters",
+      "expectation": "reject",
+      "kind": "unexpected-path",
+      "path": "agents/panel/rogue-roaster.agent.md",
+      "messageIncludes": "rogue-roaster.agent.md"
+    },
+    {
+      "name": "reject-github-agents-discovered-roaster",
+      "gate": "cacophony-roasters",
+      "expectation": "reject",
+      "kind": "unexpected-path",
+      "path": ".github/agents/panel/rogue-roaster.agent.md",
+      "messageIncludes": ".github/agents/panel/rogue-roaster.agent.md"
+    },
+    {
+      "name": "accept-retired-known-roaster-cleanup",
+      "gate": "cacophony-roasters",
+      "expectation": "accept",
+      "kind": "known-cleanup",
+      "agent": "fletcher"
+    },
+    {
+      "name": "reject-missing-explicit-roast-lens",
+      "gate": "cacophony-roasters",
+      "expectation": "reject",
+      "kind": "missing-lens",
+      "agent": "bolas",
+      "messageIncludes": "must declare ## Roast lens"
     }
   ]
 }

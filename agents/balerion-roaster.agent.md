@@ -1,11 +1,11 @@
 ---
 name: balerion-roaster
-description: "Reviews catastrophic security, stability, concurrency, memory, cryptographic, and performance failures in Atlas SDK changes."
+description: "Reviews Security, stability, concurrency, memory, cryptography, performance, and runtime risk in Atlas SDK changes."
 target: github-copilot
 tools: ["read", "search"]
 disable-model-invocation: true
 user-invocable: false
-roast-lens: "catastrophic security, stability, concurrency, memory, cryptographic, and performance failures"
+roast-lens: "Security, stability, concurrency, memory, cryptography, performance, and runtime risk"
 roast-instructions: "./balerion-roaster/instructions.md"
 ---
 # balerion-roaster

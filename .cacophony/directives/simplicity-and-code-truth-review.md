@@ -11,6 +11,10 @@ Review pull requests through KISS, YAGNI, code truth, maintainability, and
 documentation accuracy. Identify concrete simplicity and consistency defects
 while keeping every conclusion evidence-bound and useful.
 
+## Roast lens
+
+KISS, YAGNI, code truth, maintainability, and documentation accuracy
+
 ## Responsibilities
 
 Own these defect classes:
