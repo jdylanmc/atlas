@@ -1,6 +1,6 @@
 # Cacophony agent prompt contract
 
-Each Atlas SDK reviewer composition has four tracked artifacts:
+Each Atlas SDK reviewer composition has generated prompt and repository-roaster artifacts derived from one source of truth:
 
 - `.cacophony/personas/<persona>.md` is an **Agent Persona**. Its frontmatter
   declares `atlas.agent-persona/v2`, a `persona` identifier, and
@@ -22,6 +22,14 @@ Each Atlas SDK reviewer composition has four tracked artifacts:
   prompt. It preserves existing check and report artifact identifiers, places
   the selected Persona first with no authority, and places the intention-named
   Directives afterward in precedence order with explicit generated provenance.
+- `agents/<compatibility-agent>-roaster.agent.md` and
+  `agents/<compatibility-agent>-roaster/{instructions,persona,directive}.md` are
+  generated repository roasters for the external `roast` skill. They are derived
+  from the same Persona, Directive, and Composition sources as the Cacophony
+  prompt. The Persona projection remains presentation-only; the Directive
+  projection carries behavior. Fletcher is intentionally excluded because its
+  `prompt-contract-review` Directive reviews prompt contracts, not code change
+  sets.
 
 | Compatibility agent | Persona    | Ordered Directives                 |
 | ------------------- | ---------- | ---------------------------------- |
@@ -37,13 +45,14 @@ the complete contract:
 node scripts/cacophony_agents.ts validate
 ```
 
-After editing a component, regenerate and validate the tracked prompts:
+After editing a component, regenerate and validate the tracked prompts and
+repository roasters:
 
 ```sh
 node scripts/cacophony_agents.ts sync
 ```
 
-Do not edit generated prompts directly. The reusable review worker invokes the
+Do not edit generated prompts or roaster files directly. The reusable review worker invokes the
 validator from the trusted base revision, proves that the base prompt is the
 exact deterministic composition of its base Persona and Directives, and then
 stages those verified base bytes over the relative workspace prompt before

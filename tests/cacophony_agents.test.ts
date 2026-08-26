@@ -24,12 +24,16 @@ import {
   MAX_COMPONENT_BYTES,
   PERSONA_CATALOG,
   PERSONA_SCHEMA,
+  assertRoasterName,
   buildContracts,
+  buildRoasterContracts,
   commandSync,
   composeAgent,
+  composeRoaster,
   loadCompositions,
   parseComponent,
   validateDirective,
+  validateRoasterContracts,
   type Component,
   type Source,
 } from "../scripts/cacophony_agents.ts";
@@ -38,6 +42,7 @@ const ROOT = resolve(import.meta.dirname, "..");
 const SCRIPT = join(ROOT, "scripts", "cacophony_agents.ts");
 const SOURCE = new LocalSource(ROOT);
 const CONTRACTS = buildContracts(SOURCE, { verifyGenerated: true });
+const ROASTERS = buildRoasterContracts(CONTRACTS);
 const EXPECTED_DIRECTIVE_SETS = {
   balerion: ["security-and-runtime-risk-review"],
   bolas: ["domain-architecture-review"],
@@ -61,7 +66,15 @@ class OverlaySource implements Source {
   }
 
   listFiles(prefix: string): string[] {
-    return this.source.listFiles(prefix);
+    const pathPrefix = `${prefix}/`;
+    return [
+      ...new Set([
+        ...this.source.listFiles(prefix),
+        ...Object.keys(this.overrides).filter(
+          (path) => path === prefix || path.startsWith(pathPrefix),
+        ),
+      ]),
+    ].sort();
   }
 
   readText(path: string): string {
@@ -436,6 +449,124 @@ test("generated prompts retain byte-level compatibility", () => {
   }
 });
 
+test("repository roasters are generated from eligible compositions", () => {
+  assert.deepEqual(Object.keys(ROASTERS).sort(), ["balerion", "bolas", "smaug"]);
+  assert.equal(ROASTERS["fletcher"], undefined);
+
+  const bolas = ROASTERS["bolas"];
+  assert.ok(bolas);
+  assert.equal(bolas.name, "bolas-roaster");
+  assert.equal(bolas.agentPath, "agents/bolas-roaster.agent.md");
+  assert.match(bolas.agentFile, /^name: bolas-roaster$/m);
+  assert.match(bolas.agentFile, /^tools: \["read", "search"\]$/m);
+  assert.match(
+    bolas.agentFile,
+    /^roast-instructions: "\.\/bolas-roaster\/instructions\.md"$/m,
+  );
+  assert.match(bolas.instructionsFile, /^tools: \["read", "search"\]$/m);
+  assert.doesNotMatch(bolas.instructionsFile, /doctrine-manifest|^doctrine:/m);
+  assert.match(bolas.instructionsFile, /^persona: \.\/persona\.md$/m);
+  assert.match(bolas.instructionsFile, /^directive: \.\/directive\.md$/m);
+  assert.match(bolas.personaFile, /authority: none/);
+  assert.match(bolas.personaFile, /presentation-only/);
+  assert.match(bolas.directiveFile, /# Agent Directive/);
+  assert.match(
+    bolas.directiveFile,
+    /Review pull requests through Domain-Driven Design/,
+  );
+
+  for (const roaster of Object.values(ROASTERS)) {
+    assert.deepEqual(
+      [
+        roaster.agentPath,
+        roaster.instructionsPath,
+        roaster.personaPath,
+        roaster.directivePath,
+      ].map(
+        (path) =>
+          path.startsWith("agents/") && !path.includes("..") && !path.startsWith("/"),
+      ),
+      [true, true, true, true],
+    );
+  }
+});
+
+test("repository roaster validation rejects drift and missing files", () => {
+  const stalePath = "agents/bolas-roaster/directive.md";
+  assert.throws(
+    () =>
+      validateRoasterContracts(
+        new OverlaySource(SOURCE, {
+          [stalePath]: `${ROASTERS["bolas"]?.directiveFile ?? ""}stale\n`,
+        }),
+        ROASTERS,
+      ),
+    /agents\/bolas-roaster\/directive\.md is stale/,
+  );
+
+  assert.throws(
+    () =>
+      validateRoasterContracts(
+        new OverlaySource(SOURCE, {
+          "agents/fletcher-roaster.agent.md": "---\nname: fletcher-roaster\n---\n",
+        }),
+        ROASTERS,
+      ),
+    /generated roaster agent files must match eligible compositions/,
+  );
+});
+
+test("repository roaster names reject bundled roast identities", () => {
+  assert.throws(
+    () => assertRoasterName("security-roaster"),
+    /reserved by the bundled roast skill/,
+  );
+  assert.throws(() => assertRoasterName("bolas"), /ending in -roaster/);
+});
+
+test("repository roaster tools remain read and search only", () => {
+  for (const roaster of Object.values(ROASTERS)) {
+    assert.match(roaster.agentFile, /^tools: \["read", "search"\]$/m);
+    assert.doesNotMatch(roaster.agentFile, /^tools: .*\b(write|edit|bash|shell)\b/m);
+    assert.match(roaster.instructionsFile, /^tools: \["read", "search"\]$/m);
+    assert.doesNotMatch(
+      roaster.instructionsFile,
+      /^tools: .*\b(write|edit|bash|shell)\b/m,
+    );
+  }
+});
+
+test("repository roaster output paths reject symlink and escape attempts", () => {
+  const workspace = scratchDirectory("roaster-paths");
+  try {
+    cpSync(join(ROOT, ".cacophony"), join(workspace, ".cacophony"), {
+      recursive: true,
+    });
+    commandSync(workspace);
+    const source = new LocalSource(workspace);
+    const roasters = buildRoasterContracts(
+      buildContracts(source, { verifyGenerated: true }),
+    );
+    validateRoasterContracts(source, roasters);
+    assert.throws(
+      () => source.readText("agents/bolas-roaster/../directive.md"),
+      /repository-relative/,
+    );
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("Fletcher exclusion is explicit because it reviews prompt contracts", () => {
+  const fletcher = contract("fletcher");
+  assert.equal(fletcher.directiveId, "prompt-contract-review");
+  assert.equal(ROASTERS["fletcher"], undefined);
+  assert.throws(
+    () => composeRoaster(fletcher),
+    /external roast skill consumes code change set reviewers/,
+  );
+});
+
 test("stale generation is rejected and sync is idempotent", () => {
   const generatedPath = ".cacophony/agents/bolas.md";
   assert.throws(
@@ -576,7 +707,10 @@ test("validator is directly executable and preserves command interfaces", () => 
   const validation = execFileSync(SCRIPT, ["validate", "--root", ROOT], {
     encoding: "utf8",
   });
-  assert.equal(validation, "validated 4 Cacophony agent compositions\n");
+  assert.equal(
+    validation,
+    "validated 4 Cacophony agent compositions and 3 repository roasters\n",
+  );
   const rendered = execFileSync(
     "node",
     [SCRIPT, "render", "--root", ROOT, "--agent", "fletcher"],

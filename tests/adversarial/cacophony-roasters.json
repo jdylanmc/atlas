@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "reviewResolutionRule": "A review finding is resolved only after tests/adversarial has a case exercising the Cacophony roaster generation gate.",
+  "cases": [
+    {
+      "name": "accept-dragon-council-code-reviewer-roasters",
+      "gate": "cacophony-roasters",
+      "expectation": "accept",
+      "kind": "eligible-roster",
+      "expectedRoasters": ["balerion-roaster", "bolas-roaster", "smaug-roaster"],
+      "excludedRoasters": ["fletcher-roaster"]
+    },
+    {
+      "name": "reject-bundled-roast-reserved-name",
+      "gate": "cacophony-roasters",
+      "expectation": "reject",
+      "kind": "reserved-name",
+      "nameUnderTest": "security-roaster",
+      "messageIncludes": "reserved"
+    },
+    {
+      "name": "reject-tool-escalation",
+      "gate": "cacophony-roasters",
+      "expectation": "reject",
+      "kind": "tools",
+      "tools": ["read", "search", "bash"],
+      "messageIncludes": "read and search"
+    }
+  ]
+}

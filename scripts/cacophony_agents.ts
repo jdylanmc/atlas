@@ -7,6 +7,7 @@ import {
   lstatSync,
   mkdirSync,
   readdirSync,
+  rmSync,
   readFileSync,
   writeFileSync,
 } from "node:fs";
@@ -20,6 +21,25 @@ export const LEGACY_DIRECTIVE_SCHEMA = "atlas.agent-directive/v1";
 export const COMPOSITION_SCHEMA = "atlas.agent-compositions/v1";
 export const COMPOSITION_MAP_PATH = ".cacophony/compositions.json";
 export const MAX_COMPONENT_BYTES = 128 * 1024;
+export const ROASTER_OUTPUT_DIRECTORY = "agents";
+export const ROASTER_TOOL_SET = ["read", "search"] as const;
+export const ROASTER_MODEL = "gpt-5.6-sol";
+export const ROASTER_FALLBACK_MODELS = [
+  "claude-opus-5",
+  "claude-sonnet-5",
+  "gpt-5.5",
+] as const;
+export const RESERVED_ROASTER_NAMES = new Set([
+  "solid-yagni-kiss-roaster",
+  "security-roaster",
+  "testing-roaster",
+  "the-roastmaster",
+  "code-roaster-reviewer",
+]);
+export const ROASTER_EXCLUDED_DIRECTIVES: Readonly<Record<string, string>> = {
+  "prompt-contract-review":
+    "Fletcher reviews prompt contracts, while the external roast skill consumes code change set reviewers.",
+};
 
 export const COMPATIBILITY_DIRECTIVE_SETS = {
   balerion: ["security-and-runtime-risk-review"],
@@ -191,6 +211,55 @@ export interface Component {
   readonly path: string;
   readonly metadata: Readonly<Record<string, string>>;
   readonly body: string;
+}
+
+export class RoasterContract {
+  readonly compatibilityAgent: string;
+  readonly name: string;
+  readonly directory: string;
+  readonly agentPath: string;
+  readonly instructionsPath: string;
+  readonly personaPath: string;
+  readonly directivePath: string;
+  readonly description: string;
+  readonly purpose: string;
+  readonly roastLens: string;
+  readonly agentFile: string;
+  readonly instructionsFile: string;
+  readonly personaFile: string;
+  readonly directiveFile: string;
+
+  constructor(options: {
+    compatibilityAgent: string;
+    name: string;
+    directory: string;
+    agentPath: string;
+    instructionsPath: string;
+    personaPath: string;
+    directivePath: string;
+    description: string;
+    purpose: string;
+    roastLens: string;
+    agentFile: string;
+    instructionsFile: string;
+    personaFile: string;
+    directiveFile: string;
+  }) {
+    this.compatibilityAgent = options.compatibilityAgent;
+    this.name = options.name;
+    this.directory = options.directory;
+    this.agentPath = options.agentPath;
+    this.instructionsPath = options.instructionsPath;
+    this.personaPath = options.personaPath;
+    this.directivePath = options.directivePath;
+    this.description = options.description;
+    this.purpose = options.purpose;
+    this.roastLens = options.roastLens;
+    this.agentFile = options.agentFile;
+    this.instructionsFile = options.instructionsFile;
+    this.personaFile = options.personaFile;
+    this.directiveFile = options.directiveFile;
+  }
 }
 
 export class AgentContract {
@@ -757,6 +826,253 @@ ${directive.body.trimEnd()}
 `;
 }
 
+function yamlString(value: string): string {
+  return JSON.stringify(value);
+}
+
+function frontmatterArray(values: readonly string[]): string {
+  return `[${values.map((value) => yamlString(value)).join(", ")}]`;
+}
+
+function extractSection(component: Component, sectionName: string): string {
+  const sections = splitSections(component, DIRECTIVE_SECTIONS);
+  const lines = sections.get(sectionName);
+  if (lines === undefined) {
+    throw new ContractError(`${component.path} is missing ${sectionName}`);
+  }
+  return lines.join("\n").trim();
+}
+
+function firstSentence(text: string): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const match = /^(.+?\.)($|\s)/.exec(normalized);
+  return (match?.[1] ?? normalized).trim();
+}
+
+function lensFromObjective(objective: string): string {
+  const sentence = firstSentence(objective);
+  const prefix = "Review pull requests through ";
+  if (sentence.startsWith(prefix)) {
+    return sentence.slice(prefix.length).replace(/\.$/, "");
+  }
+  const riskPrefix = "Review pull requests for ";
+  if (sentence.startsWith(riskPrefix)) {
+    return sentence.slice(riskPrefix.length).replace(/\.$/, "");
+  }
+  return sentence.replace(/\.$/, "");
+}
+
+export function assertRoasterName(name: string): void {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*-roaster$/.test(name)) {
+    throw new ContractError(
+      `roaster name ${JSON.stringify(name)} must be a slug ending in -roaster`,
+    );
+  }
+  if (RESERVED_ROASTER_NAMES.has(name)) {
+    throw new ContractError(
+      `roaster name ${JSON.stringify(name)} is reserved by the bundled roast skill`,
+    );
+  }
+}
+
+function roasterPaths(name: string): {
+  readonly agentPath: string;
+  readonly directivePath: string;
+  readonly directory: string;
+  readonly instructionsPath: string;
+  readonly personaPath: string;
+} {
+  assertRoasterName(name);
+  const directory = `${ROASTER_OUTPUT_DIRECTORY}/${name}`;
+  return {
+    agentPath: `${ROASTER_OUTPUT_DIRECTORY}/${name}.agent.md`,
+    directivePath: `${directory}/directive.md`,
+    directory,
+    instructionsPath: `${directory}/instructions.md`,
+    personaPath: `${directory}/persona.md`,
+  };
+}
+
+function roasterAgentFile(options: {
+  readonly description: string;
+  readonly name: string;
+  readonly roastLens: string;
+}): string {
+  return `---
+name: ${options.name}
+description: ${yamlString(options.description)}
+target: github-copilot
+tools: ${frontmatterArray(ROASTER_TOOL_SET)}
+disable-model-invocation: true
+user-invocable: false
+roast-lens: ${yamlString(options.roastLens)}
+roast-instructions: "./${options.name}/instructions.md"
+---
+# ${options.name}
+
+Generated repository roaster for the external roast skill. Do not edit this file directly; run \`node scripts/cacophony_agents.ts sync\`.
+`;
+}
+
+function roasterInstructionsFile(options: {
+  readonly description: string;
+  readonly name: string;
+  readonly purpose: string;
+}): string {
+  return `---
+name: ${options.name}
+description: ${yamlString(options.description)}
+purpose: ${yamlString(options.purpose)}
+agent-type: general-purpose
+model: ${ROASTER_MODEL}
+fallback-capability: high-capability
+fallback-models: ${frontmatterArray(ROASTER_FALLBACK_MODELS)}
+reasoning-effort: max
+context-tier: long_context
+tools: ${frontmatterArray(ROASTER_TOOL_SET)}
+persona: ./persona.md
+directive: ./directive.md
+---
+# ${options.name} instructions
+
+This generated file bridges Atlas SDK's Cacophony composition source of truth into the repository roaster format consumed by the external roast skill.
+
+- Use \`persona.md\` only for the Roast line / presentation flavor.
+- Use \`directive.md\` for behavioral review authority.
+- Do not edit generated roaster files directly; run \`node scripts/cacophony_agents.ts sync\` after changing \`.cacophony\` sources.
+`;
+}
+
+function roasterPersonaFile(contract: AgentContract): string {
+  return `<!--
+Generated from .cacophony/personas/${contract.personaId}.md by scripts/cacophony_agents.ts. Do not edit directly.
+The source Persona has authority: none; this file is presentation-only and confers no behavioral, review, security, severity, evidence, or governance authority.
+-->
+${contract.persona.body}`;
+}
+
+function roasterDirectiveFile(contract: AgentContract): string {
+  return `<!--
+Generated from ${contract.directive.path} by scripts/cacophony_agents.ts. Do not edit directly.
+This Directive retains behavioral authority for the roaster.
+-->
+${contract.directive.body}`;
+}
+
+export function composeRoaster(contract: AgentContract): RoasterContract {
+  if (contract.directiveIds.length !== 1) {
+    throw new ContractError(
+      `${contract.compatibilityAgent} roaster requires exactly one Directive`,
+    );
+  }
+  const directiveId = contract.directiveId;
+  const excludedReason = ROASTER_EXCLUDED_DIRECTIVES[directiveId];
+  if (excludedReason !== undefined) {
+    throw new ContractError(
+      `${contract.compatibilityAgent} is excluded from roaster generation: ${excludedReason}`,
+    );
+  }
+  const name = `${contract.compatibilityAgent}-roaster`;
+  const paths = roasterPaths(name);
+  const objective = extractSection(contract.directive, "Objective");
+  const purpose = firstSentence(objective);
+  const roastLens = lensFromObjective(objective);
+  const description = `Reviews ${roastLens} in Atlas SDK changes.`;
+  return new RoasterContract({
+    compatibilityAgent: contract.compatibilityAgent,
+    description,
+    purpose,
+    roastLens,
+    ...paths,
+    name,
+    agentFile: roasterAgentFile({ description, name, roastLens }),
+    instructionsFile: roasterInstructionsFile({ description, name, purpose }),
+    personaFile: roasterPersonaFile(contract),
+    directiveFile: roasterDirectiveFile(contract),
+  });
+}
+
+export function buildRoasterContracts(
+  contracts: Readonly<Record<string, AgentContract>>,
+): Readonly<Record<string, RoasterContract>> {
+  const roasters: Record<string, RoasterContract> = {};
+  for (const [agent, contract] of Object.entries(contracts)) {
+    if (
+      contract.directiveIds.some(
+        (directiveId) => directiveId in ROASTER_EXCLUDED_DIRECTIVES,
+      )
+    ) {
+      continue;
+    }
+    const roaster = composeRoaster(contract);
+    if (roasters[roaster.name] !== undefined) {
+      throw new ContractError(`duplicate roaster name ${JSON.stringify(roaster.name)}`);
+    }
+    roasters[agent] = roaster;
+  }
+  return roasters;
+}
+
+function expectedRoasterFiles(
+  roasters: Readonly<Record<string, RoasterContract>>,
+): Readonly<Record<string, string>> {
+  return Object.fromEntries(
+    Object.values(roasters).flatMap((roaster) => [
+      [roaster.agentPath, roaster.agentFile],
+      [roaster.instructionsPath, roaster.instructionsFile],
+      [roaster.personaPath, roaster.personaFile],
+      [roaster.directivePath, roaster.directiveFile],
+    ]),
+  );
+}
+
+function roasterAgentPaths(source: Source): string[] {
+  return source
+    .listFiles(ROASTER_OUTPUT_DIRECTORY)
+    .filter((path) => /(^|\/)agents\/[^/]*roaster[^/]*\.agent\.md$/i.test(path));
+}
+
+export function validateRoasterContracts(
+  source: Source,
+  roasters: Readonly<Record<string, RoasterContract>>,
+): void {
+  const expected = expectedRoasterFiles(roasters);
+  const expectedAgentPaths = new Set(
+    Object.values(roasters).map((roaster) => roaster.agentPath),
+  );
+  const actualAgentPaths = new Set(roasterAgentPaths(source));
+  if (!setsEqual(actualAgentPaths, expectedAgentPaths)) {
+    throw new ContractError(
+      `generated roaster agent files must match eligible compositions: expected=${JSON.stringify(sortedSet(expectedAgentPaths))}, actual=${JSON.stringify(sortedSet(actualAgentPaths))}`,
+    );
+  }
+  for (const [path, content] of Object.entries(expected)) {
+    if (source.readText(path) !== content) {
+      throw new ContractError(
+        `${path} is stale; run 'node scripts/cacophony_agents.ts sync'`,
+      );
+    }
+  }
+}
+
+function removeGeneratedRoasterOutputs(
+  root: string,
+  roasters: Readonly<Record<string, RoasterContract>>,
+): void {
+  const source = new LocalSource(root);
+  const expectedAgentPaths = new Set(
+    Object.values(roasters).map((roaster) => roaster.agentPath),
+  );
+  for (const path of roasterAgentPaths(source)) {
+    if (!expectedAgentPaths.has(path)) {
+      rmSync(repositoryPath(root, path), { force: true });
+    }
+  }
+  for (const roaster of Object.values(roasters)) {
+    rmSync(repositoryPath(root, roaster.directory), { force: true, recursive: true });
+  }
+}
+
 function componentIds(source: Source, directory: string): Set<string> {
   const prefix = `.cacophony/${directory}`;
   const identifiers = new Set<string>();
@@ -1108,11 +1424,14 @@ export function buildContracts(
 }
 
 export function commandValidate(root: string): void {
-  const contracts = buildContracts(new LocalSource(root), {
+  const source = new LocalSource(root);
+  const contracts = buildContracts(source, {
     verifyGenerated: true,
   });
+  const roasters = buildRoasterContracts(contracts);
+  validateRoasterContracts(source, roasters);
   console.log(
-    `validated ${String(Object.keys(contracts).length)} Cacophony agent compositions`,
+    `validated ${String(Object.keys(contracts).length)} Cacophony agent compositions and ${String(Object.keys(roasters).length)} repository roasters`,
   );
 }
 
@@ -1120,6 +1439,7 @@ export function commandSync(root: string): void {
   const resolvedRoot = resolve(root);
   const source = new LocalSource(resolvedRoot);
   const contracts = buildContracts(source, { verifyGenerated: false });
+  const roasters = buildRoasterContracts(contracts);
   const outputDirectory = repositoryPath(resolvedRoot, ".cacophony/agents");
   mkdirSync(outputDirectory, { recursive: true });
   const outputStat = lstatSync(outputDirectory);
@@ -1131,9 +1451,30 @@ export function commandSync(root: string): void {
     writeFileSync(outputPath, contract.composed, { encoding: "utf8", mode: 0o644 });
     chmodSync(outputPath, 0o644);
   }
-  buildContracts(new LocalSource(resolvedRoot), { verifyGenerated: true });
+
+  const roasterRoot = repositoryPath(resolvedRoot, ROASTER_OUTPUT_DIRECTORY);
+  mkdirSync(roasterRoot, { recursive: true });
+  const roasterRootStat = lstatSync(roasterRoot);
+  if (roasterRootStat.isSymbolicLink() || !roasterRootStat.isDirectory()) {
+    throw new ContractError(`${ROASTER_OUTPUT_DIRECTORY} must be a regular directory`);
+  }
+  removeGeneratedRoasterOutputs(resolvedRoot, roasters);
+  for (const roaster of Object.values(roasters)) {
+    mkdirSync(repositoryPath(resolvedRoot, roaster.directory), { recursive: true });
+    for (const [path, content] of Object.entries(
+      expectedRoasterFiles({ [roaster.compatibilityAgent]: roaster }),
+    )) {
+      const outputPath = repositoryPath(resolvedRoot, path);
+      writeFileSync(outputPath, content, { encoding: "utf8", mode: 0o644 });
+      chmodSync(outputPath, 0o644);
+    }
+  }
+
+  const verifiedSource = new LocalSource(resolvedRoot);
+  const verifiedContracts = buildContracts(verifiedSource, { verifyGenerated: true });
+  validateRoasterContracts(verifiedSource, buildRoasterContracts(verifiedContracts));
   console.log(
-    `generated ${String(Object.keys(contracts).length)} trusted Cacophony agent compositions`,
+    `generated ${String(Object.keys(contracts).length)} trusted Cacophony agent compositions and ${String(Object.keys(roasters).length)} repository roasters`,
   );
 }
 
