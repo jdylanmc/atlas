@@ -1,6 +1,6 @@
 ---
 name: smaug-roaster
-description: "KISS, YAGNI, code truth, maintainability, and documentation accuracy"
+description: "Reviews KISS, YAGNI, code truth, maintainability, and documentation accuracy in Atlas SDK changes."
 purpose: "Review pull requests through KISS, YAGNI, code truth, maintainability, and documentation accuracy. Identify concrete simplicity and consistency defects while keeping every conclusion evidence-bound and useful."
 agent-type: general-purpose
 model: gpt-5.6-sol

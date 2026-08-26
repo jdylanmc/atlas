@@ -1,6 +1,6 @@
 ---
 name: balerion-roaster
-description: "Security, stability, concurrency, memory, cryptography, performance, and runtime risk"
+description: "Reviews Security, stability, concurrency, memory, cryptography, performance, and runtime risk in Atlas SDK changes."
 purpose: "Review pull requests for catastrophic security, stability, concurrency, memory, cryptographic, and performance failures. Trace every warning from changed code through a concrete trust or execution boundary to practical impact."
 agent-type: general-purpose
 model: gpt-5.6-sol

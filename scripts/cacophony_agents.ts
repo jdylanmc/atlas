@@ -1001,7 +1001,7 @@ export function composeRoaster(contract: AgentContract): RoasterContract {
   const name = `${contract.compatibilityAgent}-roaster`;
   const paths = roasterPaths(name);
   const roastLens = extractRoastLens(contract.directive);
-  const description = roastLens;
+  const description = `Reviews ${roastLens} in Atlas SDK changes.`;
   const purpose = extractDirectiveSection(contract.directive, "Objective");
   return new RoasterContract({
     compatibilityAgent: contract.compatibilityAgent,

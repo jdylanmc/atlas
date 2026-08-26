@@ -513,9 +513,11 @@ test("repository roasters are generated from eligible compositions", () => {
     );
     const description = /^description: (.+)$/m.exec(roaster.instructionsFile)?.[1];
     const purpose = /^purpose: (.+)$/m.exec(roaster.instructionsFile)?.[1];
+    const roastLens = /^roast-lens: (.+)$/m.exec(roaster.agentFile)?.[1];
     assert.ok(description);
     assert.ok(purpose);
-    assert.notEqual(description, purpose);
+    assert.ok(roastLens);
+    assert.equal(new Set([description, purpose, roastLens]).size, 3);
   }
 });
 

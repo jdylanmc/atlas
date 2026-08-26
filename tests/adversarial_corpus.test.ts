@@ -172,10 +172,10 @@ interface CacophonyRoasterKnownCleanupCase {
   readonly name: string;
 }
 
-interface CacophonyRoasterPurposeDistinctCase {
+interface CacophonyRoasterFieldsDistinctCase {
   readonly expectation: "accept";
   readonly gate: "cacophony-roasters";
-  readonly kind: "purpose-distinct";
+  readonly kind: "roaster-fields-distinct";
   readonly name: string;
 }
 
@@ -201,8 +201,8 @@ type CacophonyRoasterCase =
   | CacophonyRoasterEligibleRosterCase
   | CacophonyRoasterKnownCleanupCase
   | CacophonyRoasterMisplacedLensCase
+  | CacophonyRoasterFieldsDistinctCase
   | CacophonyRoasterMissingLensCase
-  | CacophonyRoasterPurposeDistinctCase
   | CacophonyRoasterReservedNameCase
   | CacophonyRoasterToolsCase
   | CacophonyRoasterUnexpectedPathCase;
@@ -1046,7 +1046,7 @@ function parseCacophonyRoasterCorpus(value: unknown): CacophonyRoasterCorpus {
           name,
         };
       }
-      if (kind === "purpose-distinct") {
+      if (kind === "roaster-fields-distinct") {
         assert.equal(entry["expectation"], "accept", `${path}.expectation`);
         accepts += 1;
         return {
@@ -1453,16 +1453,18 @@ for (const entry of cacophonyRoasterCorpus.cases) {
       }
       return;
     }
-    if (entry.kind === "purpose-distinct") {
+    if (entry.kind === "roaster-fields-distinct") {
       const roasters = buildRoasterContracts(
         buildContracts(new LocalSource(ROOT), { verifyGenerated: false }),
       );
       for (const roaster of Object.values(roasters)) {
         const description = /^description: (.+)$/m.exec(roaster.instructionsFile)?.[1];
         const purpose = /^purpose: (.+)$/m.exec(roaster.instructionsFile)?.[1];
+        const roastLens = /^roast-lens: (.+)$/m.exec(roaster.agentFile)?.[1];
         assert.ok(description);
         assert.ok(purpose);
-        assert.notEqual(description, purpose);
+        assert.ok(roastLens);
+        assert.equal(new Set([description, purpose, roastLens]).size, 3);
       }
       return;
     }

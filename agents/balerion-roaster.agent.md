@@ -1,6 +1,6 @@
 ---
 name: balerion-roaster
-description: "Security, stability, concurrency, memory, cryptography, performance, and runtime risk"
+description: "Reviews Security, stability, concurrency, memory, cryptography, performance, and runtime risk in Atlas SDK changes."
 target: github-copilot
 tools: ["read", "search"]
 disable-model-invocation: true

@@ -58,10 +58,10 @@
       "messageIncludes": "must declare ## Roast lens"
     },
     {
-      "name": "accept-purpose-and-description-are-distinct",
+      "name": "accept-description-purpose-and-lens-are-pairwise-distinct",
       "gate": "cacophony-roasters",
       "expectation": "accept",
-      "kind": "purpose-distinct"
+      "kind": "roaster-fields-distinct"
     },
     {
       "name": "reject-misplaced-roast-lens-with-truthful-schema",
