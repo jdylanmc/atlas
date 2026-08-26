@@ -991,7 +991,8 @@ function validateAtlasStructureWithPages(
 /**
  * Parses and validates captured Atlas text, returning deeply immutable Findings
  * ordered by path, source position, code, then message using Unicode code points.
- * Opaque Framework, Changelog, and non-page Markdown records produce no Findings.
+ * Opaque framework-directory, Changelog, and non-page Markdown records produce
+ * no Findings.
  */
 export function validateAtlasStructure(
   files: readonly AtlasTextFile[],

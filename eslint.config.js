@@ -12,7 +12,6 @@ const sourceLayers = [
   "operations",
   "platform",
   "adapters",
-  "framework",
   "interfaces",
 ];
 

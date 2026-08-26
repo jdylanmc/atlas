@@ -5,7 +5,7 @@ Atlas SDK is a structured knowledge environment that helps coding agents discove
 ## Language
 
 **Atlas SDK**:
-The framework and operation-scoped composite view through which an agent discovers connected knowledge domains. Atlas SDK does not own a central knowledge graph or registry.
+The framework and operation-scoped composite view through which an agent discovers connected knowledge domains. Atlas SDK is installed on an operator's machine as one versioned package rather than copied into the Atlases it manages, so its contracts are trusted because the operator chose and can inspect that version, not because any bytes were committed inside an Atlas. Atlas SDK does not own a central knowledge graph or registry.
 
 **Atlas**:
 A sovereign, bounded knowledge domain rooted in one Atlas Host Directory. Its knowledge, governance, automation, and records live beneath `.atlas/`, and it may track other Atlases.
@@ -21,7 +21,7 @@ The human-facing workflow that interactively composes one new Atlas's orientatio
 An optional named identity, display profile, and avatar that shape an agent's conversational voice, tone, and visual or editorial flavor without changing semantic meaning. A Persona carries no behavioral or governance authority, does not shape the authored voice of Concepts or Principles, and remains separate from the agent's Directive.
 
 **Agent Directive**:
-The literal statement of an agent role's objectives, responsibilities, allowed actions, constraints, and required handoffs. An SDK-owned baseline may be specialized by a separate Atlas-owned layer that cannot weaken the baseline, Framework contracts, or Atlas Policies. A Directive is precise instruction, not character prose.
+The literal statement of an agent role's objectives, responsibilities, allowed actions, constraints, and required handoffs. An SDK-owned baseline may be specialized by a separate Atlas-owned layer that cannot weaken the baseline, Atlas SDK contracts, or Atlas Policies. A Directive is precise instruction, not character prose.
 
 **Agent Composition**:
 The declarative pairing of zero or one Agent Persona with an ordered set of one or more Agent Directives. Directives remain authoritative and determine behavior; an optional Persona shapes only eligible presentation, cannot change semantic meaning, and loses every conflict with a Directive.
@@ -36,28 +36,16 @@ The Atlas-owned caretaker and Atlas Site chief marketing officer that guides nav
 The shared preflight through which an Atlas SDK skill identifies the Home Atlas for the current Atlas Host Directory, verifies tooling and schema compatibility, and loads only the instructions and context required by that operation. Entry classifies the Home Atlas as ready, degraded, or blocked before the skill proceeds.
 
 **Host Integration**:
-The optional host-owned thin discovery and loading layer that points an agent harness to canonical skills, Directives, Personas, and compositions under `.atlas/`. It contains no duplicated Atlas SDK behavior and remains outside Framework Upgrade ownership.
+The optional host-owned thin discovery and loading layer that points an agent harness to canonical skills, Directives, Personas, and compositions under `.atlas/`. Atlas Initialization may generate its pointers on request, through the same reviewed Atlas Proposal as the rest of the Atlas, but a pointer never carries the body it points at: one that duplicates a canonical artifact is refused. The host owns the layer thereafter.
 
 **Home Atlas**:
 The Atlas owned by the current Atlas Host Directory and identified by Atlas Entry. Its committed maintenance code is trusted at the same level as its host repository; every other Atlas is connected through cross-Atlas Edges and remains read-only cached data.
 
 **SDK Atlas**:
-The canonical upstream Home Atlas of the Atlas SDK repository, displayed as **Atlas SDK** and identified by the Atlas Slug `atlas-sdk`. It maintains cited knowledge about Atlas SDK's purpose, architecture, implementation, onboarding, operation, and use, while Framework Releases carry its enforceable core contracts into sovereign Atlases. Its deployed Atlas Site is the canonical destination linked by other Atlases when explaining Atlas SDK. Merlin is its designated Atlas Guide.
-
-**Framework Bundle**:
-The SDK-owned, portable baseline committed inside an Atlas. It contains the installed Framework Release Manifest and that manifest's complete inventory of SDK-owned files, whose bytes remain immutable while the release is pinned. Together they provide the instructions, contracts, and maintenance tooling that make the Atlas operable without joining the host application's dependency ecosystem, and an upgrade replaces them atomically as one governed unit.
-
-**Framework Release**:
-One exact version of the SDK-owned runtime, core contracts, packaged skills, templates, and adapters from which an Atlas's Framework Bundle is derived. A Home Atlas pins one Framework Release while its Atlas Schema evolves independently.
-
-**Framework Release Manifest**:
-The immutable inventory and compatibility contract included in one Framework Release and installed in its Framework Bundle. It identifies every complete SDK-owned file and its digest, supported environments and Atlas contracts, and the explicit migration paths to and from other supported releases.
-
-**Framework Upgrade**:
-The governed workflow that replaces a Home Atlas's pinned Framework Release as one isolated, fully Linted Atlas Proposal while preserving Atlas-owned state. A completed upgrade operation has proposed the change for review; the target release becomes active only when that proposal merges.
+The canonical upstream Home Atlas of the Atlas SDK repository, displayed as **Atlas SDK** and identified by the Atlas Slug `atlas-sdk`. It maintains cited knowledge about Atlas SDK's purpose, architecture, implementation, onboarding, operation, and use, while the installed Atlas SDK carries its enforceable core contracts into sovereign Atlases. Its deployed Atlas Site is the canonical destination linked by other Atlases when explaining Atlas SDK. Merlin is its designated Atlas Guide.
 
 **Check SDK**:
-The Framework Release's typed, read-only interface for Atlas-owned deterministic checks. It exposes the parsed Home Atlas model and graph-oriented utilities so checks express Atlas-specific invariants without parsing knowledge files or acquiring host dependencies.
+Atlas SDK's typed, read-only interface for Atlas-owned deterministic checks. It exposes the parsed Home Atlas model and graph-oriented utilities so checks express Atlas-specific invariants without parsing knowledge files or acquiring host dependencies.
 
 **Tool Runtime**:
 An SDK-managed machine-scoped installation of a heavyweight replaceable tool used by many Atlases. A Tool Runtime is disposable, version-coupled generated state rather than part of an Atlas or the host application's dependencies.
@@ -81,7 +69,7 @@ The exact Git commit of an Atlas used during one operation. A snapshot records o
 The human-authored declaration of an Atlas's intended knowledge contract and local configuration.
 
 **Atlas Schema**:
-The versioned extension contract that adds Atlas-specific page types, fields, relationship semantics, and validation while inheriting and preserving Atlas SDK core archetype behavior. Every page declares two versions because two owners evolve on independent lifecycles: `atlas-sdk-schema` pins the SDK-owned page contract, which advances only through a governed Framework Upgrade, and `local-atlas-schema` pins the Atlas's own extensions built on top of it, which the Atlas may change at any time. Both declarations live in the page's SDK-owned block, because the Atlas SDK must read which local contract applies before it can interpret the Atlas-owned block that contract governs.
+The versioned extension contract that adds Atlas-specific page types, fields, relationship semantics, and validation while inheriting and preserving Atlas SDK core archetype behavior. Every page declares two versions because two owners evolve on independent lifecycles: `atlas-sdk-schema` pins the SDK-owned page contract that page was written against, and `local-atlas-schema` pins the Atlas's own extensions built on top of it, which the Atlas may change at any time. Both are committed declarations, so neither changes except by rewriting the page. Both live in the page's SDK-owned block, because the Atlas SDK must read which local contract applies before it can interpret the Atlas-owned block that contract governs.
 
 **Atlas Lock**:
 The generated, local record of resolved schema versions, tracked Atlas Snapshots, fetch times, and the lazily materialized Atlas dependency graph. It records which Anchor gateway and cross-Atlas Edge introduced each dependency. Atlas Lock is replaceable cache state rather than committed Atlas knowledge.
@@ -195,7 +183,7 @@ The human-approved traversal envelope for one Ingest source, including its entry
 A canonical structured-source contract whose recognizable semantics warrant a reusable Ingest optimization. Its identity follows the source contract rather than its transport, serialization, branding, or subject matter alone.
 
 **Ingest Type Skill**:
-A reusable `ingest-<type>` source adapter that makes repeated Ingest operations for one Ingest Type cheaper and more consistent. Whether Framework-provided, downloaded, or learned, it may specialize source handling but never owns Atlas synthesis or governance.
+A reusable `ingest-<type>` source adapter that makes repeated Ingest operations for one Ingest Type cheaper and more consistent. Whether SDK-provided, downloaded, or learned, it may specialize source handling but never owns Atlas synthesis or governance.
 
 **Crawlers**:
 The read-only subagents an Ingest dispatches to crawl one source in parallel. Crawlers report candidates and never writes to an Atlas.
@@ -212,7 +200,7 @@ The human-facing workflow for validating an Atlas. Trusted deterministic validat
 _Avoid_: Weave
 
 **Lint Stamp**:
-A deterministic machine-readable attestation that one exact Atlas commit completed a full Lint with matching evidence. It is reproducible validation evidence rather than committed Atlas knowledge, and any change to the stamped commit invalidates it. Framework, schema, check, and Policy revisions belong in the stamp only when Atlas SDK has authoritative revision sources for them.
+A deterministic machine-readable attestation that one exact Atlas commit completed a full Lint with matching evidence. Its trusted deterministic portion is reproducible validation evidence rather than committed Atlas knowledge, and any change to the stamped commit invalidates it. A stamp neither reproduces nor identifies the semantic half of a Lint, whose verdicts are attested rather than recomputed, and it does not record which Atlas SDK produced it, so even the deterministic half is reproducible only within one Atlas SDK version. Schema, check, and Policy revisions belong in the stamp only when Atlas SDK has authoritative revision sources for them.
 
 **Finding**:
 One result reported by a Lint, attributed to the check that raised it and to whether that check is trusted Atlas SDK validation or Atlas-owned. A finding is an error, a warning, a suggestion, an inconclusive semantic verdict, or a check skipped because one it depended on failed. An Atlas-owned check may add findings; it may never suppress or downgrade a trusted one.
@@ -251,7 +239,7 @@ The ephemeral repository-local state for one resumable operation, including chec
 The Atlas Initialization handoff and pull-request description that explains the proposed Atlas boundary, Guide, governance, founding evidence and graph, integrations, degradations, uninspected areas, first Lint Stamp, and recommended next actions.
 
 **Atlas Proposal**:
-The isolated branch, worktree, and pull request through which one knowledge-changing operation or Framework Upgrade proposes changes to a Home Atlas. A Framework Upgrade uses the same reconciliation and full Lint gate without changing Atlas knowledge. An Atlas Proposal is anchored to a base commit and must reconcile against the current target branch before it can merge.
+The isolated branch, worktree, and pull request through which one knowledge-changing operation proposes changes to a Home Atlas. An Atlas Proposal is anchored to a base commit and must reconcile against the current target branch before it can merge.
 
 **Stale Atlas Proposal**:
 An Atlas Proposal whose target branch has advanced since its last successful reconciliation and full Lint. It cannot merge until Atlas SDK rebases and revalidates it against the new target state.

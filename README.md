@@ -45,7 +45,3 @@ Internal source paths are not exported. Treat anything outside the package root 
 ## Package contents
 
 The npm artifact ships only the compiled runtime, declaration files, `package.json`, and this README. Development fixtures, tests, local workspaces, and source-tree automation are not part of the package artifact.
-
-## Framework Bundle note
-
-Framework Bundle assembly remains a repository maintainer workflow. The installed package is the supported package-consumption path for Home Atlas repositories; Framework Releases still use their manifest and integrity checks when assembled by this repository.

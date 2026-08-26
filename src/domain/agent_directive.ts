@@ -32,7 +32,7 @@ export const sdkBaselineDirectives = Object.freeze({
     ]),
     constraints: Object.freeze([
       "Directive semantics override any Persona presentation.",
-      "Do not weaken Framework contracts, Atlas Policies, or active Principle truths.",
+      "Do not weaken Atlas SDK contracts, Atlas Policies, or active Principle truths.",
     ]),
     objectives: Object.freeze([
       "Guide navigation through the Home Atlas and connected knowledge with explicit evidence.",

@@ -68,24 +68,6 @@ export type {
   VirtualAtlasView,
 } from "./domain/virtual_atlas_view.ts";
 export {
-  frameworkReleaseIdentity,
-  frameworkReleaseManifestSchemaVersion,
-  inventoryPaths,
-  parseFrameworkReleaseManifest,
-} from "./framework/framework_release.ts";
-export type {
-  FrameworkBundle,
-  FrameworkBundleVerificationResult,
-  FrameworkInventoryKind,
-  FrameworkRelease,
-  FrameworkReleaseDependencyEvidence,
-  FrameworkReleaseEnvironment,
-  FrameworkReleaseInventoryEntry,
-  FrameworkReleaseManifest,
-  FrameworkReleaseManifestParseResult,
-  FrameworkReleaseMigrationPaths,
-} from "./framework/framework_release.ts";
-export {
   exitCodeForInitializeOperationResult,
   initializeCommandExitCodes,
   initializeCommandUsage,

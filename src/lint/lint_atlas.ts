@@ -16,9 +16,9 @@ export interface ValidAtlasLintResult {
   readonly findings: readonly Finding[];
   /**
    * The records Lint reads as text rather than as pages - the Changelog, the
-   * Framework Bundle, and any other non-page Markdown - carried exactly as they
-   * were loaded. They have no page envelope to normalize, so normalizing them
-   * would rewrite bytes Lint has no contract over.
+   * opaque framework directory, and any other non-page Markdown - carried
+   * exactly as they were loaded. They have no page envelope to normalize, so
+   * normalizing them would rewrite bytes Lint has no contract over.
    */
   readonly opaque: readonly AtlasTextFile[];
   readonly outcome: "valid";

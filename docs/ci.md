@@ -42,7 +42,7 @@ Guide sources under `docs/agents/atlas-sdk/`. Those sources define presentation
 and reference metadata only; they do not initialize or activate an Atlas. The
 standalone `node scripts/atlas_sdk_agents.ts validate` command is a local
 repository check, not a trusted runtime or Continuous Integration schema
-loader; canonical Framework validation remains deferred with activation.
+loader; canonical Atlas SDK validation remains deferred with activation.
 
 ## Node.js and repository quality contract
 
@@ -83,8 +83,8 @@ contract vocabulary agreement, byte-exact Cacophony prompt validation, and
 Actionlint `1.7.7`. The SDK Atlas gate runs `atlas lint --machine` against the
 repository Atlas Host Directory and requires a completed Valid Atlas Lint Result
 with no error Findings. This confirms only the deterministic Lint rules that
-exist today; the Framework Bundle page is still carried as an opaque record, and
-Framework Bundle-specific rules remain deferred.
+exist today; the contents of `.atlas/framework/` are still carried as an opaque
+record, and rules specific to that directory remain deferred.
 The Actionlint launcher also pins ShellCheck `0.11.0`, disables Python-based
 Pyflakes integration, downloads only the assets for the current supported
 platform and architecture, and verifies their release checksums before
@@ -93,19 +93,16 @@ execution.
 Focused commands are `npm run format:check`, `npm run lint`,
 `npm run typecheck`, `npm run test:coverage`, `npm run test:unit`,
 `npm run atlas-sdk:validate`, `npm run sdk-atlas:lint`,
-`npm run vocabulary:validate`, `npm run cacophony:validate`,
-`npm run workflow:lint`, and `npm run framework:assemble`. Use
+`npm run vocabulary:validate`, `npm run cacophony:validate`, and
+`npm run workflow:lint`. Use
 `npm run cacophony:sync` only after editing a Persona, Directive, or composition
 reference.
 
-`npm run framework:assemble` writes `dist/framework-bundle/` with the portable
-Framework Bundle, its `framework-release-manifest.json`, and a sidecar manifest
-digest. The bundle vendors production dependencies and dependency license
-evidence so its verified `scripts/framework_bootstrap.ts` Lint entry point runs
-without installing or reading a host application's package graph. The sidecar
-digest is a corruption check, not a signature or external trust anchor; the
-trust root for an installed bundle is the host repository's Git history and
-code review of the committed bundle bytes.
+Atlas SDK is distributed as the public scoped npm package `@jdylanmc/atlas` and
+installed on an operator's machine rather than copied into the Atlases it
+manages. Until a release is published, a packed tarball or Git dependency built
+from this repository is how it is obtained. See
+[ADR-0002](./adr/0002-atlas-sdk-is-installed-on-the-machine.md).
 
 Review findings that describe a gate miss are resolved only after
 `tests/adversarial/` has a permanent reject or accept case that exercises the

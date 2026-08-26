@@ -1,7 +1,7 @@
 # Inactive SDK Atlas Guide
 
 This directory holds the reviewed source definition for the canonical **SDK
-Atlas** Guide. It is not an Atlas, a Framework Bundle, a host integration,
+Atlas** Guide. It is not an Atlas, a host integration,
 or an active agent registration.
 
 - `personas/merlin/persona.md` defines the presentation-only Merlin Agent
