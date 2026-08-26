@@ -382,8 +382,8 @@ function validateSemanticVerdicts(
     if (verdicts.length === 0) {
       findings.push(
         finding(
-          "ATLAS_GOVERNANCE_POLICY_EVALUATION_UNSUPPORTED",
-          "Atlas Policy evaluation must be enforceable by deterministic rules or supplied semantic verdicts.",
+          "ATLAS_GOVERNANCE_POLICY_VERDICT_REQUIRED",
+          "Changing an Atlas Policy requires at least one supplied semantic verdict.",
         ),
       );
     }

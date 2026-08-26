@@ -1018,7 +1018,7 @@ test("Atlas Policy semantics require resolved evidence, Challenge, and Maintaine
     { content: policyContent(), path: ".atlas/types/policy/publication.md" },
   ]);
   for (const [name, semanticVerdicts, expected] of [
-    ["missing", undefined, "ATLAS_GOVERNANCE_POLICY_EVALUATION_UNSUPPORTED"],
+    ["missing", undefined, "ATLAS_GOVERNANCE_POLICY_VERDICT_REQUIRED"],
     [
       "empty-evidence",
       [
@@ -1316,7 +1316,7 @@ test("the adversarial governance corpus maps to enforced gates", () => {
       ["governance", "semantic", "ATLAS_GOVERNANCE_SEMANTIC_VERDICT_FAILED"],
       ["governance", "semantic", "ATLAS_GOVERNANCE_RESUME_CHANGE_SET_MISMATCH"],
       ["governance", "semantic", "ATLAS_GOVERNANCE_PRINCIPLE_TRUTH_REQUIRED"],
-      ["governance", "semantic", "ATLAS_GOVERNANCE_POLICY_EVALUATION_UNSUPPORTED"],
+      ["governance", "semantic", "ATLAS_GOVERNANCE_POLICY_VERDICT_REQUIRED"],
       ["governance", "semantic", "ATLAS_GOVERNANCE_CHANGELOG_RESERVED"],
       ["governance", "semantic", "ATLAS_GOVERNANCE_CHANGELOG_RESERVED"],
       ["governance", "semantic", "ATLAS_GOVERNANCE_CHANGELOG_MALFORMED"],
