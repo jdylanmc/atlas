@@ -840,8 +840,27 @@ function directiveSections(
     if (!(error instanceof ContractError)) {
       throw error;
     }
+    if (/^## Roast lens$/m.test(component.body)) {
+      throw error;
+    }
     return splitSections(component, DIRECTIVE_SECTIONS);
   }
+}
+
+function collapseSectionText(lines: readonly string[]): string {
+  return lines.join("\n").replace(/\s+/g, " ").trim();
+}
+
+function extractDirectiveSection(component: Component, sectionName: string): string {
+  const lines = directiveSections(component).get(sectionName);
+  if (lines === undefined) {
+    throw new ContractError(`${component.path} is missing ## ${sectionName}`);
+  }
+  const text = collapseSectionText(lines);
+  if (text.length === 0) {
+    throw new ContractError(`${component.path} ## ${sectionName} cannot be empty`);
+  }
+  return text;
 }
 
 function extractRoastLens(component: Component): string {
@@ -982,8 +1001,8 @@ export function composeRoaster(contract: AgentContract): RoasterContract {
   const name = `${contract.compatibilityAgent}-roaster`;
   const paths = roasterPaths(name);
   const roastLens = extractRoastLens(contract.directive);
-  const description = `Reviews ${roastLens} in Atlas SDK changes.`;
-  const purpose = description;
+  const description = roastLens;
+  const purpose = extractDirectiveSection(contract.directive, "Objective");
   return new RoasterContract({
     compatibilityAgent: contract.compatibilityAgent,
     ...paths,
@@ -1142,7 +1161,10 @@ function pathExists(root: string, path: string): boolean {
   }
 }
 
-function removeKnownRoasterOutputs(root: string): void {
+function removeKnownRoasterOutputs(
+  root: string,
+  expectedGeneratedPaths: ReadonlySet<string>,
+): void {
   const source = new LocalSource(root);
   for (const path of knownRoasterOutputPaths()) {
     if (!pathExists(root, path)) {
@@ -1156,14 +1178,18 @@ function removeKnownRoasterOutputs(root: string): void {
     if (stat.isDirectory()) {
       source.listFiles(path);
       rmSync(resolvedPath, { force: true, recursive: true });
-      console.log(`deleted ${path}`);
+      if (!expectedGeneratedPaths.has(path)) {
+        console.log(`deleted ${path}`);
+      }
       continue;
     }
     if (!stat.isFile()) {
       throw new ContractError(`${path} must be a regular file or directory`);
     }
     rmSync(resolvedPath, { force: true });
-    console.log(`deleted ${path}`);
+    if (!expectedGeneratedPaths.has(path)) {
+      console.log(`deleted ${path}`);
+    }
   }
 }
 
@@ -1552,9 +1578,13 @@ export function commandSync(root: string): void {
   if (roasterRootStat.isSymbolicLink() || !roasterRootStat.isDirectory()) {
     throw new ContractError(`${ROASTER_OUTPUT_DIRECTORY} must be a regular directory`);
   }
+  const expectedGeneratedPaths = new Set([
+    ...Object.keys(expectedRoasterFiles(roasters)),
+    ...Object.values(roasters).map((roaster) => roaster.directory),
+  ]);
   const allowedDeletionPaths = new Set(knownRoasterOutputPaths());
   assertNoUnexpectedRoasterOutputs(source, roasters, allowedDeletionPaths);
-  removeKnownRoasterOutputs(resolvedRoot);
+  removeKnownRoasterOutputs(resolvedRoot, expectedGeneratedPaths);
   for (const roaster of Object.values(roasters)) {
     mkdirSync(repositoryPath(resolvedRoot, roaster.directory), { recursive: true });
     for (const [path, content] of Object.entries(

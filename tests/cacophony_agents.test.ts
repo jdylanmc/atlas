@@ -133,6 +133,20 @@ function git(repository: string, ...arguments_: string[]): string {
   }).trim();
 }
 
+function captureConsoleLog(action: () => void): string[] {
+  const original = console.log;
+  const lines: string[] = [];
+  console.log = (message?: unknown) => {
+    lines.push(typeof message === "string" ? message : JSON.stringify(message ?? ""));
+  };
+  try {
+    action();
+  } finally {
+    console.log = original;
+  }
+  return lines;
+}
+
 test("repository contract is valid", () => {
   assert.deepEqual(Object.keys(CONTRACTS).sort(), [
     "balerion",
@@ -469,6 +483,10 @@ test("repository roasters are generated from eligible compositions", () => {
     /^roast-instructions: "\.\/bolas-roaster\/instructions\.md"$/m,
   );
   assert.match(bolas.instructionsFile, /^tools: \["read", "search"\]$/m);
+  assert.match(
+    bolas.instructionsFile,
+    /^purpose: "Review pull requests through Domain-Driven Design, SOLID principles, structural decoupling, and Clean Architecture\. Identify concrete architecture defects while keeping every conclusion evidence-bound and actionable\."$/m,
+  );
   assert.doesNotMatch(bolas.instructionsFile, /doctrine-manifest|^doctrine:/m);
   assert.match(bolas.instructionsFile, /^persona: \.\/persona\.md$/m);
   assert.match(bolas.instructionsFile, /^directive: \.\/directive\.md$/m);
@@ -493,6 +511,11 @@ test("repository roasters are generated from eligible compositions", () => {
       ),
       [true, true, true, true],
     );
+    const description = /^description: (.+)$/m.exec(roaster.instructionsFile)?.[1];
+    const purpose = /^purpose: (.+)$/m.exec(roaster.instructionsFile)?.[1];
+    assert.ok(description);
+    assert.ok(purpose);
+    assert.notEqual(description, purpose);
   }
 });
 
@@ -558,6 +581,23 @@ test("sync preserves and reports hand-authored roasters instead of deleting them
   }
 });
 
+test("routine sync does not log regenerated roaster deletions", () => {
+  const workspace = scratchDirectory("quiet-sync");
+  try {
+    cpSync(join(ROOT, ".cacophony"), join(workspace, ".cacophony"), {
+      recursive: true,
+    });
+    commandSync(workspace);
+    const logs = captureConsoleLog(() => commandSync(workspace));
+    assert.deepEqual(
+      logs.filter((line) => line.startsWith("deleted ")),
+      [],
+    );
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 test("sync removes retired known roaster agent files and directories as one unit", () => {
   const workspace = scratchDirectory("retired-roaster");
   try {
@@ -573,7 +613,11 @@ test("sync removes retired known roaster agent files and directories as one unit
       join(workspace, "agents", "fletcher-roaster", "directive.md"),
       "generated but retired\n",
     );
-    commandSync(workspace);
+    const logs = captureConsoleLog(() => commandSync(workspace));
+    assert.deepEqual(
+      logs.filter((line) => line.startsWith("deleted ")),
+      ["deleted agents/fletcher-roaster", "deleted agents/fletcher-roaster.agent.md"],
+    );
     const source = new LocalSource(workspace);
     assert.throws(
       () => source.readText("agents/fletcher-roaster.agent.md"),
@@ -584,6 +628,20 @@ test("sync removes retired known roaster agent files and directories as one unit
     rmSync(workspace, { recursive: true, force: true });
   }
 });
+
+function contractWithDirective(
+  value: AgentContract,
+  directive: Component,
+): AgentContract {
+  return new AgentContract({
+    compatibilityAgent: value.compatibilityAgent,
+    personaId: value.personaId,
+    directiveIds: value.directiveIds,
+    persona: value.persona,
+    directives: [directive],
+    composed: value.composed,
+  });
+}
 
 test("repository roaster lens must be an explicit directive section", () => {
   const value = contract("bolas");
@@ -596,18 +654,24 @@ test("repository roaster lens must be an explicit directive section", () => {
     ),
   };
   assert.throws(
-    () =>
-      composeRoaster(
-        new AgentContract({
-          compatibilityAgent: value.compatibilityAgent,
-          personaId: value.personaId,
-          directiveIds: value.directiveIds,
-          persona: value.persona,
-          directives: [directive],
-          composed: value.composed,
-        }),
-      ),
+    () => composeRoaster(contractWithDirective(value, directive)),
     /must declare ## Roast lens/,
+  );
+});
+
+test("misplaced repository roaster lens reports the lens schema", () => {
+  const value = contract("bolas");
+  const lensBlock = /\n## Roast lens\n\n[^\n]+\n/u.exec(value.directive.body)?.[0];
+  assert.ok(lensBlock);
+  const withoutLens = value.directive.body.replace(lensBlock, "\n");
+  const directive: Component = {
+    path: value.directive.path,
+    metadata: value.directive.metadata,
+    body: withoutLens.replace("\n## Evidence", `${lensBlock}\n## Evidence`),
+  };
+  assert.throws(
+    () => composeRoaster(contractWithDirective(value, directive)),
+    /sections must be exactly.*Roast lens/,
   );
 });
 

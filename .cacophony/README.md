@@ -11,9 +11,13 @@ Each Atlas SDK reviewer composition has generated prompt and repository-roaster 
 - `.cacophony/directives/<intention>.md` is an **Agent Directive**. Its
   intention-named path and frontmatter `directive` identifier are independent
   of every Persona. It declares `atlas.agent-directive/v2` and
-  `authority: behavior`; its fixed sections contain objectives,
-  responsibilities, evidence rules, severity, constraints, output contract,
-  and handoffs.
+  `authority: behavior`; its fixed sections contain objectives, responsibilities,
+  evidence rules, severity, constraints, output contract, and handoffs.
+  Roaster-eligible Directives must also contain `## Roast lens` immediately
+  after `## Objective`; the section must contain exactly one non-empty,
+  non-bullet line, projected verbatim into the generated roaster's `roast-lens`
+  and `description`. Directives excluded from roaster generation, currently
+  `prompt-contract-review`, omit `## Roast lens`.
 - `.cacophony/compositions.json` is the reference-only Agent Composition
   layer. Each entry selects exactly one Persona and an ordered, non-empty list
   of stable Directives. Replacing a Persona changes only the `persona`

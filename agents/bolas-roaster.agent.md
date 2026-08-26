@@ -1,6 +1,6 @@
 ---
 name: bolas-roaster
-description: "Reviews Domain-Driven Design, SOLID, structural decoupling, and Clean Architecture boundaries in Atlas SDK changes."
+description: "Domain-Driven Design, SOLID, structural decoupling, and Clean Architecture boundaries"
 target: github-copilot
 tools: ["read", "search"]
 disable-model-invocation: true

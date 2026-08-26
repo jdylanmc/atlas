@@ -1,6 +1,6 @@
 ---
 name: smaug-roaster
-description: "Reviews KISS, YAGNI, code truth, maintainability, and documentation accuracy in Atlas SDK changes."
+description: "KISS, YAGNI, code truth, maintainability, and documentation accuracy"
 target: github-copilot
 tools: ["read", "search"]
 disable-model-invocation: true

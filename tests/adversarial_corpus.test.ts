@@ -172,6 +172,13 @@ interface CacophonyRoasterKnownCleanupCase {
   readonly name: string;
 }
 
+interface CacophonyRoasterPurposeDistinctCase {
+  readonly expectation: "accept";
+  readonly gate: "cacophony-roasters";
+  readonly kind: "purpose-distinct";
+  readonly name: string;
+}
+
 interface CacophonyRoasterMissingLensCase {
   readonly agent: string;
   readonly expectation: "reject";
@@ -181,10 +188,21 @@ interface CacophonyRoasterMissingLensCase {
   readonly name: string;
 }
 
+interface CacophonyRoasterMisplacedLensCase {
+  readonly agent: string;
+  readonly expectation: "reject";
+  readonly gate: "cacophony-roasters";
+  readonly kind: "misplaced-lens";
+  readonly messageIncludes: string;
+  readonly name: string;
+}
+
 type CacophonyRoasterCase =
   | CacophonyRoasterEligibleRosterCase
   | CacophonyRoasterKnownCleanupCase
+  | CacophonyRoasterMisplacedLensCase
   | CacophonyRoasterMissingLensCase
+  | CacophonyRoasterPurposeDistinctCase
   | CacophonyRoasterReservedNameCase
   | CacophonyRoasterToolsCase
   | CacophonyRoasterUnexpectedPathCase;
@@ -1028,6 +1046,16 @@ function parseCacophonyRoasterCorpus(value: unknown): CacophonyRoasterCorpus {
           name,
         };
       }
+      if (kind === "purpose-distinct") {
+        assert.equal(entry["expectation"], "accept", `${path}.expectation`);
+        accepts += 1;
+        return {
+          expectation: "accept",
+          gate: "cacophony-roasters",
+          kind,
+          name,
+        };
+      }
       assert.equal(entry["expectation"], "reject", `${path}.expectation`);
       rejects += 1;
       if (kind === "reserved-name") {
@@ -1056,7 +1084,7 @@ function parseCacophonyRoasterCorpus(value: unknown): CacophonyRoasterCorpus {
           path: assertString(entry["path"], `${path}.path`),
         };
       }
-      if (kind === "missing-lens") {
+      if (kind === "missing-lens" || kind === "misplaced-lens") {
         return {
           agent: assertString(entry["agent"], `${path}.agent`),
           expectation: "reject",
@@ -1425,6 +1453,19 @@ for (const entry of cacophonyRoasterCorpus.cases) {
       }
       return;
     }
+    if (entry.kind === "purpose-distinct") {
+      const roasters = buildRoasterContracts(
+        buildContracts(new LocalSource(ROOT), { verifyGenerated: false }),
+      );
+      for (const roaster of Object.values(roasters)) {
+        const description = /^description: (.+)$/m.exec(roaster.instructionsFile)?.[1];
+        const purpose = /^purpose: (.+)$/m.exec(roaster.instructionsFile)?.[1];
+        assert.ok(description);
+        assert.ok(purpose);
+        assert.notEqual(description, purpose);
+      }
+      return;
+    }
     if (entry.kind === "reserved-name") {
       assert.throws(
         () => assertRoasterName(entry.nameUnderTest),
@@ -1478,19 +1519,23 @@ for (const entry of cacophonyRoasterCorpus.cases) {
       }
       return;
     }
-    if (entry.kind === "missing-lens") {
+    if (entry.kind === "missing-lens" || entry.kind === "misplaced-lens") {
       const contracts = buildContracts(new LocalSource(ROOT), {
         verifyGenerated: false,
       });
       const value = contracts[entry.agent];
       assert.ok(value);
+      const lensBlock = /\n## Roast lens\n\n[^\n]+\n/u.exec(value.directive.body)?.[0];
+      assert.ok(lensBlock);
+      const withoutLens = value.directive.body.replace(lensBlock, "\n");
+      const body =
+        entry.kind === "missing-lens"
+          ? withoutLens
+          : withoutLens.replace("\n## Evidence", `${lensBlock}\n## Evidence`);
       const directive = {
         path: value.directive.path,
         metadata: value.directive.metadata,
-        body: value.directive.body.replace(
-          /\n## Roast lens\n\n[^\n]+\n(?=\n## Responsibilities)/u,
-          "",
-        ),
+        body,
       };
       assert.throws(
         () =>

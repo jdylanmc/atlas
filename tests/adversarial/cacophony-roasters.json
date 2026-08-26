@@ -56,6 +56,20 @@
       "kind": "missing-lens",
       "agent": "bolas",
       "messageIncludes": "must declare ## Roast lens"
+    },
+    {
+      "name": "accept-purpose-and-description-are-distinct",
+      "gate": "cacophony-roasters",
+      "expectation": "accept",
+      "kind": "purpose-distinct"
+    },
+    {
+      "name": "reject-misplaced-roast-lens-with-truthful-schema",
+      "gate": "cacophony-roasters",
+      "expectation": "reject",
+      "kind": "misplaced-lens",
+      "agent": "bolas",
+      "messageIncludes": "Roast lens"
     }
   ]
 }
