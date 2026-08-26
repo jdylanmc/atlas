@@ -609,7 +609,7 @@ test("atlas govern refuses an Atlas Policy mutation that supplies no semantic ve
   assert.equal(result.completion, "not-completed");
   assert.equal(
     result.handoff.validationState.findings[0]?.code,
-    "ATLAS_GOVERNANCE_POLICY_DOCTRINE_UNSUPPORTED",
+    "ATLAS_GOVERNANCE_POLICY_EVALUATION_UNSUPPORTED",
   );
   assert.equal("lint" in result.payload, false);
 });
