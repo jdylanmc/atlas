@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "reviewResolutionRule": "A review finding is resolved only after tests/adversarial has a case exercising the Cacophony roaster generation gate.",
+  "cases": [
+    {
+      "name": "accept-dragon-council-code-reviewer-roasters",
+      "gate": "cacophony-roasters",
+      "expectation": "accept",
+      "kind": "eligible-roster",
+      "expectedRoasters": ["balerion-roaster", "bolas-roaster", "smaug-roaster"],
+      "excludedRoasters": ["fletcher-roaster"]
+    },
+    {
+      "name": "reject-bundled-roast-reserved-name",
+      "gate": "cacophony-roasters",
+      "expectation": "reject",
+      "kind": "reserved-name",
+      "nameUnderTest": "security-roaster",
+      "messageIncludes": "reserved"
+    },
+    {
+      "name": "reject-tool-escalation",
+      "gate": "cacophony-roasters",
+      "expectation": "reject",
+      "kind": "tools",
+      "tools": ["read", "search", "bash"],
+      "messageIncludes": "read and search"
+    },
+    {
+      "name": "reject-nested-discovered-roaster",
+      "gate": "cacophony-roasters",
+      "expectation": "reject",
+      "kind": "unexpected-path",
+      "path": "agents/panel/rogue-roaster.agent.md",
+      "messageIncludes": "rogue-roaster.agent.md"
+    },
+    {
+      "name": "reject-github-agents-discovered-roaster",
+      "gate": "cacophony-roasters",
+      "expectation": "reject",
+      "kind": "unexpected-path",
+      "path": ".github/agents/panel/rogue-roaster.agent.md",
+      "messageIncludes": ".github/agents/panel/rogue-roaster.agent.md"
+    },
+    {
+      "name": "accept-retired-known-roaster-cleanup",
+      "gate": "cacophony-roasters",
+      "expectation": "accept",
+      "kind": "known-cleanup",
+      "agent": "fletcher"
+    },
+    {
+      "name": "reject-missing-explicit-roast-lens",
+      "gate": "cacophony-roasters",
+      "expectation": "reject",
+      "kind": "missing-lens",
+      "agent": "bolas",
+      "messageIncludes": "must declare ## Roast lens"
+    },
+    {
+      "name": "accept-description-purpose-and-lens-are-pairwise-distinct",
+      "gate": "cacophony-roasters",
+      "expectation": "accept",
+      "kind": "roaster-fields-distinct"
+    },
+    {
+      "name": "reject-misplaced-roast-lens-with-truthful-schema",
+      "gate": "cacophony-roasters",
+      "expectation": "reject",
+      "kind": "misplaced-lens",
+      "agent": "bolas",
+      "messageIncludes": "Roast lens"
+    }
+  ]
+}

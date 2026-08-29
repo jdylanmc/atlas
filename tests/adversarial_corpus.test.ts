@@ -4,6 +4,17 @@ import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path";
 import test, { after } from "node:test";
 import { captureAtlasHostDirectory, CaptureBudgetError } from "../scripts/atlas.ts";
+import {
+  AgentContract,
+  assertRoasterName,
+  buildContracts,
+  buildRoasterContracts,
+  commandSync,
+  composeRoaster,
+  LocalSource,
+  ROASTER_TOOL_SET,
+  validateRoasterContracts,
+} from "../scripts/cacophony_agents.ts";
 import { exploreCommandBudgets } from "../src/interfaces/explore_command.ts";
 import { ingestCommandInputBudgets } from "../src/interfaces/ingest_command.ts";
 import { buildAtlasView } from "../src/atlas/atlas_view.ts";
@@ -99,6 +110,14 @@ const ingestCorpus = parseIngestCorpus(
     readFileSync(resolve(ROOT, "tests", "adversarial", "ingest.json"), "utf8"),
   ),
 );
+const cacophonyRoasterCorpus = parseCacophonyRoasterCorpus(
+  JSON.parse(
+    readFileSync(
+      resolve(ROOT, "tests", "adversarial", "cacophony-roasters.json"),
+      "utf8",
+    ),
+  ),
+);
 
 type IngestCaseKind =
   | "graph"
@@ -108,6 +127,91 @@ type IngestCaseKind =
   | "change-set"
   | "emission"
   | "source-reuse";
+
+interface CacophonyRoasterEligibleRosterCase {
+  readonly excludedRoasters: readonly string[];
+  readonly expectation: "accept";
+  readonly expectedRoasters: readonly string[];
+  readonly gate: "cacophony-roasters";
+  readonly kind: "eligible-roster";
+  readonly name: string;
+}
+
+interface CacophonyRoasterReservedNameCase {
+  readonly expectation: "reject";
+  readonly gate: "cacophony-roasters";
+  readonly kind: "reserved-name";
+  readonly messageIncludes: string;
+  readonly name: string;
+  readonly nameUnderTest: string;
+}
+
+interface CacophonyRoasterToolsCase {
+  readonly expectation: "reject";
+  readonly gate: "cacophony-roasters";
+  readonly kind: "tools";
+  readonly messageIncludes: string;
+  readonly name: string;
+  readonly tools: readonly string[];
+}
+
+interface CacophonyRoasterUnexpectedPathCase {
+  readonly expectation: "reject";
+  readonly gate: "cacophony-roasters";
+  readonly kind: "unexpected-path";
+  readonly messageIncludes: string;
+  readonly name: string;
+  readonly path: string;
+}
+
+interface CacophonyRoasterKnownCleanupCase {
+  readonly agent: string;
+  readonly expectation: "accept";
+  readonly gate: "cacophony-roasters";
+  readonly kind: "known-cleanup";
+  readonly name: string;
+}
+
+interface CacophonyRoasterFieldsDistinctCase {
+  readonly expectation: "accept";
+  readonly gate: "cacophony-roasters";
+  readonly kind: "roaster-fields-distinct";
+  readonly name: string;
+}
+
+interface CacophonyRoasterMissingLensCase {
+  readonly agent: string;
+  readonly expectation: "reject";
+  readonly gate: "cacophony-roasters";
+  readonly kind: "missing-lens";
+  readonly messageIncludes: string;
+  readonly name: string;
+}
+
+interface CacophonyRoasterMisplacedLensCase {
+  readonly agent: string;
+  readonly expectation: "reject";
+  readonly gate: "cacophony-roasters";
+  readonly kind: "misplaced-lens";
+  readonly messageIncludes: string;
+  readonly name: string;
+}
+
+type CacophonyRoasterCase =
+  | CacophonyRoasterEligibleRosterCase
+  | CacophonyRoasterKnownCleanupCase
+  | CacophonyRoasterMisplacedLensCase
+  | CacophonyRoasterFieldsDistinctCase
+  | CacophonyRoasterMissingLensCase
+  | CacophonyRoasterReservedNameCase
+  | CacophonyRoasterToolsCase
+  | CacophonyRoasterUnexpectedPathCase;
+
+interface CacophonyRoasterCorpus {
+  readonly cases: readonly CacophonyRoasterCase[];
+  readonly reviewResolutionRule: string;
+  readonly schema: 1;
+}
 
 interface IngestCorpusCase {
   readonly expectation: "accept" | "reject";
@@ -303,6 +407,33 @@ function glossary(avoidance: string, extraTerm?: string): VocabularyTextFile {
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+class OverlayAtlasSource extends LocalSource {
+  readonly overrides: Readonly<Record<string, string>>;
+  readonly base: LocalSource;
+
+  constructor(base: LocalSource, overrides: Readonly<Record<string, string>>) {
+    super(ROOT);
+    this.base = base;
+    this.overrides = overrides;
+  }
+
+  override listFiles(prefix: string): string[] {
+    const pathPrefix = `${prefix}/`;
+    return [
+      ...new Set([
+        ...this.base.listFiles(prefix),
+        ...Object.keys(this.overrides).filter(
+          (path) => path === prefix || path.startsWith(pathPrefix),
+        ),
+      ]),
+    ].sort();
+  }
+
+  override readText(path: string): string {
+    return this.overrides[path] ?? this.base.readText(path);
+  }
 }
 
 function assertString(value: unknown, path: string): string {
@@ -861,6 +992,139 @@ function parseCorpus(value: unknown): Corpus {
   return { cases, reviewResolutionRule, schema: 1 };
 }
 
+function parseCacophonyRoasterCorpus(value: unknown): CacophonyRoasterCorpus {
+  assert.ok(isRecord(value), "cacophony-roasters corpus must be an object");
+  assert.equal(value["schema"], 1, "cacophony-roasters corpus schema must be 1");
+  const reviewResolutionRule = assertString(
+    value["reviewResolutionRule"],
+    "cacophony-roasters.reviewResolutionRule",
+  );
+  assert.ok(Array.isArray(value["cases"]), "cacophony-roasters cases must be an array");
+  assert.notEqual(
+    value["cases"].length,
+    0,
+    "cacophony-roasters cases must not be empty",
+  );
+  const names = new Set<string>();
+  let accepts = 0;
+  let rejects = 0;
+  const cases = (value["cases"] as readonly unknown[]).map(
+    (entry, index): CacophonyRoasterCase => {
+      const path = `cacophony-roasters.cases[${String(index)}]`;
+      assert.ok(isRecord(entry), `${path} must be an object`);
+      const name = assertString(entry["name"], `${path}.name`);
+      assert.equal(names.has(name), false, `${path}.name must be unique`);
+      names.add(name);
+      assert.equal(entry["gate"], "cacophony-roasters", `${path}.gate is unsupported`);
+      const kind = assertString(entry["kind"], `${path}.kind`);
+      if (kind === "eligible-roster") {
+        assert.equal(entry["expectation"], "accept", `${path}.expectation`);
+        accepts += 1;
+        return {
+          excludedRoasters: assertStringArray(
+            entry["excludedRoasters"],
+            `${path}.excludedRoasters`,
+          ),
+          expectation: "accept",
+          expectedRoasters: assertStringArray(
+            entry["expectedRoasters"],
+            `${path}.expectedRoasters`,
+          ),
+          gate: "cacophony-roasters",
+          kind,
+          name,
+        };
+      }
+      if (kind === "known-cleanup") {
+        assert.equal(entry["expectation"], "accept", `${path}.expectation`);
+        accepts += 1;
+        return {
+          agent: assertString(entry["agent"], `${path}.agent`),
+          expectation: "accept",
+          gate: "cacophony-roasters",
+          kind,
+          name,
+        };
+      }
+      if (kind === "roaster-fields-distinct") {
+        assert.equal(entry["expectation"], "accept", `${path}.expectation`);
+        accepts += 1;
+        return {
+          expectation: "accept",
+          gate: "cacophony-roasters",
+          kind,
+          name,
+        };
+      }
+      assert.equal(entry["expectation"], "reject", `${path}.expectation`);
+      rejects += 1;
+      if (kind === "reserved-name") {
+        return {
+          expectation: "reject",
+          gate: "cacophony-roasters",
+          kind,
+          messageIncludes: assertString(
+            entry["messageIncludes"],
+            `${path}.messageIncludes`,
+          ),
+          name,
+          nameUnderTest: assertString(entry["nameUnderTest"], `${path}.nameUnderTest`),
+        };
+      }
+      if (kind === "unexpected-path") {
+        return {
+          expectation: "reject",
+          gate: "cacophony-roasters",
+          kind,
+          messageIncludes: assertString(
+            entry["messageIncludes"],
+            `${path}.messageIncludes`,
+          ),
+          name,
+          path: assertString(entry["path"], `${path}.path`),
+        };
+      }
+      if (kind === "missing-lens" || kind === "misplaced-lens") {
+        return {
+          agent: assertString(entry["agent"], `${path}.agent`),
+          expectation: "reject",
+          gate: "cacophony-roasters",
+          kind,
+          messageIncludes: assertString(
+            entry["messageIncludes"],
+            `${path}.messageIncludes`,
+          ),
+          name,
+        };
+      }
+      assert.equal(kind, "tools", `${path}.kind is unsupported`);
+      return {
+        expectation: "reject",
+        gate: "cacophony-roasters",
+        kind,
+        messageIncludes: assertString(
+          entry["messageIncludes"],
+          `${path}.messageIncludes`,
+        ),
+        name,
+        tools: assertStringArray(entry["tools"], `${path}.tools`),
+      };
+    },
+  );
+  assert.notEqual(accepts, 0, "cacophony-roasters corpus must include an accept case");
+  assert.notEqual(rejects, 0, "cacophony-roasters corpus must include a reject case");
+  return { cases, reviewResolutionRule, schema: 1 };
+}
+
+function validateRoasterTools(tools: readonly string[]): void {
+  if (
+    tools.length !== ROASTER_TOOL_SET.length ||
+    tools.some((tool, index) => tool !== ROASTER_TOOL_SET[index])
+  ) {
+    throw new Error("repository roaster tools must be exactly read and search");
+  }
+}
+
 function parseIngestCorpus(value: unknown): IngestCorpus {
   assert.ok(isRecord(value), "ingest corpus must be an object");
   assert.equal(value["schema"], 1, "ingest corpus schema must be 1");
@@ -953,7 +1217,8 @@ after(() => {
       lintStampCorpus.cases.length +
       frameworkBundleCorpus.cases.length +
       structuralValidationCorpus.cases.length +
-      ingestCorpus.cases.length,
+      ingestCorpus.cases.length +
+      cacophonyRoasterCorpus.cases.length,
   );
 });
 
@@ -1033,6 +1298,21 @@ test("the adversarial structural-validation corpus is structurally valid", () =>
   );
   assert.ok(
     structuralValidationCorpus.cases.some((entry) => entry.expectation === "reject"),
+  );
+});
+
+test("the adversarial cacophony-roasters corpus is structurally valid", () => {
+  assert.match(cacophonyRoasterCorpus.reviewResolutionRule, /review finding/u);
+  assert.equal(cacophonyRoasterCorpus.schema, 1);
+  assert.equal(
+    new Set(cacophonyRoasterCorpus.cases.map((entry) => entry.name)).size,
+    cacophonyRoasterCorpus.cases.length,
+  );
+  assert.ok(
+    cacophonyRoasterCorpus.cases.some((entry) => entry.expectation === "accept"),
+  );
+  assert.ok(
+    cacophonyRoasterCorpus.cases.some((entry) => entry.expectation === "reject"),
   );
 });
 
@@ -1154,6 +1434,132 @@ function exerciseAtlasViewMutation(entry: AtlasCliAtlasViewMutationCase): void {
   assert.equal(Object.isFrozen(snapshot), true);
   assert.equal(Object.isFrozen(snapshot.snapshot), true);
   assert.equal(Object.isFrozen(object.page.sdk), true);
+}
+
+for (const entry of cacophonyRoasterCorpus.cases) {
+  test(`adversarial cacophony-roasters corpus: ${entry.name}`, () => {
+    executedCases += 1;
+    assert.equal(entry.gate, "cacophony-roasters");
+    if (entry.kind === "eligible-roster") {
+      const roasters = buildRoasterContracts(
+        buildContracts(new LocalSource(ROOT), { verifyGenerated: false }),
+      );
+      const names = Object.values(roasters)
+        .map((roaster) => roaster.name)
+        .sort();
+      assert.deepEqual(names, [...entry.expectedRoasters].sort());
+      for (const excluded of entry.excludedRoasters) {
+        assert.equal(names.includes(excluded), false);
+      }
+      return;
+    }
+    if (entry.kind === "roaster-fields-distinct") {
+      const roasters = buildRoasterContracts(
+        buildContracts(new LocalSource(ROOT), { verifyGenerated: false }),
+      );
+      for (const roaster of Object.values(roasters)) {
+        const description = /^description: (.+)$/m.exec(roaster.instructionsFile)?.[1];
+        const purpose = /^purpose: (.+)$/m.exec(roaster.instructionsFile)?.[1];
+        const roastLens = /^roast-lens: (.+)$/m.exec(roaster.agentFile)?.[1];
+        assert.ok(description);
+        assert.ok(purpose);
+        assert.ok(roastLens);
+        assert.equal(new Set([description, purpose, roastLens]).size, 3);
+      }
+      return;
+    }
+    if (entry.kind === "reserved-name") {
+      assert.throws(
+        () => assertRoasterName(entry.nameUnderTest),
+        new RegExp(entry.messageIncludes, "u"),
+      );
+      return;
+    }
+    if (entry.kind === "unexpected-path") {
+      const roasters = buildRoasterContracts(
+        buildContracts(new LocalSource(ROOT), { verifyGenerated: false }),
+      );
+      assert.throws(
+        () =>
+          validateRoasterContracts(
+            new OverlayAtlasSource(new LocalSource(ROOT), {
+              [entry.path]: "---\nname: rogue-roaster\n---\n",
+            }),
+            roasters,
+          ),
+        new RegExp(entry.messageIncludes.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"),
+      );
+      return;
+    }
+    if (entry.kind === "known-cleanup") {
+      const workspace = resolve(ROOT, ".test-workspaces", `adversarial-${entry.name}`);
+      rmSync(workspace, { force: true, recursive: true });
+      try {
+        cpSync(resolve(ROOT, ".cacophony"), resolve(workspace, ".cacophony"), {
+          recursive: true,
+        });
+        mkdirSync(resolve(workspace, "agents", `${entry.agent}-roaster`), {
+          recursive: true,
+        });
+        writeFileSync(
+          resolve(workspace, "agents", `${entry.agent}-roaster.agent.md`),
+          `---\nname: ${entry.agent}-roaster\n---\n`,
+        );
+        writeFileSync(
+          resolve(workspace, "agents", `${entry.agent}-roaster`, "directive.md"),
+          "retired generated output\n",
+        );
+        commandSync(workspace);
+        const source = new LocalSource(workspace);
+        assert.throws(
+          () => source.readText(`agents/${entry.agent}-roaster.agent.md`),
+          /regular file/,
+        );
+        assert.deepEqual(source.listFiles(`agents/${entry.agent}-roaster`), []);
+      } finally {
+        rmSync(workspace, { force: true, recursive: true });
+      }
+      return;
+    }
+    if (entry.kind === "missing-lens" || entry.kind === "misplaced-lens") {
+      const contracts = buildContracts(new LocalSource(ROOT), {
+        verifyGenerated: false,
+      });
+      const value = contracts[entry.agent];
+      assert.ok(value);
+      const lensBlock = /\n## Roast lens\n\n[^\n]+\n/u.exec(value.directive.body)?.[0];
+      assert.ok(lensBlock);
+      const withoutLens = value.directive.body.replace(lensBlock, "\n");
+      const body =
+        entry.kind === "missing-lens"
+          ? withoutLens
+          : withoutLens.replace("\n## Evidence", `${lensBlock}\n## Evidence`);
+      const directive = {
+        path: value.directive.path,
+        metadata: value.directive.metadata,
+        body,
+      };
+      assert.throws(
+        () =>
+          composeRoaster(
+            new AgentContract({
+              compatibilityAgent: value.compatibilityAgent,
+              personaId: value.personaId,
+              directiveIds: value.directiveIds,
+              persona: value.persona,
+              directives: [directive],
+              composed: value.composed,
+            }),
+          ),
+        new RegExp(entry.messageIncludes, "u"),
+      );
+      return;
+    }
+    assert.throws(
+      () => validateRoasterTools(entry.tools),
+      new RegExp(entry.messageIncludes, "u"),
+    );
+  });
 }
 
 for (const entry of structuralValidationCorpus.cases) {

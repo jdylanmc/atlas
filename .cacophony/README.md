@@ -1,6 +1,6 @@
 # Cacophony agent prompt contract
 
-Each Atlas SDK reviewer composition has four tracked artifacts:
+Each Atlas SDK reviewer composition has generated prompt and repository-roaster artifacts derived from one source of truth:
 
 - `.cacophony/personas/<persona>.md` is an **Agent Persona**. Its frontmatter
   declares `atlas.agent-persona/v2`, a `persona` identifier, and
@@ -11,9 +11,13 @@ Each Atlas SDK reviewer composition has four tracked artifacts:
 - `.cacophony/directives/<intention>.md` is an **Agent Directive**. Its
   intention-named path and frontmatter `directive` identifier are independent
   of every Persona. It declares `atlas.agent-directive/v2` and
-  `authority: behavior`; its fixed sections contain objectives,
-  responsibilities, evidence rules, severity, constraints, output contract,
-  and handoffs.
+  `authority: behavior`; its fixed sections contain objectives, responsibilities,
+  evidence rules, severity, constraints, output contract, and handoffs.
+  Roaster-eligible Directives must also contain `## Roast lens` immediately
+  after `## Objective`; the section must contain exactly one non-empty,
+  non-bullet line, projected verbatim into the generated roaster's `roast-lens`
+  and `description`. Directives excluded from roaster generation, currently
+  `prompt-contract-review`, omit `## Roast lens`.
 - `.cacophony/compositions.json` is the reference-only Agent Composition
   layer. Each entry selects exactly one Persona and an ordered, non-empty list
   of stable Directives. Replacing a Persona changes only the `persona`
@@ -22,6 +26,14 @@ Each Atlas SDK reviewer composition has four tracked artifacts:
   prompt. It preserves existing check and report artifact identifiers, places
   the selected Persona first with no authority, and places the intention-named
   Directives afterward in precedence order with explicit generated provenance.
+- `agents/<compatibility-agent>-roaster.agent.md` and
+  `agents/<compatibility-agent>-roaster/{instructions,persona,directive}.md` are
+  generated repository roasters for the external `roast` skill. They are derived
+  from the same Persona, Directive, and Composition sources as the Cacophony
+  prompt. The Persona projection remains presentation-only; the Directive
+  projection carries behavior. Fletcher is intentionally excluded because its
+  `prompt-contract-review` Directive reviews prompt contracts, not code change
+  sets.
 
 | Compatibility agent | Persona    | Ordered Directives                 |
 | ------------------- | ---------- | ---------------------------------- |
@@ -37,14 +49,20 @@ the complete contract:
 node scripts/cacophony_agents.ts validate
 ```
 
-After editing a component, regenerate and validate the tracked prompts:
+After editing a component, regenerate and validate the tracked prompts and
+repository roasters:
 
 ```sh
 node scripts/cacophony_agents.ts sync
 ```
 
-Do not edit generated prompts directly. The reusable review worker invokes the
-validator from the trusted base revision, proves that the base prompt is the
+Do not edit generated prompts or roaster files directly. Repository roaster
+agent files and their sibling roaster directories under `agents/` and
+`.github/agents/` are generator-owned in this repository. Hand-authored
+repository roasters are not supported because they would create ungoverned
+reviewers outside `.cacophony`'s source of truth; `cacophony:validate` fails
+closed when one is present. The reusable review worker invokes the validator
+from the trusted base revision, proves that the base prompt is the
 exact deterministic composition of its base Persona and Directives, and then
 stages those verified base bytes over the relative workspace prompt before
 passing that path to Cacophony. The pinned action independently reads the path

@@ -17,6 +17,7 @@ import {
   COMPOSITION_MAP_PATH,
   COMPOSITION_SCHEMA,
   COMPATIBILITY_DIRECTIVE_SETS,
+  AgentContract,
   ContractError,
   DIRECTIVE_SCHEMA,
   GitRevisionSource,
@@ -24,12 +25,16 @@ import {
   MAX_COMPONENT_BYTES,
   PERSONA_CATALOG,
   PERSONA_SCHEMA,
+  assertRoasterName,
   buildContracts,
+  buildRoasterContracts,
   commandSync,
   composeAgent,
+  composeRoaster,
   loadCompositions,
   parseComponent,
   validateDirective,
+  validateRoasterContracts,
   type Component,
   type Source,
 } from "../scripts/cacophony_agents.ts";
@@ -38,6 +43,7 @@ const ROOT = resolve(import.meta.dirname, "..");
 const SCRIPT = join(ROOT, "scripts", "cacophony_agents.ts");
 const SOURCE = new LocalSource(ROOT);
 const CONTRACTS = buildContracts(SOURCE, { verifyGenerated: true });
+const ROASTERS = buildRoasterContracts(CONTRACTS);
 const EXPECTED_DIRECTIVE_SETS = {
   balerion: ["security-and-runtime-risk-review"],
   bolas: ["domain-architecture-review"],
@@ -45,10 +51,10 @@ const EXPECTED_DIRECTIVE_SETS = {
   smaug: ["simplicity-and-code-truth-review"],
 } as const;
 const EXPECTED_PROMPT_HASHES = {
-  balerion: "493956e498f24f8057759062e486fbd103446cc80ae8dafdd370fe307b2f8ce8",
-  bolas: "0a5270746674e4b76a62c9802429b229433440c595849547f3f38a5f025ba0ce",
+  balerion: "62397d83ffaaf987f2f6281185680ceb966d5a747bfae2678d7f9c60c80024c6",
+  bolas: "dabca9fbb8e348979cb1f759c3d9ad761b2de9090dd195b29b7f4617c7cf8655",
   fletcher: "e1d03ce54fff764a40beaa33e6398e208ceef449fcb2e3f8b0e9d4aa3dce65e3",
-  smaug: "73d00b7102b4b99a13f3fbf67e2fe93ea7995fe8cd0cd572363145560615b41a",
+  smaug: "4e94fc44fde65c99dfb04acfaa37babae6e064cfa1d4a4c3236af90bc2465b77",
 } as const;
 
 class OverlaySource implements Source {
@@ -61,7 +67,15 @@ class OverlaySource implements Source {
   }
 
   listFiles(prefix: string): string[] {
-    return this.source.listFiles(prefix);
+    const pathPrefix = `${prefix}/`;
+    return [
+      ...new Set([
+        ...this.source.listFiles(prefix),
+        ...Object.keys(this.overrides).filter(
+          (path) => path === prefix || path.startsWith(pathPrefix),
+        ),
+      ]),
+    ].sort();
   }
 
   readText(path: string): string {
@@ -117,6 +131,20 @@ function git(repository: string, ...arguments_: string[]): string {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   }).trim();
+}
+
+function captureConsoleLog(action: () => void): string[] {
+  const original = console.log;
+  const lines: string[] = [];
+  console.log = (message?: unknown) => {
+    lines.push(typeof message === "string" ? message : JSON.stringify(message ?? ""));
+  };
+  try {
+    action();
+  } finally {
+    console.log = original;
+  }
+  return lines;
 }
 
 test("repository contract is valid", () => {
@@ -436,6 +464,270 @@ test("generated prompts retain byte-level compatibility", () => {
   }
 });
 
+test("repository roasters are generated from eligible compositions", () => {
+  assert.deepEqual(Object.keys(ROASTERS).sort(), ["balerion", "bolas", "smaug"]);
+  assert.equal(ROASTERS["fletcher"], undefined);
+
+  const bolas = ROASTERS["bolas"];
+  assert.ok(bolas);
+  assert.equal(bolas.name, "bolas-roaster");
+  assert.equal(bolas.agentPath, "agents/bolas-roaster.agent.md");
+  assert.match(bolas.agentFile, /^name: bolas-roaster$/m);
+  assert.match(bolas.agentFile, /^tools: \["read", "search"\]$/m);
+  assert.match(
+    bolas.agentFile,
+    /^roast-lens: "Domain-Driven Design, SOLID, structural decoupling, and Clean Architecture boundaries"$/m,
+  );
+  assert.match(
+    bolas.agentFile,
+    /^roast-instructions: "\.\/bolas-roaster\/instructions\.md"$/m,
+  );
+  assert.match(bolas.instructionsFile, /^tools: \["read", "search"\]$/m);
+  assert.match(
+    bolas.instructionsFile,
+    /^purpose: "Review pull requests through Domain-Driven Design, SOLID principles, structural decoupling, and Clean Architecture\. Identify concrete architecture defects while keeping every conclusion evidence-bound and actionable\."$/m,
+  );
+  assert.doesNotMatch(bolas.instructionsFile, /doctrine-manifest|^doctrine:/m);
+  assert.match(bolas.instructionsFile, /^persona: \.\/persona\.md$/m);
+  assert.match(bolas.instructionsFile, /^directive: \.\/directive\.md$/m);
+  assert.match(bolas.personaFile, /authority: none/);
+  assert.match(bolas.personaFile, /presentation-only/);
+  assert.match(bolas.directiveFile, /# Agent Directive/);
+  assert.match(
+    bolas.directiveFile,
+    /Review pull requests through Domain-Driven Design/,
+  );
+
+  for (const roaster of Object.values(ROASTERS)) {
+    assert.deepEqual(
+      [
+        roaster.agentPath,
+        roaster.instructionsPath,
+        roaster.personaPath,
+        roaster.directivePath,
+      ].map(
+        (path) =>
+          path.startsWith("agents/") && !path.includes("..") && !path.startsWith("/"),
+      ),
+      [true, true, true, true],
+    );
+    const description = /^description: (.+)$/m.exec(roaster.instructionsFile)?.[1];
+    const purpose = /^purpose: (.+)$/m.exec(roaster.instructionsFile)?.[1];
+    const roastLens = /^roast-lens: (.+)$/m.exec(roaster.agentFile)?.[1];
+    assert.ok(description);
+    assert.ok(purpose);
+    assert.ok(roastLens);
+    assert.equal(new Set([description, purpose, roastLens]).size, 3);
+  }
+});
+
+test("repository roaster validation rejects drift and missing files", () => {
+  const stalePath = "agents/bolas-roaster/directive.md";
+  assert.throws(
+    () =>
+      validateRoasterContracts(
+        new OverlaySource(SOURCE, {
+          [stalePath]: `${ROASTERS["bolas"]?.directiveFile ?? ""}stale\n`,
+        }),
+        ROASTERS,
+      ),
+    /agents\/bolas-roaster\/directive\.md is stale/,
+  );
+
+  assert.throws(
+    () =>
+      validateRoasterContracts(
+        new OverlaySource(SOURCE, {
+          "agents/fletcher-roaster.agent.md": "---\nname: fletcher-roaster\n---\n",
+        }),
+        ROASTERS,
+      ),
+    /repository roasters are generator-owned.*fletcher-roaster\.agent\.md/,
+  );
+});
+
+test("repository roaster discovery rejects nested and .github roasters", () => {
+  for (const path of [
+    "agents/panel/rogue-roaster.agent.md",
+    ".github/agents/panel/rogue-roaster.agent.md",
+  ]) {
+    assert.throws(
+      () =>
+        validateRoasterContracts(
+          new OverlaySource(SOURCE, { [path]: "---\nname: rogue-roaster\n---\n" }),
+          ROASTERS,
+        ),
+      new RegExp(
+        `repository roasters are generator-owned.*${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+      ),
+    );
+  }
+});
+
+test("sync preserves and reports hand-authored roasters instead of deleting them", () => {
+  const workspace = scratchDirectory("human-roaster");
+  try {
+    cpSync(join(ROOT, ".cacophony"), join(workspace, ".cacophony"), {
+      recursive: true,
+    });
+    mkdirSync(join(workspace, "agents", "panel"), { recursive: true });
+    const humanRoaster = join(workspace, "agents", "panel", "human-roaster.agent.md");
+    writeFileSync(humanRoaster, "---\nname: human-roaster\n---\n");
+    assert.throws(
+      () => commandSync(workspace),
+      /remove hand-authored roaster files.*human-roaster\.agent\.md/,
+    );
+    assert.equal(readFileSync(humanRoaster, "utf8"), "---\nname: human-roaster\n---\n");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("routine sync does not log regenerated roaster deletions", () => {
+  const workspace = scratchDirectory("quiet-sync");
+  try {
+    cpSync(join(ROOT, ".cacophony"), join(workspace, ".cacophony"), {
+      recursive: true,
+    });
+    commandSync(workspace);
+    const logs = captureConsoleLog(() => commandSync(workspace));
+    assert.deepEqual(
+      logs.filter((line) => line.startsWith("deleted ")),
+      [],
+    );
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("sync removes retired known roaster agent files and directories as one unit", () => {
+  const workspace = scratchDirectory("retired-roaster");
+  try {
+    cpSync(join(ROOT, ".cacophony"), join(workspace, ".cacophony"), {
+      recursive: true,
+    });
+    mkdirSync(join(workspace, "agents", "fletcher-roaster"), { recursive: true });
+    writeFileSync(
+      join(workspace, "agents", "fletcher-roaster.agent.md"),
+      "---\nname: fletcher-roaster\n---\n",
+    );
+    writeFileSync(
+      join(workspace, "agents", "fletcher-roaster", "directive.md"),
+      "generated but retired\n",
+    );
+    const logs = captureConsoleLog(() => commandSync(workspace));
+    assert.deepEqual(
+      logs.filter((line) => line.startsWith("deleted ")),
+      ["deleted agents/fletcher-roaster", "deleted agents/fletcher-roaster.agent.md"],
+    );
+    const source = new LocalSource(workspace);
+    assert.throws(
+      () => source.readText("agents/fletcher-roaster.agent.md"),
+      /regular file/,
+    );
+    assert.deepEqual(source.listFiles("agents/fletcher-roaster"), []);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+function contractWithDirective(
+  value: AgentContract,
+  directive: Component,
+): AgentContract {
+  return new AgentContract({
+    compatibilityAgent: value.compatibilityAgent,
+    personaId: value.personaId,
+    directiveIds: value.directiveIds,
+    persona: value.persona,
+    directives: [directive],
+    composed: value.composed,
+  });
+}
+
+test("repository roaster lens must be an explicit directive section", () => {
+  const value = contract("bolas");
+  const directive: Component = {
+    path: value.directive.path,
+    metadata: value.directive.metadata,
+    body: value.directive.body.replace(
+      /\n## Roast lens\n\n[^\n]+\n(?=\n## Responsibilities)/u,
+      "",
+    ),
+  };
+  assert.throws(
+    () => composeRoaster(contractWithDirective(value, directive)),
+    /must declare ## Roast lens/,
+  );
+});
+
+test("misplaced repository roaster lens reports the lens schema", () => {
+  const value = contract("bolas");
+  const lensBlock = /\n## Roast lens\n\n[^\n]+\n/u.exec(value.directive.body)?.[0];
+  assert.ok(lensBlock);
+  const withoutLens = value.directive.body.replace(lensBlock, "\n");
+  const directive: Component = {
+    path: value.directive.path,
+    metadata: value.directive.metadata,
+    body: withoutLens.replace("\n## Evidence", `${lensBlock}\n## Evidence`),
+  };
+  assert.throws(
+    () => composeRoaster(contractWithDirective(value, directive)),
+    /sections must be exactly.*Roast lens/,
+  );
+});
+
+test("repository roaster names reject bundled roast identities", () => {
+  assert.throws(
+    () => assertRoasterName("security-roaster"),
+    /reserved by the bundled roast skill/,
+  );
+  assert.throws(() => assertRoasterName("bolas"), /ending in -roaster/);
+});
+
+test("repository roaster tools remain read and search only", () => {
+  for (const roaster of Object.values(ROASTERS)) {
+    assert.match(roaster.agentFile, /^tools: \["read", "search"\]$/m);
+    assert.doesNotMatch(roaster.agentFile, /^tools: .*\b(write|edit|bash|shell)\b/m);
+    assert.match(roaster.instructionsFile, /^tools: \["read", "search"\]$/m);
+    assert.doesNotMatch(
+      roaster.instructionsFile,
+      /^tools: .*\b(write|edit|bash|shell)\b/m,
+    );
+  }
+});
+
+test("repository roaster output paths reject symlink and escape attempts", () => {
+  const workspace = scratchDirectory("roaster-paths");
+  try {
+    cpSync(join(ROOT, ".cacophony"), join(workspace, ".cacophony"), {
+      recursive: true,
+    });
+    commandSync(workspace);
+    const source = new LocalSource(workspace);
+    const roasters = buildRoasterContracts(
+      buildContracts(source, { verifyGenerated: true }),
+    );
+    validateRoasterContracts(source, roasters);
+    assert.throws(
+      () => source.readText("agents/bolas-roaster/../directive.md"),
+      /repository-relative/,
+    );
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("Fletcher exclusion is explicit because it reviews prompt contracts", () => {
+  const fletcher = contract("fletcher");
+  assert.equal(fletcher.directiveId, "prompt-contract-review");
+  assert.equal(ROASTERS["fletcher"], undefined);
+  assert.throws(
+    () => composeRoaster(fletcher),
+    /external roast skill consumes code change set reviewers/,
+  );
+});
+
 test("stale generation is rejected and sync is idempotent", () => {
   const generatedPath = ".cacophony/agents/bolas.md";
   assert.throws(
@@ -576,7 +868,10 @@ test("validator is directly executable and preserves command interfaces", () => 
   const validation = execFileSync(SCRIPT, ["validate", "--root", ROOT], {
     encoding: "utf8",
   });
-  assert.equal(validation, "validated 4 Cacophony agent compositions\n");
+  assert.equal(
+    validation,
+    "validated 4 Cacophony agent compositions and 3 repository roasters\n",
+  );
   const rendered = execFileSync(
     "node",
     [SCRIPT, "render", "--root", ROOT, "--agent", "fletcher"],

@@ -1,8 +1,7 @@
----
-schema: atlas.agent-directive/v2
-directive: security-and-runtime-risk-review
-authority: behavior
----
+<!--
+Generated from .cacophony/directives/security-and-runtime-risk-review.md by scripts/cacophony_agents.ts. Do not edit directly.
+This Directive retains behavioral authority for the roaster.
+-->
 # Agent Directive
 
 ## Objective
