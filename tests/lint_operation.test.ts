@@ -22,7 +22,7 @@ const generousBudgets: AtlasTextBudgets = Object.freeze({
 });
 
 const atlasPaths = [
-  ".atlas/framework/README.md",
+  ".atlas/manifest.json",
   ".atlas/CHANGELOG.md",
   ".atlas/sources/atlas-sdk-lint.md",
   ".atlas/index.md",

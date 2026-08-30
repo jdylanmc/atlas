@@ -49,7 +49,7 @@ function page(
 }
 
 const validFiles = [
-  ".atlas/framework/README.md",
+  ".atlas/manifest.json",
   ".atlas/CHANGELOG.md",
   ".atlas/index.md",
   ".atlas/concepts/parsing.md",
@@ -57,7 +57,7 @@ const validFiles = [
 ].map((path) => fixture("atlas-pages", path));
 
 const invalidFiles = [
-  ".atlas/framework/README.md",
+  ".atlas/manifest.md",
   ".atlas/index.md",
   ".atlas/concepts/second.md",
   ".atlas/sources/malformed.md",

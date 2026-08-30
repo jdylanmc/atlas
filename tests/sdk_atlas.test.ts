@@ -6,8 +6,6 @@ import test from "node:test";
 
 import {
   atlasInitializationFiles,
-  canonicalFrameworkPageByBundleState,
-  frameworkBundleStateFromEvidence,
   initialAtlasInitializationWorkflowState,
   runAtlasInitializationWorkflow,
 } from "../src/operations/initialize_operation.ts";
@@ -62,44 +60,6 @@ test("the committed SDK Atlas is byte-identical to what Initialization emits", (
       `${path} has drifted from the content Atlas Initialization emits`,
     );
   }
-});
-
-// No Framework Bundle can be installed now that its assembly and verification
-// machinery is retired, so the committed framework page is the absent text by
-// construction rather than by derivation from an installed manifest. Issue #162
-// removes the directory and this test with it.
-test("the SDK Atlas framework page matches the absent canonical text", () => {
-  const framework = readFileSync(join(ROOT, ".atlas/framework/README.md"), "utf8");
-  assert.equal(
-    framework,
-    canonicalFrameworkPageByBundleState.absent,
-    "the framework page must exactly match the canonical absent text",
-  );
-});
-
-test("Framework Bundle page text is selected only from derived states", () => {
-  assert.equal(
-    canonicalFrameworkPageByBundleState[
-      frameworkBundleStateFromEvidence({
-        frameworkFilePaths: Object.freeze([]),
-        inventoryPaths: Object.freeze([]),
-        manifestDigestVerified: false,
-        manifestPresent: false,
-      })
-    ],
-    canonicalFrameworkPageByBundleState.absent,
-  );
-  assert.equal(
-    canonicalFrameworkPageByBundleState[
-      frameworkBundleStateFromEvidence({
-        frameworkFilePaths: Object.freeze([".atlas/framework/src/runtime.ts"]),
-        inventoryPaths: Object.freeze(["src/runtime.ts"]),
-        manifestDigestVerified: true,
-        manifestPresent: true,
-      })
-    ],
-    canonicalFrameworkPageByBundleState.installed,
-  );
 });
 
 test("the minimal initialization operation result remains byte-identical to the golden fixture", () => {

@@ -83,8 +83,9 @@ contract vocabulary agreement, byte-exact Cacophony prompt validation, and
 Actionlint `1.7.7`. The SDK Atlas gate runs `atlas lint --machine` against the
 repository Atlas Host Directory and requires a completed Valid Atlas Lint Result
 with no error Findings. This confirms only the deterministic Lint rules that
-exist today; the contents of `.atlas/framework/` are still carried as an opaque
-record, and rules specific to that directory remain deferred.
+exist today; the Atlas Manifest is still carried as an opaque record, and rules
+that would validate its declared schema against the rest of the Atlas remain
+deferred.
 The Actionlint launcher also pins ShellCheck `0.11.0`, disables Python-based
 Pyflakes integration, downloads only the assets for the current supported
 platform and architecture, and verifies their release checksums before

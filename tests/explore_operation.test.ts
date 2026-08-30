@@ -59,7 +59,7 @@ const budgets: ExploreBudgets = Object.freeze({
 });
 
 const paths = [
-  ".atlas/framework/README.md",
+  ".atlas/manifest.json",
   ".atlas/CHANGELOG.md",
   ".atlas/sources/atlas-sdk-lint.md",
   ".atlas/index.md",

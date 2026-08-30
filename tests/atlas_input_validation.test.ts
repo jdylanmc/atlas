@@ -25,7 +25,7 @@ const generousBudgets: AtlasTextBudgets = Object.freeze({
 });
 
 const atlasPaths = [
-  ".atlas/framework/README.md",
+  ".atlas/manifest.json",
   ".atlas/CHANGELOG.md",
   ".atlas/index.md",
   ".atlas/concepts/parsing.md",
@@ -161,8 +161,8 @@ test("carries the loaded text its Findings were decided from", () => {
     [
       ".atlas/CHANGELOG.md",
       ".atlas/concepts/parsing.md",
-      ".atlas/framework/README.md",
       ".atlas/index.md",
+      ".atlas/manifest.json",
       ".atlas/sources/parser-source.md",
     ],
   );
