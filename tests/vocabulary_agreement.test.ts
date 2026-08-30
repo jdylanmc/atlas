@@ -21,6 +21,7 @@ import {
 } from "../src/lint/validate_vocabulary_agreement.ts";
 import {
   collectContracts,
+  ContractError,
   formatFinding,
   main,
   validateRepository,
@@ -904,6 +905,26 @@ test("the validator is directly executable", () => {
     }),
     "CONTEXT.md: ATLAS_VOCABULARY_TERM_UNDEFINED Undefined.",
   );
+});
+
+test("the validator refuses a symlinked contract root directory", () => {
+  const workspace = scratchRepository();
+  const linked = scratchRepository();
+  try {
+    writeFileSync(join(linked, "src", "lint", "outside.ts"), "const a = 1;\n");
+    rmSync(join(workspace, "src"), { recursive: true, force: true });
+    symlinkSync(join(linked, "src"), join(workspace, "src"));
+
+    assert.throws(
+      () => collectContracts(workspace, "src"),
+      (error: unknown) =>
+        error instanceof ContractError &&
+        error.message === "src must be a readable directory",
+    );
+  } finally {
+    rmSync(linked, { recursive: true, force: true });
+    rmSync(workspace, { recursive: true, force: true });
+  }
 });
 
 test("the validator refuses unreadable contracts instead of following them", () => {
