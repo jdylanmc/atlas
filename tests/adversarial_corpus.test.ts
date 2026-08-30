@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import {
+  cpSync,
+  linkSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, resolve } from "node:path";
 import test, { after } from "node:test";
 import { captureAtlasHostDirectory, CaptureBudgetError } from "../scripts/atlas.ts";
+import { lintCommandCaptureBudgets } from "../src/interfaces/lint_command.ts";
 import {
   AgentContract,
   assertRoasterName,
@@ -282,9 +291,39 @@ interface AtlasCliCaptureBudgetCase {
   readonly name: string;
 }
 
+interface AtlasCliCaptureSecurityHardlinkCase {
+  readonly entryPath: string;
+  readonly expectedMessage: string;
+  readonly gate: "atlas-cli";
+  readonly kind: "capture-security";
+  readonly name: string;
+  readonly outsideFile: {
+    readonly path: string;
+    readonly text: string;
+  };
+  readonly scenario: "hardlink";
+}
+
+interface AtlasCliCaptureSecuritySymlinkSwapCase {
+  readonly entryPath: string;
+  readonly gate: "atlas-cli";
+  readonly kind: "capture-security";
+  readonly name: string;
+  readonly originalText: string;
+  readonly outsideFile: {
+    readonly path: string;
+    readonly text: string;
+  };
+  readonly scenario: "symlink-swap";
+}
+
+type AtlasCliCaptureSecurityCase =
+  AtlasCliCaptureSecurityHardlinkCase | AtlasCliCaptureSecuritySymlinkSwapCase;
+
 type AtlasCliCase =
   | AtlasCliAtlasViewMutationCase
   | AtlasCliCaptureBudgetCase
+  | AtlasCliCaptureSecurityCase
   | AtlasCliCommandCase
   | AtlasCliSourceBoundaryCase
   | AtlasCliSourceContractCase;
@@ -710,6 +749,44 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
             `${path}.mutatedSnapshot`,
           ),
           name,
+        };
+      }
+      if (entry["kind"] === "capture-security") {
+        const scenario = entry["scenario"];
+        const outsideFile = entry["outsideFile"];
+        assert.ok(isRecord(outsideFile), `${path}.outsideFile must be an object`);
+        const entryPath = assertString(entry["entryPath"], `${path}.entryPath`);
+        const parsedOutsideFile = {
+          path: assertString(outsideFile["path"], `${path}.outsideFile.path`),
+          text: assertString(outsideFile["text"], `${path}.outsideFile.text`),
+        };
+        if (scenario === "hardlink") {
+          return {
+            entryPath,
+            expectedMessage: assertString(
+              entry["expectedMessage"],
+              `${path}.expectedMessage`,
+            ),
+            gate: "atlas-cli",
+            kind: "capture-security",
+            name,
+            outsideFile: parsedOutsideFile,
+            scenario: "hardlink",
+          };
+        }
+        assert.equal(
+          scenario,
+          "symlink-swap",
+          `${path}.scenario must be symlink-swap or hardlink`,
+        );
+        return {
+          entryPath,
+          gate: "atlas-cli",
+          kind: "capture-security",
+          name,
+          originalText: assertString(entry["originalText"], `${path}.originalText`),
+          outsideFile: parsedOutsideFile,
+          scenario: "symlink-swap",
         };
       }
       assert.equal(entry["kind"], "source-boundary", `${path}.kind is unsupported`);
@@ -1188,6 +1265,7 @@ test("the adversarial atlas-cli corpus is structurally valid", () => {
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "source-boundary"));
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "source-contract"));
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "atlas-view-mutation"));
+  assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "capture-security"));
 });
 
 test("the adversarial lint-stamp corpus is structurally valid", () => {
@@ -1573,8 +1651,8 @@ for (const entry of atlasCliCorpus.cases) {
       }
       let bytesRead = 0;
       try {
-        captureAtlasHostDirectory(workspace, entry.budgets, (path) => {
-          const bytes = readFileSync(path);
+        captureAtlasHostDirectory(workspace, entry.budgets, (fd) => {
+          const bytes = readFileSync(fd);
           bytesRead += bytes.byteLength;
           return bytes;
         });
@@ -1585,6 +1663,53 @@ for (const entry of atlasCliCorpus.cases) {
         const result = runLintOperation(error.capturedFiles, entry.budgets);
         assert.equal(result.payload.state, "completed");
         assert.equal(result.payload.lint.findings[0]?.code, entry.expectedCode);
+      } finally {
+        rmSync(workspace, { force: true, recursive: true });
+      }
+      return;
+    }
+    if (entry.kind === "capture-security") {
+      const workspace = resolve(
+        ROOT,
+        ".test-workspaces",
+        "adversarial-atlas-cli-security",
+      );
+      rmSync(workspace, { force: true, recursive: true });
+      mkdirSync(resolve(workspace, ".atlas"), { recursive: true });
+      const outsidePath = resolve(workspace, entry.outsideFile.path);
+      writeFileSync(outsidePath, entry.outsideFile.text);
+      const entryAbsolutePath = resolve(workspace, entry.entryPath);
+      mkdirSync(dirname(entryAbsolutePath), { recursive: true });
+      try {
+        if (entry.scenario === "hardlink") {
+          linkSync(outsidePath, entryAbsolutePath);
+          assert.throws(
+            () => captureAtlasHostDirectory(workspace, lintCommandCaptureBudgets),
+            new RegExp(entry.expectedMessage, "u"),
+          );
+          return;
+        }
+        // symlink-swap: the entry starts as a genuine regular file so the
+        // capture opens and fstats the real inode; the injected readFile
+        // hook then simulates an attacker racing in a symlink to an
+        // out-of-tree secret at the exact same path *after* that open, and
+        // before the descriptor is read. A descriptor-bound read is immune
+        // to this because it never re-resolves the path.
+        writeFileSync(entryAbsolutePath, entry.originalText);
+        const captured = captureAtlasHostDirectory(
+          workspace,
+          lintCommandCaptureBudgets,
+          (fd) => {
+            rmSync(entryAbsolutePath, { force: true });
+            symlinkSync(outsidePath, entryAbsolutePath);
+            return readFileSync(fd);
+          },
+        );
+        assert.equal(captured.length, 1);
+        assert.equal(
+          Buffer.from(captured[0]?.bytes ?? new Uint8Array()).toString("utf8"),
+          entry.originalText,
+        );
       } finally {
         rmSync(workspace, { force: true, recursive: true });
       }

@@ -706,6 +706,30 @@
       "expectedExit": 64,
       "expectedCode": "ATLAS_GOVERNANCE_INPUT_INVALID",
       "forbidPayloadLint": true
+    },
+    {
+      "name": "capture stays bound to the original file when the Atlas path is swapped for a symlink between classification and read (TOCTOU)",
+      "gate": "atlas-cli",
+      "kind": "capture-security",
+      "scenario": "symlink-swap",
+      "entryPath": ".atlas/race.md",
+      "originalText": "LEGITIMATE-ATLAS-CONTENT-BEFORE-RACE",
+      "outsideFile": {
+        "path": "outside-secret.txt",
+        "text": "OUTSIDE-SECRET-CONTENT-VIA-RACE"
+      }
+    },
+    {
+      "name": "reject a hardlinked Atlas file whose inode is shared outside .atlas/",
+      "gate": "atlas-cli",
+      "kind": "capture-security",
+      "scenario": "hardlink",
+      "outsideFile": {
+        "path": "outside-secret.txt",
+        "text": "OUTSIDE-SECRET-CONTENT-VIA-HARDLINK"
+      },
+      "entryPath": ".atlas/leaked-hardlink.md",
+      "expectedMessage": "captured safely"
     }
   ]
 }

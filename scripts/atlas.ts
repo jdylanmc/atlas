@@ -1,7 +1,17 @@
 #!/usr/bin/env node
 /** Atlas command-line interface. */
 
-import { lstatSync, readFileSync, readdirSync, statSync, type Dirent } from "node:fs";
+import {
+  closeSync,
+  constants as fsConstants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  type Dirent,
+} from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -119,7 +129,7 @@ export class CaptureBudgetError extends Error {
   }
 }
 
-type ReadFile = (path: string) => Uint8Array;
+type ReadFile = (fd: number) => Uint8Array;
 
 function compareNames(left: Dirent, right: Dirent): number {
   return left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
@@ -127,6 +137,55 @@ function compareNames(left: Dirent, right: Dirent): number {
 
 function repositoryPath(root: string, absolutePath: string): string {
   return relative(root, absolutePath).split(sep).join("/");
+}
+
+/**
+ * Opens `path` bound to O_NOFOLLOW so a path that is (or has just become,
+ * mid-race) a symbolic link is rejected by the kernel at open time instead of
+ * transparently followed. The returned descriptor is then the single file
+ * object used both to classify the entry (via fstat) and to read its bytes,
+ * so a concurrent filesystem swap between "classify" and "read" cannot
+ * substitute a different regular file for the one that was checked.
+ */
+function openCapturedFileDescriptor(path: string): number {
+  return openSync(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+}
+
+function closeQuietly(fd: number): void {
+  try {
+    closeSync(fd);
+  } catch {
+    // A failure closing an already-validated descriptor must never mask an
+    // exception (in particular a CaptureBudgetError carrying partial
+    // results) already propagating out of the caller's try block.
+  }
+}
+
+/**
+ * Re-verifies, immediately before recursing into it, that `path` is still a
+ * genuine directory and not a symlink, by opening it with
+ * O_DIRECTORY | O_NOFOLLOW and inspecting the resulting descriptor rather
+ * than trusting the earlier by-name lstat. Node's synchronous fs API has no
+ * fd-bound directory-listing call (no `readdirSync(fd)`), so the traversal
+ * that follows this check is still a separate, later name resolution: this
+ * narrows, but cannot by itself fully eliminate, the window in which a
+ * directory entry is swapped for a symlink to an arbitrary external
+ * directory between classification and traversal.
+ */
+function assertGenuineDirectory(path: string): void {
+  let fd: number;
+  try {
+    fd = openSync(path, fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
+  } catch {
+    throw new UnreadableAtlasError("Atlas files could not be captured safely.");
+  }
+  try {
+    if (!fstatSync(fd).isDirectory()) {
+      throw new UnreadableAtlasError("Atlas files could not be captured safely.");
+    }
+  } finally {
+    closeQuietly(fd);
+  }
 }
 
 function collectAtlasFiles(
@@ -160,6 +219,7 @@ function collectAtlasFiles(
       throw new UnreadableAtlasError("Atlas files could not be captured safely.");
     }
     if (stat.isDirectory()) {
+      assertGenuineDirectory(path);
       collectAtlasFiles(root, path, files, budgets, readFile, totalBytes, depth + 1);
       continue;
     }
@@ -167,44 +227,74 @@ function collectAtlasFiles(
     if (files.length >= budgets.maxFiles) {
       throw new UnreadableAtlasError("Atlas capture exceeded file count.");
     }
-    const relativePath = repositoryPath(root, path);
-    if (stat.size > budgets.maxFileBytes) {
-      throw new CaptureBudgetError("A captured Atlas file exceeds the byte budget.", [
-        ...files,
-        { bytes: new Uint8Array(budgets.maxFileBytes + 1), path: relativePath },
-      ]);
-    }
-    if (totalBytes.value + stat.size > budgets.maxTotalBytes) {
-      throw new CaptureBudgetError(
-        "Captured Atlas files exceed the total byte budget.",
-        [
-          ...files,
-          {
-            bytes: new Uint8Array(budgets.maxTotalBytes - totalBytes.value + 1),
-            path: relativePath,
-          },
-        ],
-      );
+
+    let fd: number;
+    try {
+      fd = openCapturedFileDescriptor(path);
+    } catch {
+      // The path stopped being a directly-openable regular file between the
+      // lstat above and this open (most notably: it was swapped for a
+      // symlink). O_NOFOLLOW makes the kernel reject that instead of
+      // silently following it, closing the classify/read TOCTOU gap.
+      throw new UnreadableAtlasError("Atlas files could not be captured safely.");
     }
     try {
-      const bytes = readFile(path);
-      if (bytes.byteLength > budgets.maxFileBytes) {
+      let fdStat;
+      try {
+        fdStat = fstatSync(fd);
+      } catch {
+        throw new UnreadableAtlasError("Atlas files could not be inspected.");
+      }
+      if (!fdStat.isFile()) {
+        throw new UnreadableAtlasError("Atlas files could not be captured safely.");
+      }
+      if (fdStat.nlink > 1) {
+        // A hard-linked file is a second name for an inode that can live
+        // (and be authored) entirely outside .atlas/. Capturing it would
+        // disclose that other file's content under an opaque Atlas path.
+        throw new UnreadableAtlasError("Atlas files could not be captured safely.");
+      }
+      const relativePath = repositoryPath(root, path);
+      if (fdStat.size > budgets.maxFileBytes) {
         throw new CaptureBudgetError("A captured Atlas file exceeds the byte budget.", [
           ...files,
-          { bytes, path: relativePath },
+          { bytes: new Uint8Array(budgets.maxFileBytes + 1), path: relativePath },
         ]);
       }
-      if (totalBytes.value + bytes.byteLength > budgets.maxTotalBytes) {
+      if (totalBytes.value + fdStat.size > budgets.maxTotalBytes) {
         throw new CaptureBudgetError(
           "Captured Atlas files exceed the total byte budget.",
-          [...files, { bytes, path: relativePath }],
+          [
+            ...files,
+            {
+              bytes: new Uint8Array(budgets.maxTotalBytes - totalBytes.value + 1),
+              path: relativePath,
+            },
+          ],
         );
       }
-      totalBytes.value += bytes.byteLength;
-      files.push({ bytes, path: relativePath });
-    } catch (error: unknown) {
-      if (error instanceof CaptureBudgetError) throw error;
-      throw new UnreadableAtlasError("Atlas files could not be read.");
+      try {
+        const bytes = readFile(fd);
+        if (bytes.byteLength > budgets.maxFileBytes) {
+          throw new CaptureBudgetError(
+            "A captured Atlas file exceeds the byte budget.",
+            [...files, { bytes, path: relativePath }],
+          );
+        }
+        if (totalBytes.value + bytes.byteLength > budgets.maxTotalBytes) {
+          throw new CaptureBudgetError(
+            "Captured Atlas files exceed the total byte budget.",
+            [...files, { bytes, path: relativePath }],
+          );
+        }
+        totalBytes.value += bytes.byteLength;
+        files.push({ bytes, path: relativePath });
+      } catch (error: unknown) {
+        if (error instanceof CaptureBudgetError) throw error;
+        throw new UnreadableAtlasError("Atlas files could not be read.");
+      }
+    } finally {
+      closeQuietly(fd);
     }
   }
 }
@@ -244,6 +334,7 @@ export function captureAtlasHostDirectory(
       "Atlas Host Directory does not contain a .atlas directory.",
     );
   }
+  assertGenuineDirectory(atlasRoot);
   const files: LintCommandCapturedFile[] = [];
   collectAtlasFiles(root, atlasRoot, files, budgets, readFile, { value: 0 }, 1);
   return files;
