@@ -38,14 +38,26 @@ function readText(root: string, relativePath: string): VocabularyTextFile {
 }
 
 /**
- * Collects every Atlas SDK-authored contract source in stable path order. A
- * symbolic link is neither a directory nor a regular file entry here, so the
- * walk never leaves the repository.
+ * Collects every Atlas SDK-authored contract source in stable path order. The
+ * root component is `lstat`-checked and refused unless it is a real directory,
+ * so a symlinked `src` root is rejected; every discovered child symbolic link
+ * is excluded because its `Dirent` is neither a directory nor a regular file,
+ * so the walk never leaves the repository through any component. Pinned by
+ * `tests/vocabulary_agreement.test.ts`.
  */
 export function collectContracts(root: string, relativePath: string): string[] {
+  const path = resolve(root, relativePath);
+  let directory: boolean;
+  try {
+    directory = lstatSync(path, { throwIfNoEntry: false })?.isDirectory() === true;
+  } catch {
+    throw new ContractError(`${relativePath} must be a readable directory`);
+  }
+  if (!directory)
+    throw new ContractError(`${relativePath} must be a readable directory`);
   let entries;
   try {
-    entries = readdirSync(resolve(root, relativePath), { withFileTypes: true });
+    entries = readdirSync(path, { withFileTypes: true });
   } catch {
     throw new ContractError(`${relativePath} must be a readable directory`);
   }
