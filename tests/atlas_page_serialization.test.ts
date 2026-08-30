@@ -461,6 +461,27 @@ test("repeated serialization and reserialization stay byte identical", () => {
   assert.deepEqual(serializeAtlasPages(reparsed), first);
 });
 
+test("preserves an unrecognized SDK-owned key through a parse-then-serialize round trip", () => {
+  // A newer Atlas SDK may add an SDK-owned field this SDK predates. ADR-0002
+  // requires mapping what is recognized and continuing rather than dropping
+  // it on rewrite, which would quietly delete knowledge a newer SDK recorded.
+  const source = pageSource("custom:extended").replace(
+    "  title: Page",
+    '  title: Page\n  extension: { nested: [1, 2, "three"] }',
+  );
+  const pages = parseAtlasPages([text(".atlas/concepts/extended.md", source)]);
+  const sdk = pages[0]?.page.sdk as unknown as Readonly<Record<string, unknown>>;
+  assert.deepEqual(sdk["extension"], { nested: [1, 2, "three"] });
+
+  const first = serializeAtlasPages(pages);
+  const reparsed = parseAtlasPages(first);
+  assert.deepEqual(
+    reparsed.map((parsed) => parsed.page),
+    pages.map((parsed) => parsed.page),
+  );
+  assert.deepEqual(serializeAtlasPages(reparsed), first);
+});
+
 test("emits an empty body and preserves body bytes verbatim", () => {
   const empty = serializeOne(".atlas/concepts/empty.md", pageSource("concept:empty"));
   assert.equal(empty.startsWith("---\nsdk:\n"), true);

@@ -5,6 +5,7 @@ import test from "node:test";
 import { checkFinding, FindingSchema, type Finding } from "../src/domain/finding.ts";
 import type { AtlasTextFile } from "../src/atlas/load_atlas_text.ts";
 import { validateAtlasStructure } from "../src/lint/validate_atlas_structure.ts";
+import { assertGrowthRatio, assertWallClockUnder } from "./growth.ts";
 
 const fixturesRoot = resolve(import.meta.dirname, "fixtures");
 
@@ -65,6 +66,74 @@ const invalidFiles = [
 
 test("parses and accepts the valid minimal Atlas itself", () => {
   assert.deepEqual(validateAtlasStructure(validFiles), []);
+});
+
+test("reports an unrecognized SDK-owned field as a warning without denying validity", () => {
+  // A newer Atlas SDK may write an SDK-owned field this SDK predates.
+  // ADR-0002 requires mapping what is recognized and continuing, so this
+  // must be reported rather than passed over in silence, and must never be
+  // confused with the page - or the Atlas - being invalid.
+  const root = fixture("atlas-pages", ".atlas/index.md");
+  const extended = page(".atlas/concepts/extended.md", "# Page\n", {
+    id: "concept:extended",
+  });
+  const withUnrecognizedField = Object.freeze({
+    ...extended,
+    content: extended.content.replace(
+      "  title: Page",
+      "  title: Page\n  extension: misplaced",
+    ),
+  });
+
+  const findings = validateAtlasStructure([root, withUnrecognizedField]);
+  assert.deepEqual(
+    findings.map(({ code, path, severity }) => ({ code, path, severity })),
+    [
+      {
+        code: "ATLAS_PAGE_SDK_FIELD_UNRECOGNIZED",
+        path: ".atlas/concepts/extended.md",
+        severity: "warning",
+      },
+    ],
+  );
+  assert.equal(
+    findings.every((finding) => finding.severity !== "error"),
+    true,
+  );
+});
+
+test("cost of reporting unrecognized SDK-owned fields grows with the page, not quadratically with the key count", () => {
+  // A page's frontmatter is untrusted-content-controlled input; the count of
+  // unrecognized sdk keys it carries is attacker-controlled. Reporting each
+  // one must not re-parse the frontmatter or rebuild the file's position
+  // index per key, or a page well within the existing frontmatter budget
+  // could cost far more to validate than its size implies.
+  const root = fixture("atlas-pages", ".atlas/index.md");
+  function extendedPage(count: number): AtlasTextFile {
+    const base = page(".atlas/concepts/extended.md", "# Page\n", {
+      id: "concept:extended",
+    });
+    const extraLines = Array.from(
+      { length: count },
+      (_, index) => `  extra${String(index)}: v`,
+    ).join("\n");
+    return Object.freeze({
+      ...base,
+      content: base.content.replace("  title: Page", `  title: Page\n${extraLines}`),
+    });
+  }
+  const small = extendedPage(150);
+  const large = extendedPage(300);
+
+  assertWallClockUnder("reporting unrecognized SDK-owned fields", 2000, () => {
+    const findings = validateAtlasStructure([root, large]);
+    assert.equal(findings.length, 300);
+  });
+  assertGrowthRatio({
+    large: () => validateAtlasStructure([root, large]),
+    name: "reporting unrecognized SDK-owned fields",
+    small: () => validateAtlasStructure([root, small]),
+  });
 });
 
 test("aggregates exact sanitized structural Findings", () => {

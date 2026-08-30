@@ -22,6 +22,7 @@ import {
 } from "../domain/core_archetype.ts";
 import { malformedAtlasPrincipleTruthLines } from "../domain/atlas_principle.ts";
 import { checkAtlasSchemaVersion } from "../domain/atlas_schema_version.ts";
+import { sdkPageMetadataKeys } from "../domain/atlas_page.ts";
 import type { Finding, FindingLocation } from "../domain/finding.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import type { AtlasTextFile } from "../atlas/load_atlas_text.ts";
@@ -99,23 +100,60 @@ function pairFor(map: unknown, key: string): Pair<Node, Node> {
   ) as Pair<Node, Node>;
 }
 
-function sdkKeyLocation(
-  content: string,
-  key: "atlas-sdk-schema" | "created-at" | "id" | "type" | "updated-at",
-): FindingLocation {
+/** Every sdk-block mapping key indexed once, so locating any number of keys
+ * from one page costs one scan of the block rather than one scan per key. */
+function sdkPairsByKey(map: unknown): ReadonlyMap<string, Pair<Node, Node>> {
+  const pairs = new Map<string, Pair<Node, Node>>();
+  for (const pair of (map as YAMLMap<Node, Node>).items) {
+    if (isScalar(pair.key) && typeof pair.key.value === "string") {
+      pairs.set(pair.key.value, pair);
+    }
+  }
+  return pairs;
+}
+
+interface SdkFrontmatterIndex {
+  readonly pairs: ReadonlyMap<string, Pair<Node, Node>>;
+  readonly position: ReturnType<typeof positionIndex>;
+  readonly span: AtlasFrontmatterSpan;
+}
+
+// Parsing the frontmatter document and indexing the file's line starts each
+// cost a scan of the whole page. A page can carry any number of sdk-owned
+// keys Lint reports, so resolving every key's location from one shared parse
+// and one shared position index - built once per page - keeps locating all of
+// them linear in the page rather than quadratic in its key count.
+function sdkFrontmatterIndex(content: string): SdkFrontmatterIndex {
   // Only a page the parse already read reaches here, so the span is answered.
   // Asking the parse where its frontmatter was keeps one rule for the closing
   // delimiter instead of a second description that can disagree with it.
   const span = atlasFrontmatterSpan(content) as AtlasFrontmatterSpan;
-
   const document = parseDocument(content.slice(span.start, span.end), {
     strict: true,
     uniqueKeys: true,
   });
   const sdk = pairFor(document.contents, "sdk");
-  const target = pairFor(sdk.value, key);
+  return {
+    pairs: sdkPairsByKey(sdk.value),
+    position: positionIndex(content),
+    span,
+  };
+}
+
+function sdkKeyLocationFrom(
+  frontmatter: SdkFrontmatterIndex,
+  key: string,
+): FindingLocation {
+  const target = frontmatter.pairs.get(key) as Pair<Node, Node>;
   const range = target.key.range as [number, number, number];
-  return positionIndex(content).rangeAt(span.start + range[0], span.start + range[1]);
+  return frontmatter.position.rangeAt(
+    frontmatter.span.start + range[0],
+    frontmatter.span.start + range[1],
+  );
+}
+
+function sdkKeyLocation(content: string, key: string): FindingLocation {
+  return sdkKeyLocationFrom(sdkFrontmatterIndex(content), key);
 }
 
 function expectedType(path: string): string | undefined {
@@ -716,6 +754,31 @@ function validatePage(
         sdkKeyLocation(file.content, "atlas-sdk-schema"),
       ),
     );
+  }
+
+  // ADR-0002 requires an SDK predating a newly added SDK-owned field to map
+  // what it recognizes and continue rather than refuse the page. The schema
+  // already lets an unrecognized key parse; this reports it so it is
+  // surfaced rather than passed over in silence, distinct from the page
+  // being invalid. The frontmatter is parsed and indexed once here rather
+  // than once per key, so a page carrying many unrecognized keys costs this
+  // check no more than a page carrying few.
+  const unrecognizedKeys = Object.keys(parsed.page.sdk)
+    .filter((key) => !sdkPageMetadataKeys.has(key))
+    .toSorted(compareCodePoints);
+  if (unrecognizedKeys.length > 0) {
+    const frontmatter = sdkFrontmatterIndex(file.content);
+    for (const key of unrecognizedKeys) {
+      findings.push(
+        finding(
+          "ATLAS_PAGE_SDK_FIELD_UNRECOGNIZED",
+          "Atlas page carries an SDK-owned field this Atlas SDK does not recognize; the field is preserved and the running SDK should be updated to interpret it.",
+          file.path,
+          sdkKeyLocationFrom(frontmatter, key),
+          "warning",
+        ),
+      );
+    }
   }
 
   const expected = expectedType(file.path);

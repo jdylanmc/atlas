@@ -14,6 +14,15 @@ const ActorSchema = Type.Object(
 
 export const AtlasDateTimeSchema = Type.String({ format: "date-time" });
 
+// A newer Atlas SDK may add an SDK-owned field an older one predates. ADR-0002
+// requires the older SDK to map what it recognizes and continue rather than
+// refuse the whole page, so this block accepts an unrecognized key instead of
+// rejecting it. Every recognized key below still gets its declared shape
+// checked; only a key outside this set skips validation. Lint reports an
+// unrecognized key as a Finding, so it is surfaced rather than passed over in
+// silence, and the serializer reproduces it byte for byte because
+// canonicalization walks every own key a parsed page holds rather than this
+// schema's fixed list.
 const SdkPageMetadataSchema = Type.Object(
   {
     "atlas-sdk-schema": Type.Readonly(Type.String({ minLength: 1, pattern: nonBlank })),
@@ -36,7 +45,14 @@ const SdkPageMetadataSchema = Type.Object(
     "updated-at": Type.Readonly(AtlasDateTimeSchema),
     "updated-by": Type.Readonly(ActorSchema),
   },
-  { additionalProperties: false },
+  { additionalProperties: true },
+);
+
+// The one recognized-key set the SDK-owned block schema declares, so Lint can
+// tell a field this SDK does not recognize from one it does without restating
+// the field list a second time.
+export const sdkPageMetadataKeys: ReadonlySet<string> = Object.freeze(
+  new Set(Object.keys(SdkPageMetadataSchema.properties)),
 );
 
 export type ReadonlyJsonValue =
