@@ -110,11 +110,11 @@ The Atlas Site's reconstruction of how an Atlas's knowledge, evidence, graph, an
 A page kind Atlas SDK owns and names in every Atlas, rather than one an Atlas defines for itself. An Atlas Schema extends a Core Archetype but never redefines what it means.
 
 **Anchor**:
-A human-approved, Atlas-local page through which an agent enters a region of knowledge and from which every route to a result begins. It provides cited orientation and named paths while Concepts hold detailed understanding, and an Atlas establishes one where related ideas strongly intersect. Ingest and Lint may recommend Anchors according to Atlas policy, but agents do not establish them autonomously. An Anchor may connect through a cross-Atlas Edge to another Atlas, but it is not authoritative source material.
+A human-approved, Atlas-local page through which an agent enters a region of knowledge and from which every route to a result begins. It provides orientation and named paths attributed to its DRI rather than to a Citation while Concepts hold detailed understanding, and an Atlas establishes one where related ideas strongly intersect. An Anchor carries an immutable established-by DRI, which is its human provenance for that authored orientation in place of a Citation, but this exemption does not make an Anchor authoritative for derived factual claims. Ingest and Lint may recommend Anchors according to Atlas policy, but agents do not establish them autonomously. An Anchor may connect through a cross-Atlas Edge to another Atlas, but it is not authoritative source material.
 _Avoid_: Bonfire, Landmark, Hub
 
 **Root Anchor**:
-The permanent `.atlas/index.md` Anchor through which an agent enters an Atlas. It carries orientation and additionally catalogs pages not otherwise reachable from an Anchor. A cross-Atlas Edge resolves a tracked Atlas's Atlas Slug, lands at its Root Anchor, and re-anchors there.
+The permanent `.atlas/index.md` Anchor through which an agent enters an Atlas. Like any other Anchor, it carries its own immutable established-by DRI. It carries orientation and additionally catalogs pages not otherwise reachable from an Anchor. A cross-Atlas Edge resolves a tracked Atlas's Atlas Slug, lands at its Root Anchor, and re-anchors there.
 
 **Re-anchor**:
 The mandatory re-anchoring checkpoint performed whenever an agent reaches an Anchor. The agent re-reads the Anchor orientation and every active Principle directly connected to it, then restates its active objective and the truths governing the path before continuing.
@@ -138,7 +138,7 @@ Derived understanding of exactly one concept, whose factual claims remain tracea
 _Avoid_: Insight
 
 **Citation**:
-A claim-level reference to a Source object that supports an agent-managed claim. Concepts, Anchors, and Edges require Citations; Principles are exempt because their truths are established by humans. A claim's effective Source Authority is derived from its cited Source. Citations are not Edges.
+A claim-level reference to a Source object that supports an agent-managed claim. Concepts and Edges require Citations; Principles are exempt because their truths are established by humans, and Anchors are exempt because their orientation is attributed to a DRI rather than cited. A claim's effective Source Authority is derived from its cited Source. Citations are not Edges.
 
 **Stale Knowledge**:
 Derived knowledge supported by Source whose Atlas-defined refresh date has elapsed. Stale Knowledge remains traversable, but Lint surfaces it and the agentic workflow offers to re-Ingest the supporting Source.
@@ -148,15 +148,18 @@ A first-class Markdown relationship used to traverse Concepts, Principles, Ancho
 _Avoid_: Thread
 
 **Principle**:
-A human-governed, Atlas-local page of individually identified active universal truths that hold across an Atlas. A Principle has a stable identity, explains what it governs, and keeps a Keep a Changelog-style amendment history. Deleting a Principle invalidates all of its active truths and requires its dependent knowledge relationships and governance markers to be reconciled. Agents may help create, modify, or delete a Principle only under explicit human direction and approval.
+A human-governed, Atlas-local page of individually identified active universal truths that hold across an Atlas. A Principle has a stable identity, explains what it governs, and keeps a Keep a Changelog-style amendment history. A Principle carries an immutable established-by DRI. Deleting a Principle invalidates all of its active truths and requires its dependent knowledge relationships and governance markers to be reconciled. Agents may help create, modify, or delete a Principle only under explicit human direction and approval.
 _Avoid_: Pillar
 
 **Maintainer**:
-Any human acting through the Atlas Host Directory's Git governance to direct or approve changes to Principles or Atlas Policies. Maintainer is a contextual authority role, not a permanently named owner.
+Any human acting through the Atlas Host Directory's Git governance to direct or approve changes to Principles or Atlas Policies. Maintainer is a contextual authority role, not a permanently named owner. A Maintainer is who may currently direct or approve a change, while a DRI is the immutable record of who originally established the artifact, and a DRI carries no Maintainer authority.
 _Avoid_: Creator, Owner
 
+**Directly Responsible Individual (DRI)**:
+The immutable established-by attribution for a Principle, Atlas Policy, or Anchor, including the Root Anchor: the human who established that artifact and the person to contact when it goes stale. A DRI is a human identity or Git alias. It is provenance and a point of contact only, carrying no governance authority, ownership weight, or mutable stewardship role. It is distinct from a Maintainer: a Maintainer is a contextual authority role that directs or approves changes and is never a permanently named owner, while a DRI is permanent per-artifact attribution. There is no system-level DRI: an agent or Atlas SDK may prepare an artifact, but a human always establishes it, and that human is the DRI. A later Principle Amendment records its own directing or approving human in that amendment's history and never replaces the artifact's original DRI.
+
 **Principle Amendment**:
-A numbered, dated entry appended to a Principle's amendment history. It records added, changed, or invalidated truths together with the directing or approving human, rationale, and change reference. Meaning-preserving clarification retains a truth's stable identity; semantic replacement invalidates the old truth and adds a linked successor with a new identity.
+A numbered, dated entry appended to a Principle's amendment history. It records added, changed, or invalidated truths together with the directing or approving human, rationale, and change reference. The directing or approving human recorded on an amendment never replaces the Principle's original established-by DRI. Meaning-preserving clarification retains a truth's stable identity; semantic replacement invalidates the old truth and adds a linked successor with a new identity.
 
 **Contradiction**:
 An Atlas-local claim that contradicts an active Principle truth or violates an Atlas Policy. An accepted Contradiction is marked on its citation and on the containing Concept so agents can preserve it without mistaking it for ordinary knowledge.
@@ -169,7 +172,7 @@ A non-persistent disagreement surfaced while an agent traverses knowledge from m
 A warning that two cited Concept claims within one Atlas conflict without contradicting a Principle. The Lint workflow surfaces the evidence and Source Authority, then works with a human to reconcile or scope the claims.
 
 **Atlas Policy**:
-A human-approved, versioned invariant that governs an Atlas. Each Policy declares its scope, naming the workflows it governs such as Atlas maintenance or publication; its evaluation, either deterministic or semantic and therefore subject to Challenge; and its consequence, either invalidating the Atlas or blocking only the operation it governs. A Policy retains its stable identity while its governing intention remains the same and retires rather than disappears. Agents may propose Policies and amendments but cannot establish them autonomously. Explore is never governed by Policies; it loads an Atlas's Policies once, when traversal first enters that Atlas, as descriptive context.
+A human-approved, versioned invariant that governs an Atlas. Each Policy declares its scope, naming the workflows it governs such as Atlas maintenance or publication; its evaluation, either deterministic or semantic and therefore subject to Challenge; and its consequence, either invalidating the Atlas or blocking only the operation it governs. A Policy retains its stable identity while its governing intention remains the same and retires rather than disappears. An Atlas Policy carries an immutable established-by DRI. Agents may propose Policies and amendments but cannot establish them autonomously. Explore is never governed by Policies; it loads an Atlas's Policies once, when traversal first enters that Atlas, as descriptive context.
 _Avoid_: Realm Law, Realm Rule
 
 **Ingest**:
