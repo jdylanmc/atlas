@@ -88,6 +88,11 @@ test("Operation Workflow returns a versioned completed Lint result and handoff f
     findings: [],
     state: "passed",
   });
+  assert.deepEqual(result.handoff.degradationState, {
+    reason:
+      "No Atlas page targets an atlas-sdk-schema contract newer than this Atlas SDK.",
+    state: "not-degraded",
+  });
   assert.deepEqual(result.handoff.reviewLink, {
     reason: "Lint did not create an Atlas Proposal.",
     state: "not-applicable",
@@ -129,12 +134,57 @@ test("Operation Workflow returns a non-success Lint result and handoff for an in
     state: "failed",
   });
   assert.deepEqual(result.handoff.degradationState, {
-    reason: "The operation completed through deterministic Lint.",
+    reason:
+      "No Atlas page targets an atlas-sdk-schema contract newer than this Atlas SDK.",
     state: "not-degraded",
   });
   assert.equal(
     result.handoff.recommendedNextAction,
     "Resolve the reported Findings, then run Lint again.",
+  );
+});
+
+test("Operation Workflow returns a degraded but valid Lint result when a page targets a newer atlas-sdk-schema", () => {
+  const targetPath = ".atlas/concepts/canonical-serialization.md";
+  const atlas = completeAtlas("valid");
+  const decoder = new TextDecoder();
+  const bumped = atlas.map((file) => {
+    if (file.path !== targetPath) return file;
+    return {
+      bytes: new TextEncoder().encode(
+        decoder
+          .decode(file.bytes)
+          .replace("atlas-sdk-schema: 1.0.0", "atlas-sdk-schema: 1.1.0"),
+      ),
+      path: file.path,
+    };
+  });
+  const result = runLintOperation(bumped, generousBudgets);
+
+  assert.equal(result.disposition, "success");
+  assert.equal(result.payload.state, "completed");
+  assert.equal(result.payload.lint.outcome, "valid");
+  assert.deepEqual(
+    result.payload.lint.findings.map((finding) => ({
+      code: finding.code,
+      path: finding.path,
+      severity: finding.severity,
+    })),
+    [
+      {
+        code: "ATLAS_SCHEMA_VERSION_NEWER_THAN_SDK",
+        path: targetPath,
+        severity: "warning",
+      },
+    ],
+  );
+  assert.deepEqual(result.handoff.degradationState, {
+    reason: `Atlas page targets atlas-sdk-schema 1.1.0, newer than the running Atlas SDK's 1.0.0 contract. Update Atlas SDK to interpret it fully.`,
+    state: "degraded",
+  });
+  assert.equal(
+    result.handoff.recommendedNextAction,
+    "Update Atlas SDK. Atlas page targets atlas-sdk-schema 1.1.0, newer than the running Atlas SDK's 1.0.0 contract. Update Atlas SDK to interpret it fully.",
   );
 });
 

@@ -19,6 +19,15 @@ export interface AtlasSchemaVersion {
 }
 
 /**
+ * The `atlas-sdk-schema` contract this running Atlas SDK implements. ADR-0002
+ * requires an SDK to decide whether an Atlas targets a contract newer than
+ * this one rather than refusing or guessing, so every caller comparing an
+ * Atlas's declared version against "the running SDK" reads this one constant
+ * instead of restating the current contract per caller.
+ */
+export const currentAtlasSchemaVersion = "1.0.0";
+
+/**
  * Reports whether `value` is a well-formed `atlas-sdk-schema` version: three
  * dot-separated non-negative integers with no leading zero. A version that
  * has no defined order is not a version, so this is the one gate every reader

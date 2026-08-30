@@ -354,6 +354,49 @@ test("reports a malformed atlas-sdk-schema as a trusted error Finding naming the
   );
 });
 
+test("reports a page targeting a newer atlas-sdk-schema as a warning without denying validity", () => {
+  // ADR-0002 requires an SDK below an Atlas's targeted contract to warn and
+  // degrade rather than refuse. This is a distinct case from an unreadable
+  // (malformed) version, which stays an error above: the two must not
+  // collapse into a single message.
+  const newerPage = {
+    ...page(".atlas/concepts/page.md", "# Page"),
+    content: page(".atlas/concepts/page.md", "# Page").content.replace(
+      "  atlas-sdk-schema: 1.0.0",
+      "  atlas-sdk-schema: 1.1.0",
+    ),
+  };
+  const findings = validateAtlasStructure([validFiles[2] as AtlasTextFile, newerPage]);
+  assert.deepEqual(
+    findings.map(({ code, path, severity }) => ({ code, path, severity })),
+    [
+      {
+        code: "ATLAS_SCHEMA_VERSION_NEWER_THAN_SDK",
+        path: ".atlas/concepts/page.md",
+        severity: "warning",
+      },
+    ],
+  );
+  assert.equal(
+    findings.every((finding) => finding.severity !== "error"),
+    true,
+  );
+  const [finding] = findings;
+  assert.match(finding?.message ?? "", /1\.1\.0/u);
+  assert.match(finding?.message ?? "", /1\.0\.0/u);
+  assert.equal(checkFinding(finding), true);
+
+  // A schema version at or below the running SDK's contract produces no such
+  // Finding and no degradation.
+  assert.deepEqual(
+    validateAtlasStructure([
+      validFiles[2] as AtlasTextFile,
+      page(".atlas/concepts/page.md", "# Page"),
+    ]),
+    [],
+  );
+});
+
 test("reports an empty body at EOF without fabricating a location", () => {
   const emptyAtEof = page(".atlas/concepts/empty.md", "");
   const [finding] = validateAtlasStructure([

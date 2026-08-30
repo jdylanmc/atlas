@@ -5,6 +5,7 @@ import {
   operationHandoffSchemaVersion,
   operationResultSchemaVersion,
   type OperationChanges,
+  type OperationDegradationState,
   type OperationHandoff,
   type OperationIdentity,
   type OperationReference,
@@ -106,20 +107,57 @@ function commandFinding(code: string, message: string): Finding {
   });
 }
 
+const schemaVersionDegradationCode = "ATLAS_SCHEMA_VERSION_NEWER_THAN_SDK";
+
+interface LintSchemaDegradation {
+  readonly degradationState: OperationDegradationState;
+  readonly recommendedNextAction: string | undefined;
+}
+
+// Lint and Explore share one degradation vocabulary rather than each stating
+// its own: `OperationDegradationState` on the Operation Handoff, already used
+// identically by Explore. Explore derives its own `degraded`/`reason` from its
+// own traversal signal (ExploreDegradationLevel, a fallback ladder over
+// structural readability with no meaning for a schema-version Finding); Lint
+// derives its own from this Finding instead of adopting that ladder or
+// hardcoding a constant "not-degraded" disconnected from its Findings.
+function schemaVersionDegradation(findings: readonly Finding[]): LintSchemaDegradation {
+  const newerSchemaFindings = findings.filter(
+    (finding) => finding.code === schemaVersionDegradationCode,
+  );
+  if (newerSchemaFindings.length === 0) {
+    return Object.freeze({
+      degradationState: Object.freeze({
+        reason:
+          "No Atlas page targets an atlas-sdk-schema contract newer than this Atlas SDK.",
+        state: "not-degraded" as const,
+      }),
+      recommendedNextAction: undefined,
+    });
+  }
+  const detail = newerSchemaFindings.map((finding) => finding.message).join(" ");
+  return Object.freeze({
+    degradationState: Object.freeze({
+      reason: detail,
+      state: "degraded" as const,
+    }),
+    recommendedNextAction: `Update Atlas SDK. ${detail}`,
+  });
+}
+
 function completedLintHandoff(lint: AtlasLintResult): LintOperationHandoff {
   const success = lint.outcome === "valid";
+  const schemaDegradation = schemaVersionDegradation(lint.findings);
   return Object.freeze({
     "operation-handoff-schema": operationHandoffSchemaVersion,
     baseSnapshot: unknownBaseSnapshot,
-    degradationState: Object.freeze({
-      reason: "The operation completed through deterministic Lint.",
-      state: "not-degraded" as const,
-    }),
+    degradationState: schemaDegradation.degradationState,
     homeAtlas: unknownHomeAtlas,
     operation: capturedHomeAtlasLintOperation,
     proposedChanges: noProposedChanges,
     recommendedNextAction: success
-      ? "Use the validated Atlas records returned by Lint."
+      ? (schemaDegradation.recommendedNextAction ??
+        "Use the validated Atlas records returned by Lint.")
       : "Resolve the reported Findings, then run Lint again.",
     result: Object.freeze({
       disposition: success ? ("success" as const) : ("failed" as const),

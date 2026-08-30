@@ -21,7 +21,11 @@ import {
   rootAnchorPageId,
 } from "../domain/core_archetype.ts";
 import { malformedAtlasPrincipleTruthLines } from "../domain/atlas_principle.ts";
-import { checkAtlasSchemaVersion } from "../domain/atlas_schema_version.ts";
+import {
+  checkAtlasSchemaVersion,
+  compareAtlasSchemaVersions,
+  currentAtlasSchemaVersion,
+} from "../domain/atlas_schema_version.ts";
 import { sdkPageMetadataKeys } from "../domain/atlas_page.ts";
 import type { Finding, FindingLocation } from "../domain/finding.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
@@ -745,13 +749,30 @@ function validatePage(
   tree: Nodes,
   findings: Finding[],
 ): void {
-  if (!checkAtlasSchemaVersion(parsed.page.sdk["atlas-sdk-schema"])) {
+  const schemaVersion = parsed.page.sdk["atlas-sdk-schema"];
+  if (!checkAtlasSchemaVersion(schemaVersion)) {
     findings.push(
       finding(
         "ATLAS_SCHEMA_VERSION_MALFORMED",
         "Atlas page atlas-sdk-schema must be a well-formed MAJOR.MINOR.PATCH version.",
         file.path,
         sdkKeyLocation(file.content, "atlas-sdk-schema"),
+      ),
+    );
+  } else if (compareAtlasSchemaVersions(schemaVersion, currentAtlasSchemaVersion) > 0) {
+    // ADR-0002 requires an SDK below an Atlas's targeted contract to warn and
+    // continue in a degraded capacity rather than refuse: a newer-but-readable
+    // schema is a different case from one with no defined order at all
+    // (ATLAS_SCHEMA_VERSION_MALFORMED, above), and the two must not collapse
+    // into a single message. This does not deny the Atlas its validity; only a
+    // malformed version does that.
+    findings.push(
+      finding(
+        "ATLAS_SCHEMA_VERSION_NEWER_THAN_SDK",
+        `Atlas page targets atlas-sdk-schema ${schemaVersion}, newer than the running Atlas SDK's ${currentAtlasSchemaVersion} contract. Update Atlas SDK to interpret it fully.`,
+        file.path,
+        sdkKeyLocation(file.content, "atlas-sdk-schema"),
+        "warning",
       ),
     );
   }
