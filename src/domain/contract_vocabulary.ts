@@ -78,6 +78,10 @@ export const contractVocabularyBindings = Object.freeze([
     term: "Ingest Scope",
   }),
   Object.freeze({
+    exportedIdentifiers: Object.freeze(["AtlasApprovalAttestation"]),
+    term: "Approval Attestation",
+  }),
+  Object.freeze({
     exportedIdentifiers: Object.freeze(["AtlasIngestCandidateGraph"]),
     term: "Candidate Graph",
   }),

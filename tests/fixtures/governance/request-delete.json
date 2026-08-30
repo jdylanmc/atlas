@@ -2,6 +2,12 @@
   "governance-request-schema": "1.0.0",
   "action": "delete",
   "subject": "principle",
-  "approvedBy": "Fixture Maintainer",
-  "approvedAt": "2026-08-22T00:00:00Z"
+  "attestation": {
+    "approval-attestation-schema": "1.0.0",
+    "approver": "Fixture Maintainer",
+    "approvedAt": "2026-08-22T00:00:00Z",
+    "nonce": "fixture-nonce",
+    "operation": "governance/delete/principle",
+    "payloadDigest": "49231712f405cb5d740ab8fd8593854768d4545a178dd1e2db5bc3ecebc7e71d"
+  }
 }

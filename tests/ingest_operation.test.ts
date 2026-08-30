@@ -6,6 +6,8 @@ import type { CapturedAtlasFile } from "../src/atlas/load_atlas_text.ts";
 import type { Finding } from "../src/domain/finding.ts";
 import {
   atlasIngestChangeSetDigest,
+  ingestScopeAttestationOperation,
+  ingestScopeAttestationPayload,
   isSafeGitBranchName,
   reconcileCandidateGraph,
   runAtlasIngestWorkflow,
@@ -25,6 +27,10 @@ import {
   type AtlasIngestWorkflowState,
 } from "../src/operations/ingest_operation.ts";
 import { runLintOperation } from "../src/operations/lint_operation.ts";
+import {
+  attestationPayloadDigest,
+  type AtlasApprovalAttestation,
+} from "../src/operations/operation_support.ts";
 
 const budgets = Object.freeze({ maxFileBytes: 8192, maxTotalBytes: 262_144 });
 const encoder = new TextEncoder();
@@ -119,20 +125,43 @@ const publicationPolicy = page(
 
 const baseFilesDefault = Object.freeze([rootAnchor, changelog]);
 
-function scope(overrides: Partial<AtlasIngestScope> = {}): AtlasIngestScope {
+/** A valid detached Approval Attestation for the given (attestation-less) Scope
+ * fields, computed through the same production digest the operation verifies
+ * against, so fixtures stay honest about what a real Maintainer attestation
+ * binds to. */
+function validIngestAttestation(
+  fields: Omit<AtlasIngestScope, "attestation">,
+): AtlasApprovalAttestation {
+  const nonce = "fixture-nonce";
+  const operation = ingestScopeAttestationOperation(fields.sourceId);
+  const payload = ingestScopeAttestationPayload(fields);
   return Object.freeze({
-    "ingest-scope-schema": "1.0.0",
+    "approval-attestation-schema": "1.0.0" as const,
     approvedAt: "2026-08-22T00:00:00Z",
-    approvedBy: "Fixture Maintainer",
+    approver: "Fixture Maintainer",
+    nonce,
+    operation,
+    payloadDigest: attestationPayloadDigest(operation, nonce, payload),
+  });
+}
+
+function scope(overrides: Partial<AtlasIngestScope> = {}): AtlasIngestScope {
+  const { attestation: attestationOverride, ...fieldOverrides } = overrides;
+  const fields = {
+    "ingest-scope-schema": "1.0.0" as const,
     asOf: "2026-08-22T00:00:00Z",
-    authority: "official",
+    authority: "official" as const,
     entryPoint: "docs",
     excludedPaths: Object.freeze(["docs/private"]),
     freshnessWindowDays: 30,
     includedPaths: Object.freeze(["docs"]),
     maxDepth: 4,
     sourceId: "source:readme",
-    ...overrides,
+    ...fieldOverrides,
+  };
+  return Object.freeze({
+    ...fields,
+    attestation: attestationOverride ?? validIngestAttestation(fields),
   });
 }
 
@@ -510,6 +539,100 @@ test("Source content and revision-time defects are rejected", () => {
   assert.ok(reported.includes("ATLAS_INGEST_SOURCE_REVISION_TIME_INVALID"));
 });
 
+test("A Source Ingest could not independently capture from the Git base snapshot is rejected", () => {
+  const findings = validateCandidateGraph(request(), baseFilesDefault, new Map());
+  assert.ok(codes(findings).includes("ATLAS_INGEST_SOURCE_CAPTURE_MISSING"));
+});
+
+test("A Source whose independently captured bytes disagree with the submission is rejected", () => {
+  const capturedSources = new Map([
+    [
+      "docs/readme.md",
+      {
+        commit: "cccccccccccccccccccccccccccccccccccccccc",
+        content: "This was never in the repository.",
+        revisionTime: "2026-08-20T00:00:00Z",
+      },
+    ],
+  ]);
+  const findings = validateCandidateGraph(request(), baseFilesDefault, capturedSources);
+  assert.ok(codes(findings).includes("ATLAS_INGEST_SOURCE_CONTENT_UNVERIFIED"));
+});
+
+test("A Source whose independently captured revision time disagrees with the submission is rejected", () => {
+  const capturedSources = new Map([
+    [
+      "docs/readme.md",
+      {
+        commit: "cccccccccccccccccccccccccccccccccccccccc",
+        content: sourceContent,
+        revisionTime: "2099-01-01T00:00:00Z",
+      },
+    ],
+  ]);
+  const findings = validateCandidateGraph(request(), baseFilesDefault, capturedSources);
+  assert.ok(codes(findings).includes("ATLAS_INGEST_SOURCE_REVISION_UNVERIFIED"));
+});
+
+test("A Source whose independently captured bytes and revision time agree is accepted", () => {
+  const capturedSources = new Map([
+    [
+      "docs/readme.md",
+      {
+        commit: "cccccccccccccccccccccccccccccccccccccccc",
+        content: sourceContent,
+        revisionTime: "2026-08-20T00:00:00Z",
+      },
+    ],
+  ]);
+  const findings = validateCandidateGraph(request(), baseFilesDefault, capturedSources);
+  assert.equal(codes(findings).includes("ATLAS_INGEST_SOURCE_CAPTURE_MISSING"), false);
+  assert.equal(
+    codes(findings).includes("ATLAS_INGEST_SOURCE_CONTENT_UNVERIFIED"),
+    false,
+  );
+  assert.equal(
+    codes(findings).includes("ATLAS_INGEST_SOURCE_REVISION_UNVERIFIED"),
+    false,
+  );
+});
+
+test("An Approval Attestation with a blank nonce is refused", () => {
+  const validAttestation = scope().attestation;
+  const findings = validateCandidateGraph(
+    request({
+      scope: scope({
+        attestation: { ...validAttestation, nonce: "" },
+      }),
+    }),
+    baseFilesDefault,
+  );
+  assert.ok(codes(findings).includes("ATLAS_INGEST_APPROVAL_REQUIRED"));
+});
+
+test("An Approval Attestation whose expiry has already passed is refused", () => {
+  const validAttestation = scope().attestation;
+  const expiringScope = scope({
+    attestation: { ...validAttestation, expiresAt: "2026-08-10T00:00:00Z" },
+  });
+  const expired = validateCandidateGraph(
+    request({ scope: expiringScope }),
+    baseFilesDefault,
+    undefined,
+    "2026-08-22T00:00:00Z",
+  );
+  assert.ok(codes(expired).includes("ATLAS_INGEST_APPROVAL_EXPIRED"));
+  // An attestation whose expiry has not yet elapsed as of the reference time
+  // still approves the Scope normally.
+  const notYetExpired = validateCandidateGraph(
+    request({ scope: expiringScope }),
+    baseFilesDefault,
+    undefined,
+    "2026-08-05T00:00:00Z",
+  );
+  assert.equal(codes(notYetExpired).includes("ATLAS_INGEST_APPROVAL_EXPIRED"), false);
+});
+
 test("An empty Candidate Graph records no Source and is rejected", () => {
   const findings = validateCandidateGraph(
     request({
@@ -525,14 +648,23 @@ test("An empty Candidate Graph records no Source and is rejected", () => {
 });
 
 test("Invalid Ingest Scope timestamps are rejected before emission", () => {
+  const validAttestation = scope().attestation;
   const badApproval = validateCandidateGraph(
-    request({ scope: scope({ approvedAt: "not-a-date" }) }),
+    request({
+      scope: scope({
+        attestation: { ...validAttestation, approvedAt: "not-a-date" },
+      }),
+    }),
     baseFilesDefault,
   );
   assert.ok(codes(badApproval).includes("ATLAS_INGEST_APPROVAL_REQUIRED"));
 
   const dateOnlyApproval = validateCandidateGraph(
-    request({ scope: scope({ approvedAt: "2026-08-20" }) }),
+    request({
+      scope: scope({
+        attestation: { ...validAttestation, approvedAt: "2026-08-20" },
+      }),
+    }),
     baseFilesDefault,
   );
   assert.ok(codes(dateOnlyApproval).includes("ATLAS_INGEST_APPROVAL_REQUIRED"));

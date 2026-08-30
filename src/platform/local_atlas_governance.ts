@@ -348,6 +348,7 @@ export function runLocalAtlasGovernance(
     persistState: (nextState: AtlasGovernanceWorkflowState) => {
       writeStateAtomically(root, nextState);
     },
+    referenceTime: () => new Date().toISOString(),
     workspaceExists: () => workspaceExists(root, workflowState.proposalBranch),
     workspacePathValid: () =>
       workspacePathIsContained(root, workflowState.proposalBranch),

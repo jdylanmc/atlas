@@ -29,6 +29,8 @@ import {
   isSafeGitBranchName as isSafeGitBranchNameShared,
   receiptFor,
   revisionDigest,
+  verifyApprovalAttestation,
+  type AtlasApprovalAttestation,
 } from "./operation_support.ts";
 import {
   operationHandoffSchemaVersion,
@@ -75,9 +77,8 @@ export interface AtlasIngestOperationIdentity extends OperationIdentity {
 
 export interface AtlasIngestScope {
   readonly "ingest-scope-schema": "1.0.0";
-  readonly approvedAt: string;
-  readonly approvedBy: string;
   readonly asOf: string;
+  readonly attestation: AtlasApprovalAttestation;
   readonly authority: SourceAuthority;
   readonly entryPoint: string;
   readonly excludedPaths: readonly string[];
@@ -85,6 +86,51 @@ export interface AtlasIngestScope {
   readonly includedPaths: readonly string[];
   readonly maxDepth: number;
   readonly sourceId: string;
+}
+
+/**
+ * The operation string an Ingest Scope's Approval Attestation must bind to. It
+ * names the one Source the Scope approves crawling, so an attestation captured
+ * for one Source's Scope fails operation-mismatch verification when presented
+ * to approve a different Source.
+ */
+export function ingestScopeAttestationOperation(sourceId: string): string {
+  return `ingest-scope/${sourceId}`;
+}
+
+/**
+ * The exact canonical payload an Ingest Scope's Approval Attestation binds to:
+ * every Scope field a crawler could otherwise mutate after approval, excluding
+ * the attestation itself. Any post-approval change to any of these fields
+ * reproduces a different digest than the one the Maintainer attested to.
+ */
+export function ingestScopeAttestationPayload(
+  scope: Omit<AtlasIngestScope, "attestation">,
+): Readonly<Record<string, ReadonlyJsonValue>> {
+  return Object.freeze({
+    "ingest-scope-schema": scope["ingest-scope-schema"],
+    asOf: scope.asOf,
+    authority: scope.authority,
+    entryPoint: scope.entryPoint,
+    excludedPaths: Object.freeze([...scope.excludedPaths]),
+    freshnessWindowDays: scope.freshnessWindowDays,
+    includedPaths: Object.freeze([...scope.includedPaths]),
+    maxDepth: scope.maxDepth,
+    sourceId: scope.sourceId,
+  });
+}
+
+/**
+ * One Source revision Atlas SDK independently captured from the immutable Git
+ * base snapshot at the Source's own repository-relative locator, rather than
+ * accepting the crawler's assertion at face value. `commit` is the exact Git
+ * revision the bytes were read from, so a persisted Source record can rehydrate
+ * and revalidate its Citations against that same immutable revision later.
+ */
+export interface AtlasIngestSourceCapture {
+  readonly commit: string;
+  readonly content: string;
+  readonly revisionTime: string;
 }
 
 export interface AtlasIngestCandidateCitation {
@@ -219,6 +265,13 @@ export type AtlasIngestResult = OperationResult<
 >;
 
 export interface AtlasIngestRuntime {
+  // Independently captured revisions for the Candidate Graph's asserted Source
+  // locators, keyed by locator, read from the immutable Git base snapshot
+  // rather than trusted from the crawler's own claim. Optional so a runtime
+  // without this capability (for example, a virtual Atlas Initialization host
+  // with no repository of its own) degrades to skipping capture verification
+  // rather than failing to type-check.
+  readonly capturedSources?: () => ReadonlyMap<string, AtlasIngestSourceCapture>;
   readonly commitProposal: () => { readonly commit: string; readonly receipt: string };
   readonly createProposalWorktree: () => { readonly receipt: string };
   readonly currentBaseSnapshotDigest: () => string;
@@ -229,6 +282,10 @@ export interface AtlasIngestRuntime {
     readonly receipt: string;
   };
   readonly persistState?: (state: AtlasIngestWorkflowState) => void;
+  // The real-clock reading this deterministic operation compares an Approval
+  // Attestation's optional expiry against. Optional for the same reason
+  // capturedSources is: a virtual host has no real clock boundary of its own.
+  readonly referenceTime?: () => string;
   readonly workspaceExists?: () => boolean;
   readonly workspacePathValid?: () => boolean;
   readonly writeChangeSet: (changeSet: AtlasIngestChangeSet) => {
@@ -557,6 +614,7 @@ function collisionFindings(
 function validateSources(
   graph: AtlasIngestCandidateGraph,
   scope: AtlasIngestScope,
+  capturedSources?: ReadonlyMap<string, AtlasIngestSourceCapture>,
 ): readonly Finding[] {
   const findings: Finding[] = [];
   const seen = new Set<string>();
@@ -608,6 +666,43 @@ function validateSources(
           "inconclusive",
         ),
       );
+    } else if (capturedSources !== undefined) {
+      // The Source's locator is a real repository-relative path within scope,
+      // so its actual bytes and last commit time are independently readable
+      // from the immutable Git base snapshot rather than trusted from the
+      // crawler's own claim alone. A locator this host could not itself
+      // capture, or captured bytes that disagree with what was submitted,
+      // means the submitted Source is unverified against that immutable
+      // capture and is refused rather than accepted on the crawler's word.
+      const capture = capturedSources.get(source.locator);
+      if (capture === undefined) {
+        findings.push(
+          finding(
+            "ATLAS_INGEST_SOURCE_CAPTURE_MISSING",
+            "Ingest could not independently capture this Source's locator from the immutable Git base snapshot.",
+            path,
+          ),
+        );
+      } else if (sha256Hex(capture.content) !== sha256Hex(source.content)) {
+        findings.push(
+          finding(
+            "ATLAS_INGEST_SOURCE_CONTENT_UNVERIFIED",
+            "A Source's submitted content does not match the bytes Ingest independently captured at its locator; it may be fabricated or post-capture mutated.",
+            path,
+          ),
+        );
+      } else if (
+        dateTimeMilliseconds(capture.revisionTime) !==
+        dateTimeMilliseconds(source.revisionTime)
+      ) {
+        findings.push(
+          finding(
+            "ATLAS_INGEST_SOURCE_REVISION_UNVERIFIED",
+            "A Source's submitted revision time does not match the immutable Git history Ingest independently captured at its locator.",
+            path,
+          ),
+        );
+      }
     }
     // The approved Ingest Scope caps Source Authority: a crawler may not assert
     // a higher authority than the human approved for this source.
@@ -1060,19 +1155,50 @@ function reachableEndpoints(
 
 // The Ingest Scope is a human-approved envelope, and every generated Source page
 // stamps that its material was ingested within it. That claim is only true if a
-// Maintainer actually approved: approval identity and time are required, exactly
-// as the sibling governance operation requires them before it mutates.
-export function validateApproval(scope: AtlasIngestScope): readonly Finding[] {
-  if (
-    scope.approvedBy.trim() !== "" &&
-    dateTimeMilliseconds(scope.approvedAt) !== undefined
-  ) {
-    return [];
+// Maintainer actually approved: a detached Approval Attestation binds identity,
+// time, and a digest over the exact Scope it approved, so approval provenance
+// stays distinct from the crawler-authored Scope content it authorizes, and a
+// Scope mutated after approval, or an attestation replayed from a different
+// Source or operation, fails this check rather than passing silently.
+export function validateApproval(
+  scope: AtlasIngestScope,
+  now?: string,
+): readonly Finding[] {
+  const verdict = verifyApprovalAttestation(
+    scope.attestation,
+    ingestScopeAttestationOperation(scope.sourceId),
+    ingestScopeAttestationPayload(scope),
+    now,
+  );
+  if (verdict.ok) return [];
+  if (verdict.reason === "expired") {
+    return [
+      finding(
+        "ATLAS_INGEST_APPROVAL_EXPIRED",
+        "Ingest refused an Ingest Scope Approval Attestation whose expiry has already passed.",
+      ),
+    ];
+  }
+  if (verdict.reason === "operation-mismatch") {
+    return [
+      finding(
+        "ATLAS_INGEST_APPROVAL_OPERATION_MISMATCH",
+        "Ingest refused an Approval Attestation issued for a different Source or operation than this Ingest Scope.",
+      ),
+    ];
+  }
+  if (verdict.reason === "payload-mismatch") {
+    return [
+      finding(
+        "ATLAS_INGEST_APPROVAL_PAYLOAD_MISMATCH",
+        "Ingest refused an Ingest Scope whose content does not match what its Approval Attestation attested to; the Scope was mutated after a Maintainer approved it.",
+      ),
+    ];
   }
   return [
     finding(
       "ATLAS_INGEST_APPROVAL_REQUIRED",
-      "Ingest requires explicit Maintainer approval identity and date-time before it derives knowledge within the approved Ingest Scope.",
+      "Ingest requires a valid detached Approval Attestation naming a Maintainer approver and a comparable approval date-time before it derives knowledge within the approved Ingest Scope.",
     ),
   ];
 }
@@ -1090,13 +1216,15 @@ export function validateIngestScopeTime(scope: AtlasIngestScope): readonly Findi
 export function validateCandidateGraph(
   request: AtlasIngestRequest,
   existingFiles: readonly CapturedAtlasFile[],
+  capturedSources?: ReadonlyMap<string, AtlasIngestSourceCapture>,
+  now?: string,
 ): readonly Finding[] {
   const { candidateGraph: graph, scope } = request;
   const existing = readExistingAtlas(existingFiles);
   const sources = resolvedSources(graph);
   const reachable = reachableEndpoints(graph, existing);
   const findings: Finding[] = [];
-  findings.push(...validateApproval(scope));
+  findings.push(...validateApproval(scope, now));
   findings.push(...staleFindings(graph, scope));
   findings.push(...collisionFindings(graph, scope, existing));
   if (!isSourceAuthority(scope.authority)) {
@@ -1115,7 +1243,7 @@ export function validateCandidateGraph(
       ),
     );
   }
-  findings.push(...validateSources(graph, scope));
+  findings.push(...validateSources(graph, scope, capturedSources));
   findings.push(...validateConcepts(graph, scope, sources, existing, reachable));
   findings.push(...validateEdges(graph, scope, sources, existing));
   findings.push(...validateDisputes(graph, sources));
@@ -1258,40 +1386,42 @@ function trackedAtlasPages(
   return Object.freeze([trackedAtlasPage, edgePage]);
 }
 
+// probeAtlasIngestSource declares a tracked Atlas pointer only: a locator and
+// branch, not claimed source content a crawler could fabricate. It therefore
+// keeps its own minimal approver/time check rather than the Ingest Scope's
+// hardened Approval Attestation, which binds a digest over Source content this
+// probe does not carry.
+function probeApprovalFindings(request: AtlasIngestSourceProbeRequest): Finding[] {
+  if (
+    request.approvedBy.trim() !== "" &&
+    dateTimeMilliseconds(request.approvedAt) !== undefined
+  ) {
+    return [];
+  }
+  return [
+    finding(
+      "ATLAS_INGEST_APPROVAL_REQUIRED",
+      "Ingest requires explicit Maintainer approval identity and date-time before it derives knowledge within the approved Ingest Scope.",
+    ),
+  ];
+}
+
+function probeAsOfFindings(request: AtlasIngestSourceProbeRequest): Finding[] {
+  if (dateTimeMilliseconds(request.asOf) !== undefined) return [];
+  return [
+    finding(
+      "ATLAS_INGEST_SCOPE_AS_OF_INVALID",
+      "An Ingest Scope asOf value must be a date-time so Stale Knowledge checks and emitted Atlas page timestamps are deterministic.",
+    ),
+  ];
+}
+
 export function probeAtlasIngestSource(
   request: AtlasIngestSourceProbeRequest,
 ): AtlasIngestSourceProbeOutcome {
   const scopeFindings = [
-    ...validateApproval(
-      Object.freeze({
-        "ingest-scope-schema": "1.0.0" as const,
-        approvedAt: request.approvedAt,
-        approvedBy: request.approvedBy,
-        asOf: request.asOf,
-        authority: "official" as const,
-        entryPoint: request.atlasPath,
-        excludedPaths: Object.freeze([]),
-        freshnessWindowDays: 30,
-        includedPaths: Object.freeze([]),
-        maxDepth: 1,
-        sourceId: "source:tracked-atlas",
-      }),
-    ),
-    ...validateIngestScopeTime(
-      Object.freeze({
-        "ingest-scope-schema": "1.0.0" as const,
-        approvedAt: request.approvedAt,
-        approvedBy: request.approvedBy,
-        asOf: request.asOf,
-        authority: "official" as const,
-        entryPoint: request.atlasPath,
-        excludedPaths: Object.freeze([]),
-        freshnessWindowDays: 30,
-        includedPaths: Object.freeze([]),
-        maxDepth: 1,
-        sourceId: "source:tracked-atlas",
-      }),
-    ),
+    ...probeApprovalFindings(request),
+    ...probeAsOfFindings(request),
   ];
   if (scopeFindings.length > 0) {
     return Object.freeze({
@@ -1321,10 +1451,15 @@ function sourcePage(
   source: AtlasIngestCandidateSource,
   scope: AtlasIngestScope,
   operationId: string,
+  capture: AtlasIngestSourceCapture | undefined,
 ): ParsedAtlasPage {
   const slug = slugForId(source.id, "source") as string;
   const atlas: AtlasBlock = {
     authority: source.authority,
+    // Recorded only when Ingest independently captured this Source from the
+    // immutable Git base snapshot, so a later Lint or citation revalidation can
+    // rehydrate the exact revision this page's digest was checked against.
+    ...(capture === undefined ? {} : { "captured-at-commit": capture.commit }),
     locator: source.locator,
     "refresh-window-days": source.refreshWindowDays,
     revision: sourceRevisionDigest(source.content),
@@ -1423,7 +1558,7 @@ function changelogEntry(
       existingContent,
       scope.asOf,
       operationId,
-      `${verb} ${scope.sourceId} approved by ${scope.approvedBy} at ${scope.approvedAt} into ${String(graph.concepts.length)} Concept(s) with cited Source and Edges.`,
+      `${verb} ${scope.sourceId} approved by ${scope.attestation.approver} at ${scope.attestation.approvedAt} into ${String(graph.concepts.length)} Concept(s) with cited Source and Edges.`,
     ),
     path: atlasChangelogPath,
   });
@@ -1459,13 +1594,21 @@ function candidateGraphChanges(
   request: AtlasIngestRequest,
   existingFiles: readonly CapturedAtlasFile[],
   options: { readonly includeChangelog: boolean },
+  capturedSources?: ReadonlyMap<string, AtlasIngestSourceCapture>,
 ): readonly AtlasIngestChange[] {
   const { candidateGraph: graph, scope } = request;
   const existing = readExistingAtlas(existingFiles);
   const refresh = existing.sourceText.has(scope.sourceId);
   const pages: ParsedAtlasPage[] = [];
   for (const source of graph.sources) {
-    pages.push(sourcePage(source, scope, state.operationId));
+    pages.push(
+      sourcePage(
+        source,
+        scope,
+        state.operationId,
+        capturedSources?.get(source.locator),
+      ),
+    );
   }
   for (const concept of graph.concepts) {
     pages.push(conceptPage(concept, scope, state.operationId));
@@ -1490,12 +1633,17 @@ export function reconcileCandidateGraph(
   state: AtlasIngestWorkflowState,
   request: AtlasIngestRequest,
   existingFiles: readonly CapturedAtlasFile[] = [],
+  capturedSources?: ReadonlyMap<string, AtlasIngestSourceCapture>,
 ): AtlasIngestChangeSet {
   return Object.freeze({
     baseSnapshotDigest: state.baseSnapshotDigest,
-    changes: candidateGraphChanges(state, request, existingFiles, {
-      includeChangelog: true,
-    }),
+    changes: candidateGraphChanges(
+      state,
+      request,
+      existingFiles,
+      { includeChangelog: true },
+      capturedSources,
+    ),
     targetHead: state.targetHead,
   });
 }
@@ -1767,7 +1915,14 @@ export function runAtlasIngestWorkflow(
     }
 
     const existingFiles = runtime.existingAtlasFiles();
-    const graphFindings = validateCandidateGraph(request, existingFiles);
+    const capturedSources = runtime.capturedSources?.();
+    const referenceTime = runtime.referenceTime?.();
+    const graphFindings = validateCandidateGraph(
+      request,
+      existingFiles,
+      capturedSources,
+      referenceTime,
+    );
     // A page whose frontmatter values are structurally sound is emitted, and its
     // change set, citation correspondence, and resume receipts are cross-checked.
     // A graph with a structural error is not emitted, so no invalid page and no
@@ -1777,7 +1932,12 @@ export function runAtlasIngestWorkflow(
     let emissionFindings: readonly Finding[] = [];
     if (emittable) {
       try {
-        changeSet = reconcileCandidateGraph(state, request, existingFiles);
+        changeSet = reconcileCandidateGraph(
+          state,
+          request,
+          existingFiles,
+          capturedSources,
+        );
       } catch {
         emissionFindings = Object.freeze([
           finding(

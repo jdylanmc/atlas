@@ -18,6 +18,7 @@ import {
   type AtlasIngestChangeSet,
   type AtlasIngestRequest,
   type AtlasIngestResult,
+  type AtlasIngestSourceCapture,
   type AtlasIngestWorkflowState,
 } from "../operations/ingest_operation.ts";
 import { captureLocalAtlasSnapshot } from "./local_atlas_snapshot.ts";
@@ -68,6 +69,44 @@ function capturedAtlasFiles(repository: string): readonly CapturedAtlasFile[] {
   const capture = captureLocalAtlasSnapshot(repository);
   if (capture.state === "failed") throw new Error(capture.reason);
   return capture.snapshot.capturedFiles;
+}
+
+/**
+ * Independently captures each asserted Source locator's bytes and last commit
+ * time straight from the immutable Git base snapshot, rather than trusting the
+ * crawler's own claim. A locator this host is unable to read at `targetHead`
+ * (absent, renamed, or not yet committed) is simply omitted, so Ingest
+ * validation reports it as uncapturable instead of this adapter throwing. Once
+ * that same locator's bytes are confirmed present at `targetHead`, its commit
+ * history for that path is expected to resolve too; a `git log` failure at that
+ * point is treated as the same class of unexpected runtime failure every other
+ * trusted Git call in this adapter throws on, rather than a second silent
+ * degradation path.
+ */
+function capturedSourceRevisions(
+  repository: string,
+  targetHead: string,
+  locators: readonly string[],
+): ReadonlyMap<string, AtlasIngestSourceCapture> {
+  const captures = new Map<string, AtlasIngestSourceCapture>();
+  for (const locator of new Set(locators)) {
+    const content = runTrustedGit(repository, ["show", `${targetHead}:${locator}`]);
+    if (content.state === "failed") continue;
+    const revisionTime = git(repository, [
+      "log",
+      "-1",
+      "--format=%cI",
+      targetHead,
+      "--",
+      locator,
+    ]);
+    captures.set(locator, {
+      commit: targetHead,
+      content: content.stdout,
+      revisionTime,
+    });
+  }
+  return Object.freeze(captures);
 }
 
 function digestSnapshot(repository: string, targetHead: string): string {
@@ -268,6 +307,12 @@ export function runLocalAtlasIngest(
 
   const workspace = workspacePath(root, workflowState.proposalBranch);
   return runAtlasIngestWorkflow(workflowState, request, {
+    capturedSources: () =>
+      capturedSourceRevisions(
+        root,
+        workflowState.targetHead,
+        request.candidateGraph.sources.map((source) => source.locator),
+      ),
     commitProposal: () => {
       const tree = gitWrite(workspace, ["write-tree"]);
       const parent = git(workspace, ["rev-parse", "HEAD"]);
@@ -320,6 +365,7 @@ export function runLocalAtlasIngest(
     persistState: (nextState: AtlasIngestWorkflowState) => {
       writeStateAtomically(root, nextState);
     },
+    referenceTime: () => new Date().toISOString(),
     workspaceExists: () => workspaceExists(root, workflowState.proposalBranch),
     workspacePathValid: () =>
       workspacePathIsContained(root, workflowState.proposalBranch),

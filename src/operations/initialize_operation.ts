@@ -43,11 +43,16 @@ import {
   virtualAtlasTextFiles,
 } from "./virtual_atlas_view.ts";
 import {
+  governanceAttestationOperation,
+  governanceAttestationPayload,
   prepareGovernanceFragment,
   type AtlasGovernanceRequest,
 } from "./governance_operation.ts";
 import { prepareIngestFragment, type AtlasIngestRequest } from "./ingest_operation.ts";
-import { isSafeGitBranchName as isSafeGitBranchNameShared } from "./operation_support.ts";
+import {
+  attestationPayloadDigest,
+  isSafeGitBranchName as isSafeGitBranchNameShared,
+} from "./operation_support.ts";
 import {
   operationHandoffSchemaVersion,
   operationResultSchemaVersion,
@@ -1054,15 +1059,9 @@ function prepareSiteFragment(
   if (!sitePolicy.enabled) {
     return Object.freeze({ changes: Object.freeze([]), findings: Object.freeze([]) });
   }
-  const request: AtlasGovernanceRequest = Object.freeze({
-    "governance-request-schema": "1.0.0",
-    action: "create",
-    ...(sitePolicy.approvedAt === undefined
-      ? {}
-      : { approvedAt: sitePolicy.approvedAt }),
-    ...(sitePolicy.approvedBy === undefined
-      ? {}
-      : { approvedBy: sitePolicy.approvedBy }),
+  const requestFields = {
+    "governance-request-schema": "1.0.0" as const,
+    action: "create" as const,
     changes: Object.freeze([
       renderTypedAtlasPage({
         body: [
@@ -1098,7 +1097,33 @@ function prepareSiteFragment(
         verdict: "pass" as const,
       }),
     ]),
-    subject: "atlas-policy",
+    subject: "atlas-policy" as const,
+  };
+  // The SDK derives this entire request deterministically from `sitePolicy`, so
+  // it computes the Approval Attestation itself from the caller-supplied
+  // approver and instant, binding it to the exact payload the SDK is about to
+  // submit rather than accepting a caller-supplied attestation for content the
+  // caller did not author.
+  const operation = governanceAttestationOperation(requestFields);
+  const nonce = "atlas-initialization-site-policy";
+  const request: AtlasGovernanceRequest = Object.freeze({
+    ...requestFields,
+    ...(sitePolicy.approvedAt === undefined || sitePolicy.approvedBy === undefined
+      ? {}
+      : {
+          attestation: Object.freeze({
+            "approval-attestation-schema": "1.0.0" as const,
+            approvedAt: sitePolicy.approvedAt,
+            approver: sitePolicy.approvedBy,
+            nonce,
+            operation,
+            payloadDigest: attestationPayloadDigest(
+              operation,
+              nonce,
+              governanceAttestationPayload(requestFields),
+            ),
+          }),
+        }),
   });
   const prepared = prepareGovernanceFragment(request, virtualAtlas);
   return Object.freeze({

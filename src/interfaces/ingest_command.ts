@@ -18,6 +18,10 @@ import {
   type SourceAuthority,
 } from "../operations/ingest_operation.ts";
 import {
+  parseApprovalAttestationRecord,
+  type AtlasApprovalAttestation,
+} from "../operations/operation_support.ts";
+import {
   operationHandoffSchemaVersion,
   operationResultSchemaVersion,
 } from "../operations/operation_result.ts";
@@ -48,6 +52,12 @@ export const ingestCommandExitCodes = Object.freeze({
 
 export const ingestCommandInputBudgets = Object.freeze({
   maxFileBytes: 1024 * 1024,
+  // Bounds the distinct Source locators a Candidate Graph may assert. Ingest's
+  // independent Git capture shells out one or two trusted Git subprocesses per
+  // distinct locator before approval is even checked, so an unbounded count is
+  // an attacker-amplifiable resource cost a crawler-authored graph could
+  // otherwise impose for free.
+  maxSources: 32,
 });
 
 const trustedAttribution = Object.freeze({
@@ -217,6 +227,10 @@ function asAuthority(value: unknown, path: string): SourceAuthority {
   return authority;
 }
 
+function asAttestation(value: unknown, path: string): AtlasApprovalAttestation {
+  return parseApprovalAttestationRecord(asRecord(value, path), path, asString);
+}
+
 function parseScopeRecord(record: Readonly<Record<string, unknown>>): AtlasIngestScope {
   return Object.freeze({
     "ingest-scope-schema": asSchema(
@@ -224,9 +238,8 @@ function parseScopeRecord(record: Readonly<Record<string, unknown>>): AtlasInges
       "scope.ingest-scope-schema",
       "1.0.0",
     ),
-    approvedAt: asString(record["approvedAt"], "scope.approvedAt"),
-    approvedBy: asString(record["approvedBy"], "scope.approvedBy"),
     asOf: asString(record["asOf"], "scope.asOf"),
+    attestation: asAttestation(record["attestation"], "scope.attestation"),
     authority: asAuthority(record["authority"], "scope.authority"),
     entryPoint: asString(record["entryPoint"], "scope.entryPoint"),
     excludedPaths: asStringArray(record["excludedPaths"], "scope.excludedPaths"),
@@ -351,6 +364,12 @@ function parseDispute(value: unknown, path: string): AtlasIngestDispute {
 
 function parseGraph(value: unknown, path: string): AtlasIngestCandidateGraph {
   const record = asRecord(value, path);
+  const sources = asArray(record["sources"], `${path}.sources`);
+  if (sources.length > ingestCommandInputBudgets.maxSources) {
+    throw new IngestInputError(
+      `${path}.sources exceeds the ${String(ingestCommandInputBudgets.maxSources)} Source budget`,
+    );
+  }
   return Object.freeze({
     "candidate-graph-schema": asSchema(
       record["candidate-graph-schema"],
@@ -373,7 +392,7 @@ function parseGraph(value: unknown, path: string): AtlasIngestCandidateGraph {
       ),
     ),
     sources: Object.freeze(
-      asArray(record["sources"], `${path}.sources`).map((entry, index) =>
+      sources.map((entry, index) =>
         parseSource(entry, `${path}.sources[${String(index)}]`),
       ),
     ),
@@ -433,9 +452,8 @@ const crawlAssignmentBrand: unique symbol = Symbol("atlas-ingest-crawl-assignmen
 export interface AtlasIngestCrawlAssignment {
   readonly [crawlAssignmentBrand]: true;
   readonly "crawl-assignment-schema": "1.0.0";
-  readonly approvedAt: string;
-  readonly approvedBy: string;
   readonly asOf: string;
+  readonly attestation: AtlasApprovalAttestation;
   readonly authority: SourceAuthority;
   readonly entryPoint: string;
   readonly excludedPaths: readonly string[];
@@ -452,9 +470,17 @@ export type AtlasIngestPlanOutcome =
 // Approval is enforced here through the same validateApproval gate the Ingest
 // operation runs before it mutates, so a blank approval refuses the Crawl
 // Assignment exactly as it later refuses reconciliation. The negative branch
-// blocks: no assignment is constructed when approval is missing.
-export function planCrawlAssignment(scope: AtlasIngestScope): AtlasIngestPlanOutcome {
-  const approvalFindings = validateApproval(scope);
+// blocks: no assignment is constructed when approval is missing. `now`, when
+// supplied by the caller, is the only clock reading in this check; the Scope's
+// own Approval Attestation is re-verified again at reconcile time against
+// whatever Scope is actually submitted then, so a Scope mutated between plan
+// and reconcile reproduces a different digest and is refused there even if a
+// crawler skips planning or replays a stale assignment.
+export function planCrawlAssignment(
+  scope: AtlasIngestScope,
+  now?: string,
+): AtlasIngestPlanOutcome {
+  const approvalFindings = validateApproval(scope, now);
   if (approvalFindings.length > 0) {
     return {
       result: notCompletedIngestResult(
@@ -479,9 +505,8 @@ export function planCrawlAssignment(scope: AtlasIngestScope): AtlasIngestPlanOut
   const assignment: AtlasIngestCrawlAssignment = Object.freeze({
     [crawlAssignmentBrand]: true as const,
     "crawl-assignment-schema": "1.0.0" as const,
-    approvedAt: scope.approvedAt,
-    approvedBy: scope.approvedBy,
     asOf: scope.asOf,
+    attestation: scope.attestation,
     authority: scope.authority,
     entryPoint: scope.entryPoint,
     excludedPaths: scope.excludedPaths,
@@ -552,7 +577,12 @@ export function exitCodeForIngestOperationResult(result: AtlasIngestResult): num
   ) {
     return ingestCommandExitCodes.usage;
   }
-  if (codes.has("ATLAS_INGEST_APPROVAL_REQUIRED")) {
+  if (
+    codes.has("ATLAS_INGEST_APPROVAL_REQUIRED") ||
+    codes.has("ATLAS_INGEST_APPROVAL_EXPIRED") ||
+    codes.has("ATLAS_INGEST_APPROVAL_OPERATION_MISMATCH") ||
+    codes.has("ATLAS_INGEST_APPROVAL_PAYLOAD_MISMATCH")
+  ) {
     return ingestCommandExitCodes.approvalRequired;
   }
   if (result.handoff.unresolvedHumanDecisions.state === "pending") {

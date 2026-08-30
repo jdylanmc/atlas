@@ -13,6 +13,13 @@ import {
   type AtlasInitializationWorkflowState,
 } from "../src/operations/initialize_operation.ts";
 import { prepareGovernanceFragment } from "../src/operations/governance_operation.ts";
+import {
+  governanceAttestationOperation,
+  governanceAttestationPayload,
+} from "../src/operations/governance_operation.ts";
+import { ingestScopeAttestationOperation } from "../src/operations/ingest_operation.ts";
+import { ingestScopeAttestationPayload } from "../src/operations/ingest_operation.ts";
+import { attestationPayloadDigest } from "../src/operations/operation_support.ts";
 import { createVirtualAtlasView } from "../src/operations/virtual_atlas_view.ts";
 import { runLintOperation } from "../src/operations/lint_operation.ts";
 import {
@@ -47,6 +54,102 @@ function captured(
   );
 }
 
+// A shared, valid founding governance fixture: an authored Principle page plus
+// drafted Changelog prose, and the detached Approval Attestation a Maintainer
+// would have computed for exactly this content through the same production
+// digest the operation verifies against.
+const foundingGovernanceFields = {
+  "governance-request-schema": "1.0.0" as const,
+  action: "create" as const,
+  changes: [
+    {
+      content: [
+        "---",
+        "sdk:",
+        "  atlas-sdk-schema: 1.0.0",
+        '  created-at: "2026-01-01T00:00:00Z"',
+        "  created-by:",
+        "    kind: agent",
+        "    name: Atlas SDK",
+        "  id: principle:determinism",
+        "  local-atlas-schema: 1.0.0",
+        "  tags: []",
+        "  title: Determinism",
+        "  type: principle",
+        '  updated-at: "2026-01-01T00:00:00Z"',
+        "  updated-by:",
+        "    kind: agent",
+        "    name: Atlas SDK",
+        "atlas: {}",
+        "---",
+        "",
+        "# Determinism",
+        "",
+        "## Active truths",
+        "",
+        "- `truth:no-model` Atlas SDK never invokes a model.",
+        "",
+        "## Amendments",
+        "",
+        "### 1 - 2026-08-24",
+        "",
+        "Added `truth:no-model`.",
+        "",
+      ].join("\n"),
+      path: ".atlas/principles/determinism.md",
+    },
+  ],
+  changelog: "Create founding Principle.",
+  subject: "principle" as const,
+};
+const foundingGovernanceOperation = governanceAttestationOperation(
+  foundingGovernanceFields,
+);
+const foundingGovernanceNonce = "founding-fixture-nonce";
+const foundingGovernanceAttestation = {
+  "approval-attestation-schema": "1.0.0" as const,
+  approvedAt: "2026-08-24T12:00:00Z",
+  approver: "Reviewer",
+  nonce: foundingGovernanceNonce,
+  operation: foundingGovernanceOperation,
+  payloadDigest: attestationPayloadDigest(
+    foundingGovernanceOperation,
+    foundingGovernanceNonce,
+    governanceAttestationPayload(foundingGovernanceFields),
+  ),
+};
+
+// A shared, valid founding Ingest Scope fixture and its Approval Attestation.
+const foundingIngestScopeFields = {
+  asOf: "2026-08-24T12:00:00Z",
+  authority: "official" as const,
+  entryPoint: "docs",
+  excludedPaths: ["docs/private"],
+  freshnessWindowDays: 30,
+  includedPaths: ["docs"],
+  maxDepth: 4,
+  sourceId: "source:readme",
+};
+const foundingIngestScopeOperation = ingestScopeAttestationOperation(
+  foundingIngestScopeFields.sourceId,
+);
+const foundingIngestScopeNonce = "founding-ingest-fixture-nonce";
+const foundingIngestScopeAttestation = {
+  "approval-attestation-schema": "1.0.0" as const,
+  approvedAt: "2026-08-24T12:00:00Z",
+  approver: "Reviewer",
+  nonce: foundingIngestScopeNonce,
+  operation: foundingIngestScopeOperation,
+  payloadDigest: attestationPayloadDigest(
+    foundingIngestScopeOperation,
+    foundingIngestScopeNonce,
+    ingestScopeAttestationPayload({
+      "ingest-scope-schema": "1.0.0",
+      ...foundingIngestScopeFields,
+    }),
+  ),
+};
+
 test("composed founding workflow succeeds while leaving the legacy minimal path intact", () => {
   const initial = state();
   let created = 0;
@@ -78,50 +181,8 @@ test("composed founding workflow succeeds while leaving the legacy minimal path 
       },
       governance: [
         {
-          "governance-request-schema": "1.0.0",
-          action: "create",
-          approvedAt: "2026-08-24T12:00:00Z",
-          approvedBy: "Reviewer",
-          changes: [
-            {
-              content: [
-                "---",
-                "sdk:",
-                "  atlas-sdk-schema: 1.0.0",
-                '  created-at: "2026-01-01T00:00:00Z"',
-                "  created-by:",
-                "    kind: agent",
-                "    name: Atlas SDK",
-                "  id: principle:determinism",
-                "  local-atlas-schema: 1.0.0",
-                "  tags: []",
-                "  title: Determinism",
-                "  type: principle",
-                '  updated-at: "2026-01-01T00:00:00Z"',
-                "  updated-by:",
-                "    kind: agent",
-                "    name: Atlas SDK",
-                "atlas: {}",
-                "---",
-                "",
-                "# Determinism",
-                "",
-                "## Active truths",
-                "",
-                "- `truth:no-model` Atlas SDK never invokes a model.",
-                "",
-                "## Amendments",
-                "",
-                "### 1 - 2026-08-24",
-                "",
-                "Added `truth:no-model`.",
-                "",
-              ].join("\n"),
-              path: ".atlas/principles/determinism.md",
-            },
-          ],
-          changelog: "Create founding Principle.",
-          subject: "principle",
+          ...foundingGovernanceFields,
+          attestation: foundingGovernanceAttestation,
         },
       ],
       hostIntegration: { skills: ["atlas-entry"] },
@@ -174,16 +235,8 @@ test("composed founding workflow succeeds while leaving the legacy minimal path 
         },
         scope: {
           "ingest-scope-schema": "1.0.0",
-          approvedAt: "2026-08-24T12:00:00Z",
-          approvedBy: "Reviewer",
-          asOf: "2026-08-24T12:00:00Z",
-          authority: "official",
-          entryPoint: "docs",
-          excludedPaths: ["docs/private"],
-          freshnessWindowDays: 30,
-          includedPaths: ["docs"],
-          maxDepth: 4,
-          sourceId: "source:readme",
+          ...foundingIngestScopeFields,
+          attestation: foundingIngestScopeAttestation,
         },
       },
       anchors: [
@@ -489,19 +542,8 @@ test("governance invalidation affects only true downstream dependents", () => {
     {
       governance: [
         {
-          "governance-request-schema": "1.0.0",
-          action: "create",
-          approvedAt: "2026-08-24T12:00:00Z",
-          approvedBy: "Reviewer",
-          changes: [
-            {
-              content:
-                '---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  created-at: "2026-01-01T00:00:00Z"\n  created-by:\n    kind: agent\n    name: Atlas SDK\n  id: principle:determinism\n  local-atlas-schema: 1.0.0\n  tags: []\n  title: Determinism\n  type: principle\n  updated-at: "2026-01-01T00:00:00Z"\n  updated-by:\n    kind: agent\n    name: Atlas SDK\natlas: {}\n---\n\n# Determinism\n\n## Active truths\n\n- `truth:no-model` Atlas SDK never invokes a model.\n\n## Amendments\n\n### 1 - 2026-08-24\n\nAdded `truth:no-model`.\n',
-              path: ".atlas/principles/determinism.md",
-            },
-          ],
-          changelog: "Create founding Principle.",
-          subject: "principle",
+          ...foundingGovernanceFields,
+          attestation: foundingGovernanceAttestation,
         },
       ],
       anchors: [
@@ -788,6 +830,83 @@ test("raw founding input rejects injected persona authority before typing", () =
     },
   );
   assert.equal(malformedSkills.completion, "completed");
+
+  // A structurally incomplete Approval Attestation nested inside an
+  // unchecked-cast `governance`/`ingest` field must report a determinate
+  // Finding rather than crash the shared verifyApprovalAttestation core with a
+  // raw TypeError.
+  const malformedGovernanceAttestation = runComposedAtlasInitializationWorkflow(
+    initial,
+    {
+      governance: [
+        {
+          ...foundingGovernanceFields,
+          attestation: { "approval-attestation-schema": "1.0.0" },
+        },
+      ],
+    },
+    {
+      commitProposal: () => ({ commit: "c", receipt: "c" }),
+      createProposalWorktree: () => ({ receipt: "created" }),
+      currentTargetHead: () => initial.targetHead,
+      currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
+      lintProposal: () => ({
+        lint: runLintOperation(atlasInitializationFiles(initial), {
+          maxFileBytes: 4096,
+          maxTotalBytes: 65536,
+        }),
+        receipt: "c",
+      }),
+      writeChangeSet: () => ({ receipt: "written" }),
+    },
+  );
+  assert.equal(malformedGovernanceAttestation.completion, "not-completed");
+  assert.ok(
+    malformedGovernanceAttestation.handoff.validationState.findings.some(
+      (finding) => finding.code === "ATLAS_GOVERNANCE_APPROVAL_REQUIRED",
+    ),
+  );
+
+  const malformedIngestAttestation = runComposedAtlasInitializationWorkflow(
+    initial,
+    {
+      ingest: {
+        "ingest-request-schema": "1.0.0",
+        candidateGraph: {
+          "candidate-graph-schema": "1.0.0",
+          concepts: [],
+          disputes: [],
+          edges: [],
+          sources: [],
+        },
+        scope: {
+          "ingest-scope-schema": "1.0.0",
+          ...foundingIngestScopeFields,
+          attestation: { "approval-attestation-schema": "1.0.0" },
+        },
+      },
+    },
+    {
+      commitProposal: () => ({ commit: "c", receipt: "c" }),
+      createProposalWorktree: () => ({ receipt: "created" }),
+      currentTargetHead: () => initial.targetHead,
+      currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
+      lintProposal: () => ({
+        lint: runLintOperation(atlasInitializationFiles(initial), {
+          maxFileBytes: 4096,
+          maxTotalBytes: 65536,
+        }),
+        receipt: "c",
+      }),
+      writeChangeSet: () => ({ receipt: "written" }),
+    },
+  );
+  assert.equal(malformedIngestAttestation.completion, "not-completed");
+  assert.ok(
+    malformedIngestAttestation.handoff.validationState.findings.some(
+      (finding) => finding.code === "ATLAS_INGEST_APPROVAL_REQUIRED",
+    ),
+  );
 });
 
 test("composed initialization covers declined capabilities and runtime failure handoff", () => {

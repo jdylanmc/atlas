@@ -579,16 +579,16 @@
       "gate": "atlas-cli",
       "kind": "source-contract",
       "path": "src/interfaces/governance_command.ts",
-      "requiredText": "if (record[\"approvedBy\"] !== undefined) {",
-      "forbiddenText": "approvedBy = \""
+      "requiredText": "if (record[\"attestation\"] !== undefined) {",
+      "forbiddenText": "attestation = {"
     },
     {
       "name": "reject a governance command seam that defaults a Maintainer approver literal",
       "gate": "atlas-cli",
       "kind": "source-contract",
       "path": "src/interfaces/governance_command.ts",
-      "requiredText": "request.approvedBy = asBoundedString(",
-      "forbiddenText": "approvedBy: \""
+      "requiredText": "request.attestation = asAttestation(",
+      "forbiddenText": "approver: \""
     },
     {
       "name": "reject a governance dispatch that offers a self-approval flag",
