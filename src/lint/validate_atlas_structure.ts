@@ -21,6 +21,7 @@ import {
   rootAnchorPageId,
 } from "../domain/core_archetype.ts";
 import { malformedAtlasPrincipleTruthLines } from "../domain/atlas_principle.ts";
+import { checkAtlasSchemaVersion } from "../domain/atlas_schema_version.ts";
 import type { Finding, FindingLocation } from "../domain/finding.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import type { AtlasTextFile } from "../atlas/load_atlas_text.ts";
@@ -100,7 +101,7 @@ function pairFor(map: unknown, key: string): Pair<Node, Node> {
 
 function sdkKeyLocation(
   content: string,
-  key: "created-at" | "id" | "type" | "updated-at",
+  key: "atlas-sdk-schema" | "created-at" | "id" | "type" | "updated-at",
 ): FindingLocation {
   // Only a page the parse already read reaches here, so the span is answered.
   // Asking the parse where its frontmatter was keeps one rule for the closing
@@ -706,6 +707,17 @@ function validatePage(
   tree: Nodes,
   findings: Finding[],
 ): void {
+  if (!checkAtlasSchemaVersion(parsed.page.sdk["atlas-sdk-schema"])) {
+    findings.push(
+      finding(
+        "ATLAS_SCHEMA_VERSION_MALFORMED",
+        "Atlas page atlas-sdk-schema must be a well-formed MAJOR.MINOR.PATCH version.",
+        file.path,
+        sdkKeyLocation(file.content, "atlas-sdk-schema"),
+      ),
+    );
+  }
+
   const expected = expectedType(file.path);
   if (parsed.page.sdk.type !== expected) {
     findings.push(

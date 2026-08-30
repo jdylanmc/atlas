@@ -251,6 +251,40 @@ test("requires the first CommonMark block to be the matching H1", () => {
   );
 });
 
+test("reports a malformed atlas-sdk-schema as a trusted error Finding naming the field", () => {
+  for (const malformed of ["banana", "1.0", "01.0.0", "1.0.0-beta"]) {
+    const malformedPage = {
+      ...page(".atlas/concepts/page.md", "# Page"),
+      content: page(".atlas/concepts/page.md", "# Page").content.replace(
+        "  atlas-sdk-schema: 1.0.0",
+        `  atlas-sdk-schema: "${malformed}"`,
+      ),
+    };
+    const findings = validateAtlasStructure([
+      validFiles[2] as AtlasTextFile,
+      malformedPage,
+    ]);
+    assert.deepEqual(
+      findings.map(({ code, path }) => ({ code, path })),
+      [{ code: "ATLAS_SCHEMA_VERSION_MALFORMED", path: ".atlas/concepts/page.md" }],
+      malformed,
+    );
+    const [finding] = findings;
+    assert.deepEqual(finding?.location, {
+      end: { column: 19, line: 3 },
+      start: { column: 3, line: 3 },
+    });
+    assert.equal(checkFinding(finding), true);
+  }
+  assert.deepEqual(
+    validateAtlasStructure([
+      validFiles[2] as AtlasTextFile,
+      page(".atlas/concepts/page.md", "# Page"),
+    ]),
+    [],
+  );
+});
+
 test("reports an empty body at EOF without fabricating a location", () => {
   const emptyAtEof = page(".atlas/concepts/empty.md", "");
   const [finding] = validateAtlasStructure([
