@@ -237,8 +237,8 @@ test("Atlas capture enforces total byte budget before reading the offending file
         maxTotalBytes: 15,
         maxTraversalDepth: 4,
       },
-      (path) => {
-        const bytes = readFileSync(path);
+      (fd) => {
+        const bytes = readFileSync(fd);
         bytesRead += bytes.byteLength;
         return bytes;
       },
