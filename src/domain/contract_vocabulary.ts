@@ -286,6 +286,10 @@ export const unboundGlossaryTerms = Object.freeze([
     term: "Maintainer",
   }),
   Object.freeze({
+    reason: "Not yet implemented.",
+    term: "Directly Responsible Individual (DRI)",
+  }),
+  Object.freeze({
     reason: "Not yet implemented as a distinct type.",
     term: "Principle Amendment",
   }),
