@@ -18,13 +18,14 @@ export function sdkFindings(
   message: string,
   path: string,
   location?: FindingLocation,
+  severity?: Finding["severity"],
 ) => Finding {
   const attribution = Object.freeze({
     checkId,
     kind: "sdk-core" as const,
     trusted: true as const,
   });
-  return (code, message, path, location) =>
+  return (code, message, path, location, severity = "error") =>
     Object.freeze({
       attribution,
       code,
@@ -32,6 +33,6 @@ export function sdkFindings(
       ...(location === undefined ? {} : { location: freezeLocation(location) }),
       message,
       path,
-      severity: "error",
+      severity,
     });
 }

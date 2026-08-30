@@ -240,13 +240,30 @@ test("rejects missing, malformed, and invalid frontmatter", () => {
     ).code,
     "MALFORMED_FRONTMATTER",
   );
+});
 
+test("parses an unrecognized SDK-owned key instead of refusing the page", () => {
+  // A newer Atlas SDK may add an SDK-owned field this SDK predates. ADR-0002
+  // requires mapping what is recognized and continuing, so the page must
+  // still parse, and the unrecognized key and its value must survive exactly.
   const sdkExtension = validPage("custom:page").replace(
     "  title: Page",
     "  title: Page\n  extension: misplaced",
   );
+  const [parsed] = parseAtlasPages([text(".atlas/concepts/page.md", sdkExtension)]);
+  assert.ok(parsed);
+  const sdk = parsed.page.sdk as unknown as Readonly<Record<string, unknown>>;
+  assert.equal(sdk["extension"], "misplaced");
+  assert.equal(sdk["title"], "Page");
+
+  // A recognized SDK-owned key with the wrong shape is still refused; the
+  // tolerance only ever applies to a key this SDK does not recognize.
+  const malformedRecognized = validPage("custom:page").replace(
+    "  title: Page",
+    "  title: 4",
+  );
   assert.equal(
-    parseError(text(".atlas/index.md", sdkExtension)).code,
+    parseError(text(".atlas/index.md", malformedRecognized)).code,
     "INVALID_PAGE_ENVELOPE",
   );
 });
@@ -372,7 +389,10 @@ test("schema and inferred TypeScript type describe the same envelope", () => {
     "https://json-schema.org/draft/2020-12/schema",
   );
   assert.equal(AtlasPageEnvelopeSchema.additionalProperties, false);
-  assert.equal(AtlasPageEnvelopeSchema.properties.sdk.additionalProperties, false);
+  // The SDK-owned block itself tolerates an unrecognized key so a newer SDK's
+  // field does not hard-refuse an older SDK; the root envelope and the
+  // Atlas-owned block keep their strict boundary.
+  assert.equal(AtlasPageEnvelopeSchema.properties.sdk.additionalProperties, true);
 });
 
 test("JSON value schema accepts only nested JSON-compatible values", () => {

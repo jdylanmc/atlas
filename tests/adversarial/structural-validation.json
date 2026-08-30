@@ -103,6 +103,14 @@
       "expectation": "reject",
       "expectedCode": "ATLAS_PAGE_NON_CANONICAL_LINE_TERMINATOR",
       "body": "# Principle\n\n## Active truths\n\n- `truth:review` Every change requires Maintainer approval.\u2029- `truth:audit` All writes are audited.\n"
+    },
+    {
+      "name": "unrecognized-sdk-owned-field-parses-warns-and-round-trips-losslessly",
+      "gate": "structural-validation",
+      "kind": "sdk-unrecognized-field",
+      "expectation": "accept",
+      "field": "extension",
+      "value": "misplaced"
     }
   ]
 }

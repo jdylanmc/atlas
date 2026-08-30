@@ -18,7 +18,8 @@ import {
 import { exploreCommandBudgets } from "../src/interfaces/explore_command.ts";
 import { ingestCommandInputBudgets } from "../src/interfaces/ingest_command.ts";
 import { buildAtlasView } from "../src/atlas/atlas_view.ts";
-import { parseAtlasPage } from "../src/atlas/parse_atlas_pages.ts";
+import { parseAtlasPage, parseAtlasPages } from "../src/atlas/parse_atlas_pages.ts";
+import { serializeAtlasPages } from "../src/atlas/serialize_atlas_pages.ts";
 import type { CapturedAtlasFile } from "../src/atlas/load_atlas_text.ts";
 import type { Finding } from "../src/domain/finding.ts";
 import type { CoreArchetypeBindings } from "../src/domain/core_archetype.ts";
@@ -364,7 +365,7 @@ interface FrameworkBundleCorpus {
   readonly schema: 1;
 }
 
-interface StructuralValidationCase {
+interface StructuralValidationTruthsCase {
   readonly body: string;
   readonly expectation: "accept" | "reject";
   readonly expectedCode?: string;
@@ -372,6 +373,18 @@ interface StructuralValidationCase {
   readonly kind: "principle-active-truths";
   readonly name: string;
 }
+
+interface StructuralValidationSdkFieldCase {
+  readonly expectation: "accept";
+  readonly field: string;
+  readonly gate: "structural-validation";
+  readonly kind: "sdk-unrecognized-field";
+  readonly name: string;
+  readonly value: string;
+}
+
+type StructuralValidationCase =
+  StructuralValidationTruthsCase | StructuralValidationSdkFieldCase;
 
 interface StructuralValidationCorpus {
   readonly cases: readonly StructuralValidationCase[];
@@ -564,11 +577,27 @@ function parseStructuralValidationCorpus(value: unknown): StructuralValidationCo
         "structural-validation",
         `${path}.gate is unsupported`,
       );
-      assert.equal(
-        entry["kind"],
-        "principle-active-truths",
+      const kind = entry["kind"];
+      assert.ok(
+        kind === "principle-active-truths" || kind === "sdk-unrecognized-field",
         `${path}.kind is unsupported`,
       );
+      if (kind === "sdk-unrecognized-field") {
+        assert.equal(
+          entry["expectation"],
+          "accept",
+          `${path}.expectation must be accept for sdk-unrecognized-field`,
+        );
+        accepts += 1;
+        return {
+          expectation: "accept",
+          field: assertString(entry["field"], `${path}.field`),
+          gate: "structural-validation",
+          kind,
+          name,
+          value: assertString(entry["value"], `${path}.value`),
+        };
+      }
       const expectation = entry["expectation"];
       assert.ok(
         expectation === "accept" || expectation === "reject",
@@ -581,7 +610,7 @@ function parseStructuralValidationCorpus(value: unknown): StructuralValidationCo
           body: assertString(entry["body"], `${path}.body`),
           expectation,
           gate: "structural-validation",
-          kind: "principle-active-truths",
+          kind,
           name,
         };
       }
@@ -591,7 +620,7 @@ function parseStructuralValidationCorpus(value: unknown): StructuralValidationCo
         expectation,
         expectedCode: assertString(entry["expectedCode"], `${path}.expectedCode`),
         gate: "structural-validation",
-        kind: "principle-active-truths",
+        kind,
         name,
       };
     },
@@ -1353,6 +1382,26 @@ const structuralRoot = structuralAtlasPage(
   "# Root\n",
 );
 
+// Builds a page carrying one extra SDK-owned key this SDK does not
+// recognize, so the sdk-unrecognized-field corpus case can prove both that
+// the page still parses and that the field survives a round trip, rather
+// than only asserting a Finding code in isolation.
+function structuralAtlasPageWithSdkField(
+  path: string,
+  id: string,
+  field: string,
+  value: string,
+) {
+  const withoutField = structuralAtlasPage(path, id, "concept", "Page", "# Page\n");
+  return Object.freeze({
+    content: withoutField.content.replace(
+      "  title: Page",
+      `  title: Page\n  ${field}: ${value}`,
+    ),
+    path,
+  });
+}
+
 function adversarialCaptured(path: string, content: string): CapturedAtlasFile {
   return { bytes: adversarialEncoder.encode(content), path };
 }
@@ -1566,6 +1615,36 @@ for (const entry of structuralValidationCorpus.cases) {
   test(`adversarial structural-validation corpus: ${entry.name}`, () => {
     executedCases += 1;
     assert.equal(entry.gate, "structural-validation");
+    if (entry.kind === "sdk-unrecognized-field") {
+      const page = structuralAtlasPageWithSdkField(
+        ".atlas/concepts/extended.md",
+        "concept:extended",
+        entry.field,
+        entry.value,
+      );
+      const findings = validateAtlasStructure([structuralRoot, page]);
+      assert.deepEqual(
+        findings.map(({ code, path, severity }) => ({ code, path, severity })),
+        [
+          {
+            code: "ATLAS_PAGE_SDK_FIELD_UNRECOGNIZED",
+            path: page.path,
+            severity: "warning",
+          },
+        ],
+      );
+
+      // The Finding alone would tolerate a serializer that silently drops the
+      // field on rewrite. Round-tripping through the parser and serializer
+      // proves the unrecognized key survives byte for byte instead.
+      const [parsed] = parseAtlasPages([page]);
+      assert.ok(parsed);
+      const first = serializeAtlasPages([parsed]);
+      const reparsed = parseAtlasPages(first);
+      assert.deepEqual(reparsed[0]?.page, parsed.page);
+      assert.deepEqual(serializeAtlasPages(reparsed), first);
+      return;
+    }
     const findings = validateAtlasStructure([
       structuralRoot,
       structuralAtlasPage(
