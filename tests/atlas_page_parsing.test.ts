@@ -69,8 +69,8 @@ test("classifies only settled core Atlas page locations", () => {
 
   for (const path of [
     ".atlas/CHANGELOG.md",
-    ".atlas/framework/README.md",
-    ".atlas/framework/concepts/not-a-page.md",
+    ".atlas/manifest.json",
+    ".atlas/notes/concepts/not-a-page.md",
     ".atlas/skills/ingest.md",
     ".atlas/directives/guide.md",
     ".atlas/atlas/schemas/page.md",
@@ -84,7 +84,7 @@ test("classifies only settled core Atlas page locations", () => {
 
 test("parses the canonical fixture and ignores opaque Markdown", () => {
   const records = [
-    fixture(".atlas/framework/README.md"),
+    fixture(".atlas/manifest.json"),
     fixture(".atlas/concepts/parsing.md"),
     fixture(".atlas/CHANGELOG.md"),
     fixture(".atlas/index.md"),

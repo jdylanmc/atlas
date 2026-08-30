@@ -157,6 +157,10 @@ export const contractVocabularyBindings = Object.freeze([
     exportedIdentifiers: Object.freeze(["TrackedAtlas"]),
     term: "TrackedAtlas",
   }),
+  Object.freeze({
+    exportedIdentifiers: Object.freeze(["atlasManifestPath", "canonicalAtlasManifest"]),
+    term: "Atlas Manifest",
+  }),
 ] as const) satisfies readonly ContractVocabularyBinding[];
 
 export interface UnboundGlossaryTerm {
@@ -212,10 +216,6 @@ export const unboundGlossaryTerms = Object.freeze([
   Object.freeze({
     reason: "Not yet implemented.",
     term: "Tool Runtime",
-  }),
-  Object.freeze({
-    reason: "Not yet implemented.",
-    term: "Atlas Manifest",
   }),
   Object.freeze({
     reason:

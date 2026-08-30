@@ -17,7 +17,7 @@ import { assertGrowthRatio, assertWallClockUnder } from "./growth.ts";
 
 const encoder = new TextEncoder();
 const fixturesRoot = resolve(import.meta.dirname, "fixtures", "complete-atlas");
-const opaquePaths = [".atlas/CHANGELOG.md", ".atlas/framework/README.md"] as const;
+const opaquePaths = [".atlas/CHANGELOG.md", ".atlas/manifest.json"] as const;
 
 const generousBudgets: AtlasTextBudgets = Object.freeze({
   maxFileBytes: 4096,
@@ -27,7 +27,7 @@ const generousBudgets: AtlasTextBudgets = Object.freeze({
 // Captured in an order no canonical result may depend on: opaque records first,
 // pages neither in code point order nor in directory order.
 const atlasPaths = [
-  ".atlas/framework/README.md",
+  ".atlas/manifest.json",
   ".atlas/CHANGELOG.md",
   ".atlas/sources/atlas-sdk-lint.md",
   ".atlas/index.md",
@@ -130,7 +130,7 @@ test("lints the complete valid Atlas to canonical byte-identical pages", () => {
 
   // Records Lint reads as text rather than as pages are carried, not dropped:
   // they have no page envelope to normalize, and a caller writing back only
-  // `pages` would otherwise delete the Changelog and the Framework Bundle.
+  // `pages` would otherwise delete the Changelog and the Atlas Manifest.
   assert.deepEqual(
     result.opaque.map((record) => record.path),
     opaquePaths,

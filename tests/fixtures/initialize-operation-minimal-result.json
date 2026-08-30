@@ -72,8 +72,8 @@
           "path": ".atlas/CHANGELOG.md"
         },
         {
-          "content": "# Framework\n\nNo Framework Bundle is installed in this Atlas yet.\nFramework Bundle files, once installed, are opaque to Atlas page parsing.\n",
-          "path": ".atlas/framework/README.md"
+          "content": "{\n  \"atlas-manifest-schema\": \"1.0.0\",\n  \"atlas-sdk-schema\": \"1.0.0\",\n  \"local-atlas-schema\": \"1.0.0\"\n}\n",
+          "path": ".atlas/manifest.json"
         },
         {
           "content": "---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  created-at: \"2026-01-01T00:00:00Z\"\n  created-by:\n    kind: agent\n    name: Atlas SDK\n  id: anchor:root\n  local-atlas-schema: 1.0.0\n  originating-operation: atlas-initialization\n  tags: []\n  title: Home Atlas\n  type: anchor\n  updated-at: \"2026-01-01T00:00:00Z\"\n  updated-by:\n    kind: agent\n    name: Atlas SDK\natlas: {}\n---\n\n# Home Atlas\n\nThis Root Anchor starts a minimal Home Atlas with no Guide Persona, founding knowledge, or Atlas Site.\n",
@@ -139,8 +139,8 @@
               "path": ".atlas/CHANGELOG.md"
             },
             {
-              "content": "# Framework\n\nNo Framework Bundle is installed in this Atlas yet.\nFramework Bundle files, once installed, are opaque to Atlas page parsing.\n",
-              "path": ".atlas/framework/README.md"
+              "content": "{\n  \"atlas-manifest-schema\": \"1.0.0\",\n  \"atlas-sdk-schema\": \"1.0.0\",\n  \"local-atlas-schema\": \"1.0.0\"\n}\n",
+              "path": ".atlas/manifest.json"
             }
           ],
           "outcome": "valid",
