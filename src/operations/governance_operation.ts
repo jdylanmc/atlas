@@ -1,4 +1,5 @@
 import {
+  atlasPathCollisionKey,
   normalizeAtlasTextPath,
   type CapturedAtlasFile,
 } from "../atlas/load_atlas_text.ts";
@@ -725,24 +726,8 @@ function governanceDerivedPaths(): readonly string[] {
   return [atlasChangelogPath];
 }
 
-// The identity two paths share on a real filesystem. A collision is refused, so
-// this folds every way one path can name the same file as another: Win32 drops
-// trailing dots and spaces per segment and compares case-insensitively, and
-// Unicode-equivalent spellings normalize together. On the case-insensitive
-// filesystems most adopters run (macOS, Windows), `.atlas/changelog.md` and the
-// SDK-derived `.atlas/CHANGELOG.md` are the same file, and this makes them
-// collide instead of silently overwriting one another in a committed proposal.
-function pathCollisionKey(path: string): string {
-  return path
-    .split("/")
-    .map((segment) => segment.replace(/[. ]+$/u, ""))
-    .join("/")
-    .normalize("NFC")
-    .toLowerCase();
-}
-
 const reservedGovernanceCollisionKeys: ReadonlySet<string> = new Set(
-  governanceDerivedPaths().map(pathCollisionKey),
+  governanceDerivedPaths().map(atlasPathCollisionKey),
 );
 
 // Defence in depth against Changelog prose injection. The seam bounds `changelog`
@@ -819,7 +804,7 @@ function validateAtlasGovernanceRequestInternal(
         ),
       );
     }
-    if (reservedGovernanceCollisionKeys.has(pathCollisionKey(change.path))) {
+    if (reservedGovernanceCollisionKeys.has(atlasPathCollisionKey(change.path))) {
       findings.push(
         finding(
           "ATLAS_GOVERNANCE_CHANGELOG_RESERVED",

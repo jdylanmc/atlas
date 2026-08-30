@@ -1,4 +1,8 @@
-import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
+import {
+  atlasPathCollisionSegments,
+  trimWin32PathSegment,
+  type CapturedAtlasFile,
+} from "../atlas/load_atlas_text.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import { sha256Hex } from "../atlas/sha256.ts";
 import { atlasChangelogPath, renderAtlasChangelog } from "../domain/atlas_changelog.ts";
@@ -397,33 +401,13 @@ function isCanonicalLocator(locator: string): boolean {
       // `docs/private`. Such a spelling is not canonical, and accepting it
       // would let a crawler address a scope-excluded directory under a name
       // scope confinement does not recognize.
-      segment !== trimWin32Segment(segment),
+      segment !== trimWin32PathSegment(segment),
   );
 }
 
-/** One path component as Win32 resolves it, without trailing dots or spaces. */
-function trimWin32Segment(segment: string): string {
-  return segment.replace(/[. ]+$/u, "");
-}
-
-// Scope confinement compares directories, not raw strings. A case-insensitive
-// or Unicode-decomposed spelling of an excluded directory names the same
-// directory on a case-folding or normalizing file system, so both sides are
-// folded to NFC lower case before comparison. Trailing dots and spaces fold
-// away too, because Win32 strips them from every component. Component
-// alignment already holds; this closes the case, normalization, and Win32
-// trailing-form gaps a raw `===` left open.
-function scopeSegments(path: string): readonly string[] {
-  return path
-    .normalize("NFC")
-    .split("/")
-    .map((segment) => trimWin32Segment(segment).toLowerCase())
-    .filter((segment) => segment.length > 0);
-}
-
 function isPrefixPath(prefix: string, path: string): boolean {
-  const prefixParts = scopeSegments(prefix);
-  const pathParts = scopeSegments(path);
+  const prefixParts = atlasPathCollisionSegments(prefix);
+  const pathParts = atlasPathCollisionSegments(path);
   if (prefixParts.length > pathParts.length) return false;
   return prefixParts.every((segment, index) => segment === pathParts[index]);
 }

@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
 import {
+  atlasPathCollisionKey,
+  atlasPathCollisionSegments,
   loadAtlasText,
   AtlasLoadError,
+  trimWin32PathSegment,
   type CapturedAtlasFile,
 } from "../src/atlas/load_atlas_text.ts";
 
@@ -81,6 +84,51 @@ test("normalizes paths and rejects duplicate normalized paths", () => {
       ),
     ),
     "DUPLICATE_PATH",
+  );
+});
+
+test("exports the shared Win32 path-segment trimming rule", () => {
+  assert.equal(trimWin32PathSegment("CHANGELOG.md"), "CHANGELOG.md");
+  assert.equal(trimWin32PathSegment("CHANGELOG.md. "), "CHANGELOG.md");
+});
+
+test("folds Atlas path collisions to one shared filesystem identity", () => {
+  const canonical = ".atlas/CHANGELOG.md";
+  const expectedKey = atlasPathCollisionKey(canonical);
+  const expectedSegments = [".atlas", "changelog.md"];
+
+  assert.deepEqual(atlasPathCollisionSegments(canonical), expectedSegments);
+
+  for (const variant of [
+    ".atlas/CHANGELOG.md",
+    ".atlas/changelog.md",
+    ".atlas/CHANGELOG.MD",
+    ".atlas/Changelog.md",
+    ".atlas/CHANGELOG.md.",
+    ".atlas/CHANGELOG.md ",
+  ]) {
+    assert.equal(atlasPathCollisionKey(variant), expectedKey, variant);
+  }
+
+  assert.notEqual(atlasPathCollisionKey(".atlas/principles/x.md"), expectedKey);
+  assert.equal(
+    atlasPathCollisionKey(".atlas/cafe\u0301.md"),
+    atlasPathCollisionKey(".atlas/caf\u00e9.md"),
+  );
+  // governance_operation.ts validates authored `change.path` with
+  // `pathIsCanonicalAtlasPath`, and ingest_operation.ts validates crawled
+  // `source.locator` / `concept.locator` with `isCanonicalLocator`, before those
+  // values reach this fold. But ingest_operation.ts also feeds scope-confinement
+  // prefixes through `isPrefixPath`, and those `scope.entryPoint`,
+  // `scope.includedPaths`, and `scope.excludedPaths` values are parsed with
+  // `asString` / `asStringArray` and are not canonical-path-validated anywhere,
+  // so `.atlas//CHANGELOG.md`-style spellings genuinely reach this fold there
+  // today. This test pins the shared folding rule directly so the two
+  // consumers cannot drift.
+  assert.equal(atlasPathCollisionKey(".atlas//CHANGELOG.md"), expectedKey);
+  assert.deepEqual(
+    atlasPathCollisionSegments(".atlas//CHANGELOG.md"),
+    expectedSegments,
   );
 });
 
