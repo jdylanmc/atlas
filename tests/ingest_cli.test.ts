@@ -46,6 +46,23 @@ function git(repository: string, args: readonly string[]): string {
   return result.stdout.trim();
 }
 
+function gitWithDate(
+  repository: string,
+  args: readonly string[],
+  isoDate: string,
+): string {
+  const result = spawnSync("git", ["-C", repository, ...args], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_DATE: isoDate,
+      GIT_COMMITTER_DATE: isoDate,
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.trim();
+}
+
 function gitMaybe(repository: string, args: readonly string[]): number | null {
   return spawnSync("git", ["-C", repository, ...args], { encoding: "utf8" }).status;
 }
@@ -81,16 +98,29 @@ function initAtlasRepository(repository: string): string {
     { recursive: true },
   );
   writeFileSync(resolve(repository, "README.md"), "# host\n", "utf8");
-  git(repository, ["add", ".atlas", "README.md"]);
-  git(repository, [
-    "-c",
-    "user.name=Fixture",
-    "-c",
-    "user.email=fixture@example.invalid",
-    "commit",
-    "-m",
-    "Initial Atlas",
-  ]);
+  // Committed at the exact instant the ingest fixtures assert as this Source's
+  // revisionTime, so Ingest's independent Git capture at "docs/readme.md"
+  // corroborates every fixture that asserts this content unmutated.
+  mkdirSync(resolve(repository, "docs"), { recursive: true });
+  writeFileSync(
+    resolve(repository, "docs", "readme.md"),
+    "Atlas SDK is a deterministic library. The Lint gate runs with no network access.",
+    "utf8",
+  );
+  git(repository, ["add", ".atlas", "README.md", "docs/readme.md"]);
+  gitWithDate(
+    repository,
+    [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "-m",
+      "Initial Atlas",
+    ],
+    "2026-08-20T00:00:00Z",
+  );
   return git(repository, ["rev-parse", "HEAD"]);
 }
 
@@ -116,7 +146,10 @@ test("atlas ingest plan emits a Crawler assignment only for an approved Ingest S
   const assignment = JSON.parse(command.stdout) as Readonly<Record<string, unknown>>;
   assert.equal(assignment["crawl-assignment-schema"], "1.0.0");
   assert.equal(assignment["sourceId"], "source:readme");
-  assert.equal(assignment["approvedBy"], "Fixture Maintainer");
+  assert.equal(
+    (assignment["attestation"] as Readonly<Record<string, unknown>>)["approver"],
+    "Fixture Maintainer",
+  );
   assert.equal(assignment["refreshWindowDays"], 30);
 });
 
@@ -459,11 +492,23 @@ test("Ingest command helpers preserve machine JSON and all exit classes", () => 
   );
 
   const baseline = ingestRequest();
+  const withExpiry = parseIngestScope({
+    ...baseline.scope,
+    attestation: { ...baseline.scope.attestation, expiresAt: "2099-01-01T00:00:00Z" },
+  });
+  assert.equal(withExpiry.ok, true);
   for (const badScope of [
     { ...baseline.scope, "ingest-scope-schema": "2.0.0" },
     { ...baseline.scope, authority: "trusted" },
     { ...baseline.scope, freshnessWindowDays: "30" },
     { ...baseline.scope, includedPaths: "docs" },
+    {
+      ...baseline.scope,
+      attestation: {
+        ...baseline.scope.attestation,
+        "approval-attestation-schema": "2.0.0",
+      },
+    },
   ]) {
     assert.equal(parseIngestScope(badScope).ok, false);
   }
@@ -471,6 +516,26 @@ test("Ingest command helpers preserve machine JSON and all exit classes", () => 
     parseIngestRequest({
       ...baseline,
       candidateGraph: { ...baseline.candidateGraph, disputes: {} },
+    }).ok,
+    false,
+  );
+  // A Candidate Graph asserting more distinct Source locators than the
+  // budget allows is refused before Ingest would shell out one or two trusted
+  // Git subprocesses per locator to independently capture each one.
+  assert.equal(
+    parseIngestRequest({
+      ...baseline,
+      candidateGraph: {
+        ...baseline.candidateGraph,
+        sources: Array.from(
+          { length: ingestCommandInputBudgets.maxSources + 1 },
+          (_, index) => ({
+            ...baseline.candidateGraph.sources[0],
+            id: `source:readme-${String(index)}`,
+            locator: `docs/readme-${String(index)}.md`,
+          }),
+        ),
+      },
     }).ok,
     false,
   );

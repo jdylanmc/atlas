@@ -6,6 +6,8 @@ import type { CapturedAtlasFile } from "../src/atlas/load_atlas_text.ts";
 import type { Finding } from "../src/domain/finding.ts";
 import {
   buildAtlasGovernanceChangeSet,
+  governanceAttestationOperation,
+  governanceAttestationPayload,
   mergeGovernanceFindings,
   runAtlasGovernanceWorkflow,
   validateAtlasGovernanceRequest,
@@ -15,6 +17,10 @@ import {
   type AtlasGovernanceRuntime,
   type AtlasGovernanceWorkflowState,
 } from "../src/operations/governance_operation.ts";
+import {
+  attestationPayloadDigest,
+  type AtlasApprovalAttestation,
+} from "../src/operations/operation_support.ts";
 import {
   notCompletedLintOperationResult,
   runLintOperation,
@@ -193,13 +199,34 @@ type RequestOverrides = Partial<{
     AtlasGovernanceRequest[Key] | undefined;
 }> & { readonly changeSet?: TestChangeSet | undefined };
 
+/** A valid detached Approval Attestation for the given (attestation-less)
+ * request fields, computed through the same production digest the operation
+ * verifies against. */
+function validGovernanceAttestation(
+  fields: AtlasGovernanceRequest,
+): AtlasApprovalAttestation {
+  const operation = governanceAttestationOperation(fields);
+  const payload = governanceAttestationPayload(fields);
+  const nonce = "fixture-nonce";
+  return Object.freeze({
+    "approval-attestation-schema": "1.0.0" as const,
+    approvedAt: "2026-08-21T00:00:00Z",
+    approver: "Fixture Maintainer",
+    nonce,
+    operation,
+    payloadDigest: attestationPayloadDigest(operation, nonce, payload),
+  });
+}
+
 function request(overrides: RequestOverrides = {}): AtlasGovernanceRequest {
-  const { changeSet: changeSetOverride, ...rest } = overrides;
+  const {
+    attestation: attestationOverride,
+    changeSet: changeSetOverride,
+    ...rest
+  } = overrides;
   const base: Record<string, unknown> = {
     "governance-request-schema": "1.0.0",
     action: "create",
-    approvedAt: "2026-08-21T00:00:00Z",
-    approvedBy: "Fixture Maintainer",
     changelog: "Created Determinism Principle.",
     changes: authoredPages(changeSet()),
     subject: "principle",
@@ -214,7 +241,17 @@ function request(overrides: RequestOverrides = {}): AtlasGovernanceRequest {
   const merged: Record<string, unknown> = Object.fromEntries(
     Object.entries({ ...base, ...rest }).filter(([, value]) => value !== undefined),
   );
-  return merged as unknown as AtlasGovernanceRequest;
+  const withoutAttestation = merged as unknown as AtlasGovernanceRequest;
+  const attestation =
+    "attestation" in overrides
+      ? attestationOverride
+      : withoutAttestation.action === "verify"
+        ? undefined
+        : validGovernanceAttestation(withoutAttestation);
+  return {
+    ...withoutAttestation,
+    ...(attestation === undefined ? {} : { attestation }),
+  };
 }
 
 function applyChanges(
@@ -243,6 +280,7 @@ function runtime(
     readonly failCreate?: true;
     readonly lintReceipt?: string;
     readonly lintUsesEmptyAtlas?: true;
+    readonly referenceTime?: string;
     readonly workspaceExists?: boolean;
     readonly workspacePathValid?: boolean;
   } = {},
@@ -300,6 +338,9 @@ function runtime(
     },
     workspaceExists: () => options.workspaceExists ?? false,
     workspacePathValid: () => options.workspacePathValid ?? true,
+    ...(options.referenceTime === undefined
+      ? {}
+      : { referenceTime: () => options.referenceTime as string }),
     writeChangeSet: () => {
       written += 1;
       return { receipt: "written" };
@@ -746,13 +787,42 @@ test("Governance proves every deterministic input gate can fail with specific co
   for (const [name, maintenanceRequest, expected] of [
     [
       "approval",
-      request({ approvedAt: undefined, approvedBy: undefined }),
+      request({ attestation: undefined }),
       "ATLAS_GOVERNANCE_APPROVAL_REQUIRED",
     ],
     [
       "approval-missing-time",
-      request({ approvedAt: undefined, approvedBy: "Fixture Maintainer" }),
+      request({
+        attestation: { ...request().attestation, approvedAt: "" } as
+          AtlasApprovalAttestation | undefined,
+      }),
       "ATLAS_GOVERNANCE_APPROVAL_REQUIRED",
+    ],
+    [
+      "approval-blank-nonce",
+      request({
+        attestation: { ...request().attestation, nonce: "" } as
+          AtlasApprovalAttestation | undefined,
+      }),
+      "ATLAS_GOVERNANCE_APPROVAL_REQUIRED",
+    ],
+    [
+      "approval-operation-mismatch",
+      request({
+        attestation: {
+          ...request().attestation,
+          operation: "governance/create/atlas-policy",
+        } as AtlasApprovalAttestation | undefined,
+      }),
+      "ATLAS_GOVERNANCE_APPROVAL_OPERATION_MISMATCH",
+    ],
+    [
+      "approval-payload-mismatch",
+      request({
+        attestation: request().attestation,
+        changelog: "Created Determinism Principle, but altered.",
+      }),
+      "ATLAS_GOVERNANCE_APPROVAL_PAYLOAD_MISMATCH",
     ],
     [
       "change-set",
@@ -779,6 +849,41 @@ test("Governance proves every deterministic input gate can fail with specific co
     assert.equal(result.completion, "not-completed", name);
     assert.equal(result.handoff.validationState.findings[0]?.code, expected, name);
   }
+});
+
+test("Governance refuses an Approval Attestation whose expiry has already passed", () => {
+  const workflowState = state();
+  const attestation = request().attestation;
+  const expiring = request({
+    attestation: {
+      ...attestation,
+      expiresAt: "2026-08-01T00:00:00Z",
+    } as AtlasApprovalAttestation | undefined,
+  });
+  const result = runAtlasGovernanceWorkflow(
+    workflowState,
+    expiring,
+    runtime(workflowState, expiring, { referenceTime: "2026-08-22T00:00:00Z" }),
+  );
+  assert.equal(result.completion, "not-completed");
+  assert.equal(
+    result.handoff.validationState.findings[0]?.code,
+    "ATLAS_GOVERNANCE_APPROVAL_EXPIRED",
+  );
+  // An attestation whose expiry has not yet elapsed as of the reference time
+  // still approves the request normally.
+  const notYetExpired = request({
+    attestation: {
+      ...attestation,
+      expiresAt: "2026-08-23T00:00:00Z",
+    } as AtlasApprovalAttestation | undefined,
+  });
+  const stillValid = runAtlasGovernanceWorkflow(
+    workflowState,
+    notYetExpired,
+    runtime(workflowState, notYetExpired, { referenceTime: "2026-08-22T00:00:00Z" }),
+  );
+  assert.equal(stillValid.completion, "completed");
 });
 
 test("Governance refuses unsafe change paths through the one shared path rule", () => {
@@ -1178,8 +1283,6 @@ test("Verification-only governance creates no proposal and can fail read-only", 
   const workflowState = state();
   const maintenanceRequest = request({
     action: "verify",
-    approvedAt: undefined,
-    approvedBy: undefined,
     changeSet: undefined,
   });
   const successAdapter = runtime(workflowState, maintenanceRequest);

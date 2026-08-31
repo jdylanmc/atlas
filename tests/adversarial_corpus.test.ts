@@ -41,6 +41,8 @@ import {
 } from "../src/operations/initialize_operation.ts";
 import { runLintOperation } from "../src/operations/lint_operation.ts";
 import {
+  ingestScopeAttestationOperation,
+  ingestScopeAttestationPayload,
   reconcileCandidateGraph,
   runAtlasIngestWorkflow,
   validateAtlasIngestChangeSet,
@@ -51,8 +53,13 @@ import {
   type AtlasIngestChangeSet,
   type AtlasIngestRequest,
   type AtlasIngestRuntime,
+  type AtlasIngestSourceCapture,
   type AtlasIngestWorkflowState,
 } from "../src/operations/ingest_operation.ts";
+import {
+  attestationPayloadDigest,
+  type AtlasApprovalAttestation,
+} from "../src/operations/operation_support.ts";
 import {
   validateVocabularyAgreement,
   type VocabularyTextFile,
@@ -1384,6 +1391,22 @@ function adversarialGit(repository: string, args: readonly string[]): void {
   assert.equal(result.status, 0, result.stderr);
 }
 
+function adversarialGitWithDate(
+  repository: string,
+  args: readonly string[],
+  isoDate: string,
+): void {
+  const result = spawnSync("git", ["-C", repository, ...args], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_DATE: isoDate,
+      GIT_COMMITTER_DATE: isoDate,
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+}
+
 function createAdversarialAtlasRepository(repository: string): void {
   rmSync(repository, { force: true, recursive: true });
   mkdirSync(repository, { recursive: true });
@@ -1396,8 +1419,21 @@ function createAdversarialAtlasRepository(repository: string): void {
     { recursive: true },
   );
   writeFileSync(resolve(repository, "README.md"), "# host\n", "utf8");
-  adversarialGit(repository, ["add", ".atlas", "README.md"]);
-  adversarialGit(repository, ["commit", "-m", "Initial Atlas"]);
+  // Committed at the exact instant the ingest fixtures assert as this Source's
+  // revisionTime, so Ingest's independent Git capture at "docs/readme.md"
+  // corroborates every fixture that asserts this content unmutated.
+  mkdirSync(resolve(repository, "docs"), { recursive: true });
+  writeFileSync(
+    resolve(repository, "docs", "readme.md"),
+    "Atlas SDK is a deterministic library. The Lint gate runs with no network access.",
+    "utf8",
+  );
+  adversarialGit(repository, ["add", ".atlas", "README.md", "docs/readme.md"]);
+  adversarialGitWithDate(
+    repository,
+    ["commit", "-m", "Initial Atlas"],
+    "2026-08-20T00:00:00Z",
+  );
 }
 
 function adversarialPage(): CapturedAtlasFile {
@@ -2170,11 +2206,29 @@ function ingestBaselineGraph(): AtlasIngestCandidateGraph {
   };
 }
 
-function ingestScope(): AtlasIngestRequest["scope"] {
+const ingestAttestationNonce = "fixture-nonce";
+
+/** A valid detached Approval Attestation for the given (attestation-less) Scope
+ * fields, computed through the same production digest the operation verifies
+ * against. */
+function ingestValidAttestation(
+  fields: Omit<AtlasIngestRequest["scope"], "attestation">,
+): AtlasApprovalAttestation {
+  const operation = ingestScopeAttestationOperation(fields.sourceId);
+  const payload = ingestScopeAttestationPayload(fields);
+  return {
+    "approval-attestation-schema": "1.0.0",
+    approvedAt: "2026-08-22T00:00:00Z",
+    approver: "Fixture Maintainer",
+    nonce: ingestAttestationNonce,
+    operation,
+    payloadDigest: attestationPayloadDigest(operation, ingestAttestationNonce, payload),
+  };
+}
+
+function ingestScopeFields(): Omit<AtlasIngestRequest["scope"], "attestation"> {
   return {
     "ingest-scope-schema": "1.0.0",
-    approvedAt: "2026-08-22T00:00:00Z",
-    approvedBy: "Fixture Maintainer",
     asOf: "2026-08-22T00:00:00Z",
     authority: "official",
     entryPoint: "docs",
@@ -2184,6 +2238,11 @@ function ingestScope(): AtlasIngestRequest["scope"] {
     maxDepth: 4,
     sourceId: "source:readme",
   };
+}
+
+function ingestScope(): AtlasIngestRequest["scope"] {
+  const fields = ingestScopeFields();
+  return { ...fields, attestation: ingestValidAttestation(fields) };
 }
 
 interface IngestScenario {
@@ -2446,27 +2505,114 @@ function ingestMutatedGraph(mutation: string): AtlasIngestCandidateGraph {
       concepts: [ingestConcept({ title: "Determinism\nforged-sdk-key: pwned" })],
     };
   }
+  // The crawler asserts fabricated Source bytes that Ingest's independent Git
+  // capture at the Source's own locator does not corroborate. The fabricated
+  // text still contains both baseline Citation spans, so this exercises only
+  // the capture gate rather than incidentally tripping Citation support too.
+  if (mutation === "source-content-fabricated") {
+    return {
+      ...ingestBaselineGraph(),
+      sources: [
+        ingestSource({
+          content: `${ingestSourceContent} This additional sentence was fabricated and never appeared in the captured repository file.`,
+        }),
+      ],
+    };
+  }
+  // The crawler asserts a revision time the independently captured Git history
+  // at the Source's locator does not corroborate.
+  if (mutation === "source-revision-time-fabricated") {
+    return {
+      ...ingestBaselineGraph(),
+      sources: [ingestSource({ revisionTime: "2099-01-01T00:00:00Z" })],
+    };
+  }
   return ingestBaselineGraph();
 }
 
 function ingestMutatedScope(mutation: string): AtlasIngestRequest["scope"] {
   if (mutation === "approval-missing") {
-    return { ...ingestScope(), approvedAt: "", approvedBy: "" };
+    const fields = ingestScopeFields();
+    return {
+      ...fields,
+      attestation: { ...ingestValidAttestation(fields), approver: "" },
+    };
   }
   if (mutation === "approved-at-date-only") {
-    return { ...ingestScope(), approvedAt: "2026-08-20" };
+    const fields = ingestScopeFields();
+    return {
+      ...fields,
+      attestation: { ...ingestValidAttestation(fields), approvedAt: "2026-08-20" },
+    };
   }
   if (mutation === "as-of-date-only") {
-    return { ...ingestScope(), asOf: "2026-08-20" };
+    const fields = { ...ingestScopeFields(), asOf: "2026-08-20" };
+    return { ...fields, attestation: ingestValidAttestation(fields) };
   }
   if (mutation === "source-authority-exceeds-scope") {
-    return { ...ingestScope(), authority: "community" };
+    const fields: Omit<AtlasIngestRequest["scope"], "attestation"> = {
+      ...ingestScopeFields(),
+      authority: "community",
+    };
+    return { ...fields, attestation: ingestValidAttestation(fields) };
   }
   if (mutation === "scope-freshness-ceiling") {
-    return { ...ingestScope(), freshnessWindowDays: 1 };
+    const fields = { ...ingestScopeFields(), freshnessWindowDays: 1 };
+    return { ...fields, attestation: ingestValidAttestation(fields) };
   }
   if (mutation === "excluded-path-nfd-variant") {
-    return { ...ingestScope(), excludedPaths: ["docs/caf\u00e9"] };
+    const fields = { ...ingestScopeFields(), excludedPaths: ["docs/caf\u00e9"] };
+    return { ...fields, attestation: ingestValidAttestation(fields) };
+  }
+  // The Scope's own fields changed after a Maintainer attested to the original
+  // ones, but the attestation carried forward unchanged: its digest no longer
+  // reproduces, so the Scope mutation is refused rather than silently accepted.
+  if (mutation === "attestation-altered-scope") {
+    const fields = ingestScopeFields();
+    const attestation = ingestValidAttestation(fields);
+    return { ...fields, attestation, entryPoint: "docs/very/deep" };
+  }
+  // A locally fabricated attestation copies a real Maintainer's name and a
+  // plausible approval time, but was never produced against this Scope's exact
+  // content, so its digest cannot reproduce the one a genuine attestation would.
+  if (mutation === "attestation-copied-attribution") {
+    const fields = ingestScopeFields();
+    const genuine = ingestValidAttestation(fields);
+    return {
+      ...fields,
+      attestation: { ...genuine, payloadDigest: `${genuine.payloadDigest}00` },
+    };
+  }
+  // An attestation whose expiry has already elapsed as of the Scope's own asOf
+  // reference no longer authorizes anything, even though every other field is
+  // otherwise genuine and self-consistent.
+  if (mutation === "attestation-expired") {
+    const fields = ingestScopeFields();
+    const operation = ingestScopeAttestationOperation(fields.sourceId);
+    const payload = ingestScopeAttestationPayload(fields);
+    return {
+      ...fields,
+      attestation: {
+        "approval-attestation-schema": "1.0.0",
+        approvedAt: "2026-08-01T00:00:00Z",
+        approver: "Fixture Maintainer",
+        expiresAt: "2026-08-10T00:00:00Z",
+        nonce: ingestAttestationNonce,
+        operation,
+        payloadDigest: attestationPayloadDigest(
+          operation,
+          ingestAttestationNonce,
+          payload,
+        ),
+      },
+    };
+  }
+  // A genuine attestation for a different Source's Scope is replayed here: its
+  // operation names that other Source, so it cannot authorize this one even
+  // though its digest, approver, and time are all otherwise well-formed.
+  if (mutation === "attestation-replay") {
+    const otherFields = { ...ingestScopeFields(), sourceId: "source:other" };
+    return { ...ingestScopeFields(), attestation: ingestValidAttestation(otherFields) };
   }
   return ingestScope();
 }
@@ -2576,7 +2722,45 @@ function ingestGraphFindings(
       changes: [...changeSet.changes, forged],
     });
   }
-  return validateCandidateGraph(scenario.request, scenario.baseFiles);
+  return validateCandidateGraph(
+    scenario.request,
+    scenario.baseFiles,
+    ingestCapturedSources(entry.mutation),
+    ingestReferenceTime(entry.mutation),
+  );
+}
+
+// The wall-clock reading Ingest's Approval Attestation expiry check compares
+// against. Only the expiry-focused mutation needs one; every other case leaves
+// it unwired (undefined), preserving its prior behavior.
+function ingestReferenceTime(mutation: string): string | undefined {
+  return mutation === "attestation-expired" ? "2026-08-22T00:00:00Z" : undefined;
+}
+
+// The bytes and revision time Ingest would independently capture from the
+// immutable Git base snapshot at "docs/readme.md" — the genuine baseline a
+// fabricated Source's assertion is checked against. Every other corpus case
+// leaves capture verification unwired (undefined), preserving its prior
+// behavior; only these two mutations exercise the capture gate directly.
+function ingestCapturedSources(
+  mutation: string,
+): ReadonlyMap<string, AtlasIngestSourceCapture> | undefined {
+  if (
+    mutation !== "source-content-fabricated" &&
+    mutation !== "source-revision-time-fabricated"
+  ) {
+    return undefined;
+  }
+  return new Map([
+    [
+      "docs/readme.md",
+      {
+        commit: "cccccccccccccccccccccccccccccccccccccccc",
+        content: ingestSourceContent,
+        revisionTime: "2026-08-20T00:00:00Z",
+      },
+    ],
+  ]);
 }
 
 function ingestEmittedPage(

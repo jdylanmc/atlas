@@ -9,6 +9,10 @@ import type {
   AtlasGovernanceWorkflowState,
 } from "../operations/governance_operation.ts";
 import {
+  parseApprovalAttestationRecord,
+  type AtlasApprovalAttestation,
+} from "../operations/operation_support.ts";
+import {
   operationHandoffSchemaVersion,
   operationResultSchemaVersion,
 } from "../operations/operation_result.ts";
@@ -396,12 +400,20 @@ function parseSemanticVerdict(
 interface MutableGovernanceRequest {
   "governance-request-schema": "1.0.0";
   action: AtlasGovernanceRequest["action"];
-  approvedAt?: string;
-  approvedBy?: string;
+  attestation?: AtlasApprovalAttestation;
   changelog?: string;
   changes?: readonly AtlasGovernanceChange[];
   semanticVerdicts?: readonly AtlasGovernanceSemanticVerdict[];
   subject: AtlasGovernanceSubject;
+}
+
+function asAttestation(value: unknown, path: string): AtlasApprovalAttestation {
+  const budget = governCommandInputBudgets.maxStringBytes;
+  return parseApprovalAttestationRecord(
+    asRecord(value, path),
+    path,
+    (fieldValue, fieldPath) => asBoundedString(fieldValue, fieldPath, budget),
+  );
 }
 
 function parseRequestRecord(
@@ -419,19 +431,8 @@ function parseRequestRecord(
   // Approval is read ONLY from the human-authored request. There is no flag,
   // default, or environment value that supplies it, so the seam does not
   // self-approve a Principle or Atlas Policy on an agent's behalf.
-  if (record["approvedBy"] !== undefined) {
-    request.approvedBy = asBoundedString(
-      record["approvedBy"],
-      "request.approvedBy",
-      governCommandInputBudgets.maxStringBytes,
-    );
-  }
-  if (record["approvedAt"] !== undefined) {
-    request.approvedAt = asBoundedString(
-      record["approvedAt"],
-      "request.approvedAt",
-      governCommandInputBudgets.maxStringBytes,
-    );
+  if (record["attestation"] !== undefined) {
+    request.attestation = asAttestation(record["attestation"], "request.attestation");
   }
   if (record["changelog"] !== undefined) {
     request.changelog = asSingleLineBoundedString(
@@ -498,7 +499,12 @@ export function exitCodeForGovernOperationResult(
   ) {
     return governCommandExitCodes.usage;
   }
-  if (codes.has("ATLAS_GOVERNANCE_APPROVAL_REQUIRED")) {
+  if (
+    codes.has("ATLAS_GOVERNANCE_APPROVAL_REQUIRED") ||
+    codes.has("ATLAS_GOVERNANCE_APPROVAL_EXPIRED") ||
+    codes.has("ATLAS_GOVERNANCE_APPROVAL_OPERATION_MISMATCH") ||
+    codes.has("ATLAS_GOVERNANCE_APPROVAL_PAYLOAD_MISMATCH")
+  ) {
     return governCommandExitCodes.approvalRequired;
   }
   if (codes.has("ATLAS_GOVERNANCE_SEMANTIC_VERDICT_FAILED")) {

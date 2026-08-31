@@ -680,7 +680,7 @@ function mainIngestPlan(command: ParsedIngestPlanCommand): number {
     process.stdout.write(serializeIngestMachineResult(parsed.result));
     return exitCodeForIngestOperationResult(parsed.result);
   }
-  const outcome = planCrawlAssignment(parsed.value);
+  const outcome = planCrawlAssignment(parsed.value, new Date().toISOString());
   if (outcome.state === "refused") {
     process.stdout.write(serializeIngestMachineResult(outcome.result));
     return exitCodeForIngestPlanOutcome(outcome);

@@ -2,6 +2,12 @@
   "governance-request-schema": "1.0.0",
   "action": "create",
   "subject": "principle",
-  "approvedBy": "Fixture Maintainer",
-  "approvedAt": "1990-12-31T23:59:60Z"
+  "attestation": {
+    "approval-attestation-schema": "1.0.0",
+    "approver": "Fixture Maintainer",
+    "approvedAt": "1990-12-31T23:59:60Z",
+    "nonce": "fixture-nonce",
+    "operation": "governance/create/principle",
+    "payloadDigest": "ec553a666e2d4e7c3bda37cfd6ae784d7f6c73badb8a7c8dd08b5e9988595a3d"
+  }
 }

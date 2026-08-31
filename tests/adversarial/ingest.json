@@ -286,6 +286,54 @@
         "ATLAS_INGEST_CONCEPT_UNREACHABLE",
         "ATLAS_INGEST_EDGE_CONNECTS_SOURCE"
       ]
+    },
+    {
+      "name": "P1-fabricated-source-content-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "source-content-fabricated",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_SOURCE_CONTENT_UNVERIFIED"
+    },
+    {
+      "name": "P2-fabricated-source-revision-time-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "source-revision-time-fabricated",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_SOURCE_REVISION_UNVERIFIED"
+    },
+    {
+      "name": "P3-ingest-scope-altered-after-attestation-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "attestation-altered-scope",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_APPROVAL_PAYLOAD_MISMATCH"
+    },
+    {
+      "name": "P4-copied-attestation-attribution-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "attestation-copied-attribution",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_APPROVAL_PAYLOAD_MISMATCH"
+    },
+    {
+      "name": "P5-expired-approval-attestation-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "attestation-expired",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_APPROVAL_EXPIRED"
+    },
+    {
+      "name": "P6-attestation-replayed-for-a-different-source-is-rejected",
+      "gate": "ingest",
+      "kind": "graph",
+      "mutation": "attestation-replay",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_APPROVAL_OPERATION_MISMATCH"
     }
   ]
 }

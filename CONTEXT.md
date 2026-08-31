@@ -182,6 +182,9 @@ _Avoid_: Gather
 **Ingest Scope**:
 The human-approved traversal envelope for one Ingest source, including its entry point, depth or stopping rule, included and excluded regions, and relevant authority and freshness assumptions. Crawlers may fully traverse within it but must request approval before expanding beyond it.
 
+**Approval Attestation**:
+A detached record of Maintainer approval for one Ingest Scope or Governance Request, carrying an approver identity, an approval instant, a nonce, the exact operation it authorizes, and a digest binding it to the exact canonical content of that Scope or Request. Any later mutation of that content, or replay of the same attestation for a different Source, action, or subject, reproduces a different digest or operation and is refused. An Approval Attestation binds content and detects replay or mutation; it is not a cryptographic signature and does not by itself prove which human produced it.
+
 **Ingest Type**:
 A canonical structured-source contract whose recognizable semantics warrant a reusable Ingest optimization. Its identity follows the source contract rather than its transport, serialization, branding, or subject matter alone.
 

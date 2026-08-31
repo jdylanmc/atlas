@@ -12,7 +12,7 @@ import {
   renderAtlasChangelog,
   renderAtlasChangelogEntryBlock,
 } from "../domain/atlas_changelog.ts";
-import { dateTimeMilliseconds } from "../domain/atlas_page.ts";
+import { dateTimeMilliseconds, type ReadonlyJsonValue } from "../domain/atlas_page.ts";
 import { atlasPrincipleActiveTruthIds } from "../domain/atlas_principle.ts";
 import {
   addReceipt,
@@ -20,6 +20,8 @@ import {
   changeSetDigest,
   isSafeGitBranchName,
   receiptFor,
+  verifyApprovalAttestation,
+  type AtlasApprovalAttestation,
 } from "./operation_support.ts";
 import type { Finding } from "../domain/finding.ts";
 import type { LintOperationResult } from "./lint_operation.ts";
@@ -96,8 +98,7 @@ export interface AtlasGovernanceSemanticVerdict {
 export interface AtlasGovernanceRequest {
   readonly "governance-request-schema": "1.0.0";
   readonly action: "create" | "amend" | "retire" | "delete" | "verify";
-  readonly approvedAt?: string;
-  readonly approvedBy?: string;
+  readonly attestation?: AtlasApprovalAttestation;
   // The agent drafts the Atlas Changelog entry prose; Atlas SDK stamps it with
   // the stable operation ID and heads it with the approval date. The caller
   // does not supply the operation ID, base snapshot digest, or target head — the
@@ -109,6 +110,54 @@ export interface AtlasGovernanceRequest {
   readonly changes?: readonly AtlasGovernanceChange[];
   readonly semanticVerdicts?: readonly AtlasGovernanceSemanticVerdict[];
   readonly subject: AtlasGovernanceSubject;
+}
+
+/**
+ * The operation string a Governance Request's Approval Attestation must bind
+ * to. It names the exact action and subject archetype the attestation
+ * authorizes, so an attestation captured for one action or subject fails
+ * operation-mismatch verification when presented to authorize a different one.
+ */
+export function governanceAttestationOperation(
+  request: Pick<AtlasGovernanceRequest, "action" | "subject">,
+): string {
+  return `governance/${request.action}/${request.subject}`;
+}
+
+/**
+ * The exact canonical payload a Governance Request's Approval Attestation binds
+ * to: the authored changes, drafted Changelog prose, and semantic verdicts —
+ * everything a caller could otherwise mutate after approval. Any post-approval
+ * change to any of these fields reproduces a different digest than the one the
+ * Maintainer attested to.
+ */
+export function governanceAttestationPayload(
+  request: AtlasGovernanceRequest,
+): Readonly<Record<string, ReadonlyJsonValue>> {
+  return Object.freeze({
+    action: request.action,
+    changelog: request.changelog ?? null,
+    changes: Object.freeze(
+      (request.changes ?? []).map((change) =>
+        Object.freeze({ content: change.content, path: change.path }),
+      ),
+    ),
+    semanticVerdicts: Object.freeze(
+      (request.semanticVerdicts ?? []).map((verdict) =>
+        Object.freeze({
+          challenge: Object.freeze({
+            argument: verdict.challenge.argument,
+            evidence: Object.freeze([...verdict.challenge.evidence]),
+            position: verdict.challenge.position,
+          }),
+          evidence: Object.freeze([...verdict.evidence]),
+          policyId: verdict.policyId,
+          verdict: verdict.verdict,
+        }),
+      ),
+    ),
+    subject: request.subject,
+  });
 }
 
 export interface AtlasGovernancePayload {
@@ -137,6 +186,10 @@ export interface AtlasGovernanceRuntime {
     readonly receipt: string;
   };
   readonly persistState?: (state: AtlasGovernanceWorkflowState) => void;
+  // The real-clock reading this deterministic operation compares an Approval
+  // Attestation's optional expiry against. Optional for the same reason a
+  // virtual (Atlas Initialization) host has no real clock boundary of its own.
+  readonly referenceTime?: () => string;
   readonly workspaceExists?: () => boolean;
   readonly workspacePathValid?: () => boolean;
   readonly writeChangeSet: (changeSet: AtlasGovernanceChangeSet) => {
@@ -449,18 +502,52 @@ function validateSemanticVerdicts(
   return Object.freeze(findings);
 }
 
-function validateApproval(request: AtlasGovernanceRequest): readonly Finding[] {
+// Approval is a detached Approval Attestation binding a digest over the exact
+// authored changes, Changelog prose, and semantic verdicts, plus the action and
+// subject it authorizes. Its provenance therefore stays distinct from the
+// agent-authored content it approves, and content mutated after approval, or an
+// attestation replayed from a different action or subject, is refused rather
+// than accepted on the caller's word.
+function validateApproval(
+  request: AtlasGovernanceRequest,
+  now?: string,
+): readonly Finding[] {
   if (request.action === "verify") return Object.freeze([]);
-  if (
-    (request.approvedBy ?? "").trim() !== "" &&
-    dateTimeMilliseconds(request.approvedAt ?? "") !== undefined
-  ) {
-    return Object.freeze([]);
+  const verdict = verifyApprovalAttestation(
+    request.attestation,
+    governanceAttestationOperation(request),
+    governanceAttestationPayload(request),
+    now,
+  );
+  if (verdict.ok) return Object.freeze([]);
+  if (verdict.reason === "expired") {
+    return Object.freeze([
+      finding(
+        "ATLAS_GOVERNANCE_APPROVAL_EXPIRED",
+        "Governance refused an Approval Attestation whose expiry has already passed.",
+      ),
+    ]);
+  }
+  if (verdict.reason === "operation-mismatch") {
+    return Object.freeze([
+      finding(
+        "ATLAS_GOVERNANCE_APPROVAL_OPERATION_MISMATCH",
+        "Governance refused an Approval Attestation issued for a different action or subject than this request.",
+      ),
+    ]);
+  }
+  if (verdict.reason === "payload-mismatch") {
+    return Object.freeze([
+      finding(
+        "ATLAS_GOVERNANCE_APPROVAL_PAYLOAD_MISMATCH",
+        "Governance refused a request whose changes, Changelog prose, or semantic verdicts do not match what its Approval Attestation attested to.",
+      ),
+    ]);
   }
   return Object.freeze([
     finding(
       "ATLAS_GOVERNANCE_APPROVAL_REQUIRED",
-      "Principle and Atlas Policy maintenance requires an explicit Maintainer approver and a comparable date-time approval instant.",
+      "Principle and Atlas Policy maintenance requires a valid detached Approval Attestation naming a Maintainer approver and a comparable date-time approval instant.",
     ),
   ]);
 }
@@ -685,7 +772,7 @@ function governanceChangelogChange(
   return Object.freeze({
     content: renderAtlasChangelog(
       existingContent,
-      governanceChangelogDate(request.approvedAt),
+      governanceChangelogDate(request.attestation?.approvedAt),
       state.operationId,
       (request.changelog ?? "").trim(),
     ),
@@ -741,7 +828,7 @@ function validateDerivedChangelog(
   request: AtlasGovernanceRequest,
 ): readonly Finding[] {
   const entry = renderAtlasChangelogEntryBlock(
-    governanceChangelogDate(request.approvedAt),
+    governanceChangelogDate(request.attestation?.approvedAt),
     state.operationId,
     (request.changelog ?? "").trim(),
   );
@@ -1038,7 +1125,7 @@ export function runAtlasGovernanceWorkflow(
         ? Object.freeze([])
         : validateResumeReceipts(state, changeSet);
     const findings = Object.freeze([
-      ...validateApproval(request),
+      ...validateApproval(request, runtime.referenceTime?.()),
       ...requestFindings,
       ...correspondenceFindings,
       ...changelogFindings,

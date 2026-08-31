@@ -26,10 +26,37 @@ import type {
   AtlasGovernanceResult,
 } from "../src/operations/governance_operation.ts";
 import {
+  governanceAttestationOperation,
+  governanceAttestationPayload,
+} from "../src/operations/governance_operation.ts";
+import { attestationPayloadDigest } from "../src/operations/operation_support.ts";
+import {
   createLocalAtlasGovernanceState,
   notCompletedLocalGovernanceResult,
   runLocalAtlasGovernance,
 } from "../src/platform/local_atlas_governance.ts";
+
+// A valid detached Approval Attestation for the given (attestation-less)
+// request fields, computed through the same production digest the operation
+// verifies against. Accepts a plain record so both typed fixtures and the raw
+// JSON payloads written to disk for real end-to-end CLI runs can share it.
+function attestationFor(
+  fields: Readonly<Record<string, unknown>>,
+  approver = "Fixture Maintainer",
+) {
+  const request = fields as unknown as AtlasGovernanceRequest;
+  const operation = governanceAttestationOperation(request);
+  const payload = governanceAttestationPayload(request);
+  const nonce = "fixture-nonce";
+  return {
+    "approval-attestation-schema": "1.0.0" as const,
+    approvedAt: "2026-08-22T00:00:00Z",
+    approver,
+    nonce,
+    operation,
+    payloadDigest: attestationPayloadDigest(operation, nonce, payload),
+  };
+}
 
 const ROOT = resolve(import.meta.dirname, "..");
 const COMMAND = resolve(ROOT, "scripts", "atlas.ts");
@@ -113,15 +140,14 @@ function amendPrincipleRequest(repository: string): AtlasGovernanceRequest {
       "### 1 - 2026-08-17\n\nAdded `truth:ordering` under Maintainer approval.",
       "### 1 - 2026-08-17\n\nAdded `truth:ordering` under Maintainer approval.\n\n### 2 - 2026-08-22\n\nAdded `truth:no-model` under Maintainer approval.",
     );
-  return {
-    "governance-request-schema": "1.0.0",
-    action: "amend",
-    approvedAt: "2026-08-22T00:00:00Z",
-    approvedBy: "Fixture Maintainer",
+  const fields = {
+    "governance-request-schema": "1.0.0" as const,
+    action: "amend" as const,
     changelog: "Amended Determinism Principle.",
     changes: [{ content: principle, path: ".atlas/principles/determinism.md" }],
-    subject: "principle",
+    subject: "principle" as const,
   };
+  return { ...fields, attestation: attestationFor(fields) };
 }
 
 // A policy maintenance request carrying a semantic Policy verdict. The verdict
@@ -168,14 +194,12 @@ function policyRequest(
     "Violations block only the governed operation.",
     "",
   ].join("\n");
-  return {
-    "governance-request-schema": "1.0.0",
-    action: "create",
-    approvedAt: "2026-08-22T00:00:00Z",
-    approvedBy: "Fixture Maintainer",
+  const fields = {
+    "governance-request-schema": "1.0.0" as const,
+    action: "create" as const,
     changelog: "Created Publication Policy.",
     changes: [{ content: policy, path: ".atlas/types/policy/publication.md" }],
-    subject: "atlas-policy",
+    subject: "atlas-policy" as const,
     semanticVerdicts: [
       {
         challenge: {
@@ -189,6 +213,7 @@ function policyRequest(
       },
     ],
   };
+  return { ...fields, attestation: attestationFor(fields) };
 }
 
 // A create request for a fresh Principle page, so the operation exercises the
@@ -227,15 +252,14 @@ function createPrincipleRequest(): AtlasGovernanceRequest {
     "Added `truth:no-model` under Maintainer approval.",
     "",
   ].join("\n");
-  return {
-    "governance-request-schema": "1.0.0",
-    action: "create",
-    approvedAt: "2026-08-22T00:00:00Z",
-    approvedBy: "Fixture Maintainer",
+  const fields = {
+    "governance-request-schema": "1.0.0" as const,
+    action: "create" as const,
     changelog: "Created No Model Principle.",
     changes: [{ content: page, path: ".atlas/principles/no-model.md" }],
-    subject: "principle",
+    subject: "principle" as const,
   };
+  return { ...fields, attestation: attestationFor(fields) };
 }
 
 // A Principle whose active truths are all removed. Under `retire` the operation
@@ -260,11 +284,9 @@ function retirePrincipleRequest(
   repository: string,
   action: "amend" | "retire",
 ): AtlasGovernanceRequest {
-  return {
-    "governance-request-schema": "1.0.0",
+  const fields = {
+    "governance-request-schema": "1.0.0" as const,
     action,
-    approvedAt: "2026-08-22T00:00:00Z",
-    approvedBy: "Fixture Maintainer",
     changelog: "Retired Determinism Principle.",
     changes: [
       {
@@ -272,8 +294,9 @@ function retirePrincipleRequest(
         path: ".atlas/principles/determinism.md",
       },
     ],
-    subject: "principle",
+    subject: "principle" as const,
   };
+  return { ...fields, attestation: attestationFor(fields) };
 }
 
 function withoutSemanticVerdicts(
@@ -281,7 +304,9 @@ function withoutSemanticVerdicts(
 ): AtlasGovernanceRequest {
   const copy: Record<string, unknown> = { ...request };
   delete copy["semanticVerdicts"];
-  return copy as unknown as AtlasGovernanceRequest;
+  delete copy["attestation"];
+  const fields = copy as unknown as AtlasGovernanceRequest;
+  return { ...fields, attestation: attestationFor(copy) };
 }
 
 test("atlas govern amends a Principle into one Linted Atlas Proposal", () => {
@@ -372,11 +397,9 @@ test("the adopter probe drives atlas govern to a Principle with only the documen
   const repository = resolve(WORKSPACE, "adopter-probe");
   const mainBefore = initAtlasRepository(repository);
   const requestPath = resolve(WORKSPACE, "adopter-probe-request.json");
-  const request = {
+  const fields = {
     "governance-request-schema": "1.0.0",
     action: "create",
-    approvedBy: "Adopter Maintainer",
-    approvedAt: "2026-08-22T00:00:00Z",
     subject: "principle",
     changelog: "Established the Cited Truths founding Principle.",
     changes: [
@@ -417,6 +440,10 @@ test("the adopter probe drives atlas govern to a Principle with only the documen
         ].join("\n"),
       },
     ],
+  };
+  const request = {
+    ...fields,
+    attestation: attestationFor(fields, "Adopter Maintainer"),
   };
   writeFileSync(requestPath, JSON.stringify(request), "utf8");
 
@@ -490,16 +517,18 @@ test("atlas govern refuses a forged multi-line Changelog entry and an SDK-derive
   // An authored path that collides, under case folding, with the SDK-derived
   // .atlas/CHANGELOG.md. On a case-insensitive filesystem this would overwrite
   // the SDK-stamped entry a Maintainer reviews, so the binary refuses it.
-  const collision = {
+  const collisionFields = {
     "governance-request-schema": "1.0.0",
     action: "create",
-    approvedBy: "Adopter Maintainer",
-    approvedAt: "2026-08-22T00:00:00Z",
     subject: "principle",
     changelog: "Created a Principle.",
     changes: [
       { path: ".atlas/changelog.md", content: "## attacker\n\n- forged: entry\n" },
     ],
+  };
+  const collision = {
+    ...collisionFields,
+    attestation: attestationFor(collisionFields, "Adopter Maintainer"),
   };
   const collisionPath = resolve(WORKSPACE, "changelog-collision-request.json");
   writeFileSync(collisionPath, JSON.stringify(collision), "utf8");
@@ -935,13 +964,15 @@ test("Local Atlas Governance refuses capture failures and unsafe workspace paths
 // fails Lint, so the proposal is refused only after the worktree is created.
 function amendWithLintFailureRequest(repository: string): AtlasGovernanceRequest {
   const valid = amendPrincipleRequest(repository);
-  return {
+  const fields = {
     ...valid,
+    attestation: undefined,
     changes: [
       ...(valid.changes ?? []),
       { content: "not a page, no frontmatter\n", path: ".atlas/concepts/broken.md" },
     ],
   };
+  return { ...fields, attestation: attestationFor(fields) };
 }
 
 test("Local Atlas Governance tears down a failed proposal so a corrected retry at the same HEAD succeeds", () => {
@@ -1004,13 +1035,12 @@ test("Local Atlas Governance preserves an existing Operation Workspace", () => {
 // A minimal amend request that never reaches Lint; used only to exercise the
 // platform adapter's capture and workspace guards.
 function amendBaseRequest(): AtlasGovernanceRequest {
-  return {
-    "governance-request-schema": "1.0.0",
-    action: "amend",
-    approvedAt: "2026-08-22T00:00:00Z",
-    approvedBy: "Fixture Maintainer",
-    subject: "principle",
+  const fields = {
+    "governance-request-schema": "1.0.0" as const,
+    action: "amend" as const,
+    subject: "principle" as const,
   };
+  return { ...fields, attestation: attestationFor(fields) };
 }
 
 test("atlas govern refuses to establish a Principle without Maintainer approval even with a valid change set", () => {
@@ -1021,8 +1051,7 @@ test("atlas govern refuses to establish a Principle without Maintainer approval 
   // would proceed and commit a proposal; it must refuse and mutate nothing.
   const approved = amendPrincipleRequest(repository);
   const request: Record<string, unknown> = { ...approved };
-  delete request["approvedBy"];
-  delete request["approvedAt"];
+  delete request["attestation"];
   const requestPath = resolve(WORKSPACE, "no-approval-request.json");
   writeFileSync(requestPath, JSON.stringify(request), "utf8");
 
@@ -1113,8 +1142,18 @@ test("Governance request parser refuses every malformed axis as a determinate va
     { ...base, action: "establish" },
     { ...base, action: 7 },
     { ...base, subject: "region" },
-    { ...base, approvedBy: 42 },
-    { ...base, approvedBy: "x".repeat(governCommandInputBudgets.maxStringBytes + 1) },
+    { ...base, attestation: 42 },
+    {
+      ...base,
+      attestation: {
+        "approval-attestation-schema": "1.0.0",
+        approvedAt: "2026-08-22T00:00:00Z",
+        approver: "x".repeat(governCommandInputBudgets.maxStringBytes + 1),
+        nonce: "fixture-nonce",
+        operation: "governance/create/principle",
+        payloadDigest: "d",
+      },
+    },
     { ...base, changes: {} },
     {
       ...base,
@@ -1216,8 +1255,15 @@ test("Governance request parser refuses every malformed axis as a determinate va
     ...base,
     action: "amend",
     subject: "atlas-policy",
-    approvedAt: "2026-08-22T00:00:00Z",
-    approvedBy: "Fixture Maintainer",
+    attestation: {
+      "approval-attestation-schema": "1.0.0",
+      approvedAt: "2026-08-22T00:00:00Z",
+      approver: "Fixture Maintainer",
+      expiresAt: "2099-01-01T00:00:00Z",
+      nonce: "fixture-nonce",
+      operation: "governance/amend/atlas-policy",
+      payloadDigest: "d",
+    },
     changelog: "Amended Policy.",
     changes: [{ content: "c", path: ".atlas/types/policy/x.md" }],
     semanticVerdicts: [

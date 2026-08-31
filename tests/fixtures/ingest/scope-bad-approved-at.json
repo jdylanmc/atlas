@@ -1,7 +1,5 @@
 {
   "ingest-scope-schema": "1.0.0",
-  "approvedAt": "not-a-date",
-  "approvedBy": "Fixture Maintainer",
   "asOf": "2026-08-22T00:00:00Z",
   "authority": "official",
   "entryPoint": "docs",
@@ -9,5 +7,13 @@
   "freshnessWindowDays": 30,
   "includedPaths": ["docs"],
   "maxDepth": 4,
-  "sourceId": "source:readme"
+  "sourceId": "source:readme",
+  "attestation": {
+    "approval-attestation-schema": "1.0.0",
+    "approver": "Fixture Maintainer",
+    "approvedAt": "not-a-date",
+    "nonce": "fixture-nonce",
+    "operation": "ingest-scope/source:readme",
+    "payloadDigest": "cdaf7b2b80ba18cb67309360d13ccd61eb8e4500ac359390be63bfdfc93a9941"
+  }
 }
