@@ -15,6 +15,15 @@ import {
 import { join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  atlasCommandExitCodes,
+  commandNamesForDispatch,
+  formatAtlasCommandUsage,
+  serializeAtlasCommandMachineResult,
+  unknownAtlasCommandOperationResult,
+  usageAtlasCommandOperationResult,
+  type AtlasCommandOperationResult,
+} from "../src/interfaces/atlas_command.ts";
+import {
   exitCodeForInitializeOperationResult,
   initializeCommandExitCodes,
   initializeCommandUsage,
@@ -817,14 +826,44 @@ function mainGovern(arguments_: readonly string[]): number {
   return exitCodeForGovernOperationResult(result);
 }
 
+type AtlasCommandHandler = (arguments_: readonly string[]) => number;
+
+const atlasCommandDispatch = Object.freeze({
+  lint: mainLint,
+  initialize: mainInitialize,
+  explore: mainExplore,
+  ingest: mainIngest,
+  govern: mainGovern,
+} satisfies Readonly<Record<string, AtlasCommandHandler>>);
+
+export const atlasCommandNames = commandNamesForDispatch(atlasCommandDispatch);
+export const atlasCommandUsage = formatAtlasCommandUsage(atlasCommandNames);
+
+function isAtlasCommandName(
+  command: string,
+): command is keyof typeof atlasCommandDispatch {
+  return Object.hasOwn(atlasCommandDispatch, command);
+}
+
+function refuseAtlasCommand(result: AtlasCommandOperationResult): number {
+  process.stdout.write(serializeAtlasCommandMachineResult(result));
+  const finding = result.handoff.validationState.findings[0];
+  if (finding !== undefined) console.error(finding.message);
+  console.error(atlasCommandUsage);
+  return atlasCommandExitCodes.usage;
+}
+
 export function main(arguments_: readonly string[]): number {
-  if (arguments_[0] === "lint") return mainLint(arguments_);
-  if (arguments_[0] === "initialize") return mainInitialize(arguments_);
-  if (arguments_[0] === "explore") return mainExplore(arguments_);
-  if (arguments_[0] === "ingest") return mainIngest(arguments_);
-  if (arguments_[0] === "govern") return mainGovern(arguments_);
-  console.error(lintCommandUsage);
-  return lintCommandExitCodes.usage;
+  const command = arguments_[0];
+  if (command === undefined) {
+    return refuseAtlasCommand(usageAtlasCommandOperationResult(atlasCommandUsage));
+  }
+  if (isAtlasCommandName(command)) {
+    return atlasCommandDispatch[command](arguments_);
+  }
+  return refuseAtlasCommand(
+    unknownAtlasCommandOperationResult(command, atlasCommandUsage),
+  );
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

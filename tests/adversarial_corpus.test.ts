@@ -619,7 +619,10 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
       assert.equal(entry["gate"], "atlas-cli", `${path}.gate is unsupported`);
       if (entry["kind"] === "command") {
         const parsed: AtlasCliCommandCase = {
-          arguments: assertStringArray(entry["arguments"], `${path}.arguments`),
+          arguments: assertPossiblyEmptyStringArray(
+            entry["arguments"],
+            `${path}.arguments`,
+          ),
           expectedCode: assertString(entry["expectedCode"], `${path}.expectedCode`),
           expectedExit: assertNumber(entry["expectedExit"], `${path}.expectedExit`),
           gate: "atlas-cli",

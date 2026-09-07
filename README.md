@@ -25,12 +25,17 @@ Atlas SDK currently supports Node.js 24.x and npm 11.6.2.
 ## Command-line usage
 
 ```sh
+atlas
 atlas lint --machine --atlas-host-directory /path/to/home-atlas
 atlas initialize --machine --atlas-host-directory /path/to/home-atlas
 atlas govern --machine --request /path/to/governance-request.json --atlas-host-directory /path/to/home-atlas
 ```
 
-`--machine` is required. Command output is newline-terminated JSON so agents and scripts can parse it directly.
+Run `atlas` to list every available command. An omitted or unknown command returns
+a failed, versioned Operation Result and names the available commands; an unknown
+command also returns an `ATLAS_COMMAND_UNKNOWN` Finding naming the rejected value.
+`--machine` is required for dispatched commands. Command output is
+newline-terminated JSON so agents and scripts can parse it directly.
 
 ## Library usage
 
