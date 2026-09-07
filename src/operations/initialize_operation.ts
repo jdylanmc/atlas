@@ -1,5 +1,8 @@
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
-import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
+import {
+  atlasPathCollisionKey,
+  type CapturedAtlasFile,
+} from "../atlas/load_atlas_text.ts";
 import { parseAtlasPage } from "../atlas/parse_atlas_pages.ts";
 import { sha256Hex } from "../atlas/sha256.ts";
 import {
@@ -599,22 +602,13 @@ function parseAtlasFoundingRequest(value: unknown): {
   return Object.freeze({ findings: Object.freeze([]), request });
 }
 
-function changePathCollisionKey(path: string): string {
-  return path
-    .split("/")
-    .map((segment) => segment.replace(/[. ]+$/u, ""))
-    .join("/")
-    .normalize("NFC")
-    .toLowerCase();
-}
-
 export function validateNoChangePathCollisions(
   changes: readonly AtlasInitializationChange[],
 ): readonly Finding[] {
   const seen = new Map<string, string>();
   const findings: Finding[] = [];
   for (const change of changes) {
-    const key = changePathCollisionKey(change.path);
+    const key = atlasPathCollisionKey(change.path);
     const prior = seen.get(key);
     if (prior !== undefined) {
       findings.push(

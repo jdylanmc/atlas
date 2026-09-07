@@ -38,6 +38,7 @@ import {
   atlasInitializationFiles,
   initialAtlasInitializationWorkflowState,
   runAtlasInitializationWorkflow,
+  validateNoChangePathCollisions,
 } from "../src/operations/initialize_operation.ts";
 import { runLintOperation } from "../src/operations/lint_operation.ts";
 import {
@@ -85,6 +86,21 @@ interface Corpus {
   readonly schema: 1;
 }
 
+interface InitializationCorpusCase {
+  readonly expectation: "reject";
+  readonly expectedCode: "ATLAS_FOUNDING_CHANGE_PATH_COLLISION";
+  readonly gate: "initialization";
+  readonly kind: "change-path-collision";
+  readonly name: string;
+  readonly paths: readonly string[];
+}
+
+interface InitializationCorpus {
+  readonly cases: readonly InitializationCorpusCase[];
+  readonly reviewResolutionRule: string;
+  readonly schema: 1;
+}
+
 const ROOT = resolve(import.meta.dirname, "..");
 const atlasCliCorpus = parseAtlasCliCorpus(
   JSON.parse(
@@ -115,6 +131,11 @@ const corpus = parseCorpus(
 const ingestCorpus = parseIngestCorpus(
   JSON.parse(
     readFileSync(resolve(ROOT, "tests", "adversarial", "ingest.json"), "utf8"),
+  ),
+);
+const initializationCorpus = parseInitializationCorpus(
+  JSON.parse(
+    readFileSync(resolve(ROOT, "tests", "adversarial", "initialization.json"), "utf8"),
   ),
 );
 const cacophonyRoasterCorpus = parseCacophonyRoasterCorpus(
@@ -1238,6 +1259,54 @@ function parseIngestCorpus(value: unknown): IngestCorpus {
   return { cases, reviewResolutionRule, schema: 1 };
 }
 
+function parseInitializationCorpus(value: unknown): InitializationCorpus {
+  assert.ok(isRecord(value), "initialization corpus must be an object");
+  assert.equal(value["schema"], 1, "initialization corpus schema must be 1");
+  const reviewResolutionRule = assertString(
+    value["reviewResolutionRule"],
+    "initialization.reviewResolutionRule",
+  );
+  assert.ok(Array.isArray(value["cases"]), "initialization cases must be an array");
+  assert.notEqual(value["cases"].length, 0, "initialization cases must not be empty");
+  const names = new Set<string>();
+  const cases = (value["cases"] as readonly unknown[]).map(
+    (entry, index): InitializationCorpusCase => {
+      const path = `initialization.cases[${String(index)}]`;
+      assert.ok(isRecord(entry), `${path} must be an object`);
+      const name = assertString(entry["name"], `${path}.name`);
+      assert.equal(names.has(name), false, `${path}.name must be unique`);
+      names.add(name);
+      assert.equal(entry["gate"], "initialization", `${path}.gate is unsupported`);
+      assert.equal(
+        entry["kind"],
+        "change-path-collision",
+        `${path}.kind is unsupported`,
+      );
+      assert.equal(
+        entry["expectation"],
+        "reject",
+        `${path}.expectation is unsupported`,
+      );
+      assert.equal(
+        entry["expectedCode"],
+        "ATLAS_FOUNDING_CHANGE_PATH_COLLISION",
+        `${path}.expectedCode is unsupported`,
+      );
+      const paths = assertStringArray(entry["paths"], `${path}.paths`);
+      assert.ok(paths.length >= 2, `${path}.paths must contain a collision`);
+      return {
+        expectation: "reject",
+        expectedCode: "ATLAS_FOUNDING_CHANGE_PATH_COLLISION",
+        gate: "initialization",
+        kind: "change-path-collision",
+        name,
+        paths,
+      };
+    },
+  );
+  return { cases, reviewResolutionRule, schema: 1 };
+}
+
 let executedCases = 0;
 
 after(() => {
@@ -1248,6 +1317,7 @@ after(() => {
       lintStampCorpus.cases.length +
       structuralValidationCorpus.cases.length +
       ingestCorpus.cases.length +
+      initializationCorpus.cases.length +
       cacophonyRoasterCorpus.cases.length,
   );
 });
@@ -1327,6 +1397,28 @@ test("the adversarial cacophony-roasters corpus is structurally valid", () => {
     cacophonyRoasterCorpus.cases.some((entry) => entry.expectation === "reject"),
   );
 });
+
+test("the adversarial initialization corpus is structurally valid", () => {
+  assert.match(initializationCorpus.reviewResolutionRule, /review finding/u);
+  assert.equal(initializationCorpus.schema, 1);
+  assert.equal(
+    new Set(initializationCorpus.cases.map((entry) => entry.name)).size,
+    initializationCorpus.cases.length,
+  );
+});
+
+for (const entry of initializationCorpus.cases) {
+  test(`adversarial initialization corpus: ${entry.name}`, () => {
+    executedCases += 1;
+    const findings = validateNoChangePathCollisions(
+      entry.paths.map((path, index) => ({ content: String(index), path })),
+    );
+    assert.deepEqual(
+      findings.map((finding) => finding.code),
+      [entry.expectedCode],
+    );
+  });
+}
 
 function structuralAtlasPage(
   path: string,
