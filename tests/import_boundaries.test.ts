@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { basename, resolve } from "node:path";
 import test from "node:test";
 import { ESLint } from "eslint";
 
@@ -109,13 +109,19 @@ const fixtures = [
   },
 ] as const;
 
-test("ESLint enforces product import boundaries in one batch", async () => {
-  const paths = fixtures.map((fixture) => {
-    const path = resolve(ROOT, "src", fixture.layer, fixture.name);
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, fixture.source);
-    return path;
-  });
+test("ESLint enforces product import boundaries without source fixtures", async () => {
+  const virtualFixtures = fixtures.map((fixture) => ({
+    ...fixture,
+    path: resolve(ROOT, "src", fixture.layer, fixture.name),
+    projectPath: `src/${fixture.layer}/${fixture.name}`,
+  }));
+  for (const fixture of virtualFixtures) {
+    assert.equal(
+      existsSync(fixture.path),
+      false,
+      `${fixture.path} must not be created in product source`,
+    );
+  }
 
   test("Atlas CLI script reaches product code only through the interface layer", () => {
     const source = readFileSync(resolve(ROOT, "scripts", "atlas.ts"), "utf8");
@@ -130,13 +136,33 @@ test("ESLint enforces product import boundaries in one batch", async () => {
     assert.match(source, /\.\.\/src\/interfaces\/lint_command\.ts/u);
   });
 
-  let results: Awaited<ReturnType<ESLint["lintFiles"]>>;
-  try {
-    results = await new ESLint({ cwd: ROOT }).lintFiles(paths);
-  } finally {
-    for (const path of paths) {
-      rmSync(path);
-    }
+  const eslint = new ESLint({
+    cwd: ROOT,
+    overrideConfig: {
+      languageOptions: {
+        parserOptions: {
+          projectService: {
+            allowDefaultProject: virtualFixtures.map((fixture) => fixture.projectPath),
+            maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING:
+              virtualFixtures.length,
+          },
+        },
+      },
+    },
+  });
+  const results = (
+    await Promise.all(
+      virtualFixtures.map((fixture) =>
+        eslint.lintText(fixture.source, { filePath: fixture.path }),
+      ),
+    )
+  ).flat();
+  for (const fixture of virtualFixtures) {
+    assert.equal(
+      existsSync(fixture.path),
+      false,
+      `${fixture.path} must not be created in product source`,
+    );
   }
 
   const resultsByName = new Map(
