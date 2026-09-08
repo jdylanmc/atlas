@@ -3,6 +3,32 @@
   "reviewResolutionRule": "A review finding is resolved only after this corpus has a reject or accept case that exercises it.",
   "cases": [
     {
+      "name": "reject a missing Atlas command with discoverable typed usage",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_COMMAND_USAGE",
+      "stderrIncludes": "commands: lint, initialize, explore, ingest, govern"
+    },
+    {
+      "name": "reject an unknown Atlas command with a Finding that names it",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["frobnicate", "--machine"],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_COMMAND_UNKNOWN",
+      "stderrIncludes": "Unknown Atlas command \"frobnicate\"."
+    },
+    {
+      "name": "reject a second command list independent of the dispatch table",
+      "gate": "atlas-cli",
+      "kind": "source-contract",
+      "path": "scripts/atlas.ts",
+      "requiredText": "commandNamesForDispatch(atlasCommandDispatch)",
+      "forbiddenText": "console.error(lintCommandUsage)"
+    },
+    {
       "name": "reject an Ingest operation that reaches for the network or a model",
       "gate": "atlas-cli",
       "kind": "source-boundary",
@@ -595,7 +621,7 @@
       "gate": "atlas-cli",
       "kind": "source-contract",
       "path": "scripts/atlas.ts",
-      "requiredText": "if (arguments_[0] === \"govern\") return mainGovern(arguments_);",
+      "requiredText": "govern: mainGovern,",
       "forbiddenText": "--approve"
     },
     {

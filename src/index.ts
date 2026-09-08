@@ -39,6 +39,20 @@ export type {
   AtlasLocatorInput,
   AtlasLocatorParseResult,
 } from "./domain/atlas_locator.ts";
+export {
+  atlasCommandExitCodes,
+  commandNamesForDispatch,
+  formatAtlasCommandUsage,
+  serializeAtlasCommandMachineResult,
+  unknownAtlasCommandOperationResult,
+  usageAtlasCommandOperationResult,
+} from "./interfaces/atlas_command.ts";
+export type {
+  AtlasCommandOperationHandoff,
+  AtlasCommandOperationIdentity,
+  AtlasCommandOperationResult,
+  NotCompletedAtlasCommandPayload,
+} from "./interfaces/atlas_command.ts";
 export { deriveAtlasSlug } from "./domain/atlas_slug.ts";
 export type { AtlasSlug } from "./domain/atlas_slug.ts";
 export { atlasCacheKey, createAtlasCache } from "./domain/atlas_cache.ts";

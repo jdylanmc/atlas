@@ -3,7 +3,21 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
-import { captureAtlasHostDirectory, CaptureBudgetError } from "../scripts/atlas.ts";
+import {
+  atlasCommandNames,
+  atlasCommandUsage,
+  captureAtlasHostDirectory,
+  CaptureBudgetError,
+} from "../scripts/atlas.ts";
+import {
+  atlasCommandExitCodes,
+  commandNamesForDispatch,
+  formatAtlasCommandUsage,
+  serializeAtlasCommandMachineResult,
+  unknownAtlasCommandOperationResult,
+  usageAtlasCommandOperationResult,
+  type AtlasCommandOperationResult,
+} from "../src/interfaces/atlas_command.ts";
 import {
   exitCodeForLintOperationResult,
   lintCommandExitCodes,
@@ -56,12 +70,93 @@ function parseResult(stdout: Buffer): LintOperationResult {
   return parsed;
 }
 
+function parseAtlasCommandResult(stdout: Buffer): AtlasCommandOperationResult {
+  const parsed = JSON.parse(stdout.toString("utf8")) as AtlasCommandOperationResult;
+  assert.equal(parsed["operation-result-schema"], "1.0.0");
+  assert.equal(parsed.handoff["operation-handoff-schema"], "1.0.0");
+  assert.deepEqual(parsed.handoff.operation, parsed.operation);
+  return parsed;
+}
+
 function assertNotCompletedHasNoAtlasVerdict(result: LintOperationResult): void {
   assert.equal(result.completion, "not-completed");
   assert.equal(result.payload.state, "not-completed");
   assert.equal("lint" in result.payload, false);
   assert.notEqual(result.operation.subject, "captured-home-atlas");
 }
+
+test("bare atlas invocation returns typed usage naming every dispatchable command", () => {
+  const command = runAtlas([]);
+
+  assert.equal(command.status, atlasCommandExitCodes.usage);
+  const result = parseAtlasCommandResult(command.stdout);
+  assert.equal(result.completion, "not-completed");
+  assert.equal(result.disposition, "failed");
+  assert.equal(result.operation.kind, "atlas-command");
+  assert.equal(result.payload.state, "not-completed");
+  assert.equal(result.handoff.validationState.findings[0]?.code, "ATLAS_COMMAND_USAGE");
+  for (const name of atlasCommandNames) {
+    assert.match(command.stderr, new RegExp(`\\b${name}\\b`, "u"));
+    assert.match(
+      result.handoff.recommendedNextAction,
+      new RegExp(`\\b${name}\\b`, "u"),
+    );
+  }
+});
+
+test("unknown atlas command returns a typed refusal naming it and every valid command", () => {
+  const command = runAtlas(["frobnicate", "--machine"]);
+
+  assert.equal(command.status, atlasCommandExitCodes.usage);
+  const result = parseAtlasCommandResult(command.stdout);
+  const finding = result.handoff.validationState.findings[0];
+  assert.ok(finding);
+  assert.equal(finding.code, "ATLAS_COMMAND_UNKNOWN");
+  assert.match(finding.message, /frobnicate/u);
+  assert.match(command.stderr, /frobnicate/u);
+  for (const name of atlasCommandNames) {
+    assert.match(command.stderr, new RegExp(`\\b${name}\\b`, "u"));
+    assert.match(
+      result.handoff.recommendedNextAction,
+      new RegExp(`\\b${name}\\b`, "u"),
+    );
+  }
+});
+
+test("Atlas command usage derives from the dispatch keys", () => {
+  const dispatch = Object.freeze({
+    alpha: () => 0,
+    beta: () => 0,
+  });
+  const names = commandNamesForDispatch(dispatch);
+
+  assert.deepEqual(names, ["alpha", "beta"]);
+  assert.equal(
+    formatAtlasCommandUsage(names),
+    "usage: atlas <command> --machine [arguments]\ncommands: alpha, beta",
+  );
+  assert.deepEqual(atlasCommandNames, [
+    "lint",
+    "initialize",
+    "explore",
+    "ingest",
+    "govern",
+  ]);
+  assert.equal(atlasCommandUsage, formatAtlasCommandUsage(atlasCommandNames));
+});
+
+test("Atlas command refusal helpers preserve the public machine contract", () => {
+  const usage = usageAtlasCommandOperationResult(atlasCommandUsage);
+  const unknown = unknownAtlasCommandOperationResult("frobnicate", atlasCommandUsage);
+
+  assert.equal(serializeAtlasCommandMachineResult(usage), `${JSON.stringify(usage)}\n`);
+  assert.equal(usage.payload.findings, usage.handoff.validationState.findings);
+  assert.equal(usage.handoff.degradationState.state, "not-degraded");
+  assert.equal(
+    unknown.payload.findings[0]?.message,
+    'Unknown Atlas command "frobnicate".',
+  );
+});
 
 test("atlas lint --machine emits a completed Operation Result and Handoff for a valid complete fixture", () => {
   const command = runAtlasLint("tests/fixtures/complete-atlas");
