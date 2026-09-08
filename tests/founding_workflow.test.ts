@@ -498,6 +498,16 @@ test("persona activation before approval is rejected pre-write", () => {
   );
 });
 
+test("founding change paths reject collisions that differ by empty segments", () => {
+  const findings = validateNoChangePathCollisions([
+    { content: "a", path: ".atlas//types/guide/x.json" },
+    { content: "b", path: ".atlas/types/guide/X.json" },
+  ]);
+
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0]?.code, "ATLAS_FOUNDING_CHANGE_PATH_COLLISION");
+});
+
 test("governance invalidation affects only true downstream dependents", () => {
   assert.equal(
     validateNoChangePathCollisions([

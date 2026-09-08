@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "reviewResolutionRule": "A review finding is resolved only after tests/adversarial has a case exercising the initialization gate.",
+  "cases": [
+    {
+      "name": "empty path segments collide with their collapsed spelling",
+      "gate": "initialization",
+      "kind": "change-path-collision",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_FOUNDING_CHANGE_PATH_COLLISION",
+      "paths": [".atlas//types/guide/x.json", ".atlas/types/guide/X.json"]
+    }
+  ]
+}
