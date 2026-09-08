@@ -636,9 +636,12 @@ test("atlas govern refuses an Atlas Policy mutation that supplies no semantic ve
   assert.equal(command.status, governCommandExitCodes.operationFailed);
   const result = parseGovernResult(command.stdout);
   assert.equal(result.completion, "not-completed");
+  const finding = result.handoff.validationState.findings[0];
+  assert.ok(finding);
+  assert.equal(finding.code, "ATLAS_GOVERNANCE_POLICY_EVALUATION_UNSUPPORTED");
   assert.equal(
-    result.handoff.validationState.findings[0]?.code,
-    "ATLAS_GOVERNANCE_POLICY_DOCTRINE_UNSUPPORTED",
+    finding.message,
+    "Atlas Policy evaluation must be deterministic or semantic with a supplied verdict.",
   );
   assert.equal("lint" in result.payload, false);
 });

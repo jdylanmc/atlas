@@ -173,7 +173,7 @@ A warning that two cited Concept claims within one Atlas conflict without contra
 
 **Atlas Policy**:
 A human-approved, versioned invariant that governs an Atlas. Each Policy declares its scope, naming the workflows it governs such as Atlas maintenance or publication; its evaluation, either deterministic or semantic and therefore subject to Challenge; and its consequence, either invalidating the Atlas or blocking only the operation it governs. A Policy retains its stable identity while its governing intention remains the same and retires rather than disappears. An Atlas Policy carries an immutable established-by DRI. Agents may propose Policies and amendments but cannot establish them autonomously. Explore is never governed by Policies; it loads an Atlas's Policies once, when traversal first enters that Atlas, as descriptive context.
-_Avoid_: Realm Law, Realm Rule
+_Avoid_: Doctrine, Realm Law, Realm Rule
 
 **Ingest**:
 The human-facing workflow for ingesting Sources and updating an Atlas's derived knowledge. Ingest runs inside the Atlas's own repository and takes one source per invocation. A source that is itself an Atlas becomes a tracked Atlas and a human-agreed cross-Atlas Edge rather than a Source.

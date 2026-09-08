@@ -90,7 +90,7 @@
       "name": "policy-mutation-without-any-verdict-is-rejected",
       "gate": "governance",
       "kind": "semantic",
-      "expectedCode": "ATLAS_GOVERNANCE_POLICY_DOCTRINE_UNSUPPORTED"
+      "expectedCode": "ATLAS_GOVERNANCE_POLICY_EVALUATION_UNSUPPORTED"
     },
     {
       "name": "caller-authored-changelog-path-is-reserved-to-the-sdk",
