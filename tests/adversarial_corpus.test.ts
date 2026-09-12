@@ -61,6 +61,7 @@ import {
   attestationPayloadDigest,
   type AtlasApprovalAttestation,
 } from "../src/operations/operation_support.ts";
+import type { ExploreOperationResult } from "../src/operations/explore_operation.ts";
 import {
   validateVocabularyAgreement,
   type VocabularyTextFile,
@@ -101,10 +102,32 @@ interface InitializationCorpus {
   readonly schema: 1;
 }
 
+interface ExploreRankingCorpusCase {
+  readonly expectedBodyIncludes: string;
+  readonly expectedCitationId: string;
+  readonly expectedRouteEdgeId: string;
+  readonly expectedTopResultId: string;
+  readonly expectation: "accept";
+  readonly gate: "explore-ranking";
+  readonly name: string;
+  readonly query: string;
+}
+
+interface ExploreRankingCorpus {
+  readonly cases: readonly ExploreRankingCorpusCase[];
+  readonly reviewResolutionRule: string;
+  readonly schema: 1;
+}
+
 const ROOT = resolve(import.meta.dirname, "..");
 const atlasCliCorpus = parseAtlasCliCorpus(
   JSON.parse(
     readFileSync(resolve(ROOT, "tests", "adversarial", "atlas-cli.json"), "utf8"),
+  ),
+);
+const exploreRankingCorpus = parseExploreRankingCorpus(
+  JSON.parse(
+    readFileSync(resolve(ROOT, "tests", "adversarial", "explore-ranking.json"), "utf8"),
   ),
 );
 const lintStampCorpus = parseLintStampCorpus(
@@ -526,6 +549,52 @@ function assertNumber(value: unknown, path: string): number {
     assert.fail(`${path} must be a number`);
   }
   return value;
+}
+
+function parseExploreRankingCorpus(value: unknown): ExploreRankingCorpus {
+  assert.ok(isRecord(value), "explore-ranking corpus must be an object");
+  assert.equal(value["schema"], 1, "explore-ranking corpus schema must be 1");
+  const reviewResolutionRule = assertString(
+    value["reviewResolutionRule"],
+    "explore-ranking.reviewResolutionRule",
+  );
+  assert.ok(Array.isArray(value["cases"]), "explore-ranking cases must be an array");
+  assert.notEqual(value["cases"].length, 0, "explore-ranking cases must not be empty");
+  const names = new Set<string>();
+  const cases = (value["cases"] as readonly unknown[]).map(
+    (entry, index): ExploreRankingCorpusCase => {
+      const path = `explore-ranking.cases[${String(index)}]`;
+      assert.ok(isRecord(entry), `${path} must be an object`);
+      const name = assertString(entry["name"], `${path}.name`);
+      assert.equal(names.has(name), false, `${path}.name must be unique`);
+      names.add(name);
+      assert.equal(entry["gate"], "explore-ranking", `${path}.gate is unsupported`);
+      assert.equal(entry["expectation"], "accept", `${path}.expectation`);
+      return {
+        expectedBodyIncludes: assertString(
+          entry["expectedBodyIncludes"],
+          `${path}.expectedBodyIncludes`,
+        ),
+        expectedCitationId: assertString(
+          entry["expectedCitationId"],
+          `${path}.expectedCitationId`,
+        ),
+        expectedRouteEdgeId: assertString(
+          entry["expectedRouteEdgeId"],
+          `${path}.expectedRouteEdgeId`,
+        ),
+        expectedTopResultId: assertString(
+          entry["expectedTopResultId"],
+          `${path}.expectedTopResultId`,
+        ),
+        expectation: "accept",
+        gate: "explore-ranking",
+        name,
+        query: assertString(entry["query"], `${path}.query`),
+      };
+    },
+  );
+  return { cases, reviewResolutionRule, schema: 1 };
 }
 
 function parseStructuralValidationCorpus(value: unknown): StructuralValidationCorpus {
@@ -1314,6 +1383,7 @@ after(() => {
     executedCases,
     corpus.cases.length +
       atlasCliCorpus.cases.length +
+      exploreRankingCorpus.cases.length +
       lintStampCorpus.cases.length +
       structuralValidationCorpus.cases.length +
       ingestCorpus.cases.length +
@@ -1346,6 +1416,16 @@ test("the adversarial atlas-cli corpus is structurally valid", () => {
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "source-contract"));
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "atlas-view-mutation"));
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "capture-security"));
+});
+
+test("the adversarial Explore ranking corpus is structurally valid", () => {
+  assert.match(exploreRankingCorpus.reviewResolutionRule, /review finding/u);
+  assert.equal(exploreRankingCorpus.schema, 1);
+  assert.equal(
+    new Set(exploreRankingCorpus.cases.map((entry) => entry.name)).size,
+    exploreRankingCorpus.cases.length,
+  );
+  assert.ok(exploreRankingCorpus.cases.every((entry) => entry.query.length > 0));
 });
 
 test("the adversarial lint-stamp corpus is structurally valid", () => {
@@ -1955,6 +2035,38 @@ for (const entry of atlasCliCorpus.cases) {
         command.stderr.toString("utf8"),
       );
     }
+  });
+}
+
+for (const entry of exploreRankingCorpus.cases) {
+  test(`adversarial Explore ranking corpus: ${entry.name}`, () => {
+    executedCases += 1;
+    const command = spawnSync(
+      process.execPath,
+      [resolve(ROOT, "scripts", "atlas.ts"), "explore", "--machine", entry.query],
+      { cwd: ROOT, encoding: "utf8" },
+    );
+    assert.equal(command.error, undefined);
+    assert.equal(command.status, 0, command.stderr);
+    assert.equal(command.stderr, "");
+
+    const result = JSON.parse(command.stdout) as ExploreOperationResult;
+    assert.equal(result.completion, "completed");
+    assert.equal(result.disposition, "success");
+    assert.equal(result.payload.degradation.level, "valid-structured");
+    assert.equal(result.payload.degradation.diagnostics.length, 0);
+
+    const top = result.payload.results[0];
+    assert.ok(top, "Explore returned no results at all");
+    assert.equal(top.result.id, entry.expectedTopResultId);
+    assert.equal(top.route[0]?.objectId, "anchor:root");
+    assert.equal(top.route.at(-1)?.objectId, entry.expectedTopResultId);
+    assert.equal(top.route.at(-1)?.edgeId, entry.expectedRouteEdgeId);
+    assert.equal(
+      top.citedContext.some((citation) => citation.id === entry.expectedCitationId),
+      true,
+    );
+    assert.ok(top.result.body.includes(entry.expectedBodyIncludes));
   });
 }
 

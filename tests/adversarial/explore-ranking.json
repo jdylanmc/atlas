@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "reviewResolutionRule": "A review finding is resolved only after this corpus has a repository-backed case that exercises it.",
+  "cases": [
+    {
+      "name": "accept the ATX heading guidance as the best answer to a Setext-versus-hash question",
+      "gate": "explore-ranking",
+      "expectation": "accept",
+      "query": "Should I use === underlines or # for a Markdown heading?",
+      "expectedTopResultId": "concept:atx-style-headings",
+      "expectedRouteEdgeId": "edge:root-covers-atx-style-headings",
+      "expectedCitationId": "source:google-markdown-style-guide",
+      "expectedBodyIncludes": "ATX-style (#) headings rather than Setext-style"
+    },
+    {
+      "name": "retain the line-length guidance for an ordinary English question",
+      "gate": "explore-ranking",
+      "expectation": "accept",
+      "query": "How many characters should a line of Markdown be?",
+      "expectedTopResultId": "concept:character-line-limit",
+      "expectedRouteEdgeId": "edge:root-covers-character-line-limit",
+      "expectedCitationId": "source:google-markdown-style-guide",
+      "expectedBodyIncludes": "80-character line limit"
+    },
+    {
+      "name": "retain heading-count guidance for a question about H1 count",
+      "gate": "explore-ranking",
+      "expectation": "accept",
+      "query": "How many H1 headings should a Markdown document use?",
+      "expectedTopResultId": "concept:single-h1-heading",
+      "expectedRouteEdgeId": "edge:root-covers-single-h1-heading",
+      "expectedCitationId": "source:google-markdown-style-guide",
+      "expectedBodyIncludes": "one H1 heading as its title"
+    },
+    {
+      "name": "retain whitespace guidance for an ordinary English question",
+      "gate": "explore-ranking",
+      "expectation": "accept",
+      "query": "Should Markdown have trailing whitespace?",
+      "expectedTopResultId": "concept:no-trailing-whitespace",
+      "expectedRouteEdgeId": "edge:root-covers-no-trailing-whitespace",
+      "expectedCitationId": "source:google-markdown-style-guide",
+      "expectedBodyIncludes": "trailing whitespace"
+    }
+  ]
+}
