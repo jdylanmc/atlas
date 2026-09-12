@@ -69,6 +69,12 @@ It neither fixes code nor publishes a review. `caveman-commit` supplies an
 authorized commit's message only; the caller owns staging, committing and
 pushing. Active attribution requirements take precedence over its style.
 
+For local Roast or Dragon Council cycles, follow
+[`docs/agents/review-cycle.md`](../../docs/agents/review-cycle.md).
+The panel already embeds the skills' bounded read-only methods through its
+canonical Directives; do not stack a duplicate standalone review on top.
+Only the separate authorized driver executes test-first remediation skills.
+
 ## Atlas adaptations and setup
 
 Read [`AGENTS.md`](../../AGENTS.md) and the existing configuration first:

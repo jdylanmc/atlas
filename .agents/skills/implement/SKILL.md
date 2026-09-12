@@ -21,7 +21,13 @@ Keep the SDK deterministic and model-free. A durable review finding requires
 an accept or reject case in `tests/adversarial/`; prefer data-only additions
 when an existing gate covers the behavior.
 
-Once done, use /caveman-review in working-tree mode against the captured base,
+If the task uses local Roast or Dragon Council review rounds, follow
+`docs/agents/review-cycle.md`: use that panel once, hand fixes to the authorized
+driver, and re-review within the caller's existing budget. The panel already
+adapts the read-only `caveman-review` method; do not add a duplicate standalone
+review. Never invoke implementation skills from a read-only reviewer.
+
+Otherwise, use /caveman-review in working-tree mode against the captured base,
 including new files. Fix in-scope findings and repeat affected checks. A
 committed-only diff cannot review work that has not been committed yet.
 

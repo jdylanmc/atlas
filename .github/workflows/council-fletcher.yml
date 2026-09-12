@@ -3,6 +3,12 @@ name: Council - Fletcher
 on:
   pull_request_target:
     paths:
+      - ".agents/skills/**"
+      - "AGENTS.md"
+      - "docs/agents/review-cycle.md"
+      - "docs/agents/issue-tracker.md"
+      - "docs/agents/triage-labels.md"
+      - "docs/agents/domain.md"
       - ".cacophony/agents/**"
       - ".cacophony/compositions.json"
       - ".cacophony/directives/**"
@@ -13,6 +19,8 @@ on:
       - "scripts/run_actionlint.ts"
       - "tests/atlas_sdk_agents.test.ts"
       - "tests/cacophony_agents.test.ts"
+      - "tests/adversarial/cacophony-roasters.json"
+      - "tests/adversarial_corpus.test.ts"
       - "tests/run_actionlint.test.ts"
       - ".npmrc"
       - "eslint.config.js"

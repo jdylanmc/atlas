@@ -17,6 +17,11 @@ caller explicitly supplies completed findings for formatting, reuse that
 analysis rather than reviewing it twice. Preserve uncertainty and explain
 architectural trade-offs fully; never invent findings to fill the format.
 
+For an Atlas panel cycle, follow `docs/agents/review-cycle.md`. The generated
+reviewers already adapt this method within their own lenses and native report
+contracts. Do not recursively invoke the panel or add an equivalent standalone
+review to completed panel evidence.
+
 Repository review rules take precedence over presentation. Fixing a durable
 finding requires an accept or reject case in `tests/adversarial/`; this
 read-only skill reports missing evidence rather than making that change.

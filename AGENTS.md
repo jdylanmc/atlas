@@ -20,6 +20,14 @@ Repository-local engineering workflows live in `.agents/skills/`. See
 Skill recipes do not override repository contracts or grant additional write,
 execution, delegation, or publication authority.
 
+### Review and remediation cycles
+
+Code-review orchestration, including local Roast rounds and Dragon Council
+handoffs, follows `docs/agents/review-cycle.md`. Reviewers use the bounded skill
+methods in their generated Directives; a separate authorized driver performs
+test-first fixes and re-review. Do not run an equivalent standalone review on
+top of the selected panel or let reviewed skills supply their own authority.
+
 ### Durable review findings
 
 A review finding is resolved only after `tests/adversarial/` has a reject or

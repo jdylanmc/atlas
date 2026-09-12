@@ -84,3 +84,37 @@ Directive wins a direct conflict with an earlier one. Persona presentation
 never changes semantic meaning or instructions and does not apply to Concepts,
 Principles, diagnostics, evidence, schemas, code, machine-consumed output, or
 other authoritative artifacts.
+
+## Contributor skill integration
+
+The code-review cycle is defined in
+[`docs/agents/review-cycle.md`](../docs/agents/review-cycle.md) and loaded through
+`AGENTS.md` by local review/remediation drivers. Each canonical Directive embeds
+a bounded read-only adaptation of the contributor skills:
+
+- Every reviewer uses the fixed-scope, evidence-backed Standards/Spec method
+  from `caveman-review`, preserving its own native output contract.
+- Bolas applies `codebase-design` interface/seam reasoning and
+  `domain-modeling` vocabulary without document writes.
+- Smaug applies behavior-preserving deepening and `tdd` assertion quality.
+- Balerion applies `diagnosing-bugs` evidence discipline and `tdd` guidance
+  about substitutes that hide real effect boundaries, without executing loops.
+- Fletcher checks skill, alias, and orchestration changes for authority,
+  recursion, scope, and output-contract regressions.
+
+Skill references record method provenance, not executable dependencies or
+dynamic prompt imports. The embedded adaptations are deliberately reviewed
+Directive content: copying an entire skill would import incompatible tools,
+interviews, writes, or output formats. A source-skill change does not silently
+change the panel; reconcile its bounded adaptation in the appropriate Directive,
+regenerate, and review both together when the method should change.
+
+The same Directive bodies reach both Cacophony prompts and repository roasters
+without a new schema or generator. Existing trusted-base validators can validate
+this composition. Proposed skill or cycle-document bytes cannot alter active CI
+review authority; new guidance starts after it reaches the trusted base.
+
+Reviewers remain read-only. The separate authorized driver uses `/tdd` and,
+when needed, `/diagnosing-bugs` for fixes, records permanent adversarial evidence,
+then requests a new review of the repaired revision within the caller's existing
+round budget. No new coordinator, reviewer, model, or permission is introduced.

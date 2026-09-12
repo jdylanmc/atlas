@@ -232,6 +232,24 @@ interface CacophonyRoasterFieldsDistinctCase {
   readonly name: string;
 }
 
+interface CacophonyReviewGuidanceCase {
+  readonly agent: string;
+  readonly expectation: "accept";
+  readonly gate: "cacophony-roasters";
+  readonly kind: "review-guidance";
+  readonly name: string;
+  readonly requiredText: readonly string[];
+}
+
+interface CacophonyUntrustedSkillCase {
+  readonly expectation: "accept";
+  readonly gate: "cacophony-roasters";
+  readonly kind: "untrusted-skill";
+  readonly name: string;
+  readonly path: string;
+  readonly text: string;
+}
+
 interface CacophonyRoasterMissingLensCase {
   readonly agent: string;
   readonly expectation: "reject";
@@ -251,6 +269,8 @@ interface CacophonyRoasterMisplacedLensCase {
 }
 
 type CacophonyRoasterCase =
+  | CacophonyReviewGuidanceCase
+  | CacophonyUntrustedSkillCase
   | CacophonyRoasterEligibleRosterCase
   | CacophonyRoasterKnownCleanupCase
   | CacophonyRoasterMisplacedLensCase
@@ -1191,6 +1211,33 @@ function parseCacophonyRoasterCorpus(value: unknown): CacophonyRoasterCorpus {
       names.add(name);
       assert.equal(entry["gate"], "cacophony-roasters", `${path}.gate is unsupported`);
       const kind = assertString(entry["kind"], `${path}.kind`);
+      if (kind === "review-guidance") {
+        assert.equal(entry["expectation"], "accept", `${path}.expectation`);
+        accepts += 1;
+        return {
+          agent: assertString(entry["agent"], `${path}.agent`),
+          expectation: "accept",
+          gate: "cacophony-roasters",
+          kind,
+          name,
+          requiredText: assertStringArray(
+            entry["requiredText"],
+            `${path}.requiredText`,
+          ),
+        };
+      }
+      if (kind === "untrusted-skill") {
+        assert.equal(entry["expectation"], "accept", `${path}.expectation`);
+        accepts += 1;
+        return {
+          expectation: "accept",
+          gate: "cacophony-roasters",
+          kind,
+          name,
+          path: assertString(entry["path"], `${path}.path`),
+          text: assertString(entry["text"], `${path}.text`),
+        };
+      }
       if (kind === "eligible-roster") {
         assert.equal(entry["expectation"], "accept", `${path}.expectation`);
         accepts += 1;
@@ -1730,6 +1777,34 @@ for (const entry of cacophonyRoasterCorpus.cases) {
   test(`adversarial cacophony-roasters corpus: ${entry.name}`, () => {
     executedCases += 1;
     assert.equal(entry.gate, "cacophony-roasters");
+    if (entry.kind === "review-guidance") {
+      const contracts = buildContracts(new LocalSource(ROOT), {
+        verifyGenerated: true,
+      });
+      const contract = contracts[entry.agent];
+      assert.ok(contract);
+      const roaster = buildRoasterContracts(contracts)[entry.agent];
+      for (const text of entry.requiredText) {
+        assert.ok(contract.composed.includes(text), `${entry.agent}: ${text}`);
+        if (roaster !== undefined) {
+          assert.ok(roaster.directiveFile.includes(text), `${roaster.name}: ${text}`);
+        }
+      }
+      return;
+    }
+    if (entry.kind === "untrusted-skill") {
+      const source = new LocalSource(ROOT);
+      const before = buildContracts(source, { verifyGenerated: true });
+      const after = buildContracts(
+        new OverlayAtlasSource(source, { [entry.path]: entry.text }),
+        { verifyGenerated: true },
+      );
+      for (const [agent, contract] of Object.entries(before)) {
+        assert.equal(after[agent]?.composed, contract.composed, agent);
+      }
+      assert.deepEqual(buildRoasterContracts(after), buildRoasterContracts(before));
+      return;
+    }
     if (entry.kind === "eligible-roster") {
       const roasters = buildRoasterContracts(
         buildContracts(new LocalSource(ROOT), { verifyGenerated: false }),

@@ -51,10 +51,10 @@ const EXPECTED_DIRECTIVE_SETS = {
   smaug: ["simplicity-and-code-truth-review"],
 } as const;
 const EXPECTED_PROMPT_HASHES = {
-  balerion: "62397d83ffaaf987f2f6281185680ceb966d5a747bfae2678d7f9c60c80024c6",
-  bolas: "dabca9fbb8e348979cb1f759c3d9ad761b2de9090dd195b29b7f4617c7cf8655",
-  fletcher: "e1d03ce54fff764a40beaa33e6398e208ceef449fcb2e3f8b0e9d4aa3dce65e3",
-  smaug: "4e94fc44fde65c99dfb04acfaa37babae6e064cfa1d4a4c3236af90bc2465b77",
+  balerion: "cb63df7a81973ae12b963268da66f360fdc2e1ba3040fafd299500bb9f12e2a3",
+  bolas: "8e7deb7ca62642a4fd1c0e1167259211d1c9545861cda5747fb3d65120a29a0c",
+  fletcher: "183eb1b2092b229a542259208b7b82f5f0b719e4a5574a293d750571bc8ccfa9",
+  smaug: "5e51b14160cb539fecb87a8fa51cd96985102c150ff509343dff6acbbda2fda0",
 } as const;
 
 class OverlaySource implements Source {
@@ -454,7 +454,7 @@ test("Fletcher marks boundary violations high severity", () => {
   assert.match(directive, /high-severity defect/);
 });
 
-test("generated prompts retain byte-level compatibility", () => {
+test("generated prompts match reviewed skill-adapted snapshots", () => {
   for (const [agent, expectedHash] of Object.entries(EXPECTED_PROMPT_HASHES)) {
     const value = contract(agent);
     const generated = readFileSync(join(ROOT, ".cacophony", "agents", `${agent}.md`));
@@ -938,6 +938,48 @@ test("Fletcher and council validate the merge contract", () => {
     "Council gate",
   ]) {
     assert.match(councilWorkflow, new RegExp(`name: ${checkName}`));
+  }
+});
+
+test("skill and review-cycle changes trigger prompt-contract review", () => {
+  const workflow = readWorkflow(".github/workflows/council-fletcher.yml");
+  const directive = contract("fletcher").directive.body;
+  for (const path of [
+    ".agents/skills/**",
+    "AGENTS.md",
+    "docs/agents/review-cycle.md",
+    "docs/agents/issue-tracker.md",
+    "docs/agents/triage-labels.md",
+    "docs/agents/domain.md",
+    "tests/adversarial/cacophony-roasters.json",
+    "tests/adversarial_corpus.test.ts",
+  ]) {
+    assert.ok(workflow.includes(`- "${path}"`), path);
+    assert.ok(directive.includes(`\`${path}\``), path);
+  }
+});
+
+test("repository entry and implementation route to one bounded review cycle", () => {
+  const path = "docs/agents/review-cycle.md";
+  const cycle = readWorkflow(path).replace(/\s+/gu, " ");
+  for (const entry of ["AGENTS.md", ".agents/skills/implement/SKILL.md"]) {
+    assert.ok(readWorkflow(entry).includes(path), entry);
+  }
+  for (const text of [
+    "## 1. Pin the round",
+    "## 2. Review without execution",
+    "## 3. Remediate outside the panel",
+    "## 4. Re-review and stop",
+    "caller",
+    "round budget",
+    "one round",
+    "/tdd",
+    "/diagnosing-bugs",
+    "tests/adversarial/",
+    "trusted base",
+    "do not run a second",
+  ]) {
+    assert.ok(cycle.includes(text), text);
   }
 });
 
