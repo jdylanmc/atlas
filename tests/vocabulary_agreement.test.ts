@@ -717,6 +717,138 @@ test("ordinary English prose that matches a domain term does not fail", () => {
   );
 });
 
+test("cycle-two required exports cannot be supplied by the prompt emitter", () => {
+  const required = [
+    {
+      exportedIdentifiers: ["ExploreOperationResult"],
+      term: "Explore",
+    },
+  ] satisfies readonly ContractVocabularyBinding[];
+  assert.deepEqual(
+    validate(
+      anchorBinding,
+      [contract("export interface ExploreOperationResult {}", "src/explore.ts")],
+      glossaryLines,
+      required,
+    ),
+    [],
+  );
+
+  assert.deepEqual(
+    summarize(
+      validate(
+        anchorBinding,
+        [
+          contract(
+            "export interface ExploreOperationResult {}",
+            "scripts/atlas_sdk_agents.ts",
+          ),
+        ],
+        glossaryLines,
+        required,
+      ),
+    ),
+    [
+      'ATLAS_VOCABULARY_CONTRACT_EXPORT_MISSING Atlas SDK contracts require the term "Explore" to be exported as "ExploreOperationResult", but no scanned contract exports that identifier.',
+    ],
+  );
+});
+
+test("cycle-two line comments end at every JavaScript line terminator", () => {
+  assert.deepEqual(
+    validate(anchorBinding, [
+      contract(
+        "// \"Bonfires are prose.\"\r// 'Bonfire is prose.'\u2028// `Bonfires are prose.`\u2029",
+      ),
+    ]),
+    [],
+  );
+
+  for (const terminator of ["\r", "\u2028", "\u2029"]) {
+    assert.deepEqual(
+      summarize(
+        validate(anchorBinding, [
+          contract(`// comment${terminator}const prompt = "Bonfires are retired.";`),
+        ]),
+      ),
+      [
+        'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "Bonfires" in a Finding message, which CONTEXT.md lists as the avoided term "Bonfire".',
+      ],
+    );
+  }
+});
+
+test("cycle-two regular expressions are not prompt strings", () => {
+  assert.deepEqual(
+    summarize(
+      validate(anchorBinding, [
+        contract(`const first = "Bonfire";\nconst second = 'Bonfire';`),
+      ]),
+    ),
+    [
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "Bonfire" in a contract literal, which CONTEXT.md lists as the avoided term "Bonfire".',
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "Bonfire" in a contract literal, which CONTEXT.md lists as the avoided term "Bonfire".',
+    ],
+  );
+
+  assert.deepEqual(
+    summarize(
+      validate(anchorBinding, [
+        contract(
+          [
+            `const single = /'Bonfire'/u;`,
+            `const double = /"Bonfire"/u;`,
+            "const diagnostic = /ATLAS_BONFIRE_MISSING/u;",
+            String.raw`const directory = /\.atlas\/bonfires\//u;`,
+          ].join("\n"),
+        ),
+      ]),
+    ),
+    [
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "BONFIRE" in the diagnostic code ATLAS_BONFIRE_MISSING, which CONTEXT.md lists as the avoided term "Bonfire".',
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "bonfires" in an Atlas page directory name, which CONTEXT.md lists as the avoided term "Bonfire".',
+    ],
+  );
+});
+
+test("literal scanning follows TypeScript expression and template boundaries", () => {
+  for (const source of [
+    'const ratio = value / "Bonfire" / divisor;',
+    'const ratio = value! / "Bonfire" / divisor;',
+    'const ratio = factory<Type> / "Bonfire" / divisor;',
+    'const ratio = (function () {}) / "Bonfire" / divisor;',
+    'const ratio = ({ value: 1 }) / "Bonfire" / divisor;',
+    'const ratio = value /* /"ignored"/ */ / "Bonfire" / divisor;',
+    'const regex = /["\\\']Bonfire["\\\']/u; const prompt = "Bonfire";',
+    'if (value) /"Bonfire"/u.test(value); const prompt = "Bonfire";',
+    'function matcher() { return /"Bonfire"/u; } const prompt = "Bonfire";',
+    'const prompt = `head ${/"Bonfire"/u.test(value)} tail Bonfire`;',
+    "const prompt = `head ${{ nested: `inside ${value} Bonfire` }} tail`;",
+    String.raw`const regex = /[\/]"Bonfire"/u; const prompt = "Bonfire";`,
+    'const prompt = "url // Bonfire";',
+  ]) {
+    const findings = validate(anchorBinding, [contract(source)]);
+    assert.deepEqual(
+      findings.map(({ code }) => code),
+      ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      source,
+    );
+    assert.match(findings[0]?.message ?? "", /"Bonfire"/u);
+  }
+});
+
+test("literal locations account for every TypeScript line terminator", () => {
+  for (const terminator of ["\r", "\n", "\r\n", "\u2028", "\u2029"]) {
+    const findings = validate(anchorBinding, [
+      contract(`// comment${terminator}const prompt = "Bonfires are retired.";`),
+    ]);
+    assert.deepEqual(findings[0]?.location, {
+      end: { column: 25, line: 2 },
+      start: { column: 17, line: 2 },
+    });
+  }
+});
+
 test("an empty glossary fails closed before any contract is scanned", () => {
   const findings = validate(
     anchorBinding,

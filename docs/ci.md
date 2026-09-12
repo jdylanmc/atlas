@@ -163,6 +163,10 @@ read where that surface can actually occur:
   without a full stop or surrounding words.
   Single- and double-quoted strings and multiline template literals are read;
   comments are skipped for literal scanning, including quoted examples.
+  TypeScript's grammar distinguishes regex tokens from actual strings and
+  division, including TypeScript-specific expressions. Line comments end at
+  CR, LF, U+2028, or U+2029. Template substitutions are traversed as expressions,
+  not flattened into prompt text; their actual nested literals still bind.
 - Module specifiers are masked before scanning, so the `node:` prefix in an
   `import`, `export ... from`, `require`, or `import.meta.resolve` is not read
   as a page-ID prefix. The mask requires the keyword to open a statement rather
@@ -201,6 +205,8 @@ not as TypeScript: capitalized terms (including plurals and adjacent multi-word
 terms), diagnostic codes, and `.atlas/` directory references are checked directly.
 Lower-case ordinary English such as “travelers gather around bonfires” is not
 treated as a capitalized domain name. Other repository prose is not scanned.
+Required contract exports are collected only from `src/**/*.ts`; an emitter
+export or a Markdown example cannot satisfy a missing source contract.
 The required roots, their ancestors, and the emitter must be real directories
 and a regular file respectively; discovered child symlinks are not followed.
 
@@ -209,6 +215,13 @@ nor regenerates their hashes, so byte-locked source literals, Markdown, and
 existing prompt hash checks remain unchanged. A vocabulary rename must reconcile
 the emitting catalog and its generated prompt together, through their existing
 review and exact-content validation; a byte lock is not a vocabulary exemption.
+
+The vocabulary check reuses the repository's exact-pinned TypeScript parser,
+rather than treating a JavaScript-only lexer as a TypeScript grammar. Because
+the check is shipped under `src/`, TypeScript is a production dependency,
+not an undeclared dependency on the host's developer tools. The isolated
+production-only package-consumption test exercises this path without network
+access. Other Atlas commands do not import the vocabulary validator.
 
 Product TypeScript under `src/` participates in formatting, linting, strict type
 checking, tests, vocabulary agreement, and the existing 100% product coverage

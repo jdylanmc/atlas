@@ -74,6 +74,7 @@ interface CorpusCase {
   readonly input: {
     readonly glossaryAvoidance: string;
     readonly glossaryTerm?: string;
+    readonly requiredExport?: string;
     readonly source: string;
     readonly sourcePath?: string;
     readonly unboundTerms?: readonly string[];
@@ -1097,6 +1098,14 @@ function parseCorpus(value: unknown): Corpus {
           entry["input"]["glossaryAvoidance"],
           `${path}.input.glossaryAvoidance`,
         ),
+        ...(entry["input"]["requiredExport"] === undefined
+          ? {}
+          : {
+              requiredExport: assertString(
+                entry["input"]["requiredExport"],
+                `${path}.input.requiredExport`,
+              ),
+            }),
         ...(entry["input"]["sourcePath"] === undefined
           ? {}
           : {
@@ -2268,7 +2277,14 @@ for (const entry of corpus.cases) {
     assert.equal(entry.gate, "vocabulary-agreement");
     const findings = validateVocabularyAgreement(
       binding,
-      [],
+      entry.input.requiredExport === undefined
+        ? []
+        : [
+            {
+              exportedIdentifiers: [entry.input.requiredExport],
+              term: "Anchor",
+            },
+          ],
       (entry.input.unboundTerms ?? []).map((term) => ({
         reason: "adversarial corpus",
         term,

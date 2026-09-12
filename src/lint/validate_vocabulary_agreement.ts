@@ -1,3 +1,4 @@
+import ts from "typescript";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import {
   reservedPageDirectories,
@@ -40,13 +41,6 @@ const directoryPattern = /\\?\.atlas\\?\/([A-Za-z0-9_.-]+)\\?\//dgu;
  * method named `from` or `require` does not mask the literal it reads. */
 const specifierPattern =
   /(?<![.\w$])(?:from|import(?:\.meta\.resolve)?|require)\s{0,64}(?:\(\s{0,64})?(["'])((?:[^"'\n\\]|\\.)*)\1/gu;
-/** Comments are consumed before their quoted examples can look like literals.
- * Literal bodies do not backtrack, so escaped quotes cost one pass. */
-const literalPattern =
-  /\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|(?<!\\)"(?=((?:[^"\\\n]|\\.)*))\1"|(?<!\\)'(?=((?:[^'\\\n]|\\.)*))\2'|(?<!\\)`(?=((?:[^`\\]|\\.)*))\3`/dgu;
-/** A template-literal substitution, whose value is not literal text. Blanking it
- * keeps its opening `$`, so a page-ID prefix spelled before it stays readable. */
-const substitutionPattern = /\$\{[^}]*\}/gu;
 /** A page-ID prefix, which requires an identifier or a substitution after its colon. */
 const idPrefixPattern = /(?<![\p{L}\p{N}_-])([a-z][a-z0-9-]*):(?=[a-z0-9$])/gu;
 /** A literal that is one lower-case identifier, the shape of a page type. */
@@ -555,27 +549,32 @@ function scanDirectories(
  * page type, Finding message, or generated prompt fragment is spelled. A prompt
  * fragment may be one word and need not end in a full stop. Its capitalized
  * words are read singly and in adjacent runs, so a term of several words is read
- * as one name. Every surface reads the literal with each substitution blanked at
- * its own length, so locations stay exact and a substituted value is not read
- * as literal text.
+ * as one name. The TypeScript parser distinguishes regular expressions,
+ * division, comments, and template substitutions using the language grammar.
+ * Only literal nodes are read; template heads and middles retain their final
+ * `$`, so a page-ID prefix followed by a substitution stays visible.
  */
 function scanLiterals(
   vocabulary: ContractVocabulary,
   file: VocabularyTextFile,
-  positions: PositionIndex,
   findings: Finding[],
 ): void {
-  for (const match of file.content.matchAll(literalPattern)) {
-    const group = match[1] !== undefined ? 1 : match[2] !== undefined ? 2 : 3;
-    const raw = match[group];
-    if (raw === undefined) continue;
-    const [start] = captureAt(match, group);
-    const text = raw.replaceAll(
-      substitutionPattern,
-      (value) => `$${" ".repeat(value.length - 1)}`,
-    );
-    const at = (offset: number, length: number): FindingLocation =>
-      positions.rangeAt(start + offset, start + offset + length);
+  const source = ts.createSourceFile(file.path, file.content, ts.ScriptTarget.Latest);
+  function visit(node: ts.Node): void {
+    if (!ts.isStringLiteralLike(node) && !ts.isTemplateLiteralToken(node)) {
+      ts.forEachChild(node, visit);
+      return;
+    }
+    const start = node.getStart(source) + 1;
+    const text = file.content.slice(start, node.end - 1);
+    const positionAt = (offset: number): FindingLocation["start"] => {
+      const position = source.getLineAndCharacterOfPosition(offset);
+      return { column: position.character + 1, line: position.line + 1 };
+    };
+    const at = (offset: number, length: number): FindingLocation => ({
+      end: positionAt(start + offset + length),
+      start: positionAt(start + offset),
+    });
     for (const prefix of text.matchAll(idPrefixPattern)) {
       const token = prefix[1] as string;
       const result = declaredFinding(
@@ -611,6 +610,7 @@ function scanLiterals(
       findings,
     );
   }
+  visit(source);
 }
 
 function compareFindings(left: Finding, right: Finding): number {
@@ -630,7 +630,9 @@ function exportedIdentifiersOf(
 ): ReadonlySet<string> {
   const exportedIdentifiers = new Set<string>();
   for (const file of contracts) {
-    if (file.content.length > CONTRACT_LIMIT || file.path.endsWith(".md")) continue;
+    if (file.content.length > CONTRACT_LIMIT || !/^src[\\/].+\.ts$/u.test(file.path)) {
+      continue;
+    }
     for (const exported of file.content.matchAll(exportedIdentifierPattern)) {
       exportedIdentifiers.add(exported[1] as string);
     }
@@ -740,7 +742,7 @@ export function validateVocabularyAgreement(
         findings,
       );
     } else {
-      scanLiterals(vocabulary, scanned, positions, findings);
+      scanLiterals(vocabulary, scanned, findings);
     }
   }
 
