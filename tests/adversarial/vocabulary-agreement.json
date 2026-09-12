@@ -123,6 +123,90 @@
       }
     },
     {
+      "name": "reject retired Core Archetype in generated prompt literal",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfires"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "export const PERSONA_VALUE_CATALOG = {\n  \"Metaphor palette\": {\n    Images: \"Lanterns, Bonfires, woven maps, and doors between Atlases\",\n  },\n};"
+      }
+    },
+    {
+      "name": "accept ordinary English in generated prompt literal",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "export const PERSONA_VALUE_CATALOG = {\n  \"Metaphor palette\": {\n    Images: \"Travelers gather around bonfires before opening their atlases\",\n  },\n};"
+      }
+    },
+    {
+      "name": "reject retired vocabulary in generated Markdown",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfires"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "sourcePath": "docs/agents/atlas-sdk/personas/merlin/persona.md",
+        "source": "- Images: Lanterns, Bonfires, woven maps, and doors between Atlases\n"
+      }
+    },
+    {
+      "name": "accept ordinary English in generated Markdown",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "sourcePath": "docs/agents/atlas-sdk/personas/merlin/persona.md",
+        "source": "- Images: Travelers gather around bonfires before opening their atlases\n"
+      }
+    },
+    {
+      "name": "accept quoted vocabulary examples in source comments",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "// \"Bonfire pages are prose.\"\n/** An avoidance line, for example `_Avoid_: Bonfire`. */\nconst label = \"Travelers gather around bonfires\";"
+      }
+    },
+    {
+      "name": "reject retired vocabulary in single-quoted prompt text",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfires"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const prompt = 'Lanterns, Bonfires, and woven maps';"
+      }
+    },
+    {
+      "name": "reject a single capitalized retired prompt term",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfires"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const prompt = \"Bonfires\";"
+      }
+    },
+    {
+      "name": "reject retired vocabulary in multiline prompt text",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfires"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const prompt = `The Atlas Guide\nuses Bonfires and woven maps`;"
+      }
+    },
+    {
       "name": "accept URLs",
       "expectation": "accept",
       "gate": "vocabulary-agreement",

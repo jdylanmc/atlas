@@ -154,11 +154,15 @@ read where that surface can actually occur:
 - `ATLAS_*` diagnostic codes and `.atlas/<directory>/` references are read
   anywhere in an SDK-owned source, comments included, because neither shape
   occurs in ordinary English.
-- Page-ID prefixes, Atlas page types, and Finding messages are read only inside
-  single-line string and template literals, because those shapes do occur in
+- Page-ID prefixes, Atlas page types, Finding messages, and generated prompt
+  fragments in TypeScript are read only inside
+  string and template literals, because those shapes do occur in
   prose. A `todo:fixme` comment tag is therefore not a page-ID prefix. Inside a
   literal, any `word:identifier` token is read as a page-ID prefix, and a
-  Finding message is a literal of several words ending in a full stop.
+  capitalized term in a Finding message or prompt fragment is checked even
+  without a full stop or surrounding words.
+  Single- and double-quoted strings and multiline template literals are read;
+  comments are skipped for literal scanning, including quoted examples.
 - Module specifiers are masked before scanning, so the `node:` prefix in an
   `import`, `export ... from`, `require`, or `import.meta.resolve` is not read
   as a page-ID prefix. The mask requires the keyword to open a statement rather
@@ -190,12 +194,21 @@ source may legitimately quote is not closed. Ordinary English usage of a word
 that happens to match a domain term raises nothing, because prose carries none
 of the identifier shapes above.
 
-Only `src/**/*.ts` is scanned. That is not the whole surface that ships bound
-vocabulary: `scripts/atlas_sdk_agents.ts` and the Personas under
-`docs/agents/atlas-sdk/personas/` emit product text carrying Core Archetype
-terms into user Atlases, and a rename would leave those prompts stale with the
-gate still green. Issue #117 tracks extending the check to SDK-authored
-generated prompts.
+The scan includes `src/**/*.ts`, the SDK prompt emitter
+`scripts/atlas_sdk_agents.ts`, and every Markdown Persona under
+`docs/agents/atlas-sdk/personas/`. Generated Markdown is read as prompt text,
+not as TypeScript: capitalized terms (including plurals and adjacent multi-word
+terms), diagnostic codes, and `.atlas/` directory references are checked directly.
+Lower-case ordinary English such as “travelers gather around bonfires” is not
+treated as a capitalized domain name. Other repository prose is not scanned.
+The required roots, their ancestors, and the emitter must be real directories
+and a regular file respectively; discovered child symlinks are not followed.
+
+Vocabulary validation only reads these artifacts. It neither rewrites prompts
+nor regenerates their hashes, so byte-locked source literals, Markdown, and
+existing prompt hash checks remain unchanged. A vocabulary rename must reconcile
+the emitting catalog and its generated prompt together, through their existing
+review and exact-content validation; a byte lock is not a vocabulary exemption.
 
 Product TypeScript under `src/` participates in formatting, linting, strict type
 checking, tests, vocabulary agreement, and the existing 100% product coverage

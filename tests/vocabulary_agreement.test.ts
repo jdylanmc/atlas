@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import type { CoreArchetypeBindings } from "../src/domain/core_archetype.ts";
@@ -115,6 +122,11 @@ function scratchRepository(): string {
     `vocabulary-${String(process.pid)}-${randomUUID()}`,
   );
   mkdirSync(join(directory, "src", "lint"), { recursive: true });
+  mkdirSync(join(directory, "scripts"), { recursive: true });
+  writeFileSync(join(directory, "scripts", "atlas_sdk_agents.ts"), "");
+  mkdirSync(join(directory, "docs", "agents", "atlas-sdk", "personas"), {
+    recursive: true,
+  });
   return directory;
 }
 
@@ -146,6 +158,111 @@ test("Atlas SDK contracts and the glossary bind one vocabulary", () => {
     ),
     collectContracts(ROOT, "src"),
   );
+});
+
+test("repository validation rejects a renamed Core Archetype retained by the generated prompt emitter", () => {
+  const workspace = scratchRepository();
+  try {
+    rmSync(join(workspace, "src"), { recursive: true, force: true });
+    cpSync(join(ROOT, "src"), join(workspace, "src"), { recursive: true });
+    writeFileSync(
+      join(workspace, "CONTEXT.md"),
+      readFileSync(join(ROOT, "CONTEXT.md"), "utf8"),
+    );
+    mkdirSync(join(workspace, "scripts"), { recursive: true });
+    writeFileSync(
+      join(workspace, "scripts", "atlas_sdk_agents.ts"),
+      [
+        "export const PERSONA_VALUE_CATALOG = {",
+        '  "Metaphor palette": {',
+        '    Images: "Lanterns, Bonfires, woven maps, and doors between Atlases",',
+        "  },",
+        "};",
+        "",
+      ].join("\n"),
+    );
+    mkdirSync(join(workspace, "docs", "agents", "atlas-sdk", "personas", "merlin"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(
+        workspace,
+        "docs",
+        "agents",
+        "atlas-sdk",
+        "personas",
+        "merlin",
+        "persona.md",
+      ),
+      "- Images: Lanterns, Bonfires, woven maps, and doors between Atlases\n",
+    );
+
+    const findings = validateRepository(workspace);
+
+    assert.deepEqual(
+      findings.map(({ code, path }) => ({ code, path })),
+      [
+        {
+          code: "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
+          path: "docs/agents/atlas-sdk/personas/merlin/persona.md",
+        },
+        {
+          code: "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
+          path: "scripts/atlas_sdk_agents.ts",
+        },
+      ],
+    );
+    assert.match(findings[0]?.message ?? "", /Bonfires/u);
+    assert.deepEqual(findings[0]?.location, {
+      end: { column: 29, line: 1 },
+      start: { column: 21, line: 1 },
+    });
+
+    const promptPath = join(
+      workspace,
+      "docs",
+      "agents",
+      "atlas-sdk",
+      "personas",
+      "merlin",
+      "persona.md",
+    );
+    const emitterPath = join(workspace, "scripts", "atlas_sdk_agents.ts");
+    const avoidedEmitter = readFileSync(emitterPath, "utf8");
+    const avoidedPrompt = readFileSync(promptPath, "utf8");
+    writeFileSync(emitterPath, avoidedEmitter.replace("Bonfires", "Anchors"));
+    assert.deepEqual(
+      validateRepository(workspace).map(({ code, path }) => ({ code, path })),
+      [
+        {
+          code: "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
+          path: "docs/agents/atlas-sdk/personas/merlin/persona.md",
+        },
+      ],
+    );
+    writeFileSync(emitterPath, avoidedEmitter);
+    writeFileSync(promptPath, avoidedPrompt.replace("Bonfires", "Anchors"));
+    assert.deepEqual(
+      validateRepository(workspace).map(({ code, path }) => ({ code, path })),
+      [
+        {
+          code: "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
+          path: "scripts/atlas_sdk_agents.ts",
+        },
+      ],
+    );
+    writeFileSync(
+      emitterPath,
+      'const prompt = "Travelers gather around bonfires before opening their atlases";\n',
+    );
+    writeFileSync(
+      promptPath,
+      "- Images: Travelers gather around bonfires before opening their atlases\n",
+    );
+    assert.deepEqual(validateRepository(workspace), []);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
 });
 
 test("a glossary rename that leaves the contracts behind names both sides", () => {
@@ -924,6 +1041,32 @@ test("the validator refuses a symlinked contract root directory", () => {
   } finally {
     rmSync(linked, { recursive: true, force: true });
     rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("prompt collection rejects symlinked ancestors and ignores linked descendants", () => {
+  const workspace = scratchRepository();
+  const linked = scratchRepository();
+  try {
+    const prompts = "docs/agents/atlas-sdk/personas";
+    writeFileSync(join(workspace, prompts, "ordinary.md"), "A plain prompt.\n");
+    writeFileSync(join(workspace, prompts, "not-a-prompt.ts"), "ignored");
+    symlinkSync(
+      join(workspace, prompts, "ordinary.md"),
+      join(workspace, prompts, "linked.md"),
+    );
+    assert.deepEqual(collectContracts(workspace, prompts, ".md"), [
+      `${prompts}/ordinary.md`,
+    ]);
+    rmSync(join(workspace, "docs", "agents"), { recursive: true });
+    symlinkSync(join(linked, "docs", "agents"), join(workspace, "docs", "agents"));
+    assert.throws(
+      () => collectContracts(workspace, prompts, ".md"),
+      /docs\/agents must be a readable directory/u,
+    );
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+    rmSync(linked, { recursive: true, force: true });
   }
 });
 

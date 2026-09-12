@@ -40,10 +40,10 @@ const directoryPattern = /\\?\.atlas\\?\/([A-Za-z0-9_.-]+)\\?\//dgu;
  * method named `from` or `require` does not mask the literal it reads. */
 const specifierPattern =
   /(?<![.\w$])(?:from|import(?:\.meta\.resolve)?|require)\s{0,64}(?:\(\s{0,64})?(["'])((?:[^"'\n\\]|\\.)*)\1/gu;
-/** A single-line string or template literal. The opening quote follows no
- * backslash and the body does not backtrack, so each literal is read once and a
- * line of escaped quotes costs one pass rather than one pass for each quote. */
-const literalPattern = /(?<!\\)"(?=((?:[^"\\\n]|\\.)*))\1"|(?<!\\)`(?=([^`\n]*))\2`/dgu;
+/** Comments are consumed before their quoted examples can look like literals.
+ * Literal bodies do not backtrack, so escaped quotes cost one pass. */
+const literalPattern =
+  /\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)|(?<!\\)"(?=((?:[^"\\\n]|\\.)*))\1"|(?<!\\)'(?=((?:[^'\\\n]|\\.)*))\2'|(?<!\\)`(?=((?:[^`\\]|\\.)*))\3`/dgu;
 /** A template-literal substitution, whose value is not literal text. Blanking it
  * keeps its opening `$`, so a page-ID prefix spelled before it stays readable. */
 const substitutionPattern = /\$\{[^}]*\}/gu;
@@ -51,8 +51,8 @@ const substitutionPattern = /\$\{[^}]*\}/gu;
 const idPrefixPattern = /(?<![\p{L}\p{N}_-])([a-z][a-z0-9-]*):(?=[a-z0-9$])/gu;
 /** A literal that is one lower-case identifier, the shape of a page type. */
 const pageTypePattern = /^[a-z][a-z0-9-]*$/u;
-/** A capitalized word in a Finding message, which may name a domain concept. */
-const capitalizedPattern = /\p{Lu}[\p{L}\p{N}]*/gu;
+/** A capitalized word in SDK-authored text, which may name a domain concept. */
+const capitalizedPattern = /(?<![\p{L}\p{N}_])\p{Lu}[\p{L}\p{N}]*(?![\p{L}\p{N}_])/gu;
 /** Words a single space or underscore joins, the shape a run of tokens spells
  * when it names one multi-word term. */
 const phrasePattern = /^[\p{L}\p{N}]+(?:[ _][\p{L}\p{N}]+)*$/u;
@@ -551,10 +551,9 @@ function scanDirectories(
 }
 
 /**
- * Scans the single-line literals a contract declares, where a page-ID prefix, a
- * page type, and a Finding message are spelled. A Finding message is a literal of
- * several words ending in a full stop, which is the shape every Atlas SDK message
- * carries and which a Markdown code span in a comment does not. Its capitalized
+ * Scans the literals a contract declares, where a page-ID prefix, a
+ * page type, Finding message, or generated prompt fragment is spelled. A prompt
+ * fragment may be one word and need not end in a full stop. Its capitalized
  * words are read singly and in adjacent runs, so a term of several words is read
  * as one name. Every surface reads the literal with each substitution blanked at
  * its own length, so locations stay exact and a substituted value is not read
@@ -567,9 +566,10 @@ function scanLiterals(
   findings: Finding[],
 ): void {
   for (const match of file.content.matchAll(literalPattern)) {
-    const quoted = match[1] !== undefined;
-    const raw = (quoted ? match[1] : match[2]) as string;
-    const [start] = captureAt(match, quoted ? 1 : 2);
+    const group = match[1] !== undefined ? 1 : match[2] !== undefined ? 2 : 3;
+    const raw = match[group];
+    if (raw === undefined) continue;
+    const [start] = captureAt(match, group);
     const text = raw.replaceAll(
       substitutionPattern,
       (value) => `$${" ".repeat(value.length - 1)}`,
@@ -598,10 +598,9 @@ function scanLiterals(
       );
       if (result !== undefined) findings.push(result);
     }
-    if (!text.includes(" ") || !text.endsWith(".")) continue;
     scanRuns(
       vocabulary,
-      "a Finding message",
+      text.endsWith(".") ? "a Finding message" : "a contract literal",
       text,
       [...text.matchAll(capitalizedPattern)].map((word) => ({
         index: word.index,
@@ -631,7 +630,7 @@ function exportedIdentifiersOf(
 ): ReadonlySet<string> {
   const exportedIdentifiers = new Set<string>();
   for (const file of contracts) {
-    if (file.content.length > CONTRACT_LIMIT) continue;
+    if (file.content.length > CONTRACT_LIMIT || file.path.endsWith(".md")) continue;
     for (const exported of file.content.matchAll(exportedIdentifierPattern)) {
       exportedIdentifiers.add(exported[1] as string);
     }
@@ -648,8 +647,9 @@ function exportedIdentifiersOf(
  * The check reads identifiers rather than prose. A diagnostic code and an
  * `.atlas/` directory reference are identifiers wherever a contract writes them;
  * a page-ID prefix, a page type, and a Finding message are read only inside a
- * single-line literal. Ordinary English writes none of those shapes, so a
- * sentence that uses a domain word raises nothing. Identical input produces
+ * literal. Generated Markdown prompts expose their capitalized
+ * domain terms directly rather than through TypeScript literals. Lower-case
+ * ordinary English is not a capitalized domain term. Identical input produces
  * identical ordered Findings.
  */
 export function validateVocabularyAgreement(
@@ -718,14 +718,30 @@ export function validateVocabularyAgreement(
       );
       continue;
     }
+    const markdown = file.path.endsWith(".md");
     const scanned: VocabularyTextFile = {
-      content: maskSpecifiers(file.content),
+      content: markdown ? file.content : maskSpecifiers(file.content),
       path: file.path,
     };
     const positions = positionIndex(scanned.content);
     scanDiagnostics(vocabulary, scanned, positions, findings);
     scanDirectories(vocabulary, scanned, positions, findings);
-    scanLiterals(vocabulary, scanned, positions, findings);
+    if (markdown) {
+      scanRuns(
+        vocabulary,
+        "a generated Markdown prompt",
+        scanned.content,
+        [...scanned.content.matchAll(capitalizedPattern)].map((word) => ({
+          index: word.index,
+          length: word[0].length,
+        })),
+        (index, length) => positions.rangeAt(index, index + length),
+        scanned,
+        findings,
+      );
+    } else {
+      scanLiterals(vocabulary, scanned, positions, findings);
+    }
   }
 
   return Object.freeze(findings.toSorted(compareFindings));
