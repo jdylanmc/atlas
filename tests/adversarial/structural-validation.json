@@ -105,6 +105,54 @@
       "body": "# Principle\n\n## Active truths\n\n- `truth:review` Every change requires Maintainer approval.\u2029- `truth:audit` All writes are audited.\n"
     },
     {
+      "name": "schema-valid-unparseable-created-at-is-rejected",
+      "gate": "structural-validation",
+      "kind": "timestamp-order",
+      "expectation": "reject",
+      "expectedCodes": ["ATLAS_PAGE_TIMESTAMP_UNPARSEABLE"],
+      "createdAt": "1990-12-31T23:59:60Z",
+      "updatedAt": "1980-01-01T00:00:00Z"
+    },
+    {
+      "name": "schema-valid-unparseable-updated-at-is-rejected",
+      "gate": "structural-validation",
+      "kind": "timestamp-order",
+      "expectation": "reject",
+      "expectedCodes": ["ATLAS_PAGE_TIMESTAMP_UNPARSEABLE"],
+      "createdAt": "1980-01-01T00:00:00Z",
+      "updatedAt": "1990-12-31T23:59:60Z"
+    },
+    {
+      "name": "both-unparseable-timestamps-are-reported",
+      "gate": "structural-validation",
+      "kind": "timestamp-order",
+      "expectation": "reject",
+      "expectedCodes": [
+        "ATLAS_PAGE_TIMESTAMP_UNPARSEABLE",
+        "ATLAS_PAGE_TIMESTAMP_UNPARSEABLE"
+      ],
+      "createdAt": "1990-12-31T23:59:60Z",
+      "updatedAt": "2016-12-31T23:59:60Z"
+    },
+    {
+      "name": "equal-epoch-timestamps-remain-valid",
+      "gate": "structural-validation",
+      "kind": "timestamp-order",
+      "expectation": "accept",
+      "expectedCodes": [],
+      "createdAt": "1970-01-01T00:00:00Z",
+      "updatedAt": "1970-01-01T00:00:00Z"
+    },
+    {
+      "name": "comparable-reverse-order-keeps-existing-diagnostic",
+      "gate": "structural-validation",
+      "kind": "timestamp-order",
+      "expectation": "reject",
+      "expectedCodes": ["ATLAS_PAGE_UPDATED_BEFORE_CREATED"],
+      "createdAt": "2026-08-18T00:00:00Z",
+      "updatedAt": "2026-08-17T00:00:00Z"
+    },
+    {
       "name": "unrecognized-sdk-owned-field-parses-warns-and-round-trips-losslessly",
       "gate": "structural-validation",
       "kind": "sdk-unrecognized-field",

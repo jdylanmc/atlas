@@ -20,9 +20,11 @@ function page(
   path: string,
   body: string,
   options: {
+    readonly createdAt?: string;
     readonly id?: string;
     readonly title?: string;
     readonly type?: string;
+    readonly updatedAt?: string;
   } = {},
 ): AtlasTextFile {
   const title = options.title ?? "Page";
@@ -35,8 +37,8 @@ function page(
       `  id: ${options.id ?? "concept:page"}`,
       `  type: ${options.type ?? "concept"}`,
       `  title: ${title}`,
-      '  created-at: "2026-08-17T00:00:00Z"',
-      '  updated-at: "2026-08-17T00:00:00Z"',
+      `  created-at: "${options.createdAt ?? "2026-08-17T00:00:00Z"}"`,
+      `  updated-at: "${options.updatedAt ?? "2026-08-17T00:00:00Z"}"`,
       "  created-by: { kind: agent, name: Fixture Agent }",
       "  updated-by: { kind: human, name: Fixture Reviewer }",
       "  tags: []",
@@ -66,6 +68,114 @@ const invalidFiles = [
 
 test("parses and accepts the valid minimal Atlas itself", () => {
   assert.deepEqual(validateAtlasStructure(validFiles), []);
+});
+
+for (const [field, createdAt, updatedAt] of [
+  ["created-at", "1990-12-31T23:59:60Z", "1980-01-01T00:00:00Z"],
+  ["updated-at", "1980-01-01T00:00:00Z", "1990-12-31T23:59:60Z"],
+] as const) {
+  test(`reports a schema-valid but unparseable ${field}`, () => {
+    const invalid = page(".atlas/concepts/timestamps.md", "# Timestamps", {
+      createdAt,
+      id: "concept:timestamps",
+      title: "Timestamps",
+      updatedAt,
+    });
+    const findings = validateAtlasStructure([validFiles[2] as AtlasTextFile, invalid]);
+    assert.notEqual(findings.length, 0);
+    assert.equal(findings.every(checkFinding), true);
+    const line = field === "created-at" ? 8 : 9;
+    assert.deepEqual(
+      findings.map(({ code, location, message, path, severity }) => ({
+        code,
+        location,
+        message,
+        path,
+        severity,
+      })),
+      [
+        {
+          code: "ATLAS_PAGE_TIMESTAMP_UNPARSEABLE",
+          location: {
+            end: { column: 13, line },
+            start: { column: 3, line },
+          },
+          message: `Atlas page ${field} must resolve to a finite, comparable instant.`,
+          path: invalid.path,
+          severity: "error",
+        },
+      ],
+    );
+  });
+}
+
+test("reports both unparseable timestamps without pretending to order them", () => {
+  const invalid = page(".atlas/concepts/timestamps.md", "# Timestamps", {
+    createdAt: "1990-12-31T23:59:60Z",
+    id: "concept:timestamps",
+    title: "Timestamps",
+    updatedAt: "2016-12-31T23:59:60Z",
+  });
+  const findings = validateAtlasStructure([validFiles[2] as AtlasTextFile, invalid]);
+  assert.deepEqual(
+    findings.map(({ code, location }) => ({ code, line: location?.start.line })),
+    [
+      { code: "ATLAS_PAGE_TIMESTAMP_UNPARSEABLE", line: 8 },
+      { code: "ATLAS_PAGE_TIMESTAMP_UNPARSEABLE", line: 9 },
+    ],
+  );
+});
+
+test("preserves comparable page timestamp ordering", () => {
+  for (const [createdAt, updatedAt] of [
+    ["2026-08-17T00:00:00Z", "2026-08-17T00:00:00Z"],
+    ["2026-08-17T00:00:00Z", "2026-08-18T00:00:00Z"],
+    ["1970-01-01T00:00:00Z", "1970-01-01T00:00:00Z"],
+    ["1969-12-31T23:59:59Z", "1970-01-01T00:00:00Z"],
+    ["2026-08-17T01:00:00+01:00", "2026-08-17T00:00:00Z"],
+    ["2026-08-17T00:30:00+02:00", "2026-08-16T23:00:00Z"],
+  ] as const) {
+    assert.deepEqual(
+      validateAtlasStructure([
+        validFiles[2] as AtlasTextFile,
+        page(".atlas/concepts/timestamps.md", "# Timestamps", {
+          createdAt,
+          id: "concept:timestamps",
+          title: "Timestamps",
+          updatedAt,
+        }),
+      ]),
+      [],
+    );
+  }
+
+  const findings = validateAtlasStructure([
+    validFiles[2] as AtlasTextFile,
+    page(".atlas/concepts/timestamps.md", "# Timestamps", {
+      createdAt: "2026-08-18T00:00:00Z",
+      id: "concept:timestamps",
+      title: "Timestamps",
+      updatedAt: "2026-08-17T00:00:00Z",
+    }),
+  ]);
+  assert.deepEqual(
+    findings.map(({ code }) => code),
+    ["ATLAS_PAGE_UPDATED_BEFORE_CREATED"],
+  );
+});
+
+test("schema-invalid timestamps retain the envelope diagnostic", () => {
+  const invalid = page(".atlas/concepts/timestamps.md", "# Timestamps", {
+    createdAt: "not-a-timestamp",
+    id: "concept:timestamps",
+    title: "Timestamps",
+  });
+  assert.deepEqual(
+    validateAtlasStructure([validFiles[2] as AtlasTextFile, invalid]).map(
+      ({ code }) => code,
+    ),
+    ["ATLAS_PAGE_INVALID_ENVELOPE"],
+  );
 });
 
 test("reports an unrecognized SDK-owned field as a warning without denying validity", () => {
