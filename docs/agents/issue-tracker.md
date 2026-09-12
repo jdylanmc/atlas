@@ -60,9 +60,32 @@ on an external skill setup or triage-label vocabulary.
   color `0E8A16` and description
   `Implementation-ready Atlas SDK tracer-bullet ticket`.
 - `/spec` and `/tickets` search for exact-title duplicates before publication.
-  They never require or invoke `/setup-matt-pocock-skills`.
+  They never require an external setup workflow.
 - `/tickets` verifies every created issue, native sub-issue relationship, and
   native blocking edge by reading the resulting graph back from GitHub.
+
+`/to-spec` and `/to-tickets` are compatibility aliases for `/spec` and `/tickets`.
+They use the same publication and approval gates, not a second planning process.
+
+## Incoming-request triage
+
+Use the roles in `docs/agents/triage-labels.md` only for incoming requests.
+Do not classify unlabeled parent specifications, Wayfinder maps/decision tickets,
+or milestone/umbrella records as neglected triage work, and do not re-triage
+the implementation tickets from `/tickets`.
+Preserve scope labels and native parent/dependency relationships.
+
+Before an authorized label change, read the current labels with
+`gh label list --limit 200 --json name,description,color`. Never assume that
+documenting a role created its label. If a needed label is absent, present its
+name, color, and description and obtain approval before creating it; then read
+it back. `/tickets` retains its existing idempotent `ready-for-agent` exception.
+Do not change metadata on an existing label to match a template.
+
+Preview the exact label, comment, and closure changes before applying a triage
+outcome. Remove only superseded triage-state labels, preserve unrelated labels,
+and read the issue back afterward. Configuration of these workflows does not
+itself authorize tracker writes.
 
 ## Wayfinding operations
 
