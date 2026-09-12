@@ -86,6 +86,14 @@ with no error Findings. This confirms only the deterministic Lint rules that
 exist today; the Atlas Manifest is still carried as an opaque record, and rules
 that would validate its declared schema against the rest of the Atlas remain
 deferred.
+
+Structural Lint compares `created-at` and `updated-at` through the shared
+`dateTimeMilliseconds` contract. A schema-valid but unrepresentable instant
+(such as a leap second) produces `ATLAS_PAGE_TIMESTAMP_UNPARSEABLE` at each
+affected frontmatter key. Comparable timestamps retain the existing
+`ATLAS_PAGE_UPDATED_BEFORE_CREATED` rule; equal instants remain valid. This
+does not change the page-envelope schema.
+
 The Actionlint launcher also pins ShellCheck `0.11.0`, disables Python-based
 Pyflakes integration, downloads only the assets for the current supported
 platform and architecture, and verifies their release checksums before

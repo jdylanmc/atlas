@@ -30,7 +30,7 @@ import { buildAtlasView } from "../src/atlas/atlas_view.ts";
 import { parseAtlasPage, parseAtlasPages } from "../src/atlas/parse_atlas_pages.ts";
 import { serializeAtlasPages } from "../src/atlas/serialize_atlas_pages.ts";
 import type { CapturedAtlasFile } from "../src/atlas/load_atlas_text.ts";
-import type { Finding } from "../src/domain/finding.ts";
+import { checkFinding, type Finding } from "../src/domain/finding.ts";
 import type { CoreArchetypeBindings } from "../src/domain/core_archetype.ts";
 import { loadAndValidateAtlasInput } from "../src/lint/validate_atlas_input.ts";
 import { validateAtlasStructure } from "../src/lint/validate_atlas_structure.ts";
@@ -448,8 +448,20 @@ interface StructuralValidationSdkFieldCase {
   readonly value: string;
 }
 
+interface StructuralValidationTimestampCase {
+  readonly createdAt: string;
+  readonly expectedCodes: readonly string[];
+  readonly expectation: "accept" | "reject";
+  readonly gate: "structural-validation";
+  readonly kind: "timestamp-order";
+  readonly name: string;
+  readonly updatedAt: string;
+}
+
 type StructuralValidationCase =
-  StructuralValidationTruthsCase | StructuralValidationSdkFieldCase;
+  | StructuralValidationTruthsCase
+  | StructuralValidationSdkFieldCase
+  | StructuralValidationTimestampCase;
 
 interface StructuralValidationCorpus {
   readonly cases: readonly StructuralValidationCase[];
@@ -630,9 +642,32 @@ function parseStructuralValidationCorpus(value: unknown): StructuralValidationCo
       );
       const kind = entry["kind"];
       assert.ok(
-        kind === "principle-active-truths" || kind === "sdk-unrecognized-field",
+        kind === "principle-active-truths" ||
+          kind === "sdk-unrecognized-field" ||
+          kind === "timestamp-order",
         `${path}.kind is unsupported`,
       );
+      if (kind === "timestamp-order") {
+        const expectation = entry["expectation"];
+        assert.ok(
+          expectation === "accept" || expectation === "reject",
+          `${path}.expectation is unsupported`,
+        );
+        if (expectation === "accept") accepts += 1;
+        else rejects += 1;
+        return {
+          createdAt: assertString(entry["createdAt"], `${path}.createdAt`),
+          expectedCodes: assertPossiblyEmptyStringArray(
+            entry["expectedCodes"],
+            `${path}.expectedCodes`,
+          ),
+          expectation,
+          gate: "structural-validation",
+          kind,
+          name,
+          updatedAt: assertString(entry["updatedAt"], `${path}.updatedAt`),
+        };
+      }
       if (kind === "sdk-unrecognized-field") {
         assert.equal(
           entry["expectation"],
@@ -1506,6 +1541,10 @@ function structuralAtlasPage(
   type: string,
   title: string,
   body: string,
+  timestamps: {
+    readonly createdAt?: string;
+    readonly updatedAt?: string;
+  } = {},
 ) {
   return Object.freeze({
     content: [
@@ -1516,8 +1555,8 @@ function structuralAtlasPage(
       `  id: ${id}`,
       `  type: ${type}`,
       `  title: ${title}`,
-      '  created-at: "2026-08-24T00:00:00Z"',
-      '  updated-at: "2026-08-24T00:00:00Z"',
+      `  created-at: "${timestamps.createdAt ?? "2026-08-24T00:00:00Z"}"`,
+      `  updated-at: "${timestamps.updatedAt ?? "2026-08-24T00:00:00Z"}"`,
       "  created-by: { kind: human, name: Fixture Maintainer }",
       "  updated-by: { kind: human, name: Fixture Maintainer }",
       "  tags: []",
@@ -1799,6 +1838,32 @@ for (const entry of structuralValidationCorpus.cases) {
   test(`adversarial structural-validation corpus: ${entry.name}`, () => {
     executedCases += 1;
     assert.equal(entry.gate, "structural-validation");
+    if (entry.kind === "timestamp-order") {
+      const page = structuralAtlasPage(
+        ".atlas/concepts/timestamps.md",
+        "concept:timestamps",
+        "concept",
+        "Timestamps",
+        "# Timestamps\n",
+        { createdAt: entry.createdAt, updatedAt: entry.updatedAt },
+      );
+      const findings = validateAtlasStructure([structuralRoot, page]);
+      assert.deepEqual(
+        findings.map(({ code }) => code),
+        entry.expectedCodes,
+      );
+      if (entry.expectation === "accept") {
+        assert.deepEqual(findings, []);
+        return;
+      }
+      assert.notEqual(findings.length, 0);
+      assert.equal(findings.every(checkFinding), true);
+      assert.equal(
+        findings.some(({ path }) => path === page.path),
+        true,
+      );
+      return;
+    }
     if (entry.kind === "sdk-unrecognized-field") {
       const page = structuralAtlasPageWithSdkField(
         ".atlas/concepts/extended.md",

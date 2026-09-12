@@ -26,7 +26,7 @@ import {
   compareAtlasSchemaVersions,
   currentAtlasSchemaVersion,
 } from "../domain/atlas_schema_version.ts";
-import { sdkPageMetadataKeys } from "../domain/atlas_page.ts";
+import { dateTimeMilliseconds, sdkPageMetadataKeys } from "../domain/atlas_page.ts";
 import type { Finding, FindingLocation } from "../domain/finding.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import type { AtlasTextFile } from "../atlas/load_atlas_text.ts";
@@ -852,10 +852,24 @@ function validatePage(
     }
   }
 
-  if (
-    Date.parse(parsed.page.sdk["created-at"]) >
-    Date.parse(parsed.page.sdk["updated-at"])
-  ) {
+  const createdAt = dateTimeMilliseconds(parsed.page.sdk["created-at"]);
+  const updatedAt = dateTimeMilliseconds(parsed.page.sdk["updated-at"]);
+  for (const [field, instant] of [
+    ["created-at", createdAt],
+    ["updated-at", updatedAt],
+  ] as const) {
+    if (instant === undefined) {
+      findings.push(
+        finding(
+          "ATLAS_PAGE_TIMESTAMP_UNPARSEABLE",
+          `Atlas page ${field} must resolve to a finite, comparable instant.`,
+          file.path,
+          sdkKeyLocation(file.content, field),
+        ),
+      );
+    }
+  }
+  if (createdAt !== undefined && updatedAt !== undefined && createdAt > updatedAt) {
     findings.push(
       finding(
         "ATLAS_PAGE_UPDATED_BEFORE_CREATED",
