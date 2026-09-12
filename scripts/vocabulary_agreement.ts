@@ -2,7 +2,7 @@
 /** Validate that CONTEXT.md and Atlas SDK-owned contracts bind one vocabulary. */
 
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   contractVocabularyBindings,
@@ -17,11 +17,15 @@ import {
 
 export const GLOSSARY_PATH = "CONTEXT.md";
 export const CONTRACT_ROOT = "src";
+export const PROMPT_EMITTER_PATH = "scripts/atlas_sdk_agents.ts";
+export const PROMPT_ROOT = "docs/agents/atlas-sdk/personas";
 
 /** A contract the validator refuses to read, named by its repository path alone. */
 export class ContractError extends Error {}
 
 function readText(root: string, relativePath: string): VocabularyTextFile {
+  const parent = dirname(relativePath);
+  if (parent !== ".") requireDirectory(root, parent);
   const path = resolve(root, relativePath);
   let regular: boolean;
   try {
@@ -37,24 +41,37 @@ function readText(root: string, relativePath: string): VocabularyTextFile {
   }
 }
 
-/**
- * Collects every Atlas SDK-authored contract source in stable path order. The
- * root component is `lstat`-checked and refused unless it is a real directory,
- * so a symlinked `src` root is rejected; every discovered child symbolic link
- * is excluded because its `Dirent` is neither a directory nor a regular file,
- * so the walk never leaves the repository through any component. Pinned by
- * `tests/vocabulary_agreement.test.ts`.
- */
-export function collectContracts(root: string, relativePath: string): string[] {
-  const path = resolve(root, relativePath);
+function requireDirectory(root: string, relativePath: string): void {
+  const parent = dirname(relativePath);
+  if (parent !== ".") requireDirectory(root, parent);
   let directory: boolean;
   try {
-    directory = lstatSync(path, { throwIfNoEntry: false })?.isDirectory() === true;
+    directory =
+      lstatSync(resolve(root, relativePath), {
+        throwIfNoEntry: false,
+      })?.isDirectory() === true;
   } catch {
     throw new ContractError(`${relativePath} must be a readable directory`);
   }
   if (!directory)
     throw new ContractError(`${relativePath} must be a readable directory`);
+}
+
+/**
+ * Collects every Atlas SDK-authored contract source in stable path order. The
+ * root and its ancestors are `lstat`-checked and refused unless each is a real
+ * directory, so a symlinked root is rejected; every discovered child symbolic link
+ * is excluded because its `Dirent` is neither a directory nor a regular file,
+ * so the walk never leaves the repository through any component. Pinned by
+ * `tests/vocabulary_agreement.test.ts`.
+ */
+export function collectContracts(
+  root: string,
+  relativePath: string,
+  extension = ".ts",
+): string[] {
+  requireDirectory(root, relativePath);
+  const path = resolve(root, relativePath);
   let entries;
   try {
     entries = readdirSync(path, { withFileTypes: true });
@@ -66,8 +83,9 @@ export function collectContracts(root: string, relativePath: string): string[] {
     left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
   )) {
     const entryPath = join(relativePath, entry.name);
-    if (entry.isDirectory()) paths.push(...collectContracts(root, entryPath));
-    else if (entry.isFile() && entry.name.endsWith(".ts")) paths.push(entryPath);
+    if (entry.isDirectory())
+      paths.push(...collectContracts(root, entryPath, extension));
+    else if (entry.isFile() && entry.name.endsWith(extension)) paths.push(entryPath);
   }
   return paths;
 }
@@ -82,7 +100,11 @@ export function validateRepository(root: string): readonly Finding[] {
     contractVocabularyBindings,
     unboundGlossaryTerms,
     readText(root, GLOSSARY_PATH),
-    collectContracts(root, CONTRACT_ROOT).map((path) => readText(root, path)),
+    [
+      ...collectContracts(root, CONTRACT_ROOT),
+      PROMPT_EMITTER_PATH,
+      ...collectContracts(root, PROMPT_ROOT, ".md"),
+    ].map((path) => readText(root, path)),
   );
 }
 

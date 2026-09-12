@@ -35,7 +35,6 @@
     "eslint": "10.8.1",
     "globals": "17.9.0",
     "prettier": "3.9.6",
-    "typescript": "6.0.3",
     "typescript-eslint": "8.65.0"
   },
   "dependencies": {
@@ -46,6 +45,7 @@
     "mdast-util-gfm-footnote": "2.1.0",
     "mdast-util-to-string": "4.0.0",
     "micromark-extension-gfm-footnote": "2.1.0",
+    "typescript": "6.0.3",
     "yaml": "2.9.0"
   },
   "bin": {

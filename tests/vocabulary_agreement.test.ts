@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import type { CoreArchetypeBindings } from "../src/domain/core_archetype.ts";
@@ -115,6 +122,11 @@ function scratchRepository(): string {
     `vocabulary-${String(process.pid)}-${randomUUID()}`,
   );
   mkdirSync(join(directory, "src", "lint"), { recursive: true });
+  mkdirSync(join(directory, "scripts"), { recursive: true });
+  writeFileSync(join(directory, "scripts", "atlas_sdk_agents.ts"), "");
+  mkdirSync(join(directory, "docs", "agents", "atlas-sdk", "personas"), {
+    recursive: true,
+  });
   return directory;
 }
 
@@ -146,6 +158,111 @@ test("Atlas SDK contracts and the glossary bind one vocabulary", () => {
     ),
     collectContracts(ROOT, "src"),
   );
+});
+
+test("repository validation rejects a renamed Core Archetype retained by the generated prompt emitter", () => {
+  const workspace = scratchRepository();
+  try {
+    rmSync(join(workspace, "src"), { recursive: true, force: true });
+    cpSync(join(ROOT, "src"), join(workspace, "src"), { recursive: true });
+    writeFileSync(
+      join(workspace, "CONTEXT.md"),
+      readFileSync(join(ROOT, "CONTEXT.md"), "utf8"),
+    );
+    mkdirSync(join(workspace, "scripts"), { recursive: true });
+    writeFileSync(
+      join(workspace, "scripts", "atlas_sdk_agents.ts"),
+      [
+        "export const PERSONA_VALUE_CATALOG = {",
+        '  "Metaphor palette": {',
+        '    Images: "Lanterns, Bonfires, woven maps, and doors between Atlases",',
+        "  },",
+        "};",
+        "",
+      ].join("\n"),
+    );
+    mkdirSync(join(workspace, "docs", "agents", "atlas-sdk", "personas", "merlin"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(
+        workspace,
+        "docs",
+        "agents",
+        "atlas-sdk",
+        "personas",
+        "merlin",
+        "persona.md",
+      ),
+      "- Images: Lanterns, Bonfires, woven maps, and doors between Atlases\n",
+    );
+
+    const findings = validateRepository(workspace);
+
+    assert.deepEqual(
+      findings.map(({ code, path }) => ({ code, path })),
+      [
+        {
+          code: "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
+          path: "docs/agents/atlas-sdk/personas/merlin/persona.md",
+        },
+        {
+          code: "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
+          path: "scripts/atlas_sdk_agents.ts",
+        },
+      ],
+    );
+    assert.match(findings[0]?.message ?? "", /Bonfires/u);
+    assert.deepEqual(findings[0]?.location, {
+      end: { column: 29, line: 1 },
+      start: { column: 21, line: 1 },
+    });
+
+    const promptPath = join(
+      workspace,
+      "docs",
+      "agents",
+      "atlas-sdk",
+      "personas",
+      "merlin",
+      "persona.md",
+    );
+    const emitterPath = join(workspace, "scripts", "atlas_sdk_agents.ts");
+    const avoidedEmitter = readFileSync(emitterPath, "utf8");
+    const avoidedPrompt = readFileSync(promptPath, "utf8");
+    writeFileSync(emitterPath, avoidedEmitter.replace("Bonfires", "Anchors"));
+    assert.deepEqual(
+      validateRepository(workspace).map(({ code, path }) => ({ code, path })),
+      [
+        {
+          code: "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
+          path: "docs/agents/atlas-sdk/personas/merlin/persona.md",
+        },
+      ],
+    );
+    writeFileSync(emitterPath, avoidedEmitter);
+    writeFileSync(promptPath, avoidedPrompt.replace("Bonfires", "Anchors"));
+    assert.deepEqual(
+      validateRepository(workspace).map(({ code, path }) => ({ code, path })),
+      [
+        {
+          code: "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
+          path: "scripts/atlas_sdk_agents.ts",
+        },
+      ],
+    );
+    writeFileSync(
+      emitterPath,
+      'const prompt = "Travelers gather around bonfires before opening their atlases";\n',
+    );
+    writeFileSync(
+      promptPath,
+      "- Images: Travelers gather around bonfires before opening their atlases\n",
+    );
+    assert.deepEqual(validateRepository(workspace), []);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
 });
 
 test("a glossary rename that leaves the contracts behind names both sides", () => {
@@ -600,6 +717,301 @@ test("ordinary English prose that matches a domain term does not fail", () => {
   );
 });
 
+test("cycle-two required exports cannot be supplied by the prompt emitter", () => {
+  const required = [
+    {
+      exportedIdentifiers: ["ExploreOperationResult"],
+      term: "Explore",
+    },
+  ] satisfies readonly ContractVocabularyBinding[];
+  assert.deepEqual(
+    validate(
+      anchorBinding,
+      [contract("export interface ExploreOperationResult {}", "src/explore.ts")],
+      glossaryLines,
+      required,
+    ),
+    [],
+  );
+
+  assert.deepEqual(
+    summarize(
+      validate(
+        anchorBinding,
+        [
+          contract(
+            "export interface ExploreOperationResult {}",
+            "scripts/atlas_sdk_agents.ts",
+          ),
+        ],
+        glossaryLines,
+        required,
+      ),
+    ),
+    [
+      'ATLAS_VOCABULARY_CONTRACT_EXPORT_MISSING Atlas SDK contracts require the term "Explore" to be exported as "ExploreOperationResult", but no scanned contract exports that identifier.',
+    ],
+  );
+});
+
+test("cycle-two line comments end at every JavaScript line terminator", () => {
+  assert.deepEqual(
+    validate(anchorBinding, [
+      contract(
+        "// \"Bonfires are prose.\"\r// 'Bonfire is prose.'\u2028// `Bonfires are prose.`\u2029",
+      ),
+    ]),
+    [],
+  );
+
+  for (const terminator of ["\r", "\u2028", "\u2029"]) {
+    assert.deepEqual(
+      summarize(
+        validate(anchorBinding, [
+          contract(`// comment${terminator}const prompt = "Bonfires are retired.";`),
+        ]),
+      ),
+      [
+        'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "Bonfires" in a Finding message, which CONTEXT.md lists as the avoided term "Bonfire".',
+      ],
+    );
+  }
+});
+
+test("cycle-two regular expressions are not prompt strings", () => {
+  assert.deepEqual(
+    summarize(
+      validate(anchorBinding, [
+        contract(`const first = "Bonfire";\nconst second = 'Bonfire';`),
+      ]),
+    ),
+    [
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "Bonfire" in a contract literal, which CONTEXT.md lists as the avoided term "Bonfire".',
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "Bonfire" in a contract literal, which CONTEXT.md lists as the avoided term "Bonfire".',
+    ],
+  );
+
+  assert.deepEqual(
+    summarize(
+      validate(anchorBinding, [
+        contract(
+          [
+            `const single = /'Bonfire'/u;`,
+            `const double = /"Bonfire"/u;`,
+            "const diagnostic = /ATLAS_BONFIRE_MISSING/u;",
+            String.raw`const directory = /\.atlas\/bonfires\//u;`,
+          ].join("\n"),
+        ),
+      ]),
+    ),
+    [
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "BONFIRE" in the diagnostic code ATLAS_BONFIRE_MISSING, which CONTEXT.md lists as the avoided term "Bonfire".',
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "bonfires" in an Atlas page directory name, which CONTEXT.md lists as the avoided term "Bonfire".',
+    ],
+  );
+});
+
+test("literal scanning follows TypeScript expression and template boundaries", () => {
+  for (const source of [
+    'const ratio = value / "Bonfire" / divisor;',
+    'const ratio = value! / "Bonfire" / divisor;',
+    'const ratio = factory<Type> / "Bonfire" / divisor;',
+    'const ratio = (function () {}) / "Bonfire" / divisor;',
+    'const ratio = ({ value: 1 }) / "Bonfire" / divisor;',
+    'const ratio = value /* /"ignored"/ */ / "Bonfire" / divisor;',
+    'const regex = /["\\\']Bonfire["\\\']/u; const prompt = "Bonfire";',
+    'if (value) /"Bonfire"/u.test(value); const prompt = "Bonfire";',
+    'function matcher() { return /"Bonfire"/u; } const prompt = "Bonfire";',
+    'const prompt = `head ${/"Bonfire"/u.test(value)} tail Bonfire`;',
+    "const prompt = `head ${{ nested: `inside ${value} Bonfire` }} tail`;",
+    String.raw`const regex = /[\/]"Bonfire"/u; const prompt = "Bonfire";`,
+    'const prompt = "url // Bonfire";',
+  ]) {
+    const findings = validate(anchorBinding, [contract(source)]);
+    assert.deepEqual(
+      findings.map(({ code }) => code),
+      ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      source,
+    );
+    assert.match(findings[0]?.message ?? "", /"Bonfire"/u);
+  }
+});
+
+test("literal locations account for every TypeScript line terminator", () => {
+  for (const terminator of ["\r", "\n", "\r\n", "\u2028", "\u2029"]) {
+    const findings = validate(anchorBinding, [
+      contract(`// comment${terminator}const prompt = "Bonfires are retired.";`),
+    ]);
+    assert.deepEqual(findings[0]?.location, {
+      end: { column: 25, line: 2 },
+      start: { column: 17, line: 2 },
+    });
+  }
+});
+
+function assertCycleThreePromptFindings(sources: readonly string[]): void {
+  for (const source of sources) {
+    const findings = validate(anchorBinding, [contract(source)]);
+    assert.deepEqual(
+      summarize(findings),
+      [
+        'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "Bonfire" in a contract literal, which CONTEXT.md lists as the avoided term "Bonfire".',
+      ],
+      source,
+    );
+    const start = source.indexOf("Bonfire");
+    assert.deepEqual(findings[0]?.location, {
+      end: { column: start + "Bonfire".length + 1, line: 1 },
+      start: { column: start + 1, line: 1 },
+    });
+  }
+}
+
+test("cycle-three single-quoted prompts preserve import and from text", () => {
+  assertCycleThreePromptFindings([
+    String.raw`const prompt = 'import \"Bonfire\"';`,
+    String.raw`const prompt = 'from \"Bonfire\"';`,
+  ]);
+  assertCycleThreePromptFindings([
+    `const prompt = 'import "Bonfire"';`,
+    `const prompt = 'from "Bonfire"';`,
+  ]);
+});
+
+test("cycle-three double-quoted prompts preserve import and from text", () => {
+  assertCycleThreePromptFindings([
+    String.raw`const prompt = "import \'Bonfire\'";`,
+    String.raw`const prompt = "from \'Bonfire\'";`,
+  ]);
+  assertCycleThreePromptFindings([
+    `const prompt = "import 'Bonfire'";`,
+    `const prompt = "from 'Bonfire'";`,
+  ]);
+});
+
+test("cycle-three template prompts preserve import and from text", () => {
+  assertCycleThreePromptFindings([
+    'const prompt = `import \\"Bonfire\\"`;',
+    'const prompt = `from \\"Bonfire\\"`;',
+  ]);
+  assertCycleThreePromptFindings([
+    'const prompt = `import "Bonfire"`;',
+    'const prompt = `from "Bonfire"`;',
+  ]);
+});
+
+test("cycle-three module contexts alone exempt their specifiers", () => {
+  assert.deepEqual(
+    summarize(
+      validate(anchorBinding, [
+        contract(
+          [
+            'import value from "Bonfire";',
+            'const dynamic = import("Bonfire");',
+            'export { value } from "Bonfire";',
+            'const required = require("Bonfire");',
+            'const resolved = import.meta.resolve("Bonfire");',
+            'const buffer = Buffer.from("Bonfire");',
+            'const regex = /"Bonfire"/u;',
+            "const diagnostic = /ATLAS_BONFIRE_MISSING/u;",
+            String.raw`const directory = /\.atlas\/bonfires\//u;`,
+          ].join("\n"),
+        ),
+      ]),
+    ),
+    [
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "Bonfire" in a contract literal, which CONTEXT.md lists as the avoided term "Bonfire".',
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "BONFIRE" in the diagnostic code ATLAS_BONFIRE_MISSING, which CONTEXT.md lists as the avoided term "Bonfire".',
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "bonfires" in an Atlas page directory name, which CONTEXT.md lists as the avoided term "Bonfire".',
+    ],
+  );
+});
+
+test("AST module exemptions include only direct literal specifiers", () => {
+  assert.deepEqual(
+    validate(anchorBinding, [
+      contract(
+        [
+          'import "Bonfire";',
+          'export * from "Bonfire";',
+          'import type { Page } from "Bonfire";',
+          'import legacy = require("Bonfire");',
+          'type PageType = import("Bonfire").Page;',
+          "const dynamic = import(`Bonfire`);",
+          "const resolved = import.meta.resolve(`Bonfire`);",
+          'const required = require?.("Bonfire");',
+          "require();",
+          "export { dynamic };",
+        ].join("\n"),
+      ),
+    ]),
+    [],
+  );
+
+  for (const source of [
+    'require("node:fs", "Bonfire");',
+    'import("node:fs", { with: { type: "Bonfire" } });',
+    'require(condition ? "Bonfire" : "anchor");',
+    'import(getPath("Bonfire"));',
+    'object.require("Bonfire");',
+    'object.resolve("Bonfire");',
+    'function example() { new.target.resolve("Bonfire"); }',
+    'import.other.resolve("Bonfire");',
+    '(require)("Bonfire");',
+    'type PageType = import("Bonfire" | Other).Page;',
+  ]) {
+    const findings = validate(anchorBinding, [contract(source)]);
+    assert.deepEqual(
+      findings.map(({ code }) => code),
+      ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      source,
+    );
+    assert.match(findings[0]?.message ?? "", /"Bonfire"/u);
+  }
+});
+
+test("module-span masking preserves other identifiers and original positions", () => {
+  const prefix =
+    'import "\u{1f4e6}/ATLAS_BONFIRE_MISSING/.atlas/bonfires/"; const prompt = ';
+  const source = `${prefix}'import "Bonfire"';`;
+  const findings = validate(anchorBinding, [contract(source)]);
+  assert.equal(findings.length, 1);
+  const start = source.lastIndexOf("Bonfire");
+  assert.deepEqual(findings[0]?.location, {
+    end: { column: start + 8, line: 1 },
+    start: { column: start + 1, line: 1 },
+  });
+
+  const prompt = "const prompt = 'import \"ATLAS_BONFIRE_MISSING\" .atlas/bonfires/';";
+  assert.deepEqual(
+    validate(anchorBinding, [contract(prompt)]).map(({ code, location }) => ({
+      code,
+      start: location?.start,
+    })),
+    [
+      {
+        code: "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
+        start: { column: prompt.indexOf("BONFIRE") + 1, line: 1 },
+      },
+      {
+        code: "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
+        start: { column: prompt.indexOf("bonfires") + 1, line: 1 },
+      },
+    ],
+  );
+
+  const multiline = [
+    "const module = import(`first line",
+    'ATLAS_BONFIRE_MISSING/.atlas/bonfires/`); const prompt = "Bonfire";',
+  ] as const;
+  const multilineFindings = validate(anchorBinding, [contract(multiline.join("\r\n"))]);
+  assert.equal(multilineFindings.length, 1);
+  assert.deepEqual(multilineFindings[0]?.location?.start, {
+    column: multiline[1].lastIndexOf("Bonfire") + 1,
+    line: 2,
+  });
+});
+
 test("an empty glossary fails closed before any contract is scanned", () => {
   const findings = validate(
     anchorBinding,
@@ -924,6 +1336,32 @@ test("the validator refuses a symlinked contract root directory", () => {
   } finally {
     rmSync(linked, { recursive: true, force: true });
     rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("prompt collection rejects symlinked ancestors and ignores linked descendants", () => {
+  const workspace = scratchRepository();
+  const linked = scratchRepository();
+  try {
+    const prompts = "docs/agents/atlas-sdk/personas";
+    writeFileSync(join(workspace, prompts, "ordinary.md"), "A plain prompt.\n");
+    writeFileSync(join(workspace, prompts, "not-a-prompt.ts"), "ignored");
+    symlinkSync(
+      join(workspace, prompts, "ordinary.md"),
+      join(workspace, prompts, "linked.md"),
+    );
+    assert.deepEqual(collectContracts(workspace, prompts, ".md"), [
+      `${prompts}/ordinary.md`,
+    ]);
+    rmSync(join(workspace, "docs", "agents"), { recursive: true });
+    symlinkSync(join(linked, "docs", "agents"), join(workspace, "docs", "agents"));
+    assert.throws(
+      () => collectContracts(workspace, prompts, ".md"),
+      /docs\/agents must be a readable directory/u,
+    );
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+    rmSync(linked, { recursive: true, force: true });
   }
 });
 

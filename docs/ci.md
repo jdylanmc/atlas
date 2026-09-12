@@ -154,17 +154,30 @@ read where that surface can actually occur:
 - `ATLAS_*` diagnostic codes and `.atlas/<directory>/` references are read
   anywhere in an SDK-owned source, comments included, because neither shape
   occurs in ordinary English.
-- Page-ID prefixes, Atlas page types, and Finding messages are read only inside
-  single-line string and template literals, because those shapes do occur in
+- Page-ID prefixes, Atlas page types, Finding messages, and generated prompt
+  fragments in TypeScript are read only inside
+  string and template literals, because those shapes do occur in
   prose. A `todo:fixme` comment tag is therefore not a page-ID prefix. Inside a
   literal, any `word:identifier` token is read as a page-ID prefix, and a
-  Finding message is a literal of several words ending in a full stop.
-- Module specifiers are masked before scanning, so the `node:` prefix in an
-  `import`, `export ... from`, `require`, or `import.meta.resolve` is not read
-  as a page-ID prefix. The mask requires the keyword to open a statement rather
-  than continue an expression, so `Buffer.from("…")` masks nothing. A `node:`
-  specifier reached any other way is not masked and would raise a false
-  positive.
+  capitalized term in a Finding message or prompt fragment is checked even
+  without a full stop or surrounding words.
+  Single- and double-quoted strings and multiline template literals are read;
+  comments are skipped for literal scanning, including quoted examples.
+  TypeScript's grammar distinguishes regex tokens from actual strings and
+  division, including TypeScript-specific expressions. Line comments end at
+  CR, LF, U+2028, or U+2029. Template substitutions are traversed as expressions,
+  not flattened into prompt text; their actual nested literals still bind.
+- Original TypeScript bytes are parsed before exemptions are identified. Only
+  literal module specifiers in actual static/dynamic `import`, `export ... from`,
+  direct `require`, and `import.meta.resolve` syntax are exempt. TypeScript
+  import-equals and import-type forms use the same rule. Only the first literal
+  argument of a module call is exempt; computed expressions, nested strings,
+  additional arguments, and unrelated methods such as `Buffer.from("…")` remain
+  scanned. Prompt text that merely quotes `import` or `from` is not module syntax.
+  Exempt spans alone are blanked for diagnostic/directory scans, preserving their
+  original UTF-16 lengths; literal scanning uses the original AST and bytes.
+  A `node:` string reached any other way is not exempt and can be reported as an
+  undeclared page-ID prefix.
 - A source longer than 1 MiB is reported rather than scanned, so no one
   contract can spend a whole continuous integration run.
 
@@ -190,12 +203,30 @@ source may legitimately quote is not closed. Ordinary English usage of a word
 that happens to match a domain term raises nothing, because prose carries none
 of the identifier shapes above.
 
-Only `src/**/*.ts` is scanned. That is not the whole surface that ships bound
-vocabulary: `scripts/atlas_sdk_agents.ts` and the Personas under
-`docs/agents/atlas-sdk/personas/` emit product text carrying Core Archetype
-terms into user Atlases, and a rename would leave those prompts stale with the
-gate still green. Issue #117 tracks extending the check to SDK-authored
-generated prompts.
+The scan includes `src/**/*.ts`, the SDK prompt emitter
+`scripts/atlas_sdk_agents.ts`, and every Markdown Persona under
+`docs/agents/atlas-sdk/personas/`. Generated Markdown is read as prompt text,
+not as TypeScript: capitalized terms (including plurals and adjacent multi-word
+terms), diagnostic codes, and `.atlas/` directory references are checked directly.
+Lower-case ordinary English such as “travelers gather around bonfires” is not
+treated as a capitalized domain name. Other repository prose is not scanned.
+Required contract exports are collected only from `src/**/*.ts`; an emitter
+export or a Markdown example cannot satisfy a missing source contract.
+The required roots, their ancestors, and the emitter must be real directories
+and a regular file respectively; discovered child symlinks are not followed.
+
+Vocabulary validation only reads these artifacts. It neither rewrites prompts
+nor regenerates their hashes, so byte-locked source literals, Markdown, and
+existing prompt hash checks remain unchanged. A vocabulary rename must reconcile
+the emitting catalog and its generated prompt together, through their existing
+review and exact-content validation; a byte lock is not a vocabulary exemption.
+
+The vocabulary check reuses the repository's exact-pinned TypeScript parser,
+rather than treating a JavaScript-only lexer as a TypeScript grammar. Because
+the check is shipped under `src/`, TypeScript is a production dependency,
+not an undeclared dependency on the host's developer tools. The isolated
+production-only package-consumption test exercises this path without network
+access. Other Atlas commands do not import the vocabulary validator.
 
 Product TypeScript under `src/` participates in formatting, linting, strict type
 checking, tests, vocabulary agreement, and the existing 100% product coverage

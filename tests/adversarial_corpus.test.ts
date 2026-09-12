@@ -74,7 +74,9 @@ interface CorpusCase {
   readonly input: {
     readonly glossaryAvoidance: string;
     readonly glossaryTerm?: string;
+    readonly requiredExport?: string;
     readonly source: string;
+    readonly sourcePath?: string;
     readonly unboundTerms?: readonly string[];
   };
   readonly messages?: readonly string[];
@@ -1096,6 +1098,22 @@ function parseCorpus(value: unknown): Corpus {
           entry["input"]["glossaryAvoidance"],
           `${path}.input.glossaryAvoidance`,
         ),
+        ...(entry["input"]["requiredExport"] === undefined
+          ? {}
+          : {
+              requiredExport: assertString(
+                entry["input"]["requiredExport"],
+                `${path}.input.requiredExport`,
+              ),
+            }),
+        ...(entry["input"]["sourcePath"] === undefined
+          ? {}
+          : {
+              sourcePath: assertString(
+                entry["input"]["sourcePath"],
+                `${path}.input.sourcePath`,
+              ),
+            }),
         ...(entry["input"]["glossaryTerm"] === undefined
           ? {}
           : {
@@ -2259,13 +2277,25 @@ for (const entry of corpus.cases) {
     assert.equal(entry.gate, "vocabulary-agreement");
     const findings = validateVocabularyAgreement(
       binding,
-      [],
+      entry.input.requiredExport === undefined
+        ? []
+        : [
+            {
+              exportedIdentifiers: [entry.input.requiredExport],
+              term: "Anchor",
+            },
+          ],
       (entry.input.unboundTerms ?? []).map((term) => ({
         reason: "adversarial corpus",
         term,
       })),
       glossary(entry.input.glossaryAvoidance, entry.input.glossaryTerm),
-      [{ content: entry.input.source, path: "src/lint/adversarial.ts" }],
+      [
+        {
+          content: entry.input.source,
+          path: entry.input.sourcePath ?? "src/lint/adversarial.ts",
+        },
+      ],
     );
     const summary = findings.map((finding) => `${finding.code} ${finding.message}`);
 

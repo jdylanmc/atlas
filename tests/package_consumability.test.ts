@@ -415,6 +415,35 @@ test("the installed package lints and explores an Atlas with production dependen
     assert.notEqual(armed.status, 0, "the network guard did not arm");
     assert.match(armed.stderr, /network access blocked/u);
 
+    const vocabulary = spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        [
+          'import assert from "node:assert/strict";',
+          'const { validateVocabularyAgreement } = await import(new URL("./dist/src/lint/validate_vocabulary_agreement.js", import.meta.resolve("@jdylanmc/atlas/package.json")));',
+          'const findings = validateVocabularyAgreement({}, [], [{ term: "Anchor", reason: "installed-package probe" }],',
+          '{ path: "CONTEXT.md", content: "**Anchor**:\\n_Avoid_: Bonfire\\n" },',
+          `[{ path: "scripts/atlas_sdk_agents.ts", content: ${JSON.stringify('const matcher = /"Bonfire"/u; const ratio = value! / "Bonfires" / divisor;')} }]);`,
+          'assert.deepEqual(findings.map(({ code }) => code), ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"]);',
+          'assert.match(findings[0].message, /"Bonfires"/u);',
+        ].join("\n"),
+      ],
+      {
+        cwd: consumer,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          NODE_OPTIONS: `${process.env["NODE_OPTIONS"] ?? ""} --import=${guard}`.trim(),
+        },
+        killSignal: "SIGKILL",
+        timeout: 30_000,
+      },
+    );
+    assert.equal(vocabulary.status, 0, vocabulary.stderr);
+    assert.equal(vocabulary.stderr, "");
+
     const lint = runInstalled(consumer, guard, [
       "lint",
       "--machine",
