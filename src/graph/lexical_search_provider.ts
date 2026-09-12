@@ -43,12 +43,19 @@ function frequency(tokens: readonly string[]): ReadonlyMap<string, number> {
   return counts;
 }
 
-function score(
+const queryFunctionWords: ReadonlySet<string> = new Set(
+  (
+    "a an and are as at be been being by can could did do does for from had has " +
+    "have how i if in is it its may of on or our should that the their there " +
+    "these this to was we were what when where which who why will with would you your"
+  ).split(" "),
+);
+
+function documentTermCounts(
   document: ExploreSearchDocument,
-  queryTerms: readonly string[],
   budgets: Pick<ExploreBudgets, "maxTerms">,
-): number {
-  const counts = frequency(
+): ReadonlyMap<string, number> {
+  return frequency(
     exploreLexicalTokens(
       [
         document.id,
@@ -60,8 +67,17 @@ function score(
       budgets.maxTerms,
     ),
   );
+}
+
+function score(
+  counts: ReadonlyMap<string, number>,
+  queryWeights: ReadonlyMap<string, number>,
+): number {
   let total = 0;
-  for (const term of queryTerms) total += counts.get(term) ?? 0;
+  for (const [term, weight] of queryWeights) {
+    const count = counts.get(term) ?? 0;
+    total += (count / (count + 1)) * weight;
+  }
   return total;
 }
 
@@ -74,10 +90,23 @@ export const lexicalSearchProvider: SearchProvider = Object.freeze({
     const queryTerms = [...new Set(exploreLexicalTokens(query, budgets.maxTerms))].sort(
       compareCodePoints,
     );
-    const candidates = documents.map((document) =>
+    const contentTerms = queryTerms.filter((term) => !queryFunctionWords.has(term));
+    const effectiveTerms = contentTerms.length === 0 ? queryTerms : contentTerms;
+    const indexed = documents.map((document) => ({
+      document,
+      counts: documentTermCounts(document, budgets),
+    }));
+    const queryWeights = new Map<string, number>();
+    for (const term of effectiveTerms) {
+      const matches = indexed.filter(({ counts }) => counts.has(term)).length;
+      if (matches > 0) {
+        queryWeights.set(term, Math.log1p(indexed.length / matches));
+      }
+    }
+    const candidates = indexed.map(({ document, counts }) =>
       Object.freeze({
         objectId: document.id,
-        score: score(document, queryTerms, budgets),
+        score: score(counts, queryWeights),
       }),
     );
     return Object.freeze(

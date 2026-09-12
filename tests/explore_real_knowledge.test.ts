@@ -74,23 +74,32 @@ test("a realistic question about line length reaches the ingested Concept, cited
   );
 });
 
-test("a heading-style question is mechanically routed but ranks the wrong Concept (filed as #194)", () => {
-  // Usefulness judging surfaced a real finding here rather than a pass: the
-  // mechanically correct machinery (valid route, valid Citation,
-  // valid-structured degradation) ranks the broader "single H1 heading"
-  // Concept above the actually-relevant "ATX-style headings" Concept for a
-  // question specifically about heading *style*. Filed as
-  // https://github.com/jdylanmc/atlas/issues/194 (lexical ranking does not
-  // disambiguate near-synonymous Concepts sharing a common term). This test
-  // pins the current, known-imperfect behavior so a ranking fix is a visible
-  // diff here, not a silent regression.
+test("a realistic heading-style question reaches the ATX heading guidance with real evidence", () => {
   const result = explore("Should I use === underlines or # for a Markdown heading?");
 
   assert.equal(result.completion, "completed");
+  assert.equal(result.disposition, "success");
   assert.equal(result.payload.degradation.level, "valid-structured");
+  assert.equal(result.payload.degradation.diagnostics.length, 0);
+
   const top = result.payload.results[0];
-  assert.ok(top);
-  assert.equal(top.result.id, "concept:single-h1-heading");
+  assert.ok(top, "Explore returned no results at all");
+  assert.equal(top.result.id, "concept:atx-style-headings");
+  assert.deepEqual(
+    top.route.map((step) => step.objectId),
+    ["anchor:root", "concept:atx-style-headings"],
+  );
+  assert.equal(top.route[1]?.edgeId, "edge:root-covers-atx-style-headings");
+
+  const citedSource = top.citedContext.find(
+    (entry) => entry.id === "source:google-markdown-style-guide",
+  );
+  assert.ok(citedSource, "the result carried no citation to the ingested Source");
+  assert.match(top.result.body, /ATX-style \(#\) headings rather than Setext-style/u);
+  assert.match(
+    top.result.body,
+    /\[\^s1\]: \[\[\.atlas\/sources\/google-markdown-style-guide\]\]/u,
+  );
 });
 
 test("Re-anchoring occurs at every reached Anchor: orientation, active Principles, and objective are all restated", () => {

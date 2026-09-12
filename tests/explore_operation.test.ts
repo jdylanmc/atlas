@@ -1060,8 +1060,8 @@ test("the lexical provider owns only deterministic candidate ranking", () => {
   );
 
   assert.deepEqual(first, [
-    { objectId: "concept:a", score: 2 },
-    { objectId: "concept:b", score: 1 },
+    { objectId: "concept:a", score: (2 / 3) * Math.log1p(1) },
+    { objectId: "concept:b", score: (1 / 2) * Math.log1p(1) },
   ]);
   assert.deepEqual(
     lexicalSearchProvider.rank(
@@ -1091,6 +1091,99 @@ test("the lexical provider owns only deterministic candidate ranking", () => {
   assert.deepEqual(exploreLexicalTokens("alpha beta", 1), ["alpha"]);
   assert.deepEqual(exploreLexicalTokens("alpha beta", 0), []);
   assert.deepEqual(exploreLexicalTokens("alpha", 0), []);
+});
+
+test("distinctive query terms outweigh repetition without depending on query or document order", () => {
+  const documents = [
+    {
+      body: "metal ".repeat(64),
+      id: "concept:a",
+      path: "a",
+      tags: [],
+      title: "A",
+      type: "concept",
+    },
+    {
+      body: "metal density",
+      id: "concept:z",
+      path: "z",
+      tags: [],
+      title: "Z",
+      type: "concept",
+    },
+    {
+      body: "metal conductivity",
+      id: "concept:c",
+      path: "c",
+      tags: [],
+      title: "C",
+      type: "concept",
+    },
+  ];
+  const first = lexicalSearchProvider.rank(documents, "metal density", budgets);
+  assert.deepEqual(
+    first.map(({ objectId }) => objectId),
+    ["concept:z", "concept:a", "concept:c"],
+  );
+  assert.deepEqual(
+    lexicalSearchProvider.rank(
+      documents.toReversed(),
+      "DENSITY metal density metal",
+      budgets,
+    ),
+    first,
+  );
+  assert.equal(Object.isFrozen(first), true);
+  assert.equal(first.every(Object.isFrozen), true);
+});
+
+test("question words do not replace content evidence and remain searchable on their own", () => {
+  const documents = [
+    {
+      body: "should should be how",
+      id: "concept:a",
+      path: "a",
+      tags: [],
+      title: "A",
+      type: "concept",
+    },
+    {
+      body: "cobalt",
+      id: "concept:z",
+      path: "z",
+      tags: [],
+      title: "Z",
+      type: "concept",
+    },
+  ];
+  assert.deepEqual(
+    lexicalSearchProvider
+      .rank(documents, "How should cobalt be stored?", budgets)
+      .map(({ objectId }) => objectId),
+    ["concept:z"],
+  );
+  assert.deepEqual(
+    lexicalSearchProvider
+      .rank(documents, "should", budgets)
+      .map(({ objectId }) => objectId),
+    ["concept:a"],
+  );
+  for (const query of ["", "?!===", "unmatched"]) {
+    assert.deepEqual(lexicalSearchProvider.rank(documents, query, budgets), []);
+  }
+  assert.deepEqual(lexicalSearchProvider.rank([], "cobalt", budgets), []);
+  assert.deepEqual(
+    lexicalSearchProvider.rank(documents, "cobalt", { ...budgets, maxTerms: 0 }),
+    [],
+  );
+  const capped = lexicalSearchProvider.rank(documents, "concept cobalt", {
+    ...budgets,
+    maxTerms: 1,
+  });
+  assert.deepEqual(capped, [
+    { objectId: "concept:a", score: (1 / 2) * Math.log1p(1) },
+    { objectId: "concept:z", score: (1 / 2) * Math.log1p(1) },
+  ]);
 });
 
 test("one Home Atlas commit remains fixed when the worktree changes", () => {

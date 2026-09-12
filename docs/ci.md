@@ -109,6 +109,25 @@ Review findings that describe a gate miss are resolved only after
 `tests/adversarial/` has a permanent reject or accept case that exercises the
 miss. Existing gate additions should be data-only corpus edits.
 
+## Deterministic Explore ranking
+
+The built-in lexical Search Provider retains bounded, case-insensitive ASCII
+alphanumeric tokenization over each document's ID, title, type, tags, and body. Common
+English question/function words are ignored when other query terms remain;
+queries containing only those words remain searchable.
+
+Each distinct query term contributes `tf / (tf + 1) * log(1 + N / df)`, where
+`tf` is its count in the document's bounded token prefix, `df` is the number of
+indexed documents containing it, and `N` is the number of indexed documents.
+Unmatched terms contribute nothing. Repetition has diminishing influence, and
+terms shared by fewer documents receive more weight.
+Scores are added in sorted query-term order; equal scores retain code-point
+ordering by object ID. Scores depend on the indexed corpus, not a model.
+
+Repository-backed regression cases check useful answers with their real routes
+and Citations. Ranking does not grant reachability, change Re-anchoring, or alter
+the result shape, evidence, degradation, or capture budgets.
+
 ## Glossary and contract vocabulary agreement
 
 `CONTEXT.md` is the authoritative domain glossary, and `src/domain/core_archetype.ts`
