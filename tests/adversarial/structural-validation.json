@@ -153,6 +153,60 @@
       "updatedAt": "2026-08-17T00:00:00Z"
     },
     {
+      "name": "high-delimiter-body-is-rejected-before-markdown-parsing",
+      "gate": "structural-validation",
+      "kind": "body-markup-budget",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PAGE_BODY_TOO_MARKED",
+      "line": "x*\n",
+      "repeat": 8191
+    },
+    {
+      "name": "high-internal-delimiter-body-is-rejected-before-markdown-parsing",
+      "gate": "structural-validation",
+      "kind": "body-markup-budget",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PAGE_BODY_TOO_MARKED",
+      "line": "a*b\n",
+      "repeat": 8191
+    },
+    {
+      "name": "first-excess-trailing-delimiter-is-rejected",
+      "gate": "structural-validation",
+      "kind": "body-markup-budget",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PAGE_BODY_TOO_MARKED",
+      "line": "x*\n",
+      "repeat": 2049
+    },
+    {
+      "name": "first-excess-internal-delimiter-is-rejected",
+      "gate": "structural-validation",
+      "kind": "body-markup-budget",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PAGE_BODY_TOO_MARKED",
+      "line": "a*b\n",
+      "repeat": 2049
+    },
+    {
+      "name": "formerly-admitted-literal-citation-count-is-now-over-budget",
+      "gate": "structural-validation",
+      "kind": "body-markup-budget",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PAGE_BODY_TOO_MARKED",
+      "line": "x[^a]",
+      "repeat": 2000
+    },
+    {
+      "name": "formerly-admitted-formatting-split-citation-count-is-now-over-budget",
+      "gate": "structural-validation",
+      "kind": "body-markup-budget",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PAGE_BODY_TOO_MARKED",
+      "line": "x[^a*b*c]",
+      "repeat": 1000
+    },
+    {
       "name": "unrecognized-sdk-owned-field-parses-warns-and-round-trips-losslessly",
       "gate": "structural-validation",
       "kind": "sdk-unrecognized-field",
