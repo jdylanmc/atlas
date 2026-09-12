@@ -167,12 +167,17 @@ read where that surface can actually occur:
   division, including TypeScript-specific expressions. Line comments end at
   CR, LF, U+2028, or U+2029. Template substitutions are traversed as expressions,
   not flattened into prompt text; their actual nested literals still bind.
-- Module specifiers are masked before scanning, so the `node:` prefix in an
-  `import`, `export ... from`, `require`, or `import.meta.resolve` is not read
-  as a page-ID prefix. The mask requires the keyword to open a statement rather
-  than continue an expression, so `Buffer.from("…")` masks nothing. A `node:`
-  specifier reached any other way is not masked and would raise a false
-  positive.
+- Original TypeScript bytes are parsed before exemptions are identified. Only
+  literal module specifiers in actual static/dynamic `import`, `export ... from`,
+  direct `require`, and `import.meta.resolve` syntax are exempt. TypeScript
+  import-equals and import-type forms use the same rule. Only the first literal
+  argument of a module call is exempt; computed expressions, nested strings,
+  additional arguments, and unrelated methods such as `Buffer.from("…")` remain
+  scanned. Prompt text that merely quotes `import` or `from` is not module syntax.
+  Exempt spans alone are blanked for diagnostic/directory scans, preserving their
+  original UTF-16 lengths; literal scanning uses the original AST and bytes.
+  A `node:` string reached any other way is not exempt and can be reported as an
+  undeclared page-ID prefix.
 - A source longer than 1 MiB is reported rather than scanned, so no one
   contract can spend a whole continuous integration run.
 

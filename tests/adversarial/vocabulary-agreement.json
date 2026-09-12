@@ -385,6 +385,230 @@
       }
     },
     {
+      "name": "reject import-shaped text in single-quoted prompt",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfire"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const prompt = 'import \"Bonfire\"';"
+      }
+    },
+    {
+      "name": "reject from-shaped text in single-quoted prompt",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfire"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const prompt = 'from \"Bonfire\"';"
+      }
+    },
+    {
+      "name": "reject import-shaped text in double-quoted prompt",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfire"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const prompt = \"import 'Bonfire'\";"
+      }
+    },
+    {
+      "name": "reject from-shaped text in double-quoted prompt",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfire"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const prompt = \"from 'Bonfire'\";"
+      }
+    },
+    {
+      "name": "reject import-shaped text in template prompt",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfire"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const prompt = `import \"Bonfire\"`;"
+      }
+    },
+    {
+      "name": "reject from-shaped text in template prompt",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfire"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const prompt = `from \"Bonfire\"`;"
+      }
+    },
+    {
+      "name": "reject escaped import-shaped text in single-quoted prompt",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfire"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const prompt = 'import \\\"Bonfire\\\"';"
+      }
+    },
+    {
+      "name": "reject escaped from-shaped text in double-quoted prompt",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfire"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const prompt = \"from \\'Bonfire\\'\";"
+      }
+    },
+    {
+      "name": "reject escaped import-shaped text in template prompt",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfire"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const prompt = `import \\\"Bonfire\\\"`;"
+      }
+    },
+    {
+      "name": "accept static import module specifier",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "import value from \"Bonfire\";"
+      }
+    },
+    {
+      "name": "accept dynamic import module specifier",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const value = import(\"Bonfire\");"
+      }
+    },
+    {
+      "name": "accept export-from module specifier",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "export { value } from \"Bonfire\";"
+      }
+    },
+    {
+      "name": "accept require module specifier",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const value = require(\"Bonfire\");"
+      }
+    },
+    {
+      "name": "accept import meta resolve module specifier",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const value = import.meta.resolve(\"Bonfire\");"
+      }
+    },
+    {
+      "name": "reject Buffer from prompt text",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfire"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const value = Buffer.from(\"Bonfire\");"
+      }
+    },
+    {
+      "name": "reject require-shaped prompt text",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfire"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const prompt = 'require(\"Bonfire\")';"
+      }
+    },
+    {
+      "name": "reject import meta resolve-shaped prompt text",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfire"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const prompt = 'import.meta.resolve(\"Bonfire\")';"
+      }
+    },
+    {
+      "name": "reject nested real string in computed import argument",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfire"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const module = import(getPath(\"Bonfire\"));"
+      }
+    },
+    {
+      "name": "reject additional require argument without exempting whole call",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfire"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const module = require(\"node:fs\", \"Bonfire\");"
+      }
+    },
+    {
+      "name": "reject method named require without module authority",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["Bonfire"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const value = object.require(\"Bonfire\");"
+      }
+    },
+    {
+      "name": "preserve whole-source identifiers in import-shaped prompt",
+      "expectation": "reject",
+      "codes": [
+        "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
+        "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"
+      ],
+      "messages": ["BONFIRE", "bonfires"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const prompt = 'import \"ATLAS_BONFIRE_MISSING\" .atlas/bonfires/';"
+      }
+    },
+    {
       "name": "accept node fs module specifier",
       "expectation": "accept",
       "gate": "vocabulary-agreement",

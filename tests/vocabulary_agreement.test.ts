@@ -849,6 +849,169 @@ test("literal locations account for every TypeScript line terminator", () => {
   }
 });
 
+function assertCycleThreePromptFindings(sources: readonly string[]): void {
+  for (const source of sources) {
+    const findings = validate(anchorBinding, [contract(source)]);
+    assert.deepEqual(
+      summarize(findings),
+      [
+        'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "Bonfire" in a contract literal, which CONTEXT.md lists as the avoided term "Bonfire".',
+      ],
+      source,
+    );
+    const start = source.indexOf("Bonfire");
+    assert.deepEqual(findings[0]?.location, {
+      end: { column: start + "Bonfire".length + 1, line: 1 },
+      start: { column: start + 1, line: 1 },
+    });
+  }
+}
+
+test("cycle-three single-quoted prompts preserve import and from text", () => {
+  assertCycleThreePromptFindings([
+    String.raw`const prompt = 'import \"Bonfire\"';`,
+    String.raw`const prompt = 'from \"Bonfire\"';`,
+  ]);
+  assertCycleThreePromptFindings([
+    `const prompt = 'import "Bonfire"';`,
+    `const prompt = 'from "Bonfire"';`,
+  ]);
+});
+
+test("cycle-three double-quoted prompts preserve import and from text", () => {
+  assertCycleThreePromptFindings([
+    String.raw`const prompt = "import \'Bonfire\'";`,
+    String.raw`const prompt = "from \'Bonfire\'";`,
+  ]);
+  assertCycleThreePromptFindings([
+    `const prompt = "import 'Bonfire'";`,
+    `const prompt = "from 'Bonfire'";`,
+  ]);
+});
+
+test("cycle-three template prompts preserve import and from text", () => {
+  assertCycleThreePromptFindings([
+    'const prompt = `import \\"Bonfire\\"`;',
+    'const prompt = `from \\"Bonfire\\"`;',
+  ]);
+  assertCycleThreePromptFindings([
+    'const prompt = `import "Bonfire"`;',
+    'const prompt = `from "Bonfire"`;',
+  ]);
+});
+
+test("cycle-three module contexts alone exempt their specifiers", () => {
+  assert.deepEqual(
+    summarize(
+      validate(anchorBinding, [
+        contract(
+          [
+            'import value from "Bonfire";',
+            'const dynamic = import("Bonfire");',
+            'export { value } from "Bonfire";',
+            'const required = require("Bonfire");',
+            'const resolved = import.meta.resolve("Bonfire");',
+            'const buffer = Buffer.from("Bonfire");',
+            'const regex = /"Bonfire"/u;',
+            "const diagnostic = /ATLAS_BONFIRE_MISSING/u;",
+            String.raw`const directory = /\.atlas\/bonfires\//u;`,
+          ].join("\n"),
+        ),
+      ]),
+    ),
+    [
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "Bonfire" in a contract literal, which CONTEXT.md lists as the avoided term "Bonfire".',
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "BONFIRE" in the diagnostic code ATLAS_BONFIRE_MISSING, which CONTEXT.md lists as the avoided term "Bonfire".',
+      'ATLAS_VOCABULARY_IDENTIFIER_AVOIDED Atlas SDK uses "bonfires" in an Atlas page directory name, which CONTEXT.md lists as the avoided term "Bonfire".',
+    ],
+  );
+});
+
+test("AST module exemptions include only direct literal specifiers", () => {
+  assert.deepEqual(
+    validate(anchorBinding, [
+      contract(
+        [
+          'import "Bonfire";',
+          'export * from "Bonfire";',
+          'import type { Page } from "Bonfire";',
+          'import legacy = require("Bonfire");',
+          'type PageType = import("Bonfire").Page;',
+          "const dynamic = import(`Bonfire`);",
+          "const resolved = import.meta.resolve(`Bonfire`);",
+          'const required = require?.("Bonfire");',
+          "require();",
+          "export { dynamic };",
+        ].join("\n"),
+      ),
+    ]),
+    [],
+  );
+
+  for (const source of [
+    'require("node:fs", "Bonfire");',
+    'import("node:fs", { with: { type: "Bonfire" } });',
+    'require(condition ? "Bonfire" : "anchor");',
+    'import(getPath("Bonfire"));',
+    'object.require("Bonfire");',
+    'object.resolve("Bonfire");',
+    'function example() { new.target.resolve("Bonfire"); }',
+    'import.other.resolve("Bonfire");',
+    '(require)("Bonfire");',
+    'type PageType = import("Bonfire" | Other).Page;',
+  ]) {
+    const findings = validate(anchorBinding, [contract(source)]);
+    assert.deepEqual(
+      findings.map(({ code }) => code),
+      ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      source,
+    );
+    assert.match(findings[0]?.message ?? "", /"Bonfire"/u);
+  }
+});
+
+test("module-span masking preserves other identifiers and original positions", () => {
+  const prefix =
+    'import "\u{1f4e6}/ATLAS_BONFIRE_MISSING/.atlas/bonfires/"; const prompt = ';
+  const source = `${prefix}'import "Bonfire"';`;
+  const findings = validate(anchorBinding, [contract(source)]);
+  assert.equal(findings.length, 1);
+  const start = source.lastIndexOf("Bonfire");
+  assert.deepEqual(findings[0]?.location, {
+    end: { column: start + 8, line: 1 },
+    start: { column: start + 1, line: 1 },
+  });
+
+  const prompt = "const prompt = 'import \"ATLAS_BONFIRE_MISSING\" .atlas/bonfires/';";
+  assert.deepEqual(
+    validate(anchorBinding, [contract(prompt)]).map(({ code, location }) => ({
+      code,
+      start: location?.start,
+    })),
+    [
+      {
+        code: "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
+        start: { column: prompt.indexOf("BONFIRE") + 1, line: 1 },
+      },
+      {
+        code: "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
+        start: { column: prompt.indexOf("bonfires") + 1, line: 1 },
+      },
+    ],
+  );
+
+  const multiline = [
+    "const module = import(`first line",
+    'ATLAS_BONFIRE_MISSING/.atlas/bonfires/`); const prompt = "Bonfire";',
+  ] as const;
+  const multilineFindings = validate(anchorBinding, [contract(multiline.join("\r\n"))]);
+  assert.equal(multilineFindings.length, 1);
+  assert.deepEqual(multilineFindings[0]?.location?.start, {
+    column: multiline[1].lastIndexOf("Bonfire") + 1,
+    line: 2,
+  });
+});
+
 test("an empty glossary fails closed before any contract is scanned", () => {
   const findings = validate(
     anchorBinding,

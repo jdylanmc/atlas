@@ -36,11 +36,6 @@ const exportedIdentifierPattern =
   /(?:^|\n)\s*export\s+(?:declare\s+)?(?:abstract\s+)?(?:interface|type|class|function|const|let|var)\s+([A-Za-z_$][\w$]*)/gu;
 /** An `.atlas/` directory reference, in plain or regular-expression form. */
 const directoryPattern = /\\?\.atlas\\?\/([A-Za-z0-9_.-]+)\\?\//dgu;
-/** A module specifier, which names a file or a runtime scheme, not an Atlas page.
- * Each keyword opens a statement rather than continuing an expression, so a
- * method named `from` or `require` does not mask the literal it reads. */
-const specifierPattern =
-  /(?<![.\w$])(?:from|import(?:\.meta\.resolve)?|require)\s{0,64}(?:\(\s{0,64})?(["'])((?:[^"'\n\\]|\\.)*)\1/gu;
 /** A page-ID prefix, which requires an identifier or a substitution after its colon. */
 const idPrefixPattern = /(?<![\p{L}\p{N}_-])([a-z][a-z0-9-]*):(?=[a-z0-9$])/gu;
 /** A literal that is one lower-case identifier, the shape of a page type. */
@@ -416,20 +411,65 @@ function declaredFinding(
   );
 }
 
-/**
- * Blanks the module specifier of an import, a `require`, or an
- * `import.meta.resolve`, so a runtime scheme such as `node:` is not read as a
- * page-ID prefix. Blanking preserves every offset, so locations stay exact. A
- * specifier reached any other way stays visible to the scan.
- */
-function maskSpecifiers(content: string): string {
-  return content.replaceAll(
-    specifierPattern,
-    (match: string, quote: string, specifier: string) =>
-      match.slice(0, match.length - specifier.length - quote.length) +
-      " ".repeat(specifier.length) +
-      quote,
+function isModuleCall(expression: ts.Expression): boolean {
+  if (expression.kind === ts.SyntaxKind.ImportKeyword) return true;
+  if (ts.isIdentifier(expression)) return expression.text === "require";
+  return (
+    ts.isPropertyAccessExpression(expression) &&
+    expression.name.text === "resolve" &&
+    ts.isMetaProperty(expression.expression) &&
+    expression.expression.keywordToken === ts.SyntaxKind.ImportKeyword &&
+    expression.expression.name.text === "meta"
   );
+}
+
+function moduleSpecifiers(source: ts.SourceFile): ReadonlySet<ts.Node> {
+  const specifiers = new Set<ts.Node>();
+  function add(node: ts.Node | undefined): void {
+    if (node !== undefined && ts.isStringLiteralLike(node)) specifiers.add(node);
+  }
+  function visit(node: ts.Node): void {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      add(node.moduleSpecifier);
+    } else if (ts.isExternalModuleReference(node)) {
+      add(node.expression);
+    } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
+      add(node.argument.literal);
+    } else if (ts.isCallExpression(node) && isModuleCall(node.expression)) {
+      add(node.arguments[0]);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  return specifiers;
+}
+
+/** Only AST-proven module literals are blanked for whole-source identifier
+ * scans. The original source and AST remain intact for literal scanning, and
+ * each span keeps its UTF-16 length for exact source locations. */
+function maskModuleSpecifiers(
+  source: ts.SourceFile,
+  specifiers: ReadonlySet<ts.Node>,
+): string {
+  const parts: string[] = [];
+  let offset = 0;
+  for (const node of specifiers) {
+    const start = node.getStart(source);
+    parts.push(source.text.slice(offset, start), " ".repeat(node.end - start));
+    offset = node.end;
+  }
+  parts.push(source.text.slice(offset));
+  return parts.join("");
+}
+
+function typescriptPositions(source: ts.SourceFile): PositionIndex {
+  const positionAt = (offset: number): FindingLocation["start"] => {
+    const position = source.getLineAndCharacterOfPosition(offset);
+    return { column: position.character + 1, line: position.line + 1 };
+  };
+  return {
+    rangeAt: (start, end) => ({ end: positionAt(end), start: positionAt(start) }),
+  };
 }
 
 interface TokenSpan {
@@ -557,24 +597,21 @@ function scanDirectories(
 function scanLiterals(
   vocabulary: ContractVocabulary,
   file: VocabularyTextFile,
+  source: ts.SourceFile,
+  specifiers: ReadonlySet<ts.Node>,
+  positions: PositionIndex,
   findings: Finding[],
 ): void {
-  const source = ts.createSourceFile(file.path, file.content, ts.ScriptTarget.Latest);
   function visit(node: ts.Node): void {
+    if (specifiers.has(node)) return;
     if (!ts.isStringLiteralLike(node) && !ts.isTemplateLiteralToken(node)) {
       ts.forEachChild(node, visit);
       return;
     }
     const start = node.getStart(source) + 1;
     const text = file.content.slice(start, node.end - 1);
-    const positionAt = (offset: number): FindingLocation["start"] => {
-      const position = source.getLineAndCharacterOfPosition(offset);
-      return { column: position.character + 1, line: position.line + 1 };
-    };
-    const at = (offset: number, length: number): FindingLocation => ({
-      end: positionAt(start + offset + length),
-      start: positionAt(start + offset),
-    });
+    const at = (offset: number, length: number): FindingLocation =>
+      positions.rangeAt(start + offset, start + offset + length);
     for (const prefix of text.matchAll(idPrefixPattern)) {
       const token = prefix[1] as string;
       const result = declaredFinding(
@@ -720,15 +757,21 @@ export function validateVocabularyAgreement(
       );
       continue;
     }
-    const markdown = file.path.endsWith(".md");
+    const source = file.path.endsWith(".md")
+      ? undefined
+      : ts.createSourceFile(file.path, file.content, ts.ScriptTarget.Latest);
+    const specifiers =
+      source === undefined ? new Set<ts.Node>() : moduleSpecifiers(source);
     const scanned: VocabularyTextFile = {
-      content: markdown ? file.content : maskSpecifiers(file.content),
+      content:
+        source === undefined ? file.content : maskModuleSpecifiers(source, specifiers),
       path: file.path,
     };
-    const positions = positionIndex(scanned.content);
+    const positions =
+      source === undefined ? positionIndex(file.content) : typescriptPositions(source);
     scanDiagnostics(vocabulary, scanned, positions, findings);
     scanDirectories(vocabulary, scanned, positions, findings);
-    if (markdown) {
+    if (source === undefined) {
       scanRuns(
         vocabulary,
         "a generated Markdown prompt",
@@ -742,7 +785,7 @@ export function validateVocabularyAgreement(
         findings,
       );
     } else {
-      scanLiterals(vocabulary, scanned, findings);
+      scanLiterals(vocabulary, file, source, specifiers, positions, findings);
     }
   }
 
