@@ -317,6 +317,20 @@ and prompt-contract results, CodeQL SARIF, and unit-test result:
 Fletcher remains the `Fletcher / review` compatibility identity for
 `prompt-contract-review`; its workflow check naming is unchanged.
 
+Contributor skills are integrated through bounded read-only adaptations in the
+canonical `.cacophony/directives/`, not by executing or importing PR-authored
+skill files. These generate both the CI prompts and local repository roasters.
+Fletcher's path filter includes `.agents/skills/**`, repository review/setup
+guidance, and the corresponding adversarial corpus so changes to the review
+process receive prompt-contract scrutiny after this configuration reaches the
+trusted base. Model choices, turn budgets, credentials, and native reports are
+unchanged.
+
+The separate coding agent follows
+[`docs/agents/review-cycle.md`](agents/review-cycle.md) for authorized test-first
+repairs and bounded re-review. CI itself does not gain a mutation or repair
+loop. Reviewed skill changes cannot govern their own CI review.
+
 The deterministic verification check fails when an applicable analysis or test
 fails. It directly needs Static analysis and Unit tests and evaluates their
 normalized current outputs; it does not consume a transitive aggregate from the
