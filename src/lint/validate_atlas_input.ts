@@ -1,7 +1,5 @@
 import type { Finding } from "../domain/finding.ts";
-import { atlasChangelogPath } from "../domain/atlas_changelog.ts";
 import {
-  defaultAtlasTextBudgets,
   loadAtlasTextWithByteLengths,
   AtlasLoadError,
   type CapturedAtlasFile,
@@ -11,35 +9,15 @@ import {
 } from "../atlas/load_atlas_text.ts";
 import { rethrowProcessLimit } from "../atlas/process_limit.ts";
 import type { ParsedAtlasPage } from "../atlas/parse_atlas_pages.ts";
-import {
-  compareFindings,
-  validateAtlasStructureWithPages,
-} from "./validate_atlas_structure.ts";
-import { sdkFindings } from "./sdk_finding.ts";
-
-const capacityFinding = sdkFindings("sdk-core.changelog-capacity");
+import { validateAtlasStructureWithPages } from "./validate_atlas_structure.ts";
 
 interface LoadedInput {
   readonly files: readonly AtlasTextFile[];
-  readonly findings: readonly Finding[];
-}
-
-function changelogCapacityFindings(
-  byteLength: number | undefined,
-  maxFileBytes: number,
-): readonly Finding[] {
-  const limit = Math.min(maxFileBytes, defaultAtlasTextBudgets.maxFileBytes);
-  const warningAt = Math.ceil(limit * 0.75);
-  if (byteLength === undefined || byteLength < warningAt) return Object.freeze([]);
-  return Object.freeze([
-    capacityFinding(
-      "ATLAS_CHANGELOG_NEAR_CAPACITY",
-      `The Atlas Changelog uses ${String(byteLength)} bytes against a ${String(limit)} byte reference limit: the smaller of this Lint budget and the SDK default snapshot cap (warning at ${String(warningAt)} bytes). Plan human-reviewed history preservation or capacity maintenance before further appends exhaust capture. Atlas SDK does not rotate history automatically.`,
-      atlasChangelogPath,
-      undefined,
-      "warning",
-    ),
-  ]);
+  readonly captureMetadata: {
+    readonly state: "loaded";
+    readonly budgets: AtlasTextBudgets;
+    readonly byteLengths: Readonly<Record<string, number>>;
+  };
 }
 
 const attribution = Object.freeze({
@@ -122,10 +100,11 @@ function loadOrFinding(
     const loaded = loadAtlasTextWithByteLengths(captured.files, captured.budgets);
     return Object.freeze({
       files: loaded.files,
-      findings: changelogCapacityFindings(
-        loaded.byteLengths[atlasChangelogPath],
-        captured.budgets.maxFileBytes,
-      ),
+      captureMetadata: Object.freeze({
+        state: "loaded" as const,
+        budgets: captured.budgets,
+        byteLengths: loaded.byteLengths,
+      }),
     });
   } catch (error: unknown) {
     if (error instanceof AtlasLoadError) {
@@ -145,6 +124,10 @@ const atlasInputValidationBrand: unique symbol = Symbol("atlas-input-validation"
 
 export interface AtlasInputValidation {
   readonly [atlasInputValidationBrand]: true;
+  /** Original measurements for operation-specific checks.
+   * tests/lint_operation.test.ts pins reuse without remeasuring decoded text. */
+  readonly captureMetadata:
+    LoadedInput["captureMetadata"] | { readonly state: "unavailable" };
   /**
    * The loaded Atlas text, empty when loading itself failed and otherwise the
    * text these Findings were decided from, whether or not the Atlas is valid.
@@ -168,8 +151,8 @@ function validationState(findings: readonly Finding[]): "invalid" | "valid" {
  * stable, sdk-core attributed Finding so invalid input escapes as neither an
  * uncaught exception nor a success-shaped result. A loading failure
  * short-circuits with one Finding, since the text it would parse is not
- * trustworthy; otherwise the loaded text flows through structural validation,
- * alongside Changelog capacity warnings based on original byte lengths.
+ * trustworthy; otherwise the loaded text flows through structural validation.
+ * Original byte measurements accompany it for operation-specific checks.
  * Deterministic ordering, sanitization, and source evidence contracts are
  * preserved. Identical input bytes yield identical ordered Findings.
  *
@@ -195,6 +178,7 @@ export function loadAndValidateAtlasInput(
     const findings = Object.freeze([loaded]);
     return Object.freeze({
       [atlasInputValidationBrand]: true as const,
+      captureMetadata: Object.freeze({ state: "unavailable" as const }),
       files: noFiles,
       findings,
       pages: noPages,
@@ -202,14 +186,12 @@ export function loadAndValidateAtlasInput(
     });
   }
   const structure = validateAtlasStructureWithPages(loaded.files);
-  const findings = Object.freeze(
-    [...structure.findings, ...loaded.findings].toSorted(compareFindings),
-  );
   return Object.freeze({
     [atlasInputValidationBrand]: true as const,
+    captureMetadata: loaded.captureMetadata,
     files: loaded.files,
-    findings,
+    findings: structure.findings,
     pages: structure.pages,
-    validationState: validationState(findings),
+    validationState: validationState(structure.findings),
   });
 }

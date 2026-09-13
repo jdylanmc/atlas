@@ -13,6 +13,7 @@ import { dirname, resolve } from "node:path";
 import test, { after } from "node:test";
 import ts from "typescript";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
+import { parseMachineOperationResult } from "./machine_operation_result.ts";
 import { captureAtlasHostDirectory, CaptureBudgetError } from "../scripts/atlas.ts";
 import { captureLocalAtlasSnapshot } from "../src/platform/local_atlas_snapshot.ts";
 import { lintCommandCaptureBudgets } from "../src/interfaces/lint_command.ts";
@@ -317,6 +318,7 @@ interface AtlasCliCommandCase {
   readonly generatedOversizedExploreQuery?: true;
   readonly generatedOversizedIngestRequest?: true;
   readonly generatedChangelogByteLength?: number;
+  readonly expectedExploreResultId?: string;
   readonly kind: "command";
   readonly name: string;
   readonly recommendedNextActionExcludes?: string;
@@ -822,6 +824,7 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
           generatedOversizedExploreQuery?: true;
           generatedOversizedIngestRequest?: true;
           generatedChangelogByteLength?: number;
+          expectedExploreResultId?: string;
           recommendedNextActionExcludes?: string;
           stderrIncludes?: string;
         } = {};
@@ -871,6 +874,13 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
           );
           assert.ok(Number.isInteger(bytes) && bytes >= 3 && bytes <= 2097152);
           optional.generatedChangelogByteLength = bytes;
+        }
+        if (entry["expectedExploreResultId"] !== undefined) {
+          assert.ok(optional.generatedChangelogByteLength !== undefined);
+          optional.expectedExploreResultId = assertString(
+            entry["expectedExploreResultId"],
+            `${path}.expectedExploreResultId`,
+          );
         }
         if (entry["recommendedNextActionExcludes"] !== undefined) {
           optional.recommendedNextActionExcludes = assertString(
@@ -2219,6 +2229,42 @@ for (const entry of atlasCliCorpus.cases) {
     }
     let changelogBefore: Uint8Array | undefined;
     let changelogHead: string | undefined;
+    const runExplore = () => {
+      const command = spawnSync(
+        process.execPath,
+        [
+          resolve(ROOT, "scripts", "atlas.ts"),
+          "explore",
+          "--machine",
+          "serialization",
+          "--atlas-host-directory",
+          resolve(workspace, "repository"),
+        ],
+        { cwd: ROOT, encoding: "utf8" },
+      );
+      assert.equal(command.error, undefined);
+      assert.equal(command.stderr, "");
+      return {
+        result: parseMachineOperationResult(command.stdout) as ExploreOperationResult,
+        status: command.status,
+      };
+    };
+    const reachableResults = (result: ExploreOperationResult) =>
+      result.payload.results.map((entry) => ({
+        id: entry.result.id,
+        route: entry.route.map(({ objectId, edgeId }) => ({ objectId, edgeId })),
+      }));
+    const exploreBefore =
+      entry.expectedExploreResultId === undefined ? undefined : runExplore();
+    if (exploreBefore !== undefined) {
+      assert.equal(exploreBefore.status, 0);
+      assert.equal(exploreBefore.result.payload.degradation.level, "valid-structured");
+      assert.ok(
+        reachableResults(exploreBefore.result).some(
+          ({ id }) => id === entry.expectedExploreResultId,
+        ),
+      );
+    }
     if (entry.generatedChangelogByteLength !== undefined) {
       const remaining = entry.generatedChangelogByteLength - 3;
       changelogBefore = new TextEncoder().encode(
@@ -2311,6 +2357,17 @@ for (const entry of atlasCliCorpus.cases) {
       );
       assert.equal(adversarialGit(repository, ["rev-parse", "HEAD"]), changelogHead);
       assert.equal(adversarialGit(repository, ["status", "--porcelain"]), "");
+    }
+    if (exploreBefore !== undefined) {
+      const explored = runExplore();
+      assert.equal(explored.result.payload.degradation.level, "valid-structured");
+      assert.equal(explored.result.handoff.validationState.state, "passed");
+      assert.deepEqual(explored.result.payload.degradation.diagnostics, []);
+      assert.equal(explored.status, 0);
+      assert.deepEqual(
+        reachableResults(explored.result),
+        reachableResults(exploreBefore.result),
+      );
     }
     if (entry.forbidPayloadLint === true) {
       const payload = result["payload"] as Readonly<Record<string, unknown>>;

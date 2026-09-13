@@ -48,6 +48,8 @@ not the decoded character count.
 
 This is a warning, not invalidity: an otherwise valid Atlas still passes Lint
 with exit 0. The Finding appears in the ordinary Lint result and handoff.
+It does not change Explore's structural completeness, validation verdict, or
+reachable results; genuine Explore degradation diagnostics remain unchanged.
 Plan human-reviewed capacity maintenance that preserves history; Atlas SDK
 does not rotate, archive, truncate, or enlarge capture limits automatically.
 This warning does not predict remaining operation counts or prevent unrelated

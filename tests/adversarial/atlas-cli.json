@@ -3,7 +3,7 @@
   "reviewResolutionRule": "A review finding is resolved only after this corpus has a reject or accept case that exercises it.",
   "cases": [
     {
-      "name": "warn at the Changelog byte threshold without invalidating or rewriting history",
+      "name": "warn at Changelog capacity without falsely degrading Explore or rewriting history",
       "gate": "atlas-cli",
       "kind": "command",
       "arguments": [
@@ -14,6 +14,7 @@
       ],
       "fixtureAtlasHostRepository": true,
       "generatedChangelogByteLength": 786432,
+      "expectedExploreResultId": "concept:canonical-serialization",
       "expectedExit": 0,
       "expectedCode": "ATLAS_CHANGELOG_NEAR_CAPACITY"
     },
@@ -29,6 +30,7 @@
       ],
       "fixtureAtlasHostRepository": true,
       "generatedChangelogByteLength": 786431,
+      "expectedExploreResultId": "concept:canonical-serialization",
       "expectedExit": 0,
       "expectedCode": null
     },
