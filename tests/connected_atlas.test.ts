@@ -595,15 +595,14 @@ test("Atlas cache keeps usable updates through reference publication and cleanup
     const remoteRevision = commitAll(source, "Update remote orientation");
     git(source, ["push", remote, "main"]);
 
-    const result = resolveAtlasCache(request, {
-      resolveRemote: () => remote,
-      writeGit: (repository, args) =>
-        args[0] === "update-ref" &&
-        ((!publish && args[1] === "refs/heads/main") ||
-          (failure === "cleanup" && args[1] === "-d"))
-          ? { reason: "Fixture publication failure", state: "failed" }
-          : runTrustedGitForWrite(repository, args),
-    });
+    const writeGit: typeof runTrustedGitForWrite = (repository, args) =>
+      args[0] === "update-ref" &&
+      ((!publish && args[1] === "refs/heads/main") ||
+        (failure === "cleanup" && args[1] === "-d"))
+        ? { reason: "Fixture publication failure", state: "failed" }
+        : runTrustedGitForWrite(repository, args);
+    const options = { resolveRemote: () => remote, writeGit };
+    const result = resolveAtlasCache(request, options);
     assert.equal(result.state, "resolved");
     const expectedRevision = publish ? remoteRevision : first.snapshot.snapshot;
     assert.equal(result.snapshot.snapshot, expectedRevision);
@@ -613,13 +612,62 @@ test("Atlas cache keeps usable updates through reference publication and cleanup
     );
     assert.deepEqual(
       result.snapshot.findings.map((item) => item.code),
-      failure === "promotion"
-        ? ["ATLAS_CROSS_ATLAS_CACHED_OFFLINE"]
-        : failure === "cleanup"
-          ? ["ATLAS_CROSS_ATLAS_CACHE_CLEANUP_FAILED"]
-          : [],
+      failure === "promotion" ? ["ATLAS_CROSS_ATLAS_CACHED_OFFLINE"] : [],
+    );
+    assert.deepEqual(
+      result.maintenanceFindings?.map(({ code }) => code),
+      failure === "cleanup" ? ["ATLAS_CROSS_ATLAS_CACHE_CLEANUP_FAILED"] : undefined,
     );
     if (!publish) assert.match(result.snapshot.findings[0]?.message ?? "", /adopt/u);
+    if (failure === "cleanup") {
+      const tracking = probeAtlasIngestSource({
+        approvedAt: "2026-08-25T00:00:00Z",
+        approvedBy: "Fixture Maintainer",
+        asOf: "2026-08-25T00:00:00Z",
+        atlasPath: ".",
+        branch: "main",
+        fromAnchorId: "anchor:root",
+        repositoryLocator: `https://github.com/owner/${name}.git`,
+        title: name,
+      });
+      assert.equal(tracking.state, "tracked-atlas");
+      const homeFiles = [
+        page(".atlas/index.md", "anchor:root", "anchor", "Home", "atlas: {}", "# Home"),
+        ...tracking.changes.map(({ path, content }) => ({ path, text: content })),
+      ];
+      for (const file of homeFiles) {
+        const path = resolve(home, file.path);
+        mkdirSync(resolve(path, ".."), { recursive: true });
+        writeFileSync(path, file.text);
+      }
+      const homeRevision = commitAll(home, "Track cleanup fixture");
+      const explored = runExploreOperation({
+        atlasCacheResolver: {
+          resolve: (entry) =>
+            resolveAtlasCache({ ...entry, homeAtlasDirectory: home }, options),
+        },
+        baseSnapshot: { reference: homeRevision, state: "known" },
+        budgets,
+        capturedFiles: homeFiles.map(captured),
+        homeAtlas: { reference: "local-home-atlas", state: "known" },
+        query: "Updated Home",
+      });
+      assert.equal(explored.disposition, "success");
+      assert.equal(explored.payload.degradation.level, "valid-structured");
+      assert.equal(explored.handoff.degradationState.state, "not-degraded");
+      assert.equal(explored.handoff.validationState.state, "passed");
+      assert.equal(explored.handoff.unresolvedHumanDecisions.state, "none");
+      assert.deepEqual(
+        explored.payload.maintenanceFindings?.map(({ code }) => code),
+        ["ATLAS_CROSS_ATLAS_CACHE_CLEANUP_FAILED"],
+      );
+      const updatedContext = explored.payload.results.find(
+        ({ result: item }) => item.snapshot?.role === "tracked",
+      );
+      assert.ok(updatedContext !== undefined);
+      assert.equal(updatedContext.result.snapshot?.snapshot, remoteRevision);
+      assert.match(updatedContext.result.body, /# Updated Home/u);
+    }
 
     rmSync(remote, { recursive: true, force: true });
     const offline = resolveAtlasCache(request, { resolveRemote: () => remote });
@@ -1785,7 +1833,7 @@ test("Atlas cache retains successful first contact when subsequent remote contac
   );
 });
 
-test("Atlas cache does not advertise first contact when the published snapshot cannot be read", () => {
+test("Atlas cache records successful first contact when its published snapshot becomes readable offline", () => {
   const home = resolve(WORKSPACE, "home-unreadable-publication");
   initRepository(home);
   commitAll(home, "home");
@@ -1800,33 +1848,213 @@ test("Atlas cache does not advertise first contact when the published snapshot c
     ),
   ]);
   const tracked = trackedAtlasDeclaration("github.com", "owner", "unreadable");
-  const result = resolveAtlasCache(
-    {
-      homeAtlasDirectory: home,
-      introducedByAnchorId: "anchor:root",
-      introducedByEdgeId: "edge:track",
-      trackedAtlas: tracked,
-    },
-    {
-      resolveRemote: () => remote,
-      readGit: (repository, args) =>
-        !repository.includes(".pending-") &&
-        args[0] === "rev-parse" &&
-        args[1] === "refs/heads/main"
-          ? { reason: "Fixture published Snapshot read failure", state: "failed" }
-          : runTrustedGit(repository, args),
-    },
-  );
+  const request = {
+    homeAtlasDirectory: home,
+    introducedByAnchorId: "anchor:root",
+    introducedByEdgeId: "edge:track",
+    trackedAtlas: tracked,
+  };
+  const fetchedAt = "2026-08-30T00:00:00Z";
+  const result = resolveAtlasCache(request, {
+    now: () => fetchedAt,
+    resolveRemote: () => remote,
+    readGit: (repository, args) =>
+      !repository.includes(".pending-") &&
+      args[0] === "rev-parse" &&
+      args[1] === "refs/heads/main"
+        ? { reason: "Fixture published Snapshot read failure", state: "failed" }
+        : runTrustedGit(repository, args),
+  });
   assert.equal(result.state, "unreachable");
   assert.deepEqual(
     result.findings.map(({ code }) => code),
     ["ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE"],
   );
   assert.match(result.findings[0]?.message ?? "", /could not resolve/u);
-  assert.equal(
-    existsSync(join(home, ".atlas", "atlas-cache", "atlas-lock.json")),
-    false,
+  const lockFile = join(home, ".atlas", "atlas-cache", "atlas-lock.json");
+  assert.equal(existsSync(lockFile), false);
+  const metadataFile = join(
+    home,
+    ".atlas",
+    "atlas-cache",
+    "atlases",
+    atlasCacheKey(tracked.locator),
+    "metadata.json",
   );
+  const originalMetadata = readFileSync(metadataFile);
+  const metadata = JSON.parse(originalMetadata.toString("utf8")) as ReturnType<
+    typeof createAtlasLock
+  >["dependencies"][number];
+  assert.equal(metadata.fetchedAt, fetchedAt);
+  const expectedRevision = git(
+    resolve(WORKSPACE, "tracked-unreadable-publication-source"),
+    ["rev-parse", "HEAD"],
+  );
+  assert.equal(metadata.snapshot, expectedRevision);
+  rmSync(remote, { force: true, recursive: true });
+  const offline = resolveAtlasCache(
+    {
+      ...request,
+      introducedByAnchorId: "anchor:later",
+      introducedByEdgeId: "edge:later",
+    },
+    { now: () => "2026-09-01T00:00:00Z", resolveRemote: () => remote },
+  );
+  assert.equal(offline.state, "resolved");
+  assert.equal(offline.snapshot.snapshot, expectedRevision);
+  assert.match(
+    new TextDecoder().decode(offline.snapshot.capturedFiles[0]?.bytes),
+    /# Tracked Home/u,
+  );
+  assert.equal(offline.snapshot.findings[0]?.code, "ATLAS_CROSS_ATLAS_CACHED_OFFLINE");
+  assert.equal(
+    existsSync(lockFile),
+    true,
+    "Usable offline dependency must be recorded",
+  );
+  const lockBytes = readFileSync(lockFile);
+  assert.deepEqual(JSON.parse(lockBytes.toString("utf8")), {
+    dependencies: [metadata],
+  });
+  assert.deepEqual(readFileSync(metadataFile), originalMetadata);
+  const repeated = resolveAtlasCache(request, { resolveRemote: () => remote });
+  assert.equal(repeated.state, "resolved");
+  assert.deepEqual(readFileSync(lockFile), lockBytes);
+  assert.deepEqual(readFileSync(metadataFile), originalMetadata);
+});
+
+test("Atlas cache recovers only missing Lock entries from matching published metadata", () => {
+  type Dependency = ReturnType<typeof createAtlasLock>["dependencies"][number];
+  const scenarios: readonly {
+    readonly name: string;
+    readonly lockText?: string;
+    readonly metadataText?: string;
+    readonly metadata?: (entry: Dependency) => unknown;
+    readonly missingMetadata?: boolean;
+    readonly repairable?: boolean;
+    readonly failCleanup?: boolean;
+  }[] = [
+    { name: "missing-entry", repairable: true },
+    { name: "missing-metadata", missingMetadata: true },
+    { name: "malformed-metadata", metadataText: "{" },
+    { name: "primitive-metadata", metadataText: "42" },
+    { name: "null-metadata", metadataText: "null" },
+    { name: "array-metadata", metadataText: "[]" },
+    { name: "wrong-key", metadata: (entry) => ({ ...entry, cacheKey: "other" }) },
+    { name: "wrong-snapshot", metadata: (entry) => ({ ...entry, snapshot: "other" }) },
+    { name: "missing-locator", metadata: (entry) => ({ ...entry, locator: null }) },
+    {
+      name: "wrong-locator",
+      metadata: (entry) => ({
+        ...entry,
+        locator: { ...entry.locator, branch: "other" },
+      }),
+    },
+    { name: "missing-slug", metadata: (entry) => ({ ...entry, slug: null }) },
+    {
+      name: "wrong-slug",
+      metadata: (entry) => ({ ...entry, slug: { value: "other" } }),
+    },
+    { name: "missing-time", metadata: (entry) => ({ ...entry, fetchedAt: null }) },
+    { name: "blank-time", metadata: (entry) => ({ ...entry, fetchedAt: " " }) },
+    {
+      name: "missing-anchor",
+      metadata: (entry) => ({ ...entry, introducedByAnchorId: null }),
+    },
+    {
+      name: "missing-edge",
+      metadata: (entry) => ({ ...entry, introducedByEdgeId: null }),
+    },
+    { name: "malformed-lock", lockText: "{" },
+    { name: "invalid-lock-object", lockText: "[]" },
+    { name: "invalid-lock-list", lockText: '{"dependencies":null}' },
+    { name: "invalid-lock-entry", lockText: '{"dependencies":[null]}' },
+    { name: "invalid-lock-key", lockText: '{"dependencies":[{"cacheKey":0}]}' },
+    { name: "cleanup-and-repair-failures", metadataText: "{}", failCleanup: true },
+  ];
+  const remote = createBareRemote("tracked-metadata-repair", [
+    page(
+      ".atlas/index.md",
+      "anchor:root",
+      "anchor",
+      "Tracked Home",
+      "atlas: {}",
+      "# Tracked Home",
+    ),
+  ]);
+  const tracked = trackedAtlasDeclaration("github.com", "owner", "metadata-repair");
+  const other = trackedAtlasDeclaration("github.com", "owner", "other");
+  for (const scenario of scenarios) {
+    const home = resolve(WORKSPACE, `metadata-${scenario.name}`);
+    initRepository(home);
+    commitAll(home, "Home");
+    const request = {
+      homeAtlasDirectory: home,
+      introducedByAnchorId: "anchor:root",
+      introducedByEdgeId: "edge:track",
+      trackedAtlas: tracked,
+    };
+    const initial = resolveAtlasCache(request, { resolveRemote: () => remote });
+    assert.equal(initial.state, "resolved");
+    const metadataFile = join(initial.snapshot.cacheDirectory, "metadata.json");
+    const metadata = JSON.parse(readFileSync(metadataFile, "utf8")) as Dependency;
+    const otherDependency = {
+      ...metadata,
+      cacheKey: atlasCacheKey(other.locator),
+      locator: other.locator,
+      slug: other.slug,
+    };
+    const lockFile = join(home, ".atlas", "atlas-cache", "atlas-lock.json");
+    const lockText =
+      scenario.lockText ?? JSON.stringify({ dependencies: [otherDependency] });
+    writeFileSync(lockFile, lockText);
+    if (scenario.metadata !== undefined) {
+      writeFileSync(metadataFile, JSON.stringify(scenario.metadata(metadata)));
+    }
+    if (scenario.metadataText !== undefined)
+      writeFileSync(metadataFile, scenario.metadataText);
+    if (scenario.missingMetadata === true) rmSync(metadataFile);
+    const metadataBefore = existsSync(metadataFile)
+      ? readFileSync(metadataFile)
+      : undefined;
+    const result = resolveAtlasCache(request, {
+      resolveRemote: () =>
+        scenario.failCleanup === true ? remote : `${remote}-offline`,
+      writeGit: (repository, args) =>
+        scenario.failCleanup === true && args[0] === "update-ref"
+          ? { reason: "Fixture publication and cleanup failure", state: "failed" }
+          : runTrustedGitForWrite(repository, args),
+    });
+    assert.equal(result.state, "resolved", scenario.name);
+    assert.equal(result.snapshot.snapshot, initial.snapshot.snapshot, scenario.name);
+    assert.deepEqual(
+      result.snapshot.capturedFiles,
+      initial.snapshot.capturedFiles,
+      scenario.name,
+    );
+    assert.equal(result.snapshot.findings[0]?.code, "ATLAS_CROSS_ATLAS_CACHED_OFFLINE");
+    if (scenario.repairable === true) {
+      assert.equal(result.maintenanceFindings, undefined);
+      assert.deepEqual(
+        JSON.parse(readFileSync(lockFile, "utf8")),
+        createAtlasLock([otherDependency, metadata]),
+      );
+    } else {
+      assert.deepEqual(
+        result.maintenanceFindings?.map(({ code }) => code),
+        [
+          ...(scenario.failCleanup === true
+            ? ["ATLAS_CROSS_ATLAS_CACHE_CLEANUP_FAILED"]
+            : []),
+          "ATLAS_CROSS_ATLAS_LOCK_REPAIR_FAILED",
+        ],
+        scenario.name,
+      );
+      assert.equal(readFileSync(lockFile, "utf8"), lockText, scenario.name);
+    }
+    if (metadataBefore === undefined) assert.equal(existsSync(metadataFile), false);
+    else assert.deepEqual(readFileSync(metadataFile), metadataBefore, scenario.name);
+  }
 });
 
 test("Atlas cache reports unreadable revisions and missing cached trees", () => {

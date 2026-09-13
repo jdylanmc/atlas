@@ -1223,6 +1223,44 @@
         "expectedSourceText": "Atlas SDK documentation describing the deterministic Lint path.",
         "expectedTrackedSlug": "github.com--fixture--connected-explore"
       }
+    },
+    {
+      "name": "installed connected Explore reports cache housekeeping without degrading current knowledge",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "connectedExplore": {
+        "query": "canonical serialization",
+        "expectedConceptId": "concept:canonical-serialization",
+        "expectedSourceId": "source:atlas-sdk-lint",
+        "expectedSourceText": "Atlas SDK documentation describing the deterministic Lint path.",
+        "expectedTrackedSlug": "github.com--fixture--connected-explore",
+        "cleanupFailureCode": "ATLAS_CROSS_ATLAS_CACHE_CLEANUP_FAILED"
+      }
+    },
+    {
+      "name": "installed cache records a published offline snapshot without inventing a new fetch time",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "cacheFailure": {
+        "mode": "unrecorded-publication",
+        "expectedCode": "ATLAS_CROSS_ATLAS_CACHED_OFFLINE"
+      }
     }
   ]
 }

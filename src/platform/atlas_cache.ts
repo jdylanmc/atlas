@@ -44,9 +44,10 @@ export interface CachedAtlasSnapshot {
   readonly trackedAtlas: TrackedAtlas;
 }
 
-export type AtlasCacheResolveResult =
+export type AtlasCacheResolveResult = (
   | { readonly snapshot: CachedAtlasSnapshot; readonly state: "resolved" }
-  | { readonly findings: readonly Finding[]; readonly state: "unreachable" };
+  | { readonly findings: readonly Finding[]; readonly state: "unreachable" }
+) & { readonly maintenanceFindings?: readonly Finding[] };
 
 export type TrustedGitBootstrapAdapter = typeof runTrustedGitBootstrap;
 
@@ -239,6 +240,85 @@ function writeAtlasLock(
   writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`, "utf8");
 }
 
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function nonBlank(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function matchesRecord(
+  value: unknown,
+  expected: Readonly<Record<string, string>>,
+): boolean {
+  return (
+    isRecord(value) &&
+    Object.entries(expected).every(([key, entry]) => value[key] === entry)
+  );
+}
+
+function restoreMissingLock(
+  request: AtlasCacheResolveRequest,
+  directory: string,
+  cacheKey: string,
+  snapshot: string,
+): Finding | undefined {
+  try {
+    const path = atlasLockPath(request.homeAtlasDirectory);
+    const lock: unknown = existsSync(path)
+      ? JSON.parse(readFileSync(path, "utf8"))
+      : { dependencies: [] };
+    if (
+      !isRecord(lock) ||
+      !Array.isArray(lock["dependencies"]) ||
+      !lock["dependencies"].every(
+        (entry: unknown): entry is { readonly cacheKey: string } =>
+          isRecord(entry) && nonBlank(entry["cacheKey"]),
+      )
+    ) {
+      throw new Error("Atlas Lock has an invalid dependency list.");
+    }
+    if (lock["dependencies"].some((entry) => entry.cacheKey === cacheKey))
+      return undefined;
+
+    const metadata: unknown = JSON.parse(readFileSync(metadataPath(directory), "utf8"));
+    if (
+      !isRecord(metadata) ||
+      metadata["cacheKey"] !== cacheKey ||
+      metadata["snapshot"] !== snapshot ||
+      !matchesRecord(metadata["locator"], { ...request.trackedAtlas.locator }) ||
+      !matchesRecord(metadata["slug"], { ...request.trackedAtlas.slug }) ||
+      !nonBlank(metadata["fetchedAt"]) ||
+      !nonBlank(metadata["introducedByAnchorId"]) ||
+      !nonBlank(metadata["introducedByEdgeId"])
+    ) {
+      throw new Error("Cache metadata does not identify the captured dependency.");
+    }
+    writeAtlasLock(request.homeAtlasDirectory, {
+      cacheKey,
+      fetchedAt: metadata["fetchedAt"],
+      introducedByAnchorId: metadata["introducedByAnchorId"],
+      introducedByEdgeId: metadata["introducedByEdgeId"],
+      locator: request.trackedAtlas.locator,
+      slug: request.trackedAtlas.slug,
+      snapshot,
+    });
+    return undefined;
+  } catch {
+    return finding(
+      "ATLAS_CROSS_ATLAS_LOCK_REPAIR_FAILED",
+      `The cached Snapshot remains usable, but its Atlas Lock dependency for ${request.trackedAtlas.slug.value} could not be recovered. Inspect the generated Lock and cache metadata.`,
+    );
+  }
+}
+
+function maintenanceResult(findings: Finding[]): {
+  readonly maintenanceFindings?: readonly Finding[];
+} {
+  return findings.length === 0 ? {} : { maintenanceFindings: Object.freeze(findings) };
+}
+
 export function publishAtlasCacheDirectory(
   finalDirectory: string,
   pendingDirectory: string,
@@ -391,6 +471,7 @@ export function resolveAtlasCache(
       : { reason: captured.reason, state: "failed" as const };
   };
   const findings: Finding[] = [];
+  const maintenanceFindings: Finding[] = [];
   const fetchReference = hadCache
     ? `refs/atlas-cache-pending/${randomUUID()}`
     : activeReference;
@@ -441,7 +522,7 @@ export function resolveAtlasCache(
     hadCache &&
     !gitSucceeded(writeGit(finalRepository, ["update-ref", "-d", fetchReference]))
   ) {
-    findings.push(
+    maintenanceFindings.push(
       finding(
         "ATLAS_CROSS_ATLAS_CACHE_CLEANUP_FAILED",
         "Cross-Atlas traversal could not remove its temporary fetch reference.",
@@ -463,6 +544,7 @@ export function resolveAtlasCache(
       findings.push(unresolved);
     }
     return Object.freeze({
+      ...maintenanceResult(maintenanceFindings),
       findings: Object.freeze(findings),
       state: "unreachable" as const,
     });
@@ -480,9 +562,18 @@ export function resolveAtlasCache(
     });
     writeMetadata(finalDirectory, dependency);
     writeAtlasLock(request.homeAtlasDirectory, dependency);
+  } else {
+    const repair = restoreMissingLock(
+      request,
+      finalDirectory,
+      cache.cacheKey,
+      captured.revision,
+    );
+    if (repair !== undefined) maintenanceFindings.push(repair);
   }
 
   return Object.freeze({
+    ...maintenanceResult(maintenanceFindings),
     snapshot: Object.freeze({
       cacheDirectory: finalDirectory,
       capturedFiles: captured.capturedFiles,

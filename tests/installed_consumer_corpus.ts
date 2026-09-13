@@ -18,10 +18,14 @@ interface InstalledConsumerCase {
     readonly expectedSourceId: string;
     readonly expectedSourceText: string;
     readonly expectedTrackedSlug: string;
+    readonly cleanupFailureCode?: string;
   };
   readonly cacheFailure?: {
     readonly mode:
-      "missing-atlas" | "uncapturable-update" | "interrupted-first-contact";
+      | "missing-atlas"
+      | "uncapturable-update"
+      | "interrupted-first-contact"
+      | "unrecorded-publication";
     readonly expectedCode: string;
   };
   readonly retirement?: GovernanceRetirementProbe;
@@ -109,12 +113,18 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
         assert.equal(typeof value, "string");
         assert.ok(value.length > 0);
       }
+      if (entry.connectedExplore.cleanupFailureCode !== undefined) {
+        assert.match(entry.connectedExplore.cleanupFailureCode, /^ATLAS_[A-Z_]+$/u);
+      }
     }
     if (entry.cacheFailure !== undefined) {
       assert.ok(
-        ["missing-atlas", "uncapturable-update", "interrupted-first-contact"].includes(
-          entry.cacheFailure.mode,
-        ),
+        [
+          "missing-atlas",
+          "uncapturable-update",
+          "interrupted-first-contact",
+          "unrecorded-publication",
+        ].includes(entry.cacheFailure.mode),
       );
       assert.match(entry.cacheFailure.expectedCode, /^ATLAS_[A-Z_]+$/u);
     }

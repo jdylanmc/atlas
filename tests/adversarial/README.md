@@ -68,6 +68,15 @@ The interrupted-first-contact case makes subsequent Git contact unavailable
 after the first fetch. Initial resolution must retain that captured snapshot;
 later offline resolutions must preserve it and report degradation.
 
+The unrecorded-publication case fails only the Git read after a valid cache is
+published, then resolves that cache offline in the installed consumer. It
+requires the missing Atlas Lock dependency to be restored from the original
+metadata, including the original fetch time and introducer identities, rather
+than treating offline reuse as a new fetch. A repeated offline resolution must
+leave the recovered Lock and metadata bytes unchanged. Source controls also
+reject malformed or mismatched metadata, preserve unrelated dependencies and
+report combined cleanup and repair failures through `maintenanceFindings`.
+
 The `connectedExplore` probe adds cited fixture knowledge and a tracked Atlas
 to the initialized consumer. A fresh external Node process imports only the
 installed package root, captures committed Home bytes through Git, and composes
@@ -85,6 +94,12 @@ adds explicit first-contact degradation and a pending human decision without
 losing Home or cached context or publishing the failed dependency. Each API
 invocation is a fresh process; all Explore runs leave Home Git/knowledge unchanged.
 This proves local Git transport behavior, not public-host authentication.
+
+The `cleanupFailureCode` variant fetches a new tracked commit and injects only a
+temporary-reference deletion failure at the existing Git write boundary. All
+other Git writes remain real. It requires the updated cited context with
+`valid-structured`, passed validation and no human decision, while preserving
+the cleanup warning separately in `maintenanceFindings`.
 
 The `retirement` probes establish real fixture governance in Git, then exercise
 both `retire` and `delete` for Principles and Atlas Policies through the source

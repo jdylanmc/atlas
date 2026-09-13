@@ -995,9 +995,9 @@ for (const entry of readInstalledConsumerCorpus().cases) {
             [
               'import assert from "node:assert/strict";',
               'import { existsSync, readFileSync, renameSync } from "node:fs";',
-              'import { execFileSync } from "node:child_process";',
+              'import { execFileSync, spawnSync } from "node:child_process";',
               'import { join } from "node:path";',
-              'import { atlasLocatorFromParts, deriveAtlasSlug, resolveAtlasCache } from "@jdylanmc/atlas";',
+              'import { atlasCacheKey, atlasLocatorFromParts, deriveAtlasSlug, resolveAtlasCache } from "@jdylanmc/atlas";',
               `const input = ${JSON.stringify({ home: consumer, remote, mode: entry.cacheFailure.mode })};`,
               'const locator = atlasLocatorFromParts({ host: "github.com", owner: "fixture", repository: "without-atlas", branch: "main", atlasPath: "." });',
               "const slug = deriveAtlasSlug(locator);",
@@ -1012,6 +1012,36 @@ for (const entry of readInstalledConsumerCorpus().cases) {
               'assert.equal(result.state, "unreachable");',
               'const dependencies = existsSync(lockPath) ? JSON.parse(readFileSync(lockPath, "utf8")).dependencies : [];',
               "console.log(JSON.stringify({ state: result.state, code: result.findings[0]?.code, dependencies }));",
+              '} else if (input.mode === "unrecorded-publication") {',
+              "const first = resolveAtlasCache(request, {",
+              "  ...options,",
+              "  readGit(repository, args) {",
+              '    if (!repository.includes(".pending-") && args[0] === "rev-parse" && args[1] === "refs/heads/main") return { state: "failed", reason: "Fixture published Snapshot read failure" };',
+              '    const result = spawnSync("git", ["-C", repository, ...args], { encoding: "utf8", timeout: 30000 });',
+              '    return result.status === 0 ? { state: "succeeded", stdout: result.stdout, stderr: result.stderr } : { state: "failed", reason: result.error?.message ?? result.stderr };',
+              "  },",
+              "});",
+              'assert.equal(first.state, "unreachable");',
+              "assert.equal(existsSync(lockPath), false);",
+              'const metadataPath = join(input.home, ".atlas", "atlas-cache", "atlases", atlasCacheKey(locator), "metadata.json");',
+              "const metadataBytes = readFileSync(metadataPath);",
+              'const metadata = JSON.parse(metadataBytes.toString("utf8"));',
+              'assert.equal(metadata.fetchedAt, "2026-08-30T00:00:00Z");',
+              "renameSync(input.remote, `${input.remote}-offline`);",
+              'now = "2026-09-01T00:00:00Z";',
+              'const recovered = resolveAtlasCache({ ...request, introducedByAnchorId: "anchor:later", introducedByEdgeId: "edge:later" }, options);',
+              'assert.equal(recovered.state, "resolved");',
+              "assert.equal(recovered.snapshot.snapshot, metadata.snapshot);",
+              'assert.equal(existsSync(lockPath), true, "Usable offline dependency must be recorded");',
+              "const lockBytes = readFileSync(lockPath);",
+              'assert.deepEqual(JSON.parse(lockBytes.toString("utf8")), { dependencies: [metadata] });',
+              "assert.deepEqual(readFileSync(metadataPath), metadataBytes);",
+              "const repeated = resolveAtlasCache(request, options);",
+              'assert.equal(repeated.state, "resolved");',
+              "assert.deepEqual(repeated.snapshot.capturedFiles, recovered.snapshot.capturedFiles);",
+              "assert.deepEqual(readFileSync(lockPath), lockBytes);",
+              "assert.deepEqual(readFileSync(metadataPath), metadataBytes);",
+              "console.log(JSON.stringify({ state: recovered.state, code: recovered.snapshot.findings[0]?.code, offlineCode: repeated.snapshot.findings[0]?.code }));",
               "} else {",
               "const first = resolveAtlasCache(request, options);",
               'assert.equal(first.state, "resolved");',
@@ -1126,20 +1156,55 @@ for (const entry of readInstalledConsumerCorpus().cases) {
           }
           return tracked.changes.map(({ path }) => path);
         };
-        const remoteHead = commitFixture(remote, "Seed connected knowledge");
+        let remoteHead = commitFixture(remote, "Seed connected knowledge");
         let homeHead = consumerGit(consumer, ["rev-parse", "HEAD"]);
-        const moduleSource = readFileSync(
-          join(ROOT, "tests", "installed_explore_consumer.ts"),
-          "utf8",
-        );
-        const runModule = () => {
+        const moduleSource = [
+          'import assert from "node:assert/strict";',
+          'import { execFileSync, spawnSync } from "node:child_process";',
+          'import { resolveAtlasCache, runExploreOperation } from "@jdylanmc/atlas";',
+          "const inputText = process.argv[1];",
+          "assert.ok(inputText !== undefined);",
+          "const input = JSON.parse(inputText);",
+          'assert.equal(typeof input.home, "string");',
+          'assert.equal(typeof input.query, "string");',
+          'assert.ok(input.remotes !== null && typeof input.remotes === "object");',
+          "const cleanupOptions = input.failCleanup === true ? {",
+          "  writeGit(repository, args) {",
+          '    if (args[0] === "update-ref" && args[1] === "-d") return { state: "failed", reason: "Fixture temporary-reference cleanup failure" };',
+          '    const result = spawnSync("git", ["-C", repository, ...args], { encoding: "utf8", timeout: 30000 });',
+          '    return result.status === 0 ? { state: "succeeded", stdout: result.stdout, stderr: result.stderr } : { state: "failed", reason: result.error?.message ?? result.stderr };',
+          "  },",
+          "} : {};",
+          'const git = (args) => execFileSync("git", ["-C", input.home, ...args], { timeout: 30000 });',
+          'const snapshot = git(["rev-parse", "HEAD"]).toString("utf8").trim();',
+          'const paths = git(["ls-tree", "-rz", "--name-only", snapshot, "--", ".atlas"]).toString("utf8").split("\\0").filter(Boolean);',
+          "const result = runExploreOperation({",
+          "  atlasCacheResolver: {",
+          "    resolve(request) {",
+          "      const remote = input.remotes[request.trackedAtlas.locator.repository];",
+          '      assert.equal(typeof remote, "string", "No Git fixture for this tracked Atlas");',
+          "      return resolveAtlasCache(",
+          "        { ...request, homeAtlasDirectory: input.home },",
+          "        { ...cleanupOptions, resolveRemote: () => remote },",
+          "      );",
+          "    },",
+          "  },",
+          '  baseSnapshot: { reference: snapshot, state: "known" },',
+          '  capturedFiles: paths.map((path) => ({ bytes: git(["show", `${snapshot}:${path}`]), path })),',
+          '  homeAtlas: { reference: "local-home-atlas", state: "known" },',
+          "  query: input.query,",
+          "});",
+          "process.stdout.write(`${JSON.stringify(result)}\\n`);",
+        ].join("\n");
+        const runModule = (failCleanup = false) => {
           const result = spawnSync(
             process.execPath,
             [
-              "--input-type=module-typescript",
+              "--input-type=module",
               "--eval",
               moduleSource,
               JSON.stringify({
+                failCleanup,
                 home: consumer,
                 query: probe.query,
                 remotes: {
@@ -1286,6 +1351,33 @@ for (const entry of readInstalledConsumerCorpus().cases) {
           return parseMachineOperationResult(result.stdout) as ExploreOperationResult;
         };
         verifyContext(runCli(), []);
+        if (probe.cleanupFailureCode !== undefined) {
+          const conceptPath = join(
+            remote,
+            ".atlas/concepts/canonical-serialization.md",
+          );
+          writeFileSync(
+            conceptPath,
+            `${readFileSync(conceptPath, "utf8")}\nCurrent fixture revision.[^sdk-lint]\n`,
+          );
+          remoteHead = commitFixture(remote, "Update tracked knowledge");
+          const cleanup = runModule(true);
+          verifyContext(cleanup, []);
+          assert.equal(cleanup.payload.degradation.level, "valid-structured");
+          assert.equal(cleanup.handoff.validationState.state, "passed");
+          assert.equal(cleanup.handoff.unresolvedHumanDecisions.state, "none");
+          assert.deepEqual(
+            cleanup.payload.maintenanceFindings?.map(({ code }) => code),
+            [probe.cleanupFailureCode],
+          );
+          assert.ok(
+            cleanup.payload.results.some(
+              ({ result }) =>
+                result.snapshot?.role === "tracked" &&
+                result.body.includes("Current fixture revision."),
+            ),
+          );
+        }
         const previousLock = readFileSync(lockPath);
         const previousMetadata = readFileSync(join(cacheDirectory, "metadata.json"));
         renameSync(remote, `${remote}-offline`);

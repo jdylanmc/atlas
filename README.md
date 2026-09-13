@@ -24,6 +24,17 @@ Snapshot and its recorded fetch time. A failed first capture is not published
 as a resolved dependency in Atlas Lock. Connected resolution has no per-host
 approval list or aggregate network-quota gate.
 
+Cache housekeeping warnings appear separately in `payload.maintenanceFindings`
+when needed. They do not mark a current, usable Snapshot as degraded or make its
+validation fail; remote unavailability and Snapshot problems still appear in
+the ordinary degradation diagnostics.
+
+If a usable published cache is missing from Atlas Lock, offline resolution
+restores only that missing dependency from matching cache metadata, retaining
+its original Snapshot, fetch time and introducer identities. Existing entries
+are left unchanged. Unreadable or mismatched metadata and Lock repair failures
+produce maintenance Findings without discarding the usable cached knowledge.
+
 ## Install
 
 Atlas SDK is intended to be consumed as the public scoped npm package `@jdylanmc/atlas` once a release is published. Until then, consumers can install a packed tarball or Git dependency built from this repository.
