@@ -96,8 +96,9 @@ function pluralizedIdentifier(base: string): string {
  * Reads CONTEXT.md as the authoritative glossary: every defined term, and every
  * unconditionally avoided term in singular and plural form. An avoidance entry
  * that begins in lower case opens a human qualifier, which scopes the one entry
- * before it to a condition validation does not judge, so that entry stays
- * advisory. A qualifier that scopes no entry, or that hides an entry behind it,
+ * before it to a condition validation does not judge. That entry is not
+ * registered for validation, and no advice is emitted.
+ * A qualifier that scopes no entry, or that hides an entry behind it,
  * leaves an avoidance no reader can rely on, and its line is reported malformed.
  * An empty entry, which a stray comma leaves behind, is neither a term nor a
  * qualifier: the line binds what it would bind without the comma, and is

@@ -208,9 +208,12 @@ read where that surface can actually occur:
   contract can spend a whole continuous integration run.
 
 A directory name or page-ID prefix must resolve to a glossary term or to a
-directory Atlas SDK reserves without one, and a term listed under an `_Avoid_`
-line may never appear in any of those surfaces — including as the opening word
-of a Finding message. A term of several words is read as one name: a diagnostic
+directory Atlas SDK reserves without one. A term listed in an unqualified
+`_Avoid_` entry is rejected in the identifier surfaces above and as a capitalized word or phrase
+in a Finding message or prompt fragment, including the opening word. Ordinary
+lowercase message text such as `"Atlas SDK requires a bonfire page here."`
+is not checked as a term; identifier-shaped tokens within messages retain
+their checks. A term of several words is read as one name: a diagnostic
 code and a Finding message are scanned in adjacent runs as well as single words,
 so `ATLAS_REALM_CHRONICLE_MISSING` and `"… a Realm Chronicle here."` both fail
 against `_Avoid_: Realm Chronicle`, and the words must be adjacent, joined by a
@@ -219,8 +222,12 @@ a message that splits `Landmark` across two capitalized words is read as that
 term. An `_Avoid_` entry followed by a lower-case
 qualifier, such
 as `_Avoid_: Query, when naming the user-facing skill`, states a condition
-validation cannot judge, so it stays advisory. The qualifier scopes the one entry
-before it and runs to the end of its line; an avoidance line that opens with a
+validation cannot judge. That qualified entry is not enforced on any scanned
+surface, and the check emits no Finding, warning, or suggestion for the scoped
+avoidance. Adding `, in prose` to `_Avoid_: Bonfire` therefore disables that
+avoidance rather than producing advice. The qualifier scopes only the one entry
+before it and runs to the end of its line; earlier unqualified entries still
+bind. An avoidance line that opens with a
 qualifier, that hides a further term behind one, or that leaves an entry empty
 through a stray comma, is reported rather than silently obeyed. Atlas page types
 are checked
