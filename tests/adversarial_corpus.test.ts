@@ -13,6 +13,7 @@ import { dirname, resolve } from "node:path";
 import test, { after } from "node:test";
 import ts from "typescript";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
+import { readChangelogCorpus } from "./changelog_corpus.ts";
 import { captureAtlasHostDirectory, CaptureBudgetError } from "../scripts/atlas.ts";
 import { lintCommandCaptureBudgets } from "../src/interfaces/lint_command.ts";
 import {
@@ -1541,6 +1542,10 @@ test("the adversarial vocabulary corpus is structurally valid", () => {
 // validates the corpus; the installed CLI/Git test supplies the acceptance proof.
 test("the adversarial installed-consumer corpus is structurally valid", () => {
   readInstalledConsumerCorpus();
+});
+
+test("the adversarial Changelog corpus is structurally valid", () => {
+  readChangelogCorpus();
 });
 
 test("adversarial governance request types require approval only for mutations", () => {

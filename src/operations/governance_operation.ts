@@ -12,7 +12,7 @@ import {
   renderAtlasChangelog,
   renderAtlasChangelogEntryBlock,
 } from "../domain/atlas_changelog.ts";
-import { dateTimeMilliseconds, type ReadonlyJsonValue } from "../domain/atlas_page.ts";
+import type { ReadonlyJsonValue } from "../domain/atlas_page.ts";
 import { atlasPrincipleActiveTruthIds } from "../domain/atlas_principle.ts";
 import {
   addReceipt,
@@ -739,17 +739,6 @@ function validatePolicyChangeSet(
   return Object.freeze(findings);
 }
 
-// The date the Atlas Changelog entry is headed with, derived from the
-// Maintainer's approval instant through the one shared timestamp contract. An
-// approval that does not parse to a comparable instant yields "unknown" rather
-// than a wall-clock time, keeping the same input deterministic.
-function governanceChangelogDate(approvedAt: string | undefined): string {
-  const milliseconds = dateTimeMilliseconds(approvedAt ?? "");
-  return milliseconds === undefined
-    ? "unknown"
-    : new Date(milliseconds).toISOString().slice(0, 10);
-}
-
 // The Atlas Changelog entry Atlas SDK derives from the agent's drafted prose.
 // The agent authors the prose (judgment); the SDK stamps the stable operation ID
 // from the workflow state and heads the entry with the approval date, then
@@ -771,7 +760,7 @@ function governanceChangelogChange(
   return Object.freeze({
     content: renderAtlasChangelog(
       existingContent,
-      governanceChangelogDate(request.attestation?.approvedAt),
+      request.attestation?.approvedAt ?? "unknown",
       state.operationId,
       (request.changelog ?? "").trim(),
     ),
@@ -827,7 +816,7 @@ function validateDerivedChangelog(
   request: AtlasGovernanceRequest,
 ): readonly Finding[] {
   const entry = renderAtlasChangelogEntryBlock(
-    governanceChangelogDate(request.attestation?.approvedAt),
+    request.attestation?.approvedAt ?? "unknown",
     state.operationId,
     (request.changelog ?? "").trim(),
   );
