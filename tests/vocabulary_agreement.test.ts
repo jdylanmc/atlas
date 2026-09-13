@@ -1256,6 +1256,24 @@ test("a directory name is located where it is written, not where it repeats", ()
   });
 });
 
+test("directory comments inside folded expressions retain one precise location", () => {
+  const findings = validate(anchorBinding, [
+    contract('const path = ".atlas" /* .atlas/unrecognized/page.md */ + "/anchors";'),
+  ]);
+  assert.deepEqual(
+    findings.map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED",
+        location: {
+          start: { line: 1, column: 33 },
+          end: { line: 1, column: 45 },
+        },
+      },
+    ],
+  );
+});
+
 test("computed directory references resolve only the supplied contract modules", () => {
   const workspace = scratchRepository();
   try {

@@ -611,8 +611,9 @@ function contractProgram(contracts: readonly VocabularyTextFile[]): {
   return { names, program, checker: () => (checker ??= program.getTypeChecker()) };
 }
 
-/** Undefined is not statically known; null explicitly refuses an exhausted
- * analysis budget. No source expression or filesystem module is executed. */
+/** Unknown values remain barriers between known text, not guessed identifiers.
+ * Null explicitly refuses an exhausted analysis budget. No source expression
+ * or filesystem module is executed. */
 function constantText(
   checker: () => ts.TypeChecker,
 ): (node: ts.Expression) => string | undefined | null {
@@ -622,13 +623,14 @@ function constantText(
   function combine(
     left: string | undefined | null,
     right: string | undefined | null,
-  ): string | undefined | null {
+  ): string | null {
     if (left === null || right === null) return null;
-    if (left === undefined || right === undefined) return undefined;
-    const length = left.length + right.length;
+    const prefix = left ?? "\0";
+    const suffix = right ?? "\0";
+    const length = prefix.length + suffix.length;
     if (length > remaining) return null;
     remaining -= length;
-    return left + right;
+    return prefix + suffix;
   }
   function read(node: ts.Expression, depth: number): string | undefined | null {
     if (memo.has(node)) return memo.get(node);
@@ -671,7 +673,7 @@ function constantText(
             /^[\\/]/u.test(part)
           )
             text = "";
-          text = combine(combine(text, "/"), part === undefined ? "\0" : part);
+          text = combine(combine(text, "/"), part);
         }
         if (typeof text === "string") text = normalizedContractPath(text);
       }
@@ -712,8 +714,15 @@ function scanDirectorySyntax(
   const parts: string[] = [];
   let offset = 0;
   let limited = false;
-  function visit(node: ts.Node): void {
+  function visit(node: ts.Node, representedBy: typeof read): void {
     if (specifiers.has(node)) return;
+    let coveredBy = representedBy;
+    if (
+      coveredBy !== undefined &&
+      ts.isExpression(node) &&
+      coveredBy(node) === undefined
+    )
+      coveredBy = undefined;
     const literal = ts.isStringLiteralLike(node);
     if (
       literal ||
@@ -736,25 +745,33 @@ function scanDirectorySyntax(
         );
       }
       if (typeof text === "string") {
-        parts.push(file.content.slice(offset, start), " ".repeat(node.end - start));
-        offset = node.end;
-        scanDirectories(
-          vocabulary,
-          { content: text.replaceAll(/\\(?![./])/gu, "/"), path: file.path },
-          {
-            rangeAt:
-              literal && source.text.slice(start + 1, node.end - 1) === text
-                ? (from, to) => positions.rangeAt(start + 1 + from, start + 1 + to)
-                : () => positions.rangeAt(start, node.end),
-          },
-          findings,
-        );
-        return;
+        if (coveredBy === undefined) {
+          scanDirectories(
+            vocabulary,
+            { content: text.replaceAll(/\\(?![./])/gu, "/"), path: file.path },
+            {
+              rangeAt:
+                literal && source.text.slice(start + 1, node.end - 1) === text
+                  ? (from, to) => positions.rangeAt(start + 1 + from, start + 1 + to)
+                  : () => positions.rangeAt(start, node.end),
+            },
+            findings,
+          );
+        }
+        coveredBy = read;
       }
     }
-    ts.forEachChild(node, visit);
+    if (literal || ts.isTemplateLiteralToken(node)) {
+      const start = node.getStart(source);
+      parts.push(file.content.slice(offset, start), " ".repeat(node.end - start));
+      offset = node.end;
+      return;
+    }
+    ts.forEachChild(node, (child) => {
+      visit(child, coveredBy);
+    });
   }
-  visit(source);
+  visit(source, undefined);
   parts.push(file.content.slice(offset));
   return parts.join("");
 }

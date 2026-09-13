@@ -189,7 +189,8 @@ read where that surface can actually occur:
   aliases, and imports from the supplied contract set through templates,
   concatenation, and imported Node path `join`/`resolve` calls. Lexical scopes
   and shadowing are respected. Known directory segments remain checked beneath
-  an unknown runtime host path, but unknown directory values are not guessed.
+  an unknown runtime host path or before a runtime filename. Unknown portions
+  form barriers: partial directory names are not completed by guessing.
   Constant lookup uses an on-demand, memory-backed TypeScript program: it
   neither executes source expressions nor reads additional filesystem modules.
   Plain literal locations retain their exact token range; a decoded or composed
@@ -215,9 +216,11 @@ read where that surface can actually occur:
   additional arguments, and unrelated methods such as `Buffer.from("…")` remain
   scanned. Prompt text that merely quotes `import` or `from` is not module syntax.
   Exempt spans are blanked for whole-source scans, preserving their original
-  UTF-16 lengths. Directory literals and resolved expressions are additionally
-  blanked after value-based inspection to avoid reporting their raw spelling
-  again; other literal scanning uses the original AST and bytes.
+  UTF-16 lengths. Directory literal and template tokens are additionally blanked
+  after value-based inspection to avoid reporting their raw spelling again.
+  Comment trivia remains visible even inside folded expressions, and unknown
+  subexpressions retain independent inspection of their nested literals.
+  Other literal scanning uses the original AST and bytes.
   A `node:` string reached any other way is not exempt and can be reported as an
   undeclared page-ID prefix.
 - A source longer than 1,048,576 UTF-16 code units is reported rather than scanned.
