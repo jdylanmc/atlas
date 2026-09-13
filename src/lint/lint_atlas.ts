@@ -117,7 +117,7 @@ function decideAtlasLint(
  * one immutable text, so serialization normalizes the content structural
  * validation accepted, and what a caller does to its own bytes afterwards does
  * not change what was judged: "decides one whole-Atlas Lint from one reading of
- * every input" pins the reads. Every stage decides from the text alone, and
+ * every input" pins the reads. Later stages use loaded text and capture metadata, and
  * declared bounds keep nesting short of the limits of the process, so identical
  * input yields identical ordered Findings and identical canonical pages on every
  * run, pinned by "produces identical ordered Findings and canonical pages across

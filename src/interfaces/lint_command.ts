@@ -1,3 +1,4 @@
+import { defaultAtlasTextBudgets } from "../atlas/load_atlas_text.ts";
 import {
   notCompletedLintOperationResult,
   runLintOperation,
@@ -23,10 +24,7 @@ export const lintCommandExitCodes = Object.freeze({
   usage: 64,
 } as const);
 
-export const lintCommandBudgets = Object.freeze({
-  maxFileBytes: 1024 * 1024,
-  maxTotalBytes: 16 * 1024 * 1024,
-});
+export const lintCommandBudgets = defaultAtlasTextBudgets;
 
 export const lintCommandCaptureBudgets: LintCommandCaptureBudgets = Object.freeze({
   maxFileBytes: lintCommandBudgets.maxFileBytes,

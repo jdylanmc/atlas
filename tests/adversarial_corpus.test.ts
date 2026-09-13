@@ -14,6 +14,7 @@ import test, { after } from "node:test";
 import ts from "typescript";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
 import { captureAtlasHostDirectory, CaptureBudgetError } from "../scripts/atlas.ts";
+import { captureLocalAtlasSnapshot } from "../src/platform/local_atlas_snapshot.ts";
 import { lintCommandCaptureBudgets } from "../src/interfaces/lint_command.ts";
 import {
   AgentContract,
@@ -306,7 +307,7 @@ interface IngestCorpus {
 
 interface AtlasCliCommandCase {
   readonly arguments: readonly string[];
-  readonly expectedCode: string;
+  readonly expectedCode: string | null;
   readonly expectedDegradationState?: "degraded" | "not-degraded";
   readonly expectedExit: number;
   readonly fixtureAtlasHostRepository?: true;
@@ -315,6 +316,7 @@ interface AtlasCliCommandCase {
   readonly generatedExploreAtlasOverFileBudget?: true;
   readonly generatedOversizedExploreQuery?: true;
   readonly generatedOversizedIngestRequest?: true;
+  readonly generatedChangelogByteLength?: number;
   readonly kind: "command";
   readonly name: string;
   readonly recommendedNextActionExcludes?: string;
@@ -803,7 +805,10 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
             entry["arguments"],
             `${path}.arguments`,
           ),
-          expectedCode: assertString(entry["expectedCode"], `${path}.expectedCode`),
+          expectedCode:
+            entry["expectedCode"] === null
+              ? null
+              : assertString(entry["expectedCode"], `${path}.expectedCode`),
           expectedExit: assertNumber(entry["expectedExit"], `${path}.expectedExit`),
           gate: "atlas-cli",
           kind: "command",
@@ -816,6 +821,7 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
           generatedExploreAtlasOverFileBudget?: true;
           generatedOversizedExploreQuery?: true;
           generatedOversizedIngestRequest?: true;
+          generatedChangelogByteLength?: number;
           recommendedNextActionExcludes?: string;
           stderrIncludes?: string;
         } = {};
@@ -856,6 +862,15 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
             `${path}.generatedOversizedIngestRequest`,
           );
           optional.generatedOversizedIngestRequest = true;
+        }
+        if (entry["generatedChangelogByteLength"] !== undefined) {
+          assert.equal(entry["fixtureAtlasHostRepository"], true);
+          const bytes = assertNumber(
+            entry["generatedChangelogByteLength"],
+            `${path}.generatedChangelogByteLength`,
+          );
+          assert.ok(Number.isInteger(bytes) && bytes >= 3 && bytes <= 2097152);
+          optional.generatedChangelogByteLength = bytes;
         }
         if (entry["recommendedNextActionExcludes"] !== undefined) {
           optional.recommendedNextActionExcludes = assertString(
@@ -1731,9 +1746,10 @@ function adversarialCaptured(path: string, content: string): CapturedAtlasFile {
   return { bytes: adversarialEncoder.encode(content), path };
 }
 
-function adversarialGit(repository: string, args: readonly string[]): void {
+function adversarialGit(repository: string, args: readonly string[]): string {
   const result = spawnSync("git", ["-C", repository, ...args], { encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
+  return result.stdout.trim();
 }
 
 function adversarialGitWithDate(
@@ -2201,6 +2217,22 @@ for (const entry of atlasCliCorpus.cases) {
         if (argument === "{atlasHostDirectory}") arguments_[index] = repository;
       }
     }
+    let changelogBefore: Uint8Array | undefined;
+    let changelogHead: string | undefined;
+    if (entry.generatedChangelogByteLength !== undefined) {
+      const remaining = entry.generatedChangelogByteLength - 3;
+      changelogBefore = new TextEncoder().encode(
+        "\uFEFF" +
+          "\u00E9".repeat(Math.floor(remaining / 2)) +
+          "x".repeat(remaining % 2),
+      );
+      assert.equal(changelogBefore.byteLength, entry.generatedChangelogByteLength);
+      const repository = resolve(workspace, "repository");
+      writeFileSync(resolve(repository, ".atlas", "CHANGELOG.md"), changelogBefore);
+      adversarialGit(repository, ["add", ".atlas/CHANGELOG.md"]);
+      adversarialGit(repository, ["commit", "-m", "Capacity fixture"]);
+      changelogHead = adversarialGit(repository, ["rev-parse", "HEAD"]);
+    }
     if (entry.generatedExploreAtlasOverFileBudget === true) {
       const repository = resolve(workspace, "repository");
       createAdversarialAtlasRepository(repository);
@@ -2250,7 +2282,36 @@ for (const entry of atlasCliCorpus.cases) {
     const findings = validationState["findings"] as readonly Readonly<
       Record<string, unknown>
     >[];
-    assert.equal(findings[0]?.["code"], entry.expectedCode);
+    assert.equal(findings[0]?.["code"], entry.expectedCode ?? undefined);
+    if (entry.expectedCode === null) assert.deepEqual(findings, []);
+    if (entry.generatedChangelogByteLength !== undefined) {
+      assert.equal(result["operation-result-schema"], "1.0.0");
+      assert.equal(result["completion"], "completed");
+      assert.equal(result["disposition"], "success");
+      assert.equal(validationState["state"], "passed");
+      if (entry.expectedCode !== null) {
+        assert.equal(findings.length, 1);
+        const [warning] = findings;
+        assert.ok(warning !== undefined);
+        assert.equal(warning["severity"], "warning");
+        assert.equal(warning["path"], ".atlas/CHANGELOG.md");
+        assert.match(String(warning["message"]), /786432.*1048576/u);
+      }
+      const repository = resolve(workspace, "repository");
+      const snapshot = captureLocalAtlasSnapshot(repository);
+      assert.ok(snapshot.state === "captured");
+      const capturedChangelog = snapshot.snapshot.capturedFiles.find(
+        ({ path }) => path === ".atlas/CHANGELOG.md",
+      );
+      assert.ok(capturedChangelog !== undefined);
+      assert.deepEqual(new Uint8Array(capturedChangelog.bytes), changelogBefore);
+      assert.deepEqual(
+        new Uint8Array(readFileSync(resolve(repository, ".atlas", "CHANGELOG.md"))),
+        changelogBefore,
+      );
+      assert.equal(adversarialGit(repository, ["rev-parse", "HEAD"]), changelogHead);
+      assert.equal(adversarialGit(repository, ["status", "--porcelain"]), "");
+    }
     if (entry.forbidPayloadLint === true) {
       const payload = result["payload"] as Readonly<Record<string, unknown>>;
       assert.equal(payload["state"], "not-completed");

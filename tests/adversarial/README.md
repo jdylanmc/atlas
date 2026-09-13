@@ -17,6 +17,12 @@ Partial-value cases preserve known directories around runtime hosts and filename
 without guessing unknown names. Comment and nested-literal cases prevent folding
 from hiding other contract references.
 
+Changelog-capacity cases in `atlas-cli.json` generate committed UTF-8 history
+with a byte-order mark at and one byte below the default warning threshold.
+They require a visible warning without invalidity at the threshold, no warning
+below it, unchanged history bytes and Git state after the actual CLI runs, and
+successful default Git snapshot capture of the same history.
+
 The `installed-consumer` gate is registered and its data validated in
 `tests/adversarial_corpus.test.ts`, but its cases execute in
 `tests/package_consumability.test.ts` alongside the other packing tests.

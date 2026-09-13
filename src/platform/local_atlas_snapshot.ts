@@ -1,5 +1,8 @@
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
-import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
+import {
+  defaultAtlasTextBudgets,
+  type CapturedAtlasFile,
+} from "../atlas/load_atlas_text.ts";
 import type { OperationReference } from "../operations/operation_result.ts";
 import { runTrustedGit, runTrustedGitBytes } from "./trusted_git.ts";
 
@@ -16,9 +19,9 @@ export interface LocalAtlasSnapshotBudgets {
 }
 
 export const localAtlasSnapshotBudgets: LocalAtlasSnapshotBudgets = Object.freeze({
-  maxFileBytes: 1024 * 1024,
+  maxFileBytes: defaultAtlasTextBudgets.maxFileBytes,
   maxFiles: 4096,
-  maxTotalBytes: 16 * 1024 * 1024,
+  maxTotalBytes: defaultAtlasTextBudgets.maxTotalBytes,
 });
 
 export type AtlasSnapshotCaptureResult =

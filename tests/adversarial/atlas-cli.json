@@ -3,6 +3,36 @@
   "reviewResolutionRule": "A review finding is resolved only after this corpus has a reject or accept case that exercises it.",
   "cases": [
     {
+      "name": "warn at the Changelog byte threshold without invalidating or rewriting history",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "lint",
+        "--machine",
+        "--atlas-host-directory",
+        "{atlasHostDirectory}"
+      ],
+      "fixtureAtlasHostRepository": true,
+      "generatedChangelogByteLength": 786432,
+      "expectedExit": 0,
+      "expectedCode": "ATLAS_CHANGELOG_NEAR_CAPACITY"
+    },
+    {
+      "name": "accept Changelog history one byte below the capacity warning",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "lint",
+        "--machine",
+        "--atlas-host-directory",
+        "{atlasHostDirectory}"
+      ],
+      "fixtureAtlasHostRepository": true,
+      "generatedChangelogByteLength": 786431,
+      "expectedExit": 0,
+      "expectedCode": null
+    },
+    {
       "name": "reject a missing Atlas command with discoverable typed usage",
       "gate": "atlas-cli",
       "kind": "command",

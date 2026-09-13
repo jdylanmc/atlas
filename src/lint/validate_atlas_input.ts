@@ -1,6 +1,8 @@
 import type { Finding } from "../domain/finding.ts";
+import { atlasChangelogPath } from "../domain/atlas_changelog.ts";
 import {
-  loadAtlasText,
+  defaultAtlasTextBudgets,
+  loadAtlasTextWithByteLengths,
   AtlasLoadError,
   type CapturedAtlasFile,
   type AtlasLoadErrorCode,
@@ -9,7 +11,36 @@ import {
 } from "../atlas/load_atlas_text.ts";
 import { rethrowProcessLimit } from "../atlas/process_limit.ts";
 import type { ParsedAtlasPage } from "../atlas/parse_atlas_pages.ts";
-import { validateAtlasStructureWithPages } from "./validate_atlas_structure.ts";
+import {
+  compareFindings,
+  validateAtlasStructureWithPages,
+} from "./validate_atlas_structure.ts";
+import { sdkFindings } from "./sdk_finding.ts";
+
+const capacityFinding = sdkFindings("sdk-core.changelog-capacity");
+
+interface LoadedInput {
+  readonly files: readonly AtlasTextFile[];
+  readonly findings: readonly Finding[];
+}
+
+function changelogCapacityFindings(
+  byteLength: number | undefined,
+  maxFileBytes: number,
+): readonly Finding[] {
+  const limit = Math.min(maxFileBytes, defaultAtlasTextBudgets.maxFileBytes);
+  const warningAt = Math.ceil(limit * 0.75);
+  if (byteLength === undefined || byteLength < warningAt) return Object.freeze([]);
+  return Object.freeze([
+    capacityFinding(
+      "ATLAS_CHANGELOG_NEAR_CAPACITY",
+      `The Atlas Changelog uses ${String(byteLength)} bytes against a ${String(limit)} byte reference limit: the smaller of this Lint budget and the SDK default snapshot cap (warning at ${String(warningAt)} bytes). Plan human-reviewed history preservation or capacity maintenance before further appends exhaust capture. Atlas SDK does not rotate history automatically.`,
+      atlasChangelogPath,
+      undefined,
+      "warning",
+    ),
+  ]);
+}
 
 const attribution = Object.freeze({
   checkId: "sdk-core.atlas-input",
@@ -71,7 +102,7 @@ function captureOnce(
 function loadOrFinding(
   capturedFiles: readonly CapturedAtlasFile[],
   budgets: AtlasTextBudgets,
-): readonly AtlasTextFile[] | Finding {
+): LoadedInput | Finding {
   let captured;
   try {
     captured = captureOnce(capturedFiles, budgets);
@@ -88,7 +119,14 @@ function loadOrFinding(
   }
 
   try {
-    return loadAtlasText(captured.files, captured.budgets);
+    const loaded = loadAtlasTextWithByteLengths(captured.files, captured.budgets);
+    return Object.freeze({
+      files: loaded.files,
+      findings: changelogCapacityFindings(
+        loaded.byteLengths[atlasChangelogPath],
+        captured.budgets.maxFileBytes,
+      ),
+    });
   } catch (error: unknown) {
     if (error instanceof AtlasLoadError) {
       return loadFinding(loadCodes[error.code], error.message);
@@ -130,8 +168,9 @@ function validationState(findings: readonly Finding[]): "invalid" | "valid" {
  * stable, sdk-core attributed Finding so invalid input escapes as neither an
  * uncaught exception nor a success-shaped result. A loading failure
  * short-circuits with one Finding, since the text it would parse is not
- * trustworthy; otherwise the loaded text flows through structural validation, whose
- * deterministic ordering, sanitization, and source evidence contracts are
+ * trustworthy; otherwise the loaded text flows through structural validation,
+ * alongside Changelog capacity warnings based on original byte lengths.
+ * Deterministic ordering, sanitization, and source evidence contracts are
  * preserved. Identical input bytes yield identical ordered Findings.
  *
  * A failure that describes the running process rather than the Atlas is raised
@@ -162,12 +201,15 @@ export function loadAndValidateAtlasInput(
       validationState: "invalid" as const,
     });
   }
-  const structure = validateAtlasStructureWithPages(loaded);
+  const structure = validateAtlasStructureWithPages(loaded.files);
+  const findings = Object.freeze(
+    [...structure.findings, ...loaded.findings].toSorted(compareFindings),
+  );
   return Object.freeze({
     [atlasInputValidationBrand]: true as const,
-    files: loaded,
-    findings: structure.findings,
+    files: loaded.files,
+    findings,
     pages: structure.pages,
-    validationState: validationState(structure.findings),
+    validationState: validationState(findings),
   });
 }
