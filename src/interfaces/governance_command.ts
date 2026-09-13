@@ -8,6 +8,7 @@ import type {
   AtlasGovernanceSubject,
   AtlasGovernanceWorkflowState,
 } from "../operations/governance_operation.ts";
+import { validateGovernanceApproval } from "../operations/governance_operation.ts";
 import {
   parseApprovalAttestationRecord,
   type AtlasApprovalAttestation,
@@ -69,11 +70,6 @@ export const governCommandInputBudgets = Object.freeze({
   maxStringBytes: 8192,
 });
 
-const governOperationIdentity = Object.freeze({
-  kind: "governance" as const,
-  subject: "principle" as const,
-});
-
 const placeholderWorkflowState: AtlasGovernanceWorkflowState = Object.freeze({
   "operation-workflow-schema": "1.0.0" as const,
   baseSnapshotDigest: "unknown",
@@ -109,7 +105,12 @@ function notCompletedGovernResult(
   findings: readonly Finding[],
   summary: string,
   recommendedNextAction: string,
+  subject: AtlasGovernanceSubject = "principle",
 ): AtlasGovernanceResult {
+  const governOperationIdentity = Object.freeze({
+    kind: "governance" as const,
+    subject,
+  });
   const handoff = Object.freeze({
     "operation-handoff-schema": operationHandoffSchemaVersion,
     baseSnapshot: Object.freeze({
@@ -418,7 +419,7 @@ function asAttestation(value: unknown, path: string): AtlasApprovalAttestation {
 
 function parseRequestRecord(
   record: Readonly<Record<string, unknown>>,
-): AtlasGovernanceRequest {
+): GovernParseOutcome {
   const request: MutableGovernanceRequest = {
     "governance-request-schema": asSchema(
       record["governance-request-schema"],
@@ -459,7 +460,27 @@ function parseRequestRecord(
       ),
     );
   }
-  return Object.freeze(request);
+  const { action, attestation, ...fields } = request;
+  if (action === "verify") {
+    if (attestation !== undefined) {
+      throw new GovernInputError(
+        "Verification-only requests must not carry an attestation",
+      );
+    }
+    return { ok: true, value: Object.freeze({ ...fields, action }) };
+  }
+  if (attestation === undefined) {
+    return {
+      ok: false,
+      result: notCompletedGovernResult(
+        validateGovernanceApproval(request),
+        "Governance refused an unapproved mutation before reading a base snapshot.",
+        "Obtain a Maintainer Approval Attestation for the exact request, then retry.",
+        request.subject,
+      ),
+    };
+  }
+  return { ok: true, value: Object.freeze({ ...fields, action, attestation }) };
 }
 
 export type GovernParseOutcome =
@@ -470,7 +491,7 @@ export type GovernParseOutcome =
 // determinate, message-bearing refusal rather than an exception that escapes.
 export function parseGovernRequest(value: unknown): GovernParseOutcome {
   try {
-    return { ok: true, value: parseRequestRecord(asRecord(value, "request")) };
+    return parseRequestRecord(asRecord(value, "request"));
   } catch (error: unknown) {
     return {
       ok: false,

@@ -47,6 +47,15 @@ import { lintCommandUsage, runLintCommandOperation } from "@jdylanmc/atlas";
 
 Internal source paths are not exported. Treat anything outside the package root as private implementation detail unless a future release adds it to the `exports` map.
 
+`AtlasGovernanceRequest` is discriminated by `action`: `create`, `amend`, `retire`,
+and `delete` require an `attestation`; `verify` carries none. Required presence
+does not authenticate the approver or replace runtime approval validation.
+Untyped CLI mutations missing the field return
+`ATLAS_GOVERNANCE_APPROVAL_REQUIRED` (exit 4) before reading an Atlas snapshot;
+verification requests carrying an attestation are invalid input (exit 64).
+Blank, expired, mismatched, or otherwise invalid attestations still face the
+existing runtime guards, including when JavaScript callers bypass TypeScript.
+
 ## Package contents
 
 The npm artifact ships only the compiled runtime, declaration files, `package.json`, and this README. Development fixtures, tests, local workspaces, and source-tree automation are not part of the package artifact.

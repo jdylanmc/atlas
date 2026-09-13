@@ -203,7 +203,7 @@ type RequestOverrides = Partial<{
  * request fields, computed through the same production digest the operation
  * verifies against. */
 function validGovernanceAttestation(
-  fields: AtlasGovernanceRequest,
+  fields: Omit<AtlasGovernanceRequest, "attestation">,
 ): AtlasApprovalAttestation {
   const operation = governanceAttestationOperation(fields);
   const payload = governanceAttestationPayload(fields);
@@ -241,17 +241,21 @@ function request(overrides: RequestOverrides = {}): AtlasGovernanceRequest {
   const merged: Record<string, unknown> = Object.fromEntries(
     Object.entries({ ...base, ...rest }).filter(([, value]) => value !== undefined),
   );
-  const withoutAttestation = merged as unknown as AtlasGovernanceRequest;
+  const withoutAttestation = merged as unknown as Omit<
+    AtlasGovernanceRequest,
+    "attestation"
+  >;
   const attestation =
     "attestation" in overrides
       ? attestationOverride
       : withoutAttestation.action === "verify"
         ? undefined
         : validGovernanceAttestation(withoutAttestation);
+  // Runtime-defense fixtures deliberately model callers bypassing the type contract.
   return {
     ...withoutAttestation,
     ...(attestation === undefined ? {} : { attestation }),
-  };
+  } as AtlasGovernanceRequest;
 }
 
 function applyChanges(
@@ -526,11 +530,7 @@ test("Atlas SDK derives the governance Change Set without prior history, compara
   // exercises every bookkeeping fallback the caller can no longer supply.
   const derived = buildAtlasGovernanceChangeSet(
     workflowState,
-    {
-      "governance-request-schema": "1.0.0",
-      action: "create",
-      subject: "principle",
-    },
+    request({ attestation: undefined, changeSet: undefined }),
     [root],
   );
   const derivedChangelog = derived.changes.find(

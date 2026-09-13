@@ -18,3 +18,11 @@ test. The corpus schema check is not the acceptance proof: the external consumer
 must invoke installed Initialization, adopt its proposal through Git, and pass
 installed Lint and Explore. Add cases to `installed-consumer.json` to extend
 this gate without duplicating the installation harness.
+
+`governance-request-types.test-d.ts` is the compiler-backed governance contract
+corpus. The registered test in `tests/adversarial_corpus.test.ts` compiles it
+with the repository TypeScript settings, and ordinary `npm run typecheck`
+includes it too. Its expected-error cases reject unapproved mutations and
+attested verification; positive cases exercise approved mutations, unattested
+verification, action narrowing, and the public workflow signature. Missing
+expected errors fail the gate rather than silently accepting weaker types.
