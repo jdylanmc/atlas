@@ -1,10 +1,15 @@
 import { createHash } from "node:crypto";
 import {
   appendFileSync,
+  closeSync,
+  constants,
   existsSync,
+  fstatSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
+  readSync,
   realpathSync,
   renameSync,
   writeFileSync,
@@ -16,8 +21,10 @@ import {
   notCompletedAtlasInitializationResult,
   runAtlasInitializationWorkflow,
   type AtlasInitializationChangeSet,
+  type AtlasInitializationResult,
   type AtlasInitializationWorkflowState,
 } from "../operations/initialize_operation.ts";
+import { renderAtlasReadinessReportMarkdown } from "../operations/initialize_readiness_report.ts";
 import { runLintOperation } from "../operations/lint_operation.ts";
 import { captureLocalAtlasSnapshot } from "./local_atlas_snapshot.ts";
 import { runTrustedGit, runTrustedGitForWrite } from "./trusted_git.ts";
@@ -60,8 +67,8 @@ function proposalBranchName(targetHead: string): string {
   return `atlas-initialization-${targetHead.slice(0, 12)}`;
 }
 
-function workspacePath(repository: string, proposalBranch: string): string {
-  return join(repository, ".atlas-operation-workspaces", proposalBranch);
+function workspacePath(repository: string, relativePath: string): string {
+  return join(repository, ".atlas-operation-workspaces", relativePath);
 }
 
 function workspaceExists(repository: string, proposalBranch: string): boolean {
@@ -76,19 +83,101 @@ function workspaceExists(repository: string, proposalBranch: string): boolean {
   );
 }
 
-function workspacePathIsContained(repository: string, proposalBranch: string): boolean {
+function workspacePathIsContained(repository: string, relativePath: string): boolean {
   const repositoryRoot = realpathSync(repository);
   let current = repositoryRoot;
-  for (const component of [
-    ".atlas-operation-workspaces",
-    ...proposalBranch.split("/"),
-  ]) {
+  for (const component of [".atlas-operation-workspaces", ...relativePath.split("/")]) {
     current = join(current, component);
     const stat = lstatSync(current, { throwIfNoEntry: false });
     if (stat === undefined) continue;
     if (stat.isSymbolicLink()) return false;
   }
   return true;
+}
+
+function writeOrReuseArtifact(path: string, content: string): void {
+  const stat = lstatSync(path, { throwIfNoEntry: false });
+  if (stat === undefined) {
+    writeFileSync(path, content, { encoding: "utf8", flag: "wx" });
+    return;
+  }
+  if (stat.isSymbolicLink()) {
+    throw new Error(`Initialization output is a symbolic link: ${path}`);
+  }
+  const descriptor = openSync(
+    path,
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+  );
+  try {
+    if (!fstatSync(descriptor).isFile()) {
+      throw new Error(`Initialization output is not a regular file: ${path}`);
+    }
+    const expected = Buffer.from(content, "utf8");
+    const actual = Buffer.alloc(expected.length + 1);
+    let length = 0;
+    while (length < actual.length) {
+      const count = readSync(descriptor, actual, length, actual.length - length, null);
+      if (count === 0) break;
+      length += count;
+    }
+    if (length !== expected.length || !actual.subarray(0, length).equals(expected)) {
+      throw new Error(
+        `Initialization output already exists with different bytes: ${path}`,
+      );
+    }
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function persistReadinessArtifacts(
+  repository: string,
+  result: AtlasInitializationResult,
+): AtlasInitializationResult {
+  const report = result.payload.atlasReadinessReport;
+  if (report === undefined) return result;
+
+  const artifactRelativePath = `.artifacts/${result.payload.workflowState.proposalBranch}`;
+  const directory = resolve(workspacePath(repository, artifactRelativePath));
+  const outputArtifacts = Object.freeze({
+    lintStamp: join(directory, "lint-stamp.json"),
+    readinessReportMarkdown: join(directory, "readiness-report.md"),
+  });
+  const markdown = renderAtlasReadinessReportMarkdown(report);
+  const stamp = `${JSON.stringify(report.lintStamp, null, 2)}\n`;
+  try {
+    if (!workspacePathIsContained(repository, artifactRelativePath)) {
+      throw new Error("Initialization output directory contains a symbolic link.");
+    }
+    mkdirSync(directory, { recursive: true });
+    writeOrReuseArtifact(outputArtifacts.readinessReportMarkdown, markdown);
+    writeOrReuseArtifact(outputArtifacts.lintStamp, stamp);
+  } catch (error) {
+    const failure = notCompletedAtlasInitializationResult({
+      code: "ATLAS_INITIALIZATION_OUTPUT_FAILED",
+      message: `Initialization could not emit its report artifacts: ${String(error)}`,
+      recommendedNextAction:
+        `Inspect ${directory}; some output files may already exist. Existing files are never overwritten. ` +
+        `Preserve or explicitly repair conflicting files, then resume proposal ${result.payload.workflowState.proposalBranch}.`,
+      summary:
+        "The local proposal and Lint evidence remain available, but report artifact output did not complete.",
+      workflowState: result.payload.workflowState,
+    });
+    return Object.freeze({
+      ...failure,
+      payload: Object.freeze({ ...result.payload, state: "not-completed" as const }),
+    });
+  }
+  return Object.freeze({
+    ...result,
+    handoff: Object.freeze({
+      ...result.handoff,
+      recommendedNextAction:
+        `Read ${outputArtifacts.readinessReportMarkdown} and ${outputArtifacts.lintStamp}. ` +
+        result.handoff.recommendedNextAction,
+    }),
+    payload: Object.freeze({ ...result.payload, outputArtifacts }),
+  });
 }
 
 function statePath(repository: string, proposalBranch: string): string {
@@ -255,7 +344,7 @@ export function runLocalAtlasInitialization(
   }
 
   const workspace = workspacePath(repository, workflowState.proposalBranch);
-  return runAtlasInitializationWorkflow(workflowState, {
+  const result = runAtlasInitializationWorkflow(workflowState, {
     commitProposal: () => {
       const tree = gitWrite(workspace, ["write-tree"]);
       const parent = git(workspace, ["rev-parse", "HEAD"]);
@@ -344,4 +433,5 @@ export function runLocalAtlasInitialization(
       };
     },
   });
+  return persistReadinessArtifacts(repository, result);
 }

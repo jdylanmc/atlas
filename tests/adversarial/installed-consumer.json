@@ -64,6 +64,75 @@
         ".atlas/manifest.json"
       ],
       "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "readinessArtifacts": {
+        "headings": [
+          "# Atlas Readiness Report",
+          "## Boundary",
+          "## Guide",
+          "## Governance",
+          "## Founding evidence",
+          "## Founding graph",
+          "## Integrations",
+          "## Degradations",
+          "## Uninspected areas",
+          "## Lint Stamp",
+          "## Publication handoff",
+          "## Recommended next action"
+        ],
+        "governance": "The proposal includes a draft Atlas Manifest; human review of the declaration and governance is still required.",
+        "enrichedReport": {
+          "capabilities": [
+            {
+              "id": "site",
+              "selected": false,
+              "status": "declined",
+              "evidence": ["Atlas Site was not selected."]
+            },
+            {
+              "id": "persona",
+              "selected": true,
+              "status": "degraded",
+              "evidence": ["Persona preview remains provisional."]
+            },
+            {
+              "id": "host-integration",
+              "selected": true,
+              "status": "blocked",
+              "evidence": ["Host pointers await review.\nNo pointer was published."]
+            },
+            {
+              "id": "directive",
+              "selected": true,
+              "status": "complete",
+              "evidence": []
+            }
+          ],
+          "unresolvedDecisions": [
+            "Choose the host integration.\nDo not infer approval."
+          ]
+        },
+        "conflicts": [
+          { "artifact": "lintStamp", "kind": "same-length" },
+          { "artifact": "readinessReportMarkdown", "kind": "short" },
+          { "artifact": "lintStamp", "kind": "long" },
+          { "artifact": "readinessReportMarkdown", "kind": "directory" },
+          { "artifact": "lintStamp", "kind": "symlink" },
+          { "artifact": "readinessReportMarkdown", "kind": "parent-symlink" }
+        ],
+        "enrichedMarkdown": [
+          "## Capability coverage",
+          "### site\n\nSelected: no; status: declined.",
+          "- Atlas Site was not selected.",
+          "### persona\n\nSelected: yes; status: degraded.",
+          "- Persona preview remains provisional.",
+          "### host-integration\n\nSelected: yes; status: blocked.",
+          "- Host pointers await review.\n  No pointer was published.",
+          "### directive\n\nSelected: yes; status: complete.",
+          "No evidence was reported.",
+          "## Unresolved decisions",
+          "- Choose the host integration.\n  Do not infer approval."
+        ]
+      },
       "governance": {
         "change": {
           "path": ".atlas/principles/quality.md",
