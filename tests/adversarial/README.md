@@ -70,6 +70,27 @@ parser as installed Initialize, Lint, Explore, and Governance, pin the complete
 Assignment payload, and require no Git or Atlas mutation. Fixture attestations
 are synthetic test input, not claims of production human approval.
 
+The `inputContracts` probes discover the input-document command from bare CLI
+usage, retrieve all three complete schemas, submit malformed documents, and
+require every expected field violation in one Operation Result without Atlas
+or Git effects. Gapped and nested array cases ensure diagnostic compaction
+does not invent errors at valid indices. After Initialization, the same
+installed consumer creates a valid Principle using the emitted authoring
+template and a synthetic fixture attestation; the proposal leaves its target
+unchanged.
+
+`repeatedEmptyEdges` fills the existing 1 MiB input budget and runs the installed
+CLI with a test-only 256 MiB V8 heap bound. All missing Edge fields must be
+represented by exact index ranges alongside the Scope errors. This guards
+against retaining millions of duplicate error objects, without adding a
+runtime quota or truncating diagnostics.
+
+The same bounded consumer also checks 40,000 alternating empty-object/number
+Edge pairs and a maximum-size variant. Independent diagnostic decoding proves
+every even index has exactly the missing-field errors and every odd index only
+the object-type error. A sparse-offset case pins hexadecimal mask byte/bit order
+and zero-filled holes at both the source parser and installed CLI boundaries.
+
 `governance-request-types.test-d.ts` is the compiler-backed governance contract
 corpus. The registered test in `tests/adversarial_corpus.test.ts` compiles it
 with the repository TypeScript settings, and ordinary `npm run typecheck`

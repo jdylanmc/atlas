@@ -130,6 +130,78 @@ function parseIngestResult(stdout: string): ReturnType<typeof runLocalAtlasInges
   return parseMachineOperationResult(stdout) as ReturnType<typeof runLocalAtlasIngest>;
 }
 
+test("atlas ingest plan reports all missing input fields in one Operation Result", () => {
+  const scopePath = resolve(WORKSPACE, "missing-fields.json");
+  mkdirSync(WORKSPACE, { recursive: true });
+  writeFileSync(scopePath, "{}");
+  try {
+    const command = runAtlas([
+      "ingest",
+      "plan",
+      "--machine",
+      "--ingest-scope",
+      scopePath,
+    ]);
+    const result = parseIngestResult(command.stdout);
+    assert.equal(result.completion, "not-completed");
+    assert.deepEqual(
+      result.handoff.validationState.findings
+        .map((entry) => entry.message)
+        .join("\n")
+        .split("\n"),
+      [
+        "scope.ingest-scope-schema must be a string",
+        "scope.asOf must be a string",
+        "scope.attestation must be an object",
+        "scope.authority must be a string",
+        "scope.entryPoint must be a string",
+        "scope.excludedPaths must be an array",
+        "scope.freshnessWindowDays must be a finite number",
+        "scope.includedPaths must be an array",
+        "scope.maxDepth must be a finite number",
+        "scope.sourceId must be a string",
+      ],
+    );
+  } finally {
+    rmSync(scopePath);
+  }
+});
+
+test("Ingest Request reports independent Graph and Scope input violations together", () => {
+  const parsed = parseIngestRequest({
+    "ingest-request-schema": "1.0.0",
+    candidateGraph: {
+      "candidate-graph-schema": "1.0.0",
+      concepts: [{}],
+      disputes: [{}],
+      edges: [{}],
+      sources: [{}],
+    },
+    scope: {},
+  });
+  assert.equal(parsed.ok, false);
+  const messages = parsed.result.handoff.validationState.findings
+    .map((entry) => entry.message)
+    .join("\n")
+    .split("\n");
+  assert.equal(messages.length, 31);
+  assert.ok(
+    messages.includes("request.candidateGraph.concepts[0].claim must be a string"),
+  );
+  assert.ok(
+    messages.includes(
+      "request.candidateGraph.disputes[0].leftConceptId must be a string",
+    ),
+  );
+  assert.ok(
+    messages.includes("request.candidateGraph.edges[0].semantics must be an array"),
+  );
+  assert.ok(
+    messages.includes("request.candidateGraph.sources[0].title must be a string"),
+  );
+  assert.ok(messages.includes("request.scope.sourceId must be a string"));
+});
+
 test("atlas ingest plan emits an Operation Result carrying the approved Crawl Assignment", () => {
   const command = runAtlas([
     "ingest",

@@ -543,6 +543,10 @@ export function validateGovernanceApproval(
       ),
     ]);
   }
+  return governanceApprovalRequiredFindings();
+}
+
+export function governanceApprovalRequiredFindings(): readonly Finding[] {
   return Object.freeze([
     finding(
       "ATLAS_GOVERNANCE_APPROVAL_REQUIRED",

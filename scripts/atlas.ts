@@ -67,7 +67,6 @@ import {
   oversizedInputIngestOperationResult,
   parseIngestScope,
   planCrawlAssignment,
-  serializeIngestMachineResult,
   usageIngestOperationResult,
   validateRequestCorrespondence,
 } from "../src/interfaces/ingest_command.ts";
@@ -79,12 +78,16 @@ import {
   invalidInputGovernOperationResult,
   oversizedInputGovernOperationResult,
   parseGovernRequest,
-  serializeGovernMachineResult,
   usageGovernOperationResult,
 } from "../src/interfaces/governance_command.ts";
 import { runLocalAtlasIngest } from "../src/platform/local_atlas_ingest.ts";
 import { runLocalAtlasGovernance } from "../src/platform/local_atlas_governance.ts";
 import { runLocalAtlasExplore } from "../src/platform/local_atlas_explore.ts";
+import {
+  inputContractCommandUsage,
+  runInputContractCommand,
+  serializeCallerInputResult,
+} from "../src/interfaces/input_contract_command.ts";
 
 interface ParsedLintCommand {
   readonly atlasHostDirectory: string;
@@ -680,16 +683,16 @@ function mainIngestPlan(command: ParsedIngestPlanCommand): number {
         : invalidInputIngestOperationResult(
             "The Ingest Scope file could not be read as JSON.",
           );
-    process.stdout.write(serializeIngestMachineResult(result));
+    process.stdout.write(serializeCallerInputResult(result));
     return exitCodeForIngestOperationResult(result);
   }
   const parsed = parseIngestScope(input);
   if (!parsed.ok) {
-    process.stdout.write(serializeIngestMachineResult(parsed.result));
+    process.stdout.write(serializeCallerInputResult(parsed.result));
     return exitCodeForIngestOperationResult(parsed.result);
   }
   const outcome = planCrawlAssignment(parsed.value, new Date().toISOString());
-  process.stdout.write(serializeIngestMachineResult(outcome.result));
+  process.stdout.write(serializeCallerInputResult(outcome.result));
   return exitCodeForIngestPlanOutcome(outcome);
 }
 
@@ -707,22 +710,22 @@ function mainIngestReconcile(command: ParsedIngestReconcileCommand): number {
         : invalidInputIngestOperationResult(
             "The Ingest request file could not be read as JSON.",
           );
-    process.stdout.write(serializeIngestMachineResult(result));
+    process.stdout.write(serializeCallerInputResult(result));
     return exitCodeForIngestOperationResult(result);
   }
   const parsed = parseIngestRequest(input);
   if (!parsed.ok) {
-    process.stdout.write(serializeIngestMachineResult(parsed.result));
+    process.stdout.write(serializeCallerInputResult(parsed.result));
     return exitCodeForIngestOperationResult(parsed.result);
   }
   const correspondence = validateRequestCorrespondence(parsed.value);
   if (correspondence.length > 0) {
     const result = correspondenceRefusalResult(correspondence);
-    process.stdout.write(serializeIngestMachineResult(result));
+    process.stdout.write(serializeCallerInputResult(result));
     return exitCodeForIngestOperationResult(result);
   }
   const result = runLocalAtlasIngest(command.atlasHostDirectory, parsed.value);
-  process.stdout.write(serializeIngestMachineResult(result));
+  process.stdout.write(serializeCallerInputResult(result));
   return exitCodeForIngestOperationResult(result);
 }
 
@@ -733,7 +736,7 @@ function mainIngest(arguments_: readonly string[]): number {
   } catch (error: unknown) {
     if (!(error instanceof UsageError)) throw error;
     const result = usageIngestOperationResult(error.message);
-    process.stdout.write(serializeIngestMachineResult(result));
+    process.stdout.write(serializeCallerInputResult(result));
     console.error(error.message);
     return ingestCommandExitCodes.usage;
   }
@@ -794,7 +797,7 @@ function mainGovern(arguments_: readonly string[]): number {
   } catch (error: unknown) {
     if (!(error instanceof UsageError)) throw error;
     const result = usageGovernOperationResult(error.message);
-    process.stdout.write(serializeGovernMachineResult(result));
+    process.stdout.write(serializeCallerInputResult(result));
     console.error(error.message);
     return governCommandExitCodes.usage;
   }
@@ -808,20 +811,28 @@ function mainGovern(arguments_: readonly string[]): number {
         : invalidInputGovernOperationResult(
             "The governance request file could not be read as JSON.",
           );
-    process.stdout.write(serializeGovernMachineResult(result));
+    process.stdout.write(serializeCallerInputResult(result));
     return exitCodeForGovernOperationResult(result);
   }
   const parsed = parseGovernRequest(input);
   if (!parsed.ok) {
-    process.stdout.write(serializeGovernMachineResult(parsed.result));
+    process.stdout.write(serializeCallerInputResult(parsed.result));
     return exitCodeForGovernOperationResult(parsed.result);
   }
   const result = runLocalAtlasGovernance(command.atlasHostDirectory, parsed.value);
-  process.stdout.write(serializeGovernMachineResult(result));
+  process.stdout.write(serializeCallerInputResult(result));
   return exitCodeForGovernOperationResult(result);
 }
 
 type AtlasCommandHandler = (arguments_: readonly string[]) => number;
+
+function mainInputContract(arguments_: readonly string[]): number {
+  const result = runInputContractCommand(arguments_);
+  process.stdout.write(`${JSON.stringify(result)}\n`);
+  if (result.disposition === "success") return 0;
+  console.error(inputContractCommandUsage);
+  return atlasCommandExitCodes.usage;
+}
 
 const atlasCommandDispatch = Object.freeze({
   lint: mainLint,
@@ -829,6 +840,7 @@ const atlasCommandDispatch = Object.freeze({
   explore: mainExplore,
   ingest: mainIngest,
   govern: mainGovern,
+  "input-contract": mainInputContract,
 } satisfies Readonly<Record<string, AtlasCommandHandler>>);
 
 export const atlasCommandNames = commandNamesForDispatch(atlasCommandDispatch);

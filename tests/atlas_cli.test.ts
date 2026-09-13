@@ -141,6 +141,7 @@ test("Atlas command usage derives from the dispatch keys", () => {
     "explore",
     "ingest",
     "govern",
+    "input-contract",
   ]);
   assert.equal(atlasCommandUsage, formatAtlasCommandUsage(atlasCommandNames));
 });

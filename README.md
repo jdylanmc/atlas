@@ -9,6 +9,7 @@ Today the package has these reachable command-line workflows:
 - `atlas explore --machine QUERY [--atlas-host-directory PATH]` reads a Home Atlas and returns routed Explore results as JSON.
 - `atlas ingest plan|reconcile --machine ...` hands out a Crawl Assignment for an approved Ingest Scope, then reconciles a returned Candidate Graph into one proposal.
 - `atlas govern --machine --request PATH [--atlas-host-directory PATH]` maintains a Principle or Atlas Policy through one reviewable Atlas Proposal. The request carries explicit Maintainer approval and any semantic Policy verdict as validated input; the command never supplies approval itself, so an agent may propose but never establish governance autonomously.
+- `atlas input-contract --machine NAME` describes a caller-authored JSON input without reading or changing an Atlas.
 
 Atlas SDK does not invoke a model, call a network service, or require an API key at runtime. Agentic judgment belongs to the calling agent workflow; Atlas SDK validates inputs, writes deterministic proposals, and returns Operation Results.
 
@@ -36,6 +37,65 @@ a failed, versioned Operation Result and names the available commands; an unknow
 command also returns an `ATLAS_COMMAND_UNKNOWN` Finding naming the rejected value.
 `--machine` is required for dispatched commands. Command output is
 newline-terminated JSON so agents and scripts can parse it directly.
+
+### Authoring JSON inputs
+
+Retrieve each complete, nested input shape from the installed CLI:
+
+```sh
+atlas input-contract --machine ingest-scope
+atlas input-contract --machine ingest-request
+atlas input-contract --machine governance-request
+```
+
+Each returns a versioned Operation Result with `payload.contract.schema` (JSON
+Schema 2020-12), `maxFileBytes`, and `guidance`. Governance also returns a
+`principleExample` containing a full Markdown template and replacement-Amendment
+example. No source checkout, declaration-file reading, Atlas selection, network,
+or model is needed. Ingest/Governance CLI refusals link directly to these commands.
+Discovery completion means documentation was returned, not that Ingest or
+Governance ran or approval was granted.
+
+The same typed definitions drive decoding and schema output. Input shape errors
+are reported together under `handoff.validationState.findings`, with
+newline-separated field paths in the input-invalid Finding. Missing mutation
+approval retains its separate Finding; shape errors take exit 64, while missing
+approval alone retains exit 4. Malformed JSON and over-budget files stop before
+decoding; invalid or oversized containers report that boundary without inspecting
+their children. Independent siblings still report their errors. Forbidden fields
+report the prohibition, not errors in their unused contents. Unknown fields are
+ignored, as before.
+
+Identical array-field errors use lossless index ranges to avoid retaining and
+printing millions of repeated messages from one small malformed document.
+`items[0..3,7].field` identifies precisely indices 0, 1, 2, 3, and 7. Nested
+ranges apply only when each listed parent has the same child index set.
+No error-count quota or diagnostic truncation is introduced.
+
+For irregular index sets, the shorter representation may be a hexadecimal
+byte mask. `items[mask@8:55].field` selects exactly indices 8, 10, 12, and 14.
+Read each pair of hex digits as one byte, least-significant bit first: bit `k`
+of byte `j` selects `offset + 8*j + k`. The offset after `@` is byte-aligned;
+zero bits do not select an index. Sparse storage avoids allocating a large
+bitmap for isolated high indices; dense masks are rendered only when shorter
+than exact ranges. Nested sets retain the same parent/child membership.
+Input byte limits are not stdout limits: consumers must accommodate complete
+Operation Results, including proposal payloads larger than their input.
+
+`x-maxUtf8Bytes` is an SDK annotation for encoded UTF-8 byte length, not JSON
+Schema's character-count `maxLength`. Generic validators must register that
+keyword to enforce byte budgets. Shape validity is not authorization, evidence
+correspondence, timestamp validity, or a successful knowledge operation; those
+workflow gates still apply.
+
+For new top-level `.atlas/principles/quality.md`, use `sdk.id: principle:quality`;
+existing pages retain their captured identity. Principle bodies need canonical
+`## Active truths` bullets with unique stable truth IDs and a preserved
+`## Amendments` history. Number and date each Amendment and record the directing
+or approving Maintainer, rationale, and change reference. Semantic replacement
+invalidates the old truth and records a linked successor with a new ID.
+The CLI reference includes the exact Markdown forms. Its examples are
+illustrative templates, never human approval records.
 
 ### Initialization report artifacts
 

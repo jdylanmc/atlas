@@ -1167,6 +1167,66 @@ test("Governance command helpers preserve machine JSON and every exit class", ()
   );
 });
 
+test("Governance reports conditional approval constraints alongside other input errors", () => {
+  const mutation = parseGovernRequest({
+    "governance-request-schema": "1.0.0",
+    action: "create",
+    subject: "invalid",
+    changes: [{}],
+  });
+  assert.equal(mutation.ok, false);
+  assert.deepEqual(
+    mutation.result.handoff.validationState.findings.map((entry) => entry.code),
+    ["ATLAS_GOVERNANCE_INPUT_INVALID", "ATLAS_GOVERNANCE_APPROVAL_REQUIRED"],
+  );
+  const verification = parseGovernRequest({
+    "governance-request-schema": "1.0.0",
+    action: "verify",
+    subject: "invalid",
+    attestation: {},
+  });
+  assert.equal(verification.ok, false);
+  const message = verification.result.handoff.validationState.findings
+    .map((entry) => entry.message)
+    .join("\n");
+  assert.ok(message.includes("request.subject must name a governance subject"));
+  assert.ok(
+    message.includes("Verification-only requests must not carry an attestation"),
+  );
+});
+
+test("Governance reports independent nested input violations together", () => {
+  const parsed = parseGovernRequest({
+    "governance-request-schema": "wrong",
+    action: "verify",
+    subject: 0,
+    changelog: "first\nsecond",
+    changes: [{ content: 0, path: 0 }],
+    semanticVerdicts: [
+      {
+        challenge: { argument: 0, evidence: [0], position: 0 },
+        evidence: [0],
+        policyId: 0,
+        verdict: 0,
+      },
+    ],
+  });
+  assert.equal(parsed.ok, false);
+  const messages = parsed.result.handoff.validationState.findings
+    .map((entry) => entry.message)
+    .join("\n")
+    .split("\n");
+  assert.equal(messages.length, 11);
+  assert.ok(messages.includes("request.changelog must be a single line"));
+  assert.ok(messages.includes("request.changes[0].path must be a string"));
+  assert.ok(
+    messages.includes(
+      "request.semanticVerdicts[0].challenge.argument must be a string",
+    ),
+  );
+  assert.ok(messages.includes("request.semanticVerdicts[0].verdict must be a string"));
+});
+
 test("Governance request parser refuses every malformed axis as a determinate value", () => {
   assert.equal(parseGovernRequest(null).ok, false);
   assert.equal(parseGovernRequest([]).ok, false);

@@ -1,15 +1,10 @@
 import type { Finding } from "../domain/finding.ts";
+import { ingestRequestInput, ingestScopeInput } from "./command_input_contracts.ts";
+import { readInput } from "./input_contract.ts";
+export { ingestCommandInputBudgets } from "./command_input_contracts.ts";
 import {
-  isSourceAuthority,
   validateApproval,
   validateIngestScopeTime,
-  type AtlasIngestCandidateCitation,
-  type AtlasIngestCandidateConcept,
-  type AtlasIngestCandidateContradiction,
-  type AtlasIngestCandidateEdge,
-  type AtlasIngestCandidateGraph,
-  type AtlasIngestCandidateSource,
-  type AtlasIngestDispute,
   type AtlasIngestHandoff,
   type AtlasIngestRequest,
   type AtlasIngestResult,
@@ -17,10 +12,7 @@ import {
   type AtlasIngestWorkflowState,
   type SourceAuthority,
 } from "../operations/ingest_operation.ts";
-import {
-  parseApprovalAttestationRecord,
-  type AtlasApprovalAttestation,
-} from "../operations/operation_support.ts";
+import type { AtlasApprovalAttestation } from "../operations/operation_support.ts";
 import {
   operationHandoffSchemaVersion,
   operationResultSchemaVersion,
@@ -50,16 +42,6 @@ export const ingestCommandExitCodes = Object.freeze({
   success: 0,
   usage: 64,
 } as const);
-
-export const ingestCommandInputBudgets = Object.freeze({
-  maxFileBytes: 1024 * 1024,
-  // Bounds the distinct Source locators a Candidate Graph may assert. Ingest's
-  // independent Git capture shells out one or two trusted Git subprocesses per
-  // distinct locator before approval is even checked, so an unbounded count is
-  // an attacker-amplifiable resource cost a crawler-authored graph could
-  // otherwise impose for free.
-  maxSources: 32,
-});
 
 const trustedAttribution = Object.freeze({
   checkId: "sdk-core.atlas-ingest-command",
@@ -171,278 +153,34 @@ export function oversizedInputIngestOperationResult(
   );
 }
 
-// The Ingest Scope is only constructible through this parser, so downstream code
-// derives the scope's validity from a validator rather than trusting a caller's
-// assertion. Each guard is a stable refusal, rather than a thrown exception.
-class IngestInputError extends Error {}
-
-function asRecord(value: unknown, path: string): Readonly<Record<string, unknown>> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new IngestInputError(`${path} must be an object`);
-  }
-  return value as Readonly<Record<string, unknown>>;
-}
-
-function asString(value: unknown, path: string): string {
-  if (typeof value !== "string") throw new IngestInputError(`${path} must be a string`);
-  return value;
-}
-
-function asNumber(value: unknown, path: string): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new IngestInputError(`${path} must be a finite number`);
-  }
-  return value;
-}
-
-function asStringArray(value: unknown, path: string): readonly string[] {
-  if (!Array.isArray(value)) throw new IngestInputError(`${path} must be an array`);
-  return Object.freeze(
-    (value as readonly unknown[]).map((entry, index) =>
-      asString(entry, `${path}[${String(index)}]`),
-    ),
-  );
-}
-
-function asArray(value: unknown, path: string): readonly unknown[] {
-  if (!Array.isArray(value)) throw new IngestInputError(`${path} must be an array`);
-  return value as readonly unknown[];
-}
-
-function asSchema<Version extends string>(
-  value: unknown,
-  path: string,
-  version: Version,
-): Version {
-  if (asString(value, path) !== version) {
-    throw new IngestInputError(`${path} must be ${JSON.stringify(version)}`);
-  }
-  return version;
-}
-
-function asAuthority(value: unknown, path: string): SourceAuthority {
-  const authority = asString(value, path);
-  if (!isSourceAuthority(authority)) {
-    throw new IngestInputError(`${path} must name a recognized Source Authority`);
-  }
-  return authority;
-}
-
-function asAttestation(value: unknown, path: string): AtlasApprovalAttestation {
-  return parseApprovalAttestationRecord(asRecord(value, path), path, asString);
-}
-
-function parseScopeRecord(record: Readonly<Record<string, unknown>>): AtlasIngestScope {
-  return Object.freeze({
-    "ingest-scope-schema": asSchema(
-      record["ingest-scope-schema"],
-      "scope.ingest-scope-schema",
-      "1.0.0",
-    ),
-    asOf: asString(record["asOf"], "scope.asOf"),
-    attestation: asAttestation(record["attestation"], "scope.attestation"),
-    authority: asAuthority(record["authority"], "scope.authority"),
-    entryPoint: asString(record["entryPoint"], "scope.entryPoint"),
-    excludedPaths: asStringArray(record["excludedPaths"], "scope.excludedPaths"),
-    freshnessWindowDays: asNumber(
-      record["freshnessWindowDays"],
-      "scope.freshnessWindowDays",
-    ),
-    includedPaths: asStringArray(record["includedPaths"], "scope.includedPaths"),
-    maxDepth: asNumber(record["maxDepth"], "scope.maxDepth"),
-    sourceId: asString(record["sourceId"], "scope.sourceId"),
-  });
-}
-
-function parseCitation(value: unknown, path: string): AtlasIngestCandidateCitation {
-  const record = asRecord(value, path);
-  return Object.freeze({
-    sourceClaim: asString(record["sourceClaim"], `${path}.sourceClaim`),
-    sourceId: asString(record["sourceId"], `${path}.sourceId`),
-  });
-}
-
-function parseCitations(
-  value: unknown,
-  path: string,
-): readonly AtlasIngestCandidateCitation[] {
-  return Object.freeze(
-    asArray(value, path).map((entry, index) =>
-      parseCitation(entry, `${path}[${String(index)}]`),
-    ),
-  );
-}
-
-function parseContradiction(
-  value: unknown,
-  path: string,
-): AtlasIngestCandidateContradiction {
-  const record = asRecord(value, path);
-  const contradiction: {
-    acceptedBy?: string;
-    atlasPolicyId?: string;
-    principleTruthId?: string;
-  } = {};
-  if (record["acceptedBy"] !== undefined) {
-    contradiction.acceptedBy = asString(record["acceptedBy"], `${path}.acceptedBy`);
-  }
-  if (record["atlasPolicyId"] !== undefined) {
-    contradiction.atlasPolicyId = asString(
-      record["atlasPolicyId"],
-      `${path}.atlasPolicyId`,
-    );
-  }
-  if (record["principleTruthId"] !== undefined) {
-    contradiction.principleTruthId = asString(
-      record["principleTruthId"],
-      `${path}.principleTruthId`,
-    );
-  }
-  return Object.freeze(contradiction);
-}
-
-function parseSource(value: unknown, path: string): AtlasIngestCandidateSource {
-  const record = asRecord(value, path);
-  return Object.freeze({
-    authority: asAuthority(record["authority"], `${path}.authority`),
-    content: asString(record["content"], `${path}.content`),
-    id: asString(record["id"], `${path}.id`),
-    locator: asString(record["locator"], `${path}.locator`),
-    refreshWindowDays: asNumber(
-      record["refreshWindowDays"],
-      `${path}.refreshWindowDays`,
-    ),
-    revisionTime: asString(record["revisionTime"], `${path}.revisionTime`),
-    title: asString(record["title"], `${path}.title`),
-  });
-}
-
-function parseConcept(value: unknown, path: string): AtlasIngestCandidateConcept {
-  const record = asRecord(value, path);
-  const concept: {
-    citations: readonly AtlasIngestCandidateCitation[];
-    claim: string;
-    contradiction?: AtlasIngestCandidateContradiction;
-    id: string;
-    locator: string;
-    title: string;
-  } = {
-    citations: parseCitations(record["citations"], `${path}.citations`),
-    claim: asString(record["claim"], `${path}.claim`),
-    id: asString(record["id"], `${path}.id`),
-    locator: asString(record["locator"], `${path}.locator`),
-    title: asString(record["title"], `${path}.title`),
-  };
-  if (record["contradiction"] !== undefined) {
-    concept.contradiction = parseContradiction(
-      record["contradiction"],
-      `${path}.contradiction`,
-    );
-  }
-  return Object.freeze(concept);
-}
-
-function parseEdge(value: unknown, path: string): AtlasIngestCandidateEdge {
-  const record = asRecord(value, path);
-  return Object.freeze({
-    citations: parseCitations(record["citations"], `${path}.citations`),
-    context: asString(record["context"], `${path}.context`),
-    from: asString(record["from"], `${path}.from`),
-    id: asString(record["id"], `${path}.id`),
-    semantics: asStringArray(record["semantics"], `${path}.semantics`),
-    title: asString(record["title"], `${path}.title`),
-    to: asString(record["to"], `${path}.to`),
-  });
-}
-
-function parseDispute(value: unknown, path: string): AtlasIngestDispute {
-  const record = asRecord(value, path);
-  return Object.freeze({
-    leftConceptId: asString(record["leftConceptId"], `${path}.leftConceptId`),
-    rightConceptId: asString(record["rightConceptId"], `${path}.rightConceptId`),
-  });
-}
-
-function parseGraph(value: unknown, path: string): AtlasIngestCandidateGraph {
-  const record = asRecord(value, path);
-  const sources = asArray(record["sources"], `${path}.sources`);
-  if (sources.length > ingestCommandInputBudgets.maxSources) {
-    throw new IngestInputError(
-      `${path}.sources exceeds the ${String(ingestCommandInputBudgets.maxSources)} Source budget`,
-    );
-  }
-  return Object.freeze({
-    "candidate-graph-schema": asSchema(
-      record["candidate-graph-schema"],
-      `${path}.candidate-graph-schema`,
-      "1.0.0",
-    ),
-    concepts: Object.freeze(
-      asArray(record["concepts"], `${path}.concepts`).map((entry, index) =>
-        parseConcept(entry, `${path}.concepts[${String(index)}]`),
-      ),
-    ),
-    disputes: Object.freeze(
-      asArray(record["disputes"], `${path}.disputes`).map((entry, index) =>
-        parseDispute(entry, `${path}.disputes[${String(index)}]`),
-      ),
-    ),
-    edges: Object.freeze(
-      asArray(record["edges"], `${path}.edges`).map((entry, index) =>
-        parseEdge(entry, `${path}.edges[${String(index)}]`),
-      ),
-    ),
-    sources: Object.freeze(
-      sources.map((entry, index) =>
-        parseSource(entry, `${path}.sources[${String(index)}]`),
-      ),
-    ),
-  });
-}
-
 export type IngestParseOutcome<Value> =
   | { readonly ok: false; readonly result: AtlasIngestResult }
   | { readonly ok: true; readonly value: Value };
 
-// Every guard in the parsers above throws IngestInputError, so a failed parse yields a
-// determinate, message-bearing refusal rather than a thrown exception
-// that escapes the command.
-function invalidIngestInput(error: unknown): {
-  readonly ok: false;
-  readonly result: AtlasIngestResult;
-} {
-  return {
-    ok: false,
-    result: invalidInputIngestOperationResult((error as IngestInputError).message),
-  };
-}
-
 export function parseIngestScope(value: unknown): IngestParseOutcome<AtlasIngestScope> {
-  try {
-    return { ok: true, value: parseScopeRecord(asRecord(value, "scope")) };
-  } catch (error: unknown) {
-    return invalidIngestInput(error);
-  }
+  const parsed = readInput(ingestScopeInput, value, "scope");
+  return parsed.ok
+    ? parsed
+    : {
+        ok: false,
+        result: invalidInputIngestOperationResult(
+          parsed.issues.map((issue) => issue.message).join("\n"),
+        ),
+      };
 }
 
 export function parseIngestRequest(
   value: unknown,
 ): IngestParseOutcome<AtlasIngestRequest> {
-  try {
-    const record = asRecord(value, "request");
-    const request: AtlasIngestRequest = Object.freeze({
-      "ingest-request-schema": asSchema(
-        record["ingest-request-schema"],
-        "request.ingest-request-schema",
-        "1.0.0",
-      ),
-      candidateGraph: parseGraph(record["candidateGraph"], "request.candidateGraph"),
-      scope: parseScopeRecord(asRecord(record["scope"], "request.scope")),
-    });
-    return { ok: true, value: request };
-  } catch (error: unknown) {
-    return invalidIngestInput(error);
-  }
+  const parsed = readInput(ingestRequestInput, value, "request");
+  return parsed.ok
+    ? parsed
+    : {
+        ok: false,
+        result: invalidInputIngestOperationResult(
+          parsed.issues.map((issue) => issue.message).join("\n"),
+        ),
+      };
 }
 
 // The Crawl Assignment the SDK hands out. The brand is a non-exported symbol, so

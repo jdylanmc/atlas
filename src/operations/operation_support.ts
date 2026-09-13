@@ -136,49 +136,6 @@ export interface AtlasApprovalAttestation {
 }
 
 /**
- * Parses one caller-authored Approval Attestation record. Ingest and
- * Governance each bound authored string length differently (Ingest has no
- * per-field byte budget today; Governance bounds every string to its shared
- * `maxStringBytes`), so the one string field validator each seam already uses
- * for its other fields is injected here rather than duplicated as a second
- * near-identical parser per seam.
- */
-export function parseApprovalAttestationRecord(
-  record: Readonly<Record<string, unknown>>,
-  path: string,
-  asFieldString: (value: unknown, path: string) => string,
-): AtlasApprovalAttestation {
-  if (
-    asFieldString(
-      record["approval-attestation-schema"],
-      `${path}.approval-attestation-schema`,
-    ) !== "1.0.0"
-  ) {
-    throw new Error(`${path}.approval-attestation-schema must be "1.0.0"`);
-  }
-  const attestation: {
-    "approval-attestation-schema": "1.0.0";
-    approvedAt: string;
-    approver: string;
-    expiresAt?: string;
-    nonce: string;
-    operation: string;
-    payloadDigest: string;
-  } = {
-    "approval-attestation-schema": "1.0.0",
-    approvedAt: asFieldString(record["approvedAt"], `${path}.approvedAt`),
-    approver: asFieldString(record["approver"], `${path}.approver`),
-    nonce: asFieldString(record["nonce"], `${path}.nonce`),
-    operation: asFieldString(record["operation"], `${path}.operation`),
-    payloadDigest: asFieldString(record["payloadDigest"], `${path}.payloadDigest`),
-  };
-  if (record["expiresAt"] !== undefined) {
-    attestation.expiresAt = asFieldString(record["expiresAt"], `${path}.expiresAt`);
-  }
-  return Object.freeze(attestation);
-}
-
-/**
  * Canonical JSON for an arbitrary payload: object keys are sorted by code
  * point before serialization, so two payloads that differ only in authored key
  * order still digest identically, while a payload that differs in any value

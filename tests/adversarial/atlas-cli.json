@@ -3,6 +3,47 @@
   "reviewResolutionRule": "A review finding is resolved only after this corpus has a reject or accept case that exercises it.",
   "cases": [
     {
+      "name": "accept input contract discovery with the positional name before machine",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["input-contract", "ingest-scope", "--machine"],
+      "expectedExit": 0,
+      "expectedCode": null
+    },
+    {
+      "name": "reject an absent input contract name with reachable choices",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["input-contract"],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_INPUT_CONTRACT_USAGE",
+      "stderrIncludes": "governance-request"
+    },
+    {
+      "name": "reject inherited object keys as input contract names",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["input-contract", "--machine", "constructor"],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_INPUT_CONTRACT_USAGE"
+    },
+    {
+      "name": "reject input contract discovery without machine even at the correct argument count",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["input-contract", "ingest-scope", "--bogus"],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_INPUT_CONTRACT_USAGE"
+    },
+    {
+      "name": "reject extra input contract arguments rather than silently ignoring them",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["input-contract", "--machine", "ingest-scope", "--machine"],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_INPUT_CONTRACT_USAGE"
+    },
+    {
       "name": "warn at Changelog capacity without falsely degrading Explore or rewriting history",
       "gate": "atlas-cli",
       "kind": "command",
@@ -637,15 +678,15 @@
       "gate": "atlas-cli",
       "kind": "source-contract",
       "path": "src/interfaces/governance_command.ts",
-      "requiredText": "if (record[\"attestation\"] !== undefined) {",
+      "requiredText": "readInput(governanceInput, value, \"request\")",
       "forbiddenText": "attestation = {"
     },
     {
       "name": "reject a governance command seam that defaults a Maintainer approver literal",
       "gate": "atlas-cli",
       "kind": "source-contract",
-      "path": "src/interfaces/governance_command.ts",
-      "requiredText": "request.attestation = asAttestation(",
+      "path": "src/interfaces/command_input_contracts.ts",
+      "requiredText": "approver: textInput(options)",
       "forbiddenText": "approver: \""
     },
     {
