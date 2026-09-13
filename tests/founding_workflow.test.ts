@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -20,7 +21,12 @@ import {
 import { ingestScopeAttestationOperation } from "../src/operations/ingest_operation.ts";
 import { ingestScopeAttestationPayload } from "../src/operations/ingest_operation.ts";
 import { attestationPayloadDigest } from "../src/operations/operation_support.ts";
-import { createVirtualAtlasView } from "../src/operations/virtual_atlas_view.ts";
+import {
+  applyVirtualAtlasChanges,
+  createVirtualAtlasView,
+  virtualAtlasDigest,
+  virtualAtlasTextFiles,
+} from "../src/index.ts";
 import { runLintOperation } from "../src/operations/lint_operation.ts";
 import {
   invalidateDependentCheckpoints,
@@ -365,6 +371,91 @@ test("prepareGovernanceFragment allows an empty verify request without deriving 
     createVirtualAtlasView([]),
   );
   assert.deepEqual(prepared.changes, []);
+});
+
+test("virtual removal leaves no tombstone or mutation of the original view", () => {
+  const kept = { path: ".atlas/principles/kept.md", content: "kept" };
+  const view = createVirtualAtlasView([
+    kept,
+    { path: ".atlas/principles/retired.md", content: "former" },
+    { path: ".atlas/principles/retired.md", content: null },
+  ]);
+  assert.deepEqual(virtualAtlasTextFiles(view), [kept]);
+  const removed = applyVirtualAtlasChanges(view, [{ path: kept.path, content: null }]);
+  assert.deepEqual(virtualAtlasTextFiles(removed), []);
+  assert.deepEqual(virtualAtlasTextFiles(view), [kept]);
+  const empty = applyVirtualAtlasChanges(view, [{ path: kept.path, content: "" }]);
+  assert.deepEqual(virtualAtlasTextFiles(empty), [{ path: kept.path, content: "" }]);
+  assert.notEqual(virtualAtlasDigest(empty), virtualAtlasDigest(removed));
+});
+
+test("composed founding refuses retirement of an earlier governance fragment before effects", () => {
+  const corpus = JSON.parse(
+    readFileSync(new URL("./adversarial/governance.json", import.meta.url), "utf8"),
+  ) as {
+    readonly cases: readonly {
+      readonly expectedCode: string;
+      readonly retirement?: {
+        readonly atFounding?: boolean;
+        readonly request: {
+          readonly action: "retire";
+          readonly changes: readonly {
+            readonly path: string;
+            readonly content: null;
+          }[];
+        };
+      };
+    }[];
+  };
+  const entry = corpus.cases.find(
+    (candidate) => candidate.retirement?.atFounding === true,
+  );
+  assert.ok(entry?.retirement !== undefined);
+  const initial = state();
+  const fields = {
+    ...foundingGovernanceFields,
+    ...entry.retirement.request,
+  };
+  const operation = governanceAttestationOperation(fields);
+  const nonce = "founding-retirement-fixture";
+  const unexpected = (): never =>
+    assert.fail("Founding retirement must refuse before effects.");
+  const result = runComposedAtlasInitializationWorkflow(
+    initial,
+    {
+      governance: [
+        { ...foundingGovernanceFields, attestation: foundingGovernanceAttestation },
+        {
+          ...fields,
+          attestation: {
+            ...foundingGovernanceAttestation,
+            operation,
+            nonce,
+            payloadDigest: attestationPayloadDigest(
+              operation,
+              nonce,
+              governanceAttestationPayload(fields),
+            ),
+          },
+        },
+      ],
+    },
+    {
+      currentTargetHead: () => initial.targetHead,
+      currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
+      createProposalWorktree: unexpected,
+      writeChangeSet: unexpected,
+      commitProposal: unexpected,
+      lintProposal: unexpected,
+    },
+  );
+  assert.equal(result.completion, "not-completed");
+  assert.ok(
+    result.handoff.validationState.findings.some(
+      ({ code }) => code === entry.expectedCode,
+    ),
+  );
+  assert.deepEqual(result.payload.workflowState.effectReceipts, []);
 });
 
 test("directive weakening is rejected before any filesystem side effect", () => {

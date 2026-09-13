@@ -141,6 +141,14 @@ export function optionalInput<Value>(
   );
 }
 
+export function nullableInput<Value>(
+  input: InputField<Value>,
+): InputField<Value | null> {
+  return field(Type.Union([input.schema, Type.Null()]), (value, path, issues) =>
+    value === null ? null : input.read(value, path, issues),
+  );
+}
+
 export function arrayInput<Value>(
   input: InputField<Value>,
   budget?: { readonly maxItems: number; readonly name: string },

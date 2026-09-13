@@ -21,6 +21,7 @@ import {
   arrayInput,
   enumInput,
   literalInput,
+  nullableInput,
   numberInput,
   objectInput,
   optionalInput,
@@ -177,7 +178,9 @@ const governEvidence = arrayInput(textInput(governText), {
   name: "element",
 });
 const governChange = objectInput<AtlasGovernanceChange>({
-  content: textInput({ maxBytes: governCommandInputBudgets.maxChangeContentBytes }),
+  content: nullableInput(
+    textInput({ maxBytes: governCommandInputBudgets.maxChangeContentBytes }),
+  ),
   path: textInput({ maxBytes: governCommandInputBudgets.maxPathBytes }),
 });
 const governVerdict = objectInput<AtlasGovernanceSemanticVerdict>({

@@ -1,4 +1,5 @@
 import type {
+  Definition,
   FootnoteDefinition,
   FootnoteReference,
   Heading,
@@ -20,7 +21,10 @@ import {
   corePageTypesByDirectory,
   rootAnchorPageId,
 } from "../domain/core_archetype.ts";
-import { malformedAtlasPrincipleTruthLines } from "../domain/atlas_principle.ts";
+import {
+  extractAtlasPrincipleActiveTruths,
+  malformedAtlasPrincipleTruthLines,
+} from "../domain/atlas_principle.ts";
 import {
   checkAtlasSchemaVersion,
   compareAtlasSchemaVersions,
@@ -41,6 +45,12 @@ import {
   type AtlasFrontmatterSpan,
   type ParsedAtlasPage,
 } from "../atlas/parse_atlas_pages.ts";
+
+interface GovernanceProseReference {
+  readonly governor: string;
+  readonly path: string;
+  readonly location: FindingLocation;
+}
 
 export interface AtlasStructureValidation {
   /**
@@ -306,6 +316,137 @@ const targetMessages = Object.freeze({
   missing: "Citation target must resolve to an existing local Source page.",
   "not-source": "Citation target must address an Atlas Source page.",
 });
+
+function governancePath(path: string): string | undefined {
+  if (
+    !path.startsWith(".atlas/principles/") &&
+    !path.startsWith(".atlas/types/policy/")
+  )
+    return undefined;
+  return path.endsWith(".md") ? path : `${path}.md`;
+}
+
+function validateGovernanceMarkdownLink(
+  parsed: ParsedAtlasPage,
+  target: string,
+  position: MarkdownPosition,
+  pagePaths: ReadonlySet<string>,
+  findings: Finding[],
+): void {
+  if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/iu.test(target)) return;
+  let path: string;
+  try {
+    const url = new URL(
+      target.startsWith(".atlas/") ? `/${target}` : target,
+      `file:///${parsed.source.path}`,
+    );
+    if (url.host !== "") return;
+    path = decodeURIComponent(url.pathname).slice(1);
+  } catch {
+    findings.push(
+      finding(
+        "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+        "A local Markdown link cannot be resolved; correct its URL before governance maintenance.",
+        parsed.source.path,
+        markdownLocation(parsed, position),
+      ),
+    );
+    return;
+  }
+  const governance = governancePath(path);
+  if (governance !== undefined && !pagePaths.has(governance)) {
+    findings.push(
+      finding(
+        "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+        "A live governance link must resolve; reconcile dependent knowledge before retirement.",
+        parsed.source.path,
+        markdownLocation(parsed, position),
+      ),
+    );
+  }
+}
+
+function validateGovernanceBodyReferences(
+  parsed: ParsedAtlasPage,
+  tree: Nodes,
+  pagePaths: ReadonlySet<string>,
+  findings: Finding[],
+): void {
+  const pending = [tree];
+  const definitions = new Map<string, Definition>();
+  const referenced = new Set<string>();
+  while (pending.length > 0) {
+    const node = pending.pop() as Nodes;
+    if (node.type === "link") {
+      validateGovernanceMarkdownLink(
+        parsed,
+        node.url,
+        node.position as MarkdownPosition,
+        pagePaths,
+        findings,
+      );
+    } else if (node.type === "linkReference") {
+      referenced.add(node.identifier);
+    } else if (node.type === "definition") {
+      if (!definitions.has(node.identifier)) definitions.set(node.identifier, node);
+    } else if (node.type === "text") {
+      const position = node.position as MarkdownPosition;
+      const source = parsed.page.body.slice(position.start.offset, position.end.offset);
+      const cursor: SourceCursor = {
+        index: 0,
+        line: position.start.line,
+        column: position.start.column,
+      };
+      let open:
+        | { readonly offset: number; readonly start: FindingLocation["start"] }
+        | undefined;
+      while (cursor.index < source.length) {
+        if (source[cursor.index] === "\\") {
+          advanceCursor(source, cursor, 2);
+        } else if (source.startsWith("[[", cursor.index)) {
+          open = {
+            offset: cursor.index + 2,
+            start: { line: cursor.line, column: cursor.column },
+          };
+          advanceCursor(source, cursor, 2);
+        } else if (open !== undefined && source.startsWith("]]", cursor.index)) {
+          const target = source.slice(open.offset, cursor.index);
+          const path = governancePath(target.split(/[|#]/u, 1)[0] as string);
+          advanceCursor(source, cursor, 2);
+          if (path !== undefined && !pagePaths.has(path)) {
+            findings.push(
+              finding(
+                "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+                "A live governance link must resolve; reconcile dependent knowledge before retirement.",
+                parsed.source.path,
+                markdownLocation(parsed, {
+                  start: open.start,
+                  end: { line: cursor.line, column: cursor.column },
+                }),
+              ),
+            );
+          }
+          open = undefined;
+        } else advanceCursor(source, cursor, 1);
+      }
+    } else if ("children" in node) {
+      for (let index = node.children.length - 1; index >= 0; index -= 1) {
+        pending.push(node.children[index] as Nodes);
+      }
+    }
+  }
+  for (const [identifier, definition] of definitions) {
+    if (referenced.has(identifier)) {
+      validateGovernanceMarkdownLink(
+        parsed,
+        definition.url,
+        definition.position as MarkdownPosition,
+        pagePaths,
+        findings,
+      );
+    }
+  }
+}
 
 function offsetLocation(
   parsed: ParsedAtlasPage,
@@ -840,13 +981,27 @@ function validatePage(
   if (heading !== undefined) findings.push(heading);
 
   if (parsed.page.sdk.type === coreArchetypes.Principle.pageType) {
-    for (const malformed of malformedAtlasPrincipleTruthLines(parsed.page.body)) {
+    const malformedLines = malformedAtlasPrincipleTruthLines(parsed.page.body);
+    for (const malformed of malformedLines) {
       findings.push(
         finding(
           "ATLAS_PRINCIPLE_TRUTH_MALFORMED",
           "A Principle truth-shaped bullet must be inside the canonical Active truths block and carry a stable truth identity with same-line text.",
           file.path,
           lineLocation(file.content, parsed.source.body.startLine + malformed.line - 1),
+        ),
+      );
+    }
+    if (
+      malformedLines.length === 0 &&
+      extractAtlasPrincipleActiveTruths(parsed.page.body).length === 0
+    ) {
+      findings.push(
+        finding(
+          "ATLAS_PRINCIPLE_TRUTH_REQUIRED",
+          "A live Principle must contain an active truth; Governance Retirement purges the document instead of retaining an empty page.",
+          file.path,
+          lineLocation(file.content, parsed.source.body.startLine),
         ),
       );
     }
@@ -1017,6 +1172,7 @@ function validateAtlasStructureWithPages(
   const pagePaths: ReadonlySet<string> = new Set(pageRecords.map((file) => file.path));
   const pages: ParsedAtlasPage[] = [];
   const parsed: { readonly file: AtlasTextFile; readonly page: ParsedAtlasPage }[] = [];
+  const proseGovernors: GovernanceProseReference[] = [];
   for (const file of pageRecords) {
     const result = parseOne(file);
     if ("code" in result) findings.push(result);
@@ -1024,41 +1180,19 @@ function validateAtlasStructureWithPages(
       pages.push(result);
       // A body carrying more Markdown than Atlas SDK reads is reported from the
       // scan of its text rather than read.
-      const bound = bodyMarkdownBound(result.page.body);
-      if (bound.nesting > maxBodyNestingDepth) {
-        findings.push(
-          finding(
-            "ATLAS_PAGE_BODY_TOO_DEEP",
-            "Atlas page body nests deeper than Atlas SDK reads.",
-            file.path,
-          ),
-        );
-        continue;
-      }
-      if (bound.marks > maxBodyMarkupMarks) {
-        findings.push(
-          finding(
-            "ATLAS_PAGE_BODY_TOO_MARKED",
-            "Atlas page body carries more Markdown markup than Atlas SDK reads.",
-            file.path,
-          ),
-        );
-        continue;
-      }
-      if (bound.lines > maxBodyLines) {
-        findings.push(
-          finding(
-            "ATLAS_PAGE_BODY_TOO_LONG",
-            "Atlas page body holds more lines than Atlas SDK reads.",
-            file.path,
-          ),
-        );
+      const bodyFinding = bodyMarkdownFinding(result);
+      if (bodyFinding !== undefined) {
+        findings.push(bodyFinding);
         continue;
       }
       const tree = fromMarkdown(result.page.body, markdownOptions);
       parsed.push({ file, page: result });
       validatePage(file, result, tree, findings);
       validateCitations(file, result, tree, pagePaths, findings);
+      validateGovernanceBodyReferences(result, tree, pagePaths, findings);
+      if (result.page.sdk.type === coreArchetypes.Concept.pageType) {
+        proseGovernors.push(...governanceProseReferences(result, tree));
+      }
     }
   }
 
@@ -1073,10 +1207,63 @@ function validateAtlasStructureWithPages(
   }
 
   const ids = new Map<string, typeof parsed>();
+  const governors = new Set<string>();
   for (const entry of parsed) {
     const matches = ids.get(entry.page.page.sdk.id);
     if (matches === undefined) ids.set(entry.page.page.sdk.id, [entry]);
     else matches.push(entry);
+    if (entry.page.page.sdk.type === coreArchetypes.Principle.pageType) {
+      for (const truth of extractAtlasPrincipleActiveTruths(entry.page.page.body)) {
+        governors.add(truth.truthId);
+      }
+    } else if (entry.page.page.sdk.type === "policy") {
+      governors.add(entry.page.page.sdk.id);
+    }
+  }
+  for (const reference of proseGovernors) {
+    if (!governors.has(reference.governor)) {
+      findings.push(
+        finding(
+          "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "The persisted Contradiction marker must name a live governor; reconcile its claim before retirement.",
+          reference.path,
+          reference.location,
+        ),
+      );
+    }
+  }
+  for (const { file, page } of parsed) {
+    const governor = page.page.atlas["contradicts"];
+    if (
+      governor !== undefined &&
+      (typeof governor !== "string" || !governors.has(governor))
+    ) {
+      findings.push(
+        finding(
+          "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "A live Contradiction must name an active Principle truth or Atlas Policy; reconcile its governance marker before retirement.",
+          file.path,
+        ),
+      );
+    }
+    if (page.page.sdk.type === coreArchetypes.Edge.pageType) {
+      if (
+        [page.page.atlas["from"], page.page.atlas["to"]].some(
+          (endpoint) =>
+            typeof endpoint === "string" &&
+            (endpoint.startsWith("principle:") || endpoint.startsWith("policy:")) &&
+            !ids.has(endpoint),
+        )
+      ) {
+        findings.push(
+          finding(
+            "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+            "A live Edge must resolve its governing document; reconcile the relationship before retirement.",
+            file.path,
+          ),
+        );
+      }
+    }
   }
   for (const entries of ids.values()) {
     if (entries.length < 2) continue;
@@ -1096,6 +1283,77 @@ function validateAtlasStructureWithPages(
     findings: Object.freeze(findings.toSorted(compareFindings)),
     pages: Object.freeze(pages),
   });
+}
+
+function bodyMarkdownFinding(parsed: ParsedAtlasPage): Finding | undefined {
+  const bound = bodyMarkdownBound(parsed.page.body);
+  if (bound.nesting > maxBodyNestingDepth) {
+    return finding(
+      "ATLAS_PAGE_BODY_TOO_DEEP",
+      "Atlas page body nests deeper than Atlas SDK reads.",
+      parsed.source.path,
+    );
+  }
+  if (bound.marks > maxBodyMarkupMarks) {
+    return finding(
+      "ATLAS_PAGE_BODY_TOO_MARKED",
+      "Atlas page body carries more Markdown markup than Atlas SDK reads.",
+      parsed.source.path,
+    );
+  }
+  if (bound.lines > maxBodyLines) {
+    return finding(
+      "ATLAS_PAGE_BODY_TOO_LONG",
+      "Atlas page body holds more lines than Atlas SDK reads.",
+      parsed.source.path,
+    );
+  }
+  return undefined;
+}
+
+function governanceProseReferences(
+  parsed: ParsedAtlasPage,
+  tree: ReturnType<typeof fromMarkdown>,
+): readonly GovernanceProseReference[] {
+  const references: GovernanceProseReference[] = [];
+  for (const node of tree.children) {
+    if (node.type !== "paragraph") continue;
+    const position = node.position as MarkdownPosition;
+    const source = parsed.page.body.slice(position.start.offset, position.end.offset);
+    const governor = /^This claim is an accepted Contradiction of (.+)\.$/u.exec(
+      source,
+    )?.[1];
+    if (governor !== undefined) {
+      references.push({
+        governor,
+        path: parsed.source.path,
+        location: markdownLocation(parsed, position),
+      });
+    }
+  }
+  return references;
+}
+
+export function validateRemovedGovernorProse(
+  parsed: ParsedAtlasPage,
+  removedGovernors: ReadonlySet<string>,
+): readonly Finding[] {
+  if (parsed.page.sdk.type !== coreArchetypes.Concept.pageType)
+    return Object.freeze([]);
+  const bodyFinding = bodyMarkdownFinding(parsed);
+  if (bodyFinding !== undefined) return Object.freeze([bodyFinding]);
+  return Object.freeze(
+    governanceProseReferences(parsed, fromMarkdown(parsed.page.body, markdownOptions))
+      .filter((reference) => removedGovernors.has(reference.governor))
+      .map((reference) =>
+        finding(
+          "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "An unqualified persisted Contradiction may refer to a removed governor even if another governor shares its token; reconcile the claim before retirement.",
+          reference.path,
+          reference.location,
+        ),
+      ),
+  );
 }
 
 /**

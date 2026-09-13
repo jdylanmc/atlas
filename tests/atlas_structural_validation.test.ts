@@ -329,16 +329,12 @@ test("aggregates exact sanitized structural Findings", () => {
   assert.equal(JSON.stringify(findings).includes("secret parser stack"), false);
 });
 
-test("Principle pages report malformed truth-shaped bullets without requiring active truths", () => {
+test("Principle pages require live truths and report malformed truth-shaped bullets", () => {
   for (const [name, body] of [
     ["canonical", "# Principle\n\n## Active truths\n\n- `truth:one` Text."],
     [
       "canonical with continuation",
       "# Principle\n\n## Active truths\n\n- `truth:one` Text\n  continued.",
-    ],
-    [
-      "retired zero-truth Principle",
-      "# Principle\n\n## Active truths\n\n## Amendments\n",
     ],
   ] as const) {
     assert.deepEqual(
@@ -352,6 +348,24 @@ test("Principle pages report malformed truth-shaped bullets without requiring ac
       ]),
       [],
       name,
+    );
+  }
+
+  for (const body of [
+    "# Principle\n\n## Active truths\n\n## Amendments\n",
+    "# Principle\n\nA page without an active truth is not retired.\n",
+  ]) {
+    const findings = validateAtlasStructure([
+      validFiles[2] as AtlasTextFile,
+      page(".atlas/principles/principle.md", body, {
+        id: "principle:principle",
+        title: "Principle",
+        type: "principle",
+      }),
+    ]);
+    assert.deepEqual(
+      findings.map(({ code }) => code),
+      ["ATLAS_PRINCIPLE_TRUTH_REQUIRED"],
     );
   }
 

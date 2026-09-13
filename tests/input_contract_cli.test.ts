@@ -123,6 +123,24 @@ test("Governance schema describes conditional approval and UTF-8 budgets", () =>
     const present = { ...missing, attestation: scope.attestation };
     assert.equal(validate(present), true);
     assert.equal(parseGovernRequest(present).ok, true);
+    for (const content of [null, ""]) {
+      const input = {
+        ...present,
+        changes: [{ path: ".atlas/principles/example.md", content }],
+      };
+      assert.equal(validate(input), true);
+      const parsed = parseGovernRequest(input);
+      assert.equal(parsed.ok, true);
+      assert.equal(parsed.value.changes?.[0]?.content, content);
+    }
+    for (const content of [false, 0, {}, []]) {
+      const input = {
+        ...present,
+        changes: [{ path: ".atlas/principles/example.md", content }],
+      };
+      assert.equal(validate(input), false);
+      assert.equal(parseGovernRequest(input).ok, false);
+    }
   }
 });
 

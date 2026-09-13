@@ -18,6 +18,7 @@ import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
 import { exerciseInitializationArtifactConflicts } from "./initialization_artifact_probes.ts";
+import { exerciseGovernanceRetirement } from "./governance_retirement_probe.ts";
 import { parseMachineOperationResult } from "./machine_operation_result.ts";
 import type { AtlasInitializationResult } from "../src/operations/initialize_operation.ts";
 import type { LintOperationResult } from "../src/operations/lint_operation.ts";
@@ -961,6 +962,11 @@ for (const entry of readInstalledConsumerCorpus().cases) {
       const [firstResult] = exploreResult.payload.results;
       assert.ok(firstResult !== undefined);
       assert.equal(firstResult.route[0]?.objectId, entry.expectedRootAnchorId);
+      if (entry.retirement !== undefined) {
+        exerciseGovernanceRetirement(consumer, entry.retirement, (arguments_) =>
+          runInstalled(consumer, guard, arguments_),
+        );
+      }
       if (principleExample !== undefined) {
         const fields = {
           "governance-request-schema": "1.0.0" as const,

@@ -766,7 +766,7 @@
       "forbidPayloadLint": true
     },
     {
-      "name": "reject a governance delete that bypasses retire-and-reconcile",
+      "name": "reject a governance delete without an authored removal and rationale",
       "gate": "atlas-cli",
       "kind": "command",
       "arguments": [
@@ -779,7 +779,7 @@
       ],
       "fixtureAtlasHostRepository": true,
       "expectedExit": 1,
-      "expectedCode": "ATLAS_GOVERNANCE_DELETE_RETIRES_TRUTHS",
+      "expectedCode": "ATLAS_GOVERNANCE_CHANGE_SET_REQUIRED",
       "forbidPayloadLint": true
     },
     {

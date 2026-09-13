@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import {
+import fs, {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { dirname, resolve } from "node:path";
 import test, { after } from "node:test";
 import {
@@ -30,6 +33,8 @@ import {
   governanceAttestationPayload,
 } from "../src/operations/governance_operation.ts";
 import { attestationPayloadDigest } from "../src/operations/operation_support.ts";
+import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
+import { exerciseGovernanceRetirement } from "./governance_retirement_probe.ts";
 import {
   createLocalAtlasGovernanceState,
   notCompletedLocalGovernanceResult,
@@ -122,6 +127,23 @@ function parseGovernResult(stdout: string): AtlasGovernanceResult {
   assert.deepEqual(parsed.handoff.operation, parsed.operation);
   return parsed;
 }
+
+test("Governance Retirement purges the proposal document while preserving the target and Git history", () => {
+  const cases = readInstalledConsumerCorpus().cases.filter(
+    (entry) => entry.retirement !== undefined,
+  );
+  assert.ok(cases.length > 0);
+  for (const [index, entry] of cases.entries()) {
+    const probe = entry.retirement;
+    assert.ok(probe !== undefined);
+    const repository = resolve(
+      WORKSPACE,
+      `retirement-${String(index)}-${probe.subject}-${probe.action}`,
+    );
+    initAtlasRepository(repository);
+    exerciseGovernanceRetirement(repository, probe, runAtlas);
+  }
+});
 
 // An amend request an adopter could author with nothing but the installed
 // package and the checked-out Atlas Host Directory: authored Principle page plus
@@ -264,9 +286,7 @@ function createPrincipleRequest(): AtlasGovernanceRequest {
   return { ...fields, attestation: attestationFor(fields) };
 }
 
-// A Principle whose active truths are all removed. Under `retire` the operation
-// permits an empty active-truth set (governance_operation.ts relaxes the
-// truth-required rule for retire); under `amend` the same Change Set is refused.
+// A legacy empty-truth retirement page is not a live Principle or a purge.
 function emptiedPrincipleContent(repository: string): string {
   return readFileSync(
     resolve(repository, ".atlas", "principles", "determinism.md"),
@@ -554,7 +574,7 @@ test("atlas govern refuses a forged multi-line Changelog entry and an SDK-derive
   assert.equal(git(repository, ["branch", "--list", "atlas-governance-*"]), "");
 });
 
-test("atlas govern retires a Principle with zero active truths, where amend is refused", () => {
+test("atlas govern refuses empty live Principles and retirement tombstones", () => {
   const repository = resolve(WORKSPACE, "retire-principle");
   const mainBefore = initAtlasRepository(repository);
   const result = runLocalAtlasGovernance(
@@ -562,9 +582,14 @@ test("atlas govern retires a Principle with zero active truths, where amend is r
     retirePrincipleRequest(repository, "retire"),
   );
 
-  assert.equal(result.completion, "completed");
-  assert.equal(result.disposition, "success");
+  assert.equal(result.completion, "not-completed");
+  assert.ok(
+    result.handoff.validationState.findings.some(
+      (entry) => entry.code === "ATLAS_GOVERNANCE_RETIREMENT_REMOVAL_REQUIRED",
+    ),
+  );
   assert.equal(git(repository, ["rev-parse", "main"]), mainBefore);
+  assert.equal(git(repository, ["branch", "--list", "atlas-governance-*"]), "");
 
   const amendRepository = resolve(WORKSPACE, "amend-zero-truth");
   initAtlasRepository(amendRepository);
@@ -737,7 +762,7 @@ test("atlas govern refuses an approval instant that is not a comparable date-tim
   }
 });
 
-test("atlas govern refuses to delete governance knowledge as a write primitive", () => {
+test("atlas govern refuses a deletion without an authored removal and rationale", () => {
   const repository = resolve(WORKSPACE, "delete-bypass");
   initAtlasRepository(repository);
 
@@ -753,7 +778,7 @@ test("atlas govern refuses to delete governance knowledge as a write primitive",
   assert.equal(command.status, governCommandExitCodes.operationFailed);
   assert.equal(
     parseGovernResult(command.stdout).handoff.validationState.findings[0]?.code,
-    "ATLAS_GOVERNANCE_DELETE_RETIRES_TRUTHS",
+    "ATLAS_GOVERNANCE_CHANGE_SET_REQUIRED",
   );
 });
 
@@ -1047,6 +1072,104 @@ function amendBaseRequest(): AtlasGovernanceRequest {
   };
   return { ...fields, attestation: attestationFor(fields) };
 }
+
+test("retirement preserves concurrent workspace paths instead of deleting them during cleanup", (context) => {
+  const corpus = JSON.parse(
+    readFileSync(new URL("./adversarial/governance.json", import.meta.url), "utf8"),
+  ) as {
+    readonly cases: readonly {
+      readonly name: string;
+      readonly expectedCode: string;
+      readonly workspaceConflict?: {
+        readonly kind: "file" | "symlink";
+        readonly content: string;
+      };
+    }[];
+  };
+  const cases = corpus.cases.filter((entry) => entry.workspaceConflict !== undefined);
+  assert.ok(cases.length > 0);
+  for (const entry of cases) {
+    const probe = entry.workspaceConflict;
+    assert.ok(probe !== undefined);
+    const repository = resolve(WORKSPACE, `retirement-conflict-${probe.kind}`);
+    initAtlasRepository(repository);
+    const path = ".atlas/principles/retirement.md";
+    writeFileSync(
+      resolve(repository, path),
+      readFileSync(fixtureJson("retirement-principle.md")),
+    );
+    git(repository, ["add", "--", path]);
+    git(repository, [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "-m",
+      "Establish fixture retirement target",
+    ]);
+    const fields = {
+      "governance-request-schema": "1.0.0" as const,
+      action: "retire" as const,
+      subject: "principle" as const,
+      changes: [{ path, content: null }],
+      changelog: "The fixture rule is obsolete.",
+    };
+    const request: AtlasGovernanceRequest = {
+      ...fields,
+      attestation: attestationFor(fields),
+    };
+    const state = createLocalAtlasGovernanceState(repository, request);
+    const conflict = resolve(
+      repository,
+      ".atlas-operation-workspaces",
+      state.proposalBranch,
+      path,
+    );
+    const outside = resolve(repository, "outside-fixture.txt");
+    writeFileSync(outside, probe.content);
+    const originalWrite = fs.writeFileSync;
+    let injected = false;
+    const interception = context.mock.method(
+      fs,
+      "writeFileSync",
+      (
+        file: Parameters<typeof fs.writeFileSync>[0],
+        data: Parameters<typeof fs.writeFileSync>[1],
+        options?: Parameters<typeof fs.writeFileSync>[2],
+      ) => {
+        originalWrite(file, data, options);
+        if (!injected && String(file).endsWith(".atlas-operation-state.json.next")) {
+          injected = true;
+          mkdirSync(dirname(conflict), { recursive: true });
+          if (probe.kind === "symlink") symlinkSync(outside, conflict);
+          else originalWrite(conflict, probe.content);
+        }
+      },
+    );
+    syncBuiltinESMExports();
+    let result: AtlasGovernanceResult;
+    try {
+      result = runLocalAtlasGovernance(repository, request);
+    } finally {
+      interception.mock.restore();
+      syncBuiltinESMExports();
+    }
+    assert.equal(injected, true);
+    assert.equal(result.completion, "not-completed");
+    assert.ok(
+      result.handoff.validationState.findings.some(
+        (finding) => finding.code === entry.expectedCode,
+      ),
+    );
+    assert.ok(lstatSync(conflict, { throwIfNoEntry: false }) !== undefined, entry.name);
+    assert.equal(readFileSync(conflict, "utf8"), probe.content);
+    assert.equal(readFileSync(outside, "utf8"), probe.content);
+    if (probe.kind === "symlink") assert.equal(readlinkSync(conflict), outside);
+    assert.equal(git(repository, ["rev-parse", "HEAD"]), state.targetHead);
+    assert.match(result.handoff.recommendedNextAction, /retained.*inspection/iu);
+  }
+});
 
 test("atlas govern refuses to establish a Principle without Maintainer approval even with a valid change set", () => {
   const repository = resolve(WORKSPACE, "no-approval-establish");

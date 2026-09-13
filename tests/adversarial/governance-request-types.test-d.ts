@@ -38,6 +38,20 @@ runAtlasGovernanceWorkflow(state, { ...fields, action: "create" }, runtime);
 
 const verify: AtlasGovernanceRequest = { ...fields, action: "verify" };
 runAtlasGovernanceWorkflow(state, verify, runtime);
+const purge: AtlasGovernanceRequest = {
+  ...fields,
+  action: "retire",
+  attestation,
+  changelog: "The former workflow is obsolete.",
+  changes: [{ path: ".atlas/principles/example.md", content: null }],
+};
+runAtlasGovernanceWorkflow(state, purge, runtime);
+const invalidChange: NonNullable<AtlasGovernanceRequest["changes"]>[number] = {
+  path: ".atlas/principles/example.md",
+  // @ts-expect-error File changes require authored text or an explicit null removal.
+  content: 42,
+};
+void invalidChange;
 for (const action of ["create", "amend", "retire", "delete"] as const) {
   const approved: AtlasGovernanceRequest = { ...fields, action, attestation };
   const approval: AtlasApprovalAttestation = approved.attestation;

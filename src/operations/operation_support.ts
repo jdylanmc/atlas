@@ -34,7 +34,7 @@ export function revisionDigest(content: string): string {
 }
 
 export interface DigestChange {
-  readonly content: string;
+  readonly content: string | null;
   readonly path: string;
 }
 
@@ -48,8 +48,8 @@ export interface DigestChangeSet {
  * The replay-protection digest of one Atlas Change Set. Each field is framed by
  * its own length before its text, so no field value can reproduce another
  * field's boundary: a path does not impersonate the separator between two
- * changes, which a delimiter-joined encoding allowed. Change content is hashed
- * to a fixed-width digest before framing, and changes are ordered by path, so
+ * changes, which a delimiter-joined encoding allowed. Written content is hashed
+ * to a fixed-width digest; removals use a distinct non-digest tag. Changes are ordered by path, so
  * the digest is a deterministic function of the set rather than its arrangement.
  */
 export function changeSetDigest(changeSet: DigestChangeSet): string {
@@ -65,7 +65,7 @@ export function changeSetDigest(changeSet: DigestChangeSet): string {
   frame(String(ordered.length));
   for (const change of ordered) {
     frame(change.path);
-    frame(sha256Hex(change.content));
+    frame(change.content === null ? "delete" : sha256Hex(change.content));
   }
   return sha256Hex(parts.join(""));
 }

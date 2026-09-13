@@ -148,7 +148,7 @@ A first-class Markdown relationship used to traverse Concepts, Principles, Ancho
 _Avoid_: Thread
 
 **Principle**:
-A human-governed, Atlas-local page of individually identified active universal truths that hold across an Atlas. A Principle has a stable identity, explains what it governs, and keeps a Keep a Changelog-style amendment history. A Principle carries an immutable established-by DRI. Deleting a Principle invalidates all of its active truths and requires its dependent knowledge relationships and governance markers to be reconciled. Agents may help create, modify, or delete a Principle only under explicit human direction and approval.
+A human-governed, Atlas-local page of one or more individually identified active universal truths that hold across an Atlas. A Principle has a stable identity, explains what it governs, and keeps a Keep a Changelog-style amendment history. A Principle carries an immutable established-by DRI. Deleting a Principle invalidates all of its active truths and requires its dependent knowledge relationships and governance markers to be reconciled. Agents may help create, modify, or delete a Principle only under explicit human direction and approval.
 _Avoid_: Pillar
 
 **Maintainer**:
@@ -172,8 +172,11 @@ A non-persistent disagreement surfaced while an agent traverses knowledge from m
 A warning that two cited Concept claims within one Atlas conflict without contradicting a Principle. The Lint workflow surfaces the evidence and Source Authority, then works with a human to reconcile or scope the claims.
 
 **Atlas Policy**:
-A human-approved, versioned invariant that governs an Atlas. Each Policy declares its scope, naming the workflows it governs such as Atlas maintenance or publication; its evaluation, either deterministic or semantic and therefore subject to Challenge; and its consequence, either invalidating the Atlas or blocking only the operation it governs. A Policy retains its stable identity while its governing intention remains the same and retires rather than disappears. An Atlas Policy carries an immutable established-by DRI. Agents may propose Policies and amendments but cannot establish them autonomously. Explore is never governed by Policies; it loads an Atlas's Policies once, when traversal first enters that Atlas, as descriptive context.
+A human-approved, versioned invariant that governs an Atlas. Each Policy declares its scope, naming the workflows it governs such as Atlas maintenance or publication; its evaluation, either deterministic or semantic and therefore subject to Challenge; and its consequence, either invalidating the Atlas or blocking only the operation it governs. A Policy retains its stable identity while its governing intention remains the same; ending it uses Governance Retirement rather than keeping a live tombstone. An Atlas Policy carries an immutable established-by DRI. Agents may propose Policies and amendments but cannot establish them autonomously. Explore is never governed by Policies; it loads an Atlas's Policies once, when traversal first enters that Atlas, as descriptive context.
 _Avoid_: Doctrine, Realm Law, Realm Rule
+
+**Governance Retirement**:
+The human-approved purge of a Principle or Atlas Policy from the live Atlas, recorded in the Atlas Changelog with what was retired, when, by whom, and why. Remaining live references, dependent truths, contradictions, and governance markers must be reconciled or retirement is refused; Git history retains the complete retired document and its amendment history, without a live tombstone.
 
 **Ingest**:
 The human-facing workflow for ingesting Sources and updating an Atlas's derived knowledge. Ingest runs inside the Atlas's own repository and takes one source per invocation. A source that is itself an Atlas becomes a tracked Atlas and a human-agreed cross-Atlas Edge rather than a Source.

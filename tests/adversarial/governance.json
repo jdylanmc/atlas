@@ -3,6 +3,177 @@
   "reviewResolutionRule": "A review finding is resolved only after tests/adversarial has a case exercising the governance gate.",
   "cases": [
     {
+      "name": "founding-cannot-purge-an-earlier-governance-fragment",
+      "gate": "governance",
+      "kind": "retirement",
+      "expectedCode": "ATLAS_FOUNDING_GOVERNANCE_REMOVAL_FORBIDDEN",
+      "retirement": {
+        "atFounding": true,
+        "request": {
+          "action": "retire",
+          "changes": [{ "path": ".atlas/principles/determinism.md", "content": null }]
+        }
+      }
+    },
+    {
+      "name": "retirement-preserves-an-unexpected-workspace-file",
+      "gate": "governance",
+      "kind": "retirement-workspace",
+      "expectedCode": "ATLAS_GOVERNANCE_RUNTIME_FAILED",
+      "workspaceConflict": {
+        "kind": "file",
+        "content": "Concurrent fixture work must survive.\n"
+      }
+    },
+    {
+      "name": "retirement-preserves-an-unexpected-workspace-symlink-and-its-target",
+      "gate": "governance",
+      "kind": "retirement-workspace",
+      "expectedCode": "ATLAS_GOVERNANCE_RUNTIME_FAILED",
+      "workspaceConflict": {
+        "kind": "symlink",
+        "content": "Outside fixture work must survive.\n"
+      }
+    },
+    {
+      "name": "retirement-cannot-remove-a-non-governance-document",
+      "gate": "governance",
+      "kind": "retirement",
+      "expectedCode": "ATLAS_GOVERNANCE_RETIREMENT_TARGET_INVALID",
+      "retirement": {
+        "request": {
+          "action": "retire",
+          "changes": [{ "path": ".atlas/index.md", "content": null }]
+        }
+      }
+    },
+    {
+      "name": "retirement-cannot-remove-a-missing-document",
+      "gate": "governance",
+      "kind": "retirement",
+      "expectedCode": "ATLAS_GOVERNANCE_RETIREMENT_TARGET_INVALID",
+      "retirement": {
+        "request": {
+          "action": "retire",
+          "changes": [{ "path": ".atlas/principles/missing.md", "content": null }]
+        }
+      }
+    },
+    {
+      "name": "retirement-cannot-purge-a-wrong-subject",
+      "gate": "governance",
+      "kind": "retirement",
+      "expectedCode": "ATLAS_GOVERNANCE_RETIREMENT_TARGET_INVALID",
+      "retirement": {
+        "request": {
+          "action": "retire",
+          "subject": "atlas-policy",
+          "changes": [{ "path": ".atlas/principles/retirement.md", "content": null }]
+        }
+      }
+    },
+    {
+      "name": "retirement-requires-a-parsed-governance-document",
+      "gate": "governance",
+      "kind": "retirement",
+      "expectedCode": "ATLAS_GOVERNANCE_RETIREMENT_TARGET_INVALID",
+      "retirement": {
+        "target": "malformed",
+        "request": {
+          "action": "retire",
+          "changes": [{ "path": ".atlas/principles/retirement.md", "content": null }]
+        }
+      }
+    },
+    {
+      "name": "retirement-checks-the-document-type-not-just-its-directory",
+      "gate": "governance",
+      "kind": "retirement",
+      "expectedCode": "ATLAS_GOVERNANCE_RETIREMENT_TARGET_INVALID",
+      "retirement": {
+        "target": "wrong-type",
+        "request": {
+          "action": "retire",
+          "changes": [{ "path": ".atlas/principles/retirement.md", "content": null }]
+        }
+      }
+    },
+    {
+      "name": "amend-cannot-smuggle-a-file-removal",
+      "gate": "governance",
+      "kind": "retirement",
+      "expectedCode": "ATLAS_GOVERNANCE_REMOVAL_ACTION_REQUIRED",
+      "retirement": {
+        "request": {
+          "action": "amend",
+          "changes": [{ "path": ".atlas/principles/retirement.md", "content": null }]
+        }
+      }
+    },
+    {
+      "name": "retirement-does-not-retain-empty-tombstones",
+      "gate": "governance",
+      "kind": "retirement",
+      "expectedCode": "ATLAS_GOVERNANCE_RETIREMENT_REMOVAL_REQUIRED",
+      "retirement": {
+        "request": {
+          "action": "retire",
+          "changes": [{ "path": ".atlas/principles/retirement.md", "content": "" }]
+        }
+      }
+    },
+    {
+      "name": "retirement-does-not-supply-human-approval",
+      "gate": "governance",
+      "kind": "retirement",
+      "expectedCode": "ATLAS_GOVERNANCE_APPROVAL_REQUIRED",
+      "retirement": {
+        "unapproved": true,
+        "request": {
+          "action": "retire",
+          "changes": [{ "path": ".atlas/principles/retirement.md", "content": null }]
+        }
+      }
+    },
+    {
+      "name": "retirement-requires-a-reason",
+      "gate": "governance",
+      "kind": "retirement",
+      "expectedCode": "ATLAS_GOVERNANCE_CHANGELOG_REQUIRED",
+      "retirement": {
+        "request": {
+          "action": "retire",
+          "changelog": "",
+          "changes": [{ "path": ".atlas/principles/retirement.md", "content": null }]
+        }
+      }
+    },
+    {
+      "name": "retirement-cannot-purge-its-audit-trail",
+      "gate": "governance",
+      "kind": "retirement",
+      "expectedCode": "ATLAS_GOVERNANCE_CHANGELOG_RESERVED",
+      "retirement": {
+        "request": {
+          "action": "delete",
+          "changes": [{ "path": ".atlas/CHANGELOG.md", "content": null }]
+        }
+      }
+    },
+    {
+      "name": "retirement-refuses-a-line-separator-in-provenance",
+      "gate": "governance",
+      "kind": "retirement",
+      "expectedCode": "ATLAS_GOVERNANCE_CHANGELOG_MALFORMED",
+      "retirement": {
+        "approver": "Fixture\u2028## 2099-01-01",
+        "request": {
+          "action": "retire",
+          "changes": [{ "path": ".atlas/principles/retirement.md", "content": null }]
+        }
+      }
+    },
+    {
       "name": "caller-range-mutation-cannot-retarget-trusted-refusals",
       "gate": "governance",
       "kind": "finding-merge",

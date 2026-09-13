@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { AtlasReadinessReport } from "../src/operations/initialize_operation.ts";
 import type { InitializationArtifactConflict } from "./initialization_artifact_probes.ts";
+import type { GovernanceRetirementProbe } from "./governance_retirement_probe.ts";
 
 interface InstalledConsumerCase {
   readonly name: string;
@@ -11,6 +12,7 @@ interface InstalledConsumerCase {
   readonly expectedRootAnchorId: string;
   readonly expectedAtlasPaths: readonly string[];
   readonly unmergedLintCode: string;
+  readonly retirement?: GovernanceRetirementProbe;
   readonly repeatedEmptyEdges?: {
     readonly alternatingPairs: number;
     readonly maxRawBytes: number;
@@ -89,6 +91,47 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
     for (const path of entry.expectedAtlasPaths) {
       assert.equal(typeof path, "string");
       assert.match(path, /^\.atlas\//u);
+    }
+    if (entry.retirement !== undefined) {
+      assert.ok(["retire", "delete"].includes(entry.retirement.action));
+      assert.ok(["principle", "atlas-policy"].includes(entry.retirement.subject));
+      assert.match(entry.retirement.fixture, /^retirement-[a-z-]+\.md$/u);
+      assert.match(entry.retirement.path, /^\.atlas\//u);
+      assert.ok(entry.retirement.reason.length > 0);
+      assert.ok(entry.retirement.expectedApprover.length > 0);
+      assert.match(entry.retirement.expectedApprovalDate, /^\d{4}-\d{2}-\d{2}$/u);
+      if (entry.retirement.dependency !== undefined) {
+        assert.ok(
+          entry.retirement.dependency.kind === undefined ||
+            ["edge", "metadata", "prose"].includes(entry.retirement.dependency.kind),
+        );
+        if (entry.retirement.dependency.survivingPrinciple !== undefined)
+          assert.equal(
+            typeof entry.retirement.dependency.survivingPrinciple,
+            "boolean",
+          );
+        assert.ok(entry.retirement.dependency.governor.length > 0);
+        assert.ok(entry.retirement.dependency.documentId.length > 0);
+        assert.match(entry.retirement.dependency.expectedCode, /^ATLAS_[A-Z_]+$/u);
+        assert.ok(entry.retirement.dependency.expectedFindings.length > 0);
+        for (const finding of entry.retirement.dependency.expectedFindings) {
+          assert.match(finding.path, /^\.atlas\//u);
+          assert.ok(Number.isInteger(finding.count) && finding.count > 0);
+        }
+      }
+      if (entry.retirement.semanticVerdicts !== undefined) {
+        assert.ok(Array.isArray(entry.retirement.semanticVerdicts));
+        assert.ok(entry.retirement.semanticVerdicts.length > 0);
+      }
+      if (entry.retirement.wrongPolicyVerdict !== undefined) {
+        assert.equal(entry.retirement.subject, "atlas-policy");
+        assert.ok(entry.retirement.wrongPolicyVerdict.length > 0);
+        assert.ok(entry.retirement.semanticVerdicts !== undefined);
+      }
+      if (entry.retirement.opaqueExamples !== undefined) {
+        assert.ok(entry.retirement.opaqueExamples.governor.length > 0);
+        assert.ok(entry.retirement.opaqueExamples.documentId.length > 0);
+      }
     }
     if (entry.readinessArtifacts !== undefined) {
       assert.ok(entry.readinessArtifacts.headings.length > 0);

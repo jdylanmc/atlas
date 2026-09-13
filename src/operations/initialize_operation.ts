@@ -1048,6 +1048,35 @@ function prepareAnchorFragment(
   });
 }
 
+function prepareInitializationGovernanceFragment(
+  request: AtlasGovernanceRequest,
+  virtualAtlas: VirtualAtlasView,
+): {
+  readonly changes: readonly AtlasInitializationChange[];
+  readonly findings: readonly Finding[];
+} {
+  const prepared = prepareGovernanceFragment(request, virtualAtlas);
+  const changes: AtlasInitializationChange[] = [];
+  const findings = [...prepared.findings];
+  for (const change of prepared.changes) {
+    if (change.content === null) {
+      findings.push(
+        finding(
+          "ATLAS_FOUNDING_GOVERNANCE_REMOVAL_FORBIDDEN",
+          "Atlas Initialization starts a new Atlas; removals require maintenance of existing live governance.",
+          change.path,
+        ),
+      );
+    } else {
+      changes.push(Object.freeze({ content: change.content, path: change.path }));
+    }
+  }
+  return Object.freeze({
+    changes: Object.freeze(changes),
+    findings: Object.freeze(findings),
+  });
+}
+
 function prepareSiteFragment(
   sitePolicy: NonNullable<AtlasFoundingRequest["sitePolicy"]>,
   virtualAtlas: VirtualAtlasView,
@@ -1126,7 +1155,7 @@ function prepareSiteFragment(
       ),
     }),
   });
-  const prepared = prepareGovernanceFragment(request, virtualAtlas);
+  const prepared = prepareInitializationGovernanceFragment(request, virtualAtlas);
   return Object.freeze({
     changes: prepared.changes,
     findings: prepared.findings,
@@ -1508,7 +1537,10 @@ export function runComposedAtlasInitializationWorkflow(
   if (request.governance !== undefined && request.governance.length > 0) {
     const changes: AtlasInitializationChange[] = [];
     for (const governance of request.governance) {
-      const prepared = prepareGovernanceFragment(governance, virtualAtlas);
+      const prepared = prepareInitializationGovernanceFragment(
+        governance,
+        virtualAtlas,
+      );
       findings.push(...prepared.findings);
       changes.push(...prepared.changes);
     }
