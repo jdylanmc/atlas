@@ -43,6 +43,7 @@ const governanceCorpus = JSON.parse(
       readonly trusted: readonly string[];
       readonly supplied: readonly string[];
       readonly expected: readonly string[];
+      readonly mutateSuppliedLocations?: boolean;
     };
   }[];
   readonly reviewResolutionRule: string;
@@ -1430,6 +1431,14 @@ for (const entry of governanceCorpus.cases) {
       start: { line: 2, column: 1 },
       end: { line: 2, column: 2 },
     };
+    const firstSuppliedLocation = {
+      start: { ...firstLocation.start },
+      end: { ...firstLocation.end },
+    };
+    const secondSuppliedLocation = {
+      start: { ...secondLocation.start },
+      end: { ...secondLocation.end },
+    };
     const fixtures: Readonly<Record<string, Finding>> = {
       trusted,
       owned,
@@ -1441,7 +1450,12 @@ for (const entry of governanceCorpus.cases) {
         location: { ...firstLocation, end: { line: 1, column: 3 } },
       },
       ownedSecond: { ...owned, severity: "warning", location: secondLocation },
-      hostileFirst: { ...owned, severity: "warning", location: firstLocation },
+      hostileFirst: { ...owned, severity: "warning", location: firstSuppliedLocation },
+      hostileSecond: {
+        ...owned,
+        severity: "warning",
+        location: secondSuppliedLocation,
+      },
       otherPath: { ...trusted, path: ".atlas/index.md" },
       otherCode: { ...trusted, code: "ATLAS_PAGE_TYPE_UNKNOWN" },
       rejectedFirst: {
@@ -1456,6 +1470,18 @@ for (const entry of governanceCorpus.cases) {
           "Atlas-owned or model-supplied findings cannot suppress or downgrade trusted Findings.",
         location: firstLocation,
       },
+      rejectedSecond: {
+        ...trusted,
+        attribution: {
+          checkId: "sdk-core.atlas-governance",
+          kind: "sdk-core",
+          trusted: true,
+        },
+        code: "ATLAS_GOVERNANCE_TRUSTED_FINDING_OVERRIDE_REJECTED",
+        message:
+          "Atlas-owned or model-supplied findings cannot suppress or downgrade trusted Findings.",
+        location: secondLocation,
+      },
     };
     const select = (names: readonly string[]): readonly Finding[] =>
       names.map((name) => {
@@ -1465,10 +1491,30 @@ for (const entry of governanceCorpus.cases) {
       });
     assert.equal(entry.gate, "governance");
     assert.equal(entry.kind, "finding-merge");
-    assert.deepEqual(
-      mergeGovernanceFindings(select(merge.trusted), select(merge.supplied)),
-      select(merge.expected),
+    const merged = mergeGovernanceFindings(
+      select(merge.trusted),
+      select(merge.supplied),
     );
+    if (merge.mutateSuppliedLocations === true) {
+      for (const location of [firstSuppliedLocation, secondSuppliedLocation]) {
+        location.start.line = 9;
+        location.start.column = 9;
+        location.end.line = 9;
+        location.end.column = 10;
+      }
+    }
+    assert.deepEqual(merged, select(merge.expected));
+    if (merge.mutateSuppliedLocations === true) {
+      const refusals = merged.filter((value) => value.code === entry.expectedCode);
+      assert.equal(refusals.length, 2);
+      for (const refusal of refusals) {
+        assert.ok(refusal.location);
+        assert.equal(Object.isFrozen(refusal), true);
+        assert.equal(Object.isFrozen(refusal.location), true);
+        assert.equal(Object.isFrozen(refusal.location.start), true);
+        assert.equal(Object.isFrozen(refusal.location.end), true);
+      }
+    }
   });
 }
 

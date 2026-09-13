@@ -62,6 +62,8 @@ Trusted attribution takes precedence for the same identity; at equal trust the
 strongest severity wins, with the first observation retained for ties. Different
 paths or locations remain distinct, including when checking for an attempted
 downgrade of a trusted Finding.
+Generated trusted refusals snapshot and deeply freeze their source ranges so
+later caller mutations cannot change the reported identity.
 
 ## Package contents
 

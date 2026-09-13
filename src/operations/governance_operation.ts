@@ -24,6 +24,7 @@ import {
   type AtlasApprovalAttestation,
 } from "./operation_support.ts";
 import type { Finding } from "../domain/finding.ts";
+import { sdkFindings } from "../lint/sdk_finding.ts";
 import type { LintOperationResult } from "./lint_operation.ts";
 import {
   operationHandoffSchemaVersion,
@@ -204,11 +205,7 @@ export interface AtlasGovernanceRuntime {
   };
 }
 
-const trustedAttribution = Object.freeze({
-  checkId: "sdk-core.atlas-governance",
-  kind: "sdk-core" as const,
-  trusted: true as const,
-});
+const sdkFinding = sdkFindings("sdk-core.atlas-governance");
 
 const noReviewLink: OperationReviewLink = Object.freeze({
   reason: "Governance maintenance produced a local Atlas Proposal only.",
@@ -229,14 +226,7 @@ function finding(
   path = ".atlas",
   severity: Finding["severity"] = "error",
 ): Finding {
-  return Object.freeze({
-    attribution: trustedAttribution,
-    code,
-    "finding-schema": "1.0.0",
-    message,
-    path,
-    severity,
-  });
+  return sdkFinding(code, message, path, undefined, severity);
 }
 
 function operation(subject: AtlasGovernanceSubject): AtlasGovernanceOperationIdentity {
@@ -1004,14 +994,12 @@ export function mergeGovernanceFindings(
       severityRank[supplied.severity] < severityRank[matchingTrusted.severity]
     ) {
       merged.push(
-        Object.freeze({
-          ...finding(
-            "ATLAS_GOVERNANCE_TRUSTED_FINDING_OVERRIDE_REJECTED",
-            "Atlas-owned or model-supplied findings cannot suppress or downgrade trusted Findings.",
-            supplied.path,
-          ),
-          ...(supplied.location === undefined ? {} : { location: supplied.location }),
-        }),
+        sdkFinding(
+          "ATLAS_GOVERNANCE_TRUSTED_FINDING_OVERRIDE_REJECTED",
+          "Atlas-owned or model-supplied findings cannot suppress or downgrade trusted Findings.",
+          supplied.path,
+          supplied.location,
+        ),
       );
       continue;
     }

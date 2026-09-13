@@ -3,6 +3,23 @@
   "reviewResolutionRule": "A review finding is resolved only after tests/adversarial has a case exercising the governance gate.",
   "cases": [
     {
+      "name": "caller-range-mutation-cannot-retarget-trusted-refusals",
+      "gate": "governance",
+      "kind": "finding-merge",
+      "expectedCode": "ATLAS_GOVERNANCE_TRUSTED_FINDING_OVERRIDE_REJECTED",
+      "merge": {
+        "trusted": ["trustedFirst", "trustedSecond"],
+        "supplied": ["hostileFirst", "hostileSecond"],
+        "expected": [
+          "rejectedFirst",
+          "rejectedSecond",
+          "trustedFirst",
+          "trustedSecond"
+        ],
+        "mutateSuppliedLocations": true
+      }
+    },
+    {
       "name": "repeated-request-observations-coalesce",
       "gate": "governance",
       "kind": "semantic",
