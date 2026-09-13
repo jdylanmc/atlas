@@ -24,6 +24,7 @@ import {
   type AtlasApprovalAttestation,
 } from "./operation_support.ts";
 import type { Finding } from "../domain/finding.ts";
+import { sdkFindings } from "../lint/sdk_finding.ts";
 import type { LintOperationResult } from "./lint_operation.ts";
 import {
   operationHandoffSchemaVersion,
@@ -204,11 +205,7 @@ export interface AtlasGovernanceRuntime {
   };
 }
 
-const trustedAttribution = Object.freeze({
-  checkId: "sdk-core.atlas-governance",
-  kind: "sdk-core" as const,
-  trusted: true as const,
-});
+const sdkFinding = sdkFindings("sdk-core.atlas-governance");
 
 const noReviewLink: OperationReviewLink = Object.freeze({
   reason: "Governance maintenance produced a local Atlas Proposal only.",
@@ -229,14 +226,7 @@ function finding(
   path = ".atlas",
   severity: Finding["severity"] = "error",
 ): Finding {
-  return Object.freeze({
-    attribution: trustedAttribution,
-    code,
-    "finding-schema": "1.0.0",
-    message,
-    path,
-    severity,
-  });
+  return sdkFinding(code, message, path, undefined, severity);
 }
 
 function operation(subject: AtlasGovernanceSubject): AtlasGovernanceOperationIdentity {
@@ -321,7 +311,7 @@ function result(
       request.subject,
       disposition,
       completion,
-      findings,
+      uniqueGovernanceFindings(findings),
       summary,
     ),
     operation: operation(request.subject),
@@ -924,9 +914,9 @@ function validateAtlasGovernanceRequestInternal(
 export function validateAtlasGovernanceRequest(
   request: AtlasGovernanceRequest,
 ): readonly Finding[] {
-  return validateAtlasGovernanceRequestInternal(request, {
-    requireChangelog: true,
-  });
+  return uniqueGovernanceFindings(
+    validateAtlasGovernanceRequestInternal(request, { requireChangelog: true }),
+  );
 }
 
 export function prepareGovernanceFragment(
@@ -942,7 +932,7 @@ export function prepareGovernanceFragment(
       Object.freeze({ content: change.content, path: change.path }),
     ),
   );
-  const findings = Object.freeze([
+  const findings = uniqueGovernanceFindings([
     ...validateGovernanceApproval(request),
     ...validateAtlasGovernanceRequestInternal(request, {
       requireChangelog: false,
@@ -958,24 +948,57 @@ export function prepareGovernanceFragment(
   return Object.freeze({ changes, findings });
 }
 
+function governanceFindingIdentity(value: Finding): string {
+  return JSON.stringify([
+    value.code,
+    value.path,
+    value.location?.start.line,
+    value.location?.start.column,
+    value.location?.end.line,
+    value.location?.end.column,
+  ]);
+}
+
+function uniqueGovernanceFindings(findings: readonly Finding[]): readonly Finding[] {
+  const unique = new Map<string, Finding>();
+  for (const value of findings) {
+    const identity = governanceFindingIdentity(value);
+    const previous = unique.get(identity);
+    if (
+      previous === undefined ||
+      (!previous.attribution.trusted && value.attribution.trusted) ||
+      (previous.attribution.trusted === value.attribution.trusted &&
+        severityRank[value.severity] > severityRank[previous.severity])
+    ) {
+      unique.set(identity, value);
+    }
+  }
+  return Object.freeze([...unique.values()]);
+}
+
 export function mergeGovernanceFindings(
   trustedFindings: readonly Finding[],
   suppliedFindings: readonly Finding[],
 ): readonly Finding[] {
-  const merged: Finding[] = [...trustedFindings];
+  const trustedByIdentity = new Map(
+    uniqueGovernanceFindings(trustedFindings).map((value) => [
+      governanceFindingIdentity(value),
+      value,
+    ]),
+  );
+  const merged: Finding[] = [...trustedByIdentity.values()];
   for (const supplied of suppliedFindings) {
-    const matchingTrusted = trustedFindings.find(
-      (trusted) => trusted.code === supplied.code && trusted.path === supplied.path,
-    );
+    const matchingTrusted = trustedByIdentity.get(governanceFindingIdentity(supplied));
     if (
       matchingTrusted !== undefined &&
       severityRank[supplied.severity] < severityRank[matchingTrusted.severity]
     ) {
       merged.push(
-        finding(
+        sdkFinding(
           "ATLAS_GOVERNANCE_TRUSTED_FINDING_OVERRIDE_REJECTED",
           "Atlas-owned or model-supplied findings cannot suppress or downgrade trusted Findings.",
           supplied.path,
+          supplied.location,
         ),
       );
       continue;
@@ -983,7 +1006,7 @@ export function mergeGovernanceFindings(
     if (!supplied.attribution.trusted) merged.push(supplied);
   }
   return Object.freeze(
-    merged.toSorted((left, right) => {
+    uniqueGovernanceFindings(merged).toSorted((left, right) => {
       const path = compareCodePoints(left.path, right.path);
       if (path !== 0) return path;
       return compareCodePoints(left.code, right.code);

@@ -13,7 +13,37 @@
         ".atlas/index.md",
         ".atlas/manifest.json"
       ],
-      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND"
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "governance": {
+        "change": {
+          "path": ".atlas/principles/quality.md",
+          "content": "---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  created-at: \"2026-08-21T00:00:00Z\"\n  created-by:\n    kind: human\n    name: Fixture Maintainer\n  id: principle:wrong\n  local-atlas-schema: 1.0.0\n  tags: []\n  title: Quality\n  type: principle\n  updated-at: \"2026-08-21T00:00:00Z\"\n  updated-by:\n    kind: human\n    name: Fixture Maintainer\natlas: {}\n---\n\n# Quality\n\n## Active truths\n\n- `truth:one` Validation is deterministic.\n"
+        },
+        "expectedCodes": [
+          "ATLAS_GOVERNANCE_PRINCIPLE_AMENDMENT_REQUIRED",
+          "ATLAS_GOVERNANCE_PRINCIPLE_IDENTITY_CHANGED"
+        ]
+      }
+    },
+    {
+      "name": "one installed governance change with one problem emits exactly one Finding",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "governance": {
+        "change": {
+          "path": ".atlas/principles/quality.md",
+          "content": "---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  created-at: \"2026-08-21T00:00:00Z\"\n  created-by:\n    kind: human\n    name: Fixture Maintainer\n  id: principle:quality\n  local-atlas-schema: 1.0.0\n  tags: []\n  title: Quality\n  type: principle\n  updated-at: \"2026-08-21T00:00:00Z\"\n  updated-by:\n    kind: human\n    name: Fixture Maintainer\natlas: {}\n---\n\n# Quality\n\n## Active truths\n\n- `truth:one` Validation is deterministic.\n"
+        },
+        "expectedCodes": ["ATLAS_GOVERNANCE_PRINCIPLE_AMENDMENT_REQUIRED"]
+      }
     }
   ]
 }

@@ -9,6 +9,10 @@ interface InstalledConsumerCase {
   readonly expectedRootAnchorId: string;
   readonly expectedAtlasPaths: readonly string[];
   readonly unmergedLintCode: string;
+  readonly governance?: {
+    readonly change: { readonly path: string; readonly content: string };
+    readonly expectedCodes: readonly string[];
+  };
 }
 
 interface InstalledConsumerCorpus {
@@ -46,6 +50,15 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
     for (const path of entry.expectedAtlasPaths) {
       assert.equal(typeof path, "string");
       assert.match(path, /^\.atlas\//u);
+    }
+    if (entry.governance !== undefined) {
+      assert.equal(typeof entry.governance.change.content, "string");
+      assert.match(entry.governance.change.path, /^\.atlas\//u);
+      assert.equal(Array.isArray(entry.governance.expectedCodes), true);
+      assert.ok(entry.governance.expectedCodes.length > 0);
+      for (const code of entry.governance.expectedCodes) {
+        assert.match(code, /^ATLAS_[A-Z_]+$/u);
+      }
     }
   }
   return corpus;
