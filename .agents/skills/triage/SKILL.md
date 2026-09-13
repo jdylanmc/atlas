@@ -1,24 +1,28 @@
 ---
 name: triage
-description: Move issues and external PRs through a state machine of triage roles, categorise, verify, grill if needed, and write agent-ready briefs.
-disable-model-invocation: true
+description: "Human or human-started Joe-mode only. Classify selected issues and external PRs, verify claims, and prepare agent-ready briefs while preserving tracker-change and human-decision gates."
+disable-model-invocation: false
+user-invocable: true
 ---
 
 # Triage
 
+## Atlas integration
+
 Before using the tracker, read `docs/agents/issue-tracker.md` and
 `docs/agents/triage-labels.md`; before code exploration, read
-`docs/agents/domain.md`. Preserve existing priority/area labels and issue
+`docs/agents/domain.md`. Preserve existing priority/area labels and native issue
 relationships. Repository approval and phase boundaries apply to reproduction,
-tests, proposal writes, tracker writes and issue closure; a triage label is not
+tests, proposal writes, tracker writes, and issue closure; a triage label is not
 execution or merge authorization.
 
 Atlas triage is for raw incoming requests. Exclude parent specifications,
 Wayfinder maps/decision tickets, milestone or umbrella records, and reviewed
 implementation tickets from automatic triage discovery. An unlabeled
-specification is intentional, not a missing-state defect. If an item's role
-is unclear, ask before relabeling it. `/spec` and `/tickets` retain their
-canonical lifecycle even when an item is explicitly named.
+specification is intentional, not a missing-state defect. `/spec` and `/tickets`
+retain their canonical lifecycle even when an item is explicitly named.
+
+Use [doctrine selection and application](../doctrine/APPLY.md), preserving explicit choices. With none, consider `debugging` for causal investigation and `documentation` for agent briefs. Pass the scoped packet with a work handoff. Reading/testing a submitted PR is not permission to create or change one; separately authorized PR-producing work requires `worktrees`.
 
 Move issues on the project issue tracker through a small state machine of triage roles.
 
@@ -63,7 +67,10 @@ State transitions: an unlabeled issue normally goes to `needs-triage` first; fro
 
 ## Invocation
 
-The maintainer invokes `/triage` and describes what they want in natural language. Interpret the request and act. Examples:
+The maintainer invokes `/triage`, or human-started Joe-mode supplies a selected
+backlog scope and current owner. Follow the [invocation contract](../setup/INVOCATION.md);
+Joe's authority does not waive the explicit tracker/decision gates below.
+Interpret the scoped request. Examples:
 
 - "Show me anything that needs my attention"
 - "Let's look at #42" (issue or PR)
@@ -91,9 +98,15 @@ Show counts and a one-line summary per item. Let the maintainer pick.
 
 2. **Recommend.** Tell the maintainer your category and state recommendation with reasoning, plus a brief codebase summary relevant to the request (including whether it's already implemented). Wait for direction.
 
-3. **Verify the claim.** Before any grilling, check that the claim holds up. For a bug, reproduce it from the reporter's steps. For a PR, confirm the diff does what it claims: check it out, run the relevant tests or commands. Report what happened: confirmed (with code path), failed, or insufficient detail (a strong `needs-info` signal). A confirmed verification makes a much stronger agent brief.
+3. **Verify the claim.** Before any interrogation, check that the claim holds up. For a bug, reproduce it from the reporter's steps. For a PR, confirm the diff does what it claims: check it out, run the relevant tests or commands. Report what happened: confirmed (with code path), failed, or insufficient detail (a strong `needs-info` signal). A confirmed verification makes a much stronger agent brief.
 
-4. **Grill (if needed).** If the request needs fleshing out, call the Skill tool twice, for "grilling" and "domain-modeling", and grill it into shape a round of questions at a time, sharpening domain terms and updating `CONTEXT.md`/ADRs inline as decisions land.
+4. **Clarify (if needed).** Ask a focused missing-detail question directly.
+   For material unknowns, give [Discovery](../discovery/SKILL.md) a bounded
+   question and evidence; it may use Interrogate internally. Under Joe-mode,
+   return the question to that controller rather than starting a competing
+   interview. Do not call Interrogate independently or write domain records
+   as an interview side effect. Any later [domain recording](../domain-modeling/SKILL.md)
+   needs confirmed decisions and explicitly agreed destinations.
 
 5. **Apply the outcome:**
    - `ready-for-agent`: post an agent brief comment ([AGENT-BRIEF.md](AGENT-BRIEF.md)).
@@ -105,19 +118,24 @@ Show counts and a one-line summary per item. Let the maintainer pick.
      - **Rejected (enhancement)**: write to `.out-of-scope/`, link to it from a comment, then close ([OUT-OF-SCOPE.md](OUT-OF-SCOPE.md)).
    - `needs-triage`: apply the role. Optional comment if there's partial progress.
 
-Before any write, preview the exact comment, state/category label changes,
-and closure for approval. Remove only superseded triage-state labels, preserve
-scope labels such as `mvp` and `post-mvp`, and never rewrite native blockers.
-Read the issue back after applying the approved changes. Rejection-record
-file changes also require approval; no commit or PR is implicit.
+Before applying tracker or repository changes, confirm the exact proposed
+outcome with the human; reuse their explicit direction without asking them to
+choose again. Use [Changelog](../changelog/SKILL.md) for authorized file changes
+and noteworthy outcomes, not an entry for every triage comment. Local
+knowledge-base writes retain their destination/ownership gates.
+
+Preview the exact comment, state/category label changes, and closure before
+approval. Remove only superseded triage-state labels, preserve scope labels such
+as `mvp` and `post-mvp`, and never rewrite native blockers. Read the item back
+after applying approved changes.
 
 ## Quick state override
 
 For an eligible incoming request, a direct state-change instruction supplies
-the outcome; skip grilling and confirm the exact changes before acting.
-It does not override Atlas's parent-specification lifecycle or clear native
-blockers. If moving an incoming request to `ready-for-agent` without a brief,
-ask whether the maintainer wants one.
+the outcome. Confirm the exact changes, then act without another interview. It
+does not override Atlas's parent-specification lifecycle or clear native
+blockers. If moving to `ready-for-agent` without an agent brief, ask whether the
+maintainer wants one.
 
 ## Needs-info template
 
@@ -135,7 +153,7 @@ ask whether the maintainer wants one.
 - question 2
 ```
 
-Capture everything resolved during grilling under "established so far" so the work isn't lost. Questions must be specific and actionable, not "please provide more info".
+Capture everything resolved during interrogation under "established so far" so the work isn't lost. Questions must be specific and actionable, not "please provide more info".
 
 ## Resuming a previous session
 
