@@ -158,10 +158,10 @@ function gitSucceeded(
 
 function readRevision(
   repository: string,
-  branch: string,
+  reference: string,
   readGit: typeof runTrustedGit,
 ): string | undefined {
-  const result = readGit(repository, ["rev-parse", `refs/heads/${branch}`]);
+  const result = readGit(repository, ["rev-parse", reference]);
   return gitSucceeded(result) ? result.stdout.trim() : undefined;
 }
 
@@ -171,6 +171,7 @@ function fetchBranch(
   branch: string,
   bootstrap: TrustedGitBootstrapAdapter,
   writeGit: typeof runTrustedGitForWrite,
+  reference = `refs/heads/${branch}`,
 ): boolean {
   writeGit(repository, ["remote", "remove", "origin"]);
   if (!gitSucceeded(writeGit(repository, ["remote", "add", "origin", remote]))) {
@@ -181,7 +182,7 @@ function fetchBranch(
       "fetch",
       "--no-tags",
       "origin",
-      `+refs/heads/${branch}:refs/heads/${branch}`,
+      `+refs/heads/${branch}:${reference}`,
     ]),
   );
 }
@@ -268,6 +269,11 @@ export function resolveAtlasCache(
   );
   const finalDirectory = cacheDirectory(request.homeAtlasDirectory, cache.cacheKey);
   const finalRepository = bareRepositoryDirectory(finalDirectory);
+  const activeReference = `refs/heads/${request.trackedAtlas.locator.branch}`;
+  const treePath =
+    request.trackedAtlas.locator.atlasPath === "."
+      ? ".atlas"
+      : `${request.trackedAtlas.locator.atlasPath}/.atlas`;
   // Unique per invocation (not just per cacheKey): concurrent first-contact
   // resolutions of the same tracked Atlas each get their own in-flight
   // bootstrap/fetch directory, so one process's cleanup does not race the
@@ -317,11 +323,7 @@ export function resolveAtlasCache(
         state: "unreachable" as const,
       });
     }
-    const revision = readRevision(
-      pendingRepository,
-      request.trackedAtlas.locator.branch,
-      readGit,
-    );
+    const revision = readRevision(pendingRepository, activeReference, readGit);
     if (revision === undefined) {
       rmSync(pendingDirectory, { force: true, recursive: true });
       return Object.freeze({
@@ -330,6 +332,23 @@ export function resolveAtlasCache(
             "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE",
             "Cross-Atlas first contact could not resolve the tracked Atlas Snapshot.",
           ),
+        ]),
+        state: "unreachable" as const,
+      });
+    }
+    const pendingCapture = captureAtlasTree(
+      pendingRepository,
+      revision,
+      treePath,
+      request.trackedAtlas.locator.atlasPath,
+      atlasCacheCaptureBudgets,
+      { readText: readGit },
+    );
+    if (pendingCapture.state !== "captured") {
+      rmSync(pendingDirectory, { force: true, recursive: true });
+      return Object.freeze({
+        findings: Object.freeze([
+          finding("ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE", pendingCapture.reason),
         ]),
         state: "unreachable" as const,
       });
@@ -345,107 +364,130 @@ export function resolveAtlasCache(
     });
     writeMetadata(pendingDirectory, dependency);
     publishAtlasCacheDirectory(finalDirectory, pendingDirectory);
-    writeAtlasLock(request.homeAtlasDirectory, dependency);
   }
 
+  const captureReference = (repository: string, reference: string) => {
+    const revision = readRevision(repository, reference, readGit);
+    if (revision === undefined) {
+      return {
+        reason: "Cross-Atlas traversal could not resolve the tracked Atlas Snapshot.",
+        state: "failed" as const,
+      };
+    }
+    const captured = captureAtlasTree(
+      repository,
+      revision,
+      treePath,
+      request.trackedAtlas.locator.atlasPath,
+      atlasCacheCaptureBudgets,
+      { readText: readGit },
+    );
+    return captured.state === "captured"
+      ? {
+          capturedFiles: captured.capturedFiles,
+          revision,
+          state: "captured" as const,
+        }
+      : { reason: captured.reason, state: "failed" as const };
+  };
   const findings: Finding[] = [];
-  const remoteReached = fetchBranch(
-    finalRepository,
-    resolveRemote(request.trackedAtlas),
-    request.trackedAtlas.locator.branch,
-    bootstrap,
-    writeGit,
-  );
-  if (!remoteReached && hadCache) {
-    findings.push(
-      finding(
-        "ATLAS_CROSS_ATLAS_CACHED_OFFLINE",
-        "Cross-Atlas traversal is using a cached tracked Atlas because the remote is currently unreachable.",
-      ),
+  const fetchReference = hadCache
+    ? `refs/atlas-cache-pending/${randomUUID()}`
+    : activeReference;
+  const remoteReached =
+    !hadCache ||
+    fetchBranch(
+      finalRepository,
+      resolveRemote(request.trackedAtlas),
+      request.trackedAtlas.locator.branch,
+      bootstrap,
+      writeGit,
+      fetchReference,
     );
-  } else if (!remoteReached) {
-    findings.push(
-      finding(
-        "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE",
-        "Cross-Atlas first contact could not reach the tracked Atlas.",
-      ),
-    );
-    return Object.freeze({
-      findings: Object.freeze(findings),
-      state: "unreachable" as const,
-    });
+  let captured = remoteReached
+    ? captureReference(finalRepository, fetchReference)
+    : {
+        reason:
+          "Cross-Atlas traversal is using a cached tracked Atlas because the remote is currently unreachable.",
+        state: "failed" as const,
+      };
+  if (hadCache && captured.state === "captured") {
+    const published = writeGit(finalRepository, [
+      "update-ref",
+      activeReference,
+      captured.revision,
+    ]);
+    if (!gitSucceeded(published)) {
+      captured = {
+        reason:
+          "Cross-Atlas traversal could not adopt the fetched Atlas Snapshot; the previous cache remains available.",
+        state: "failed" as const,
+      };
+    }
   }
-
-  const revision = readRevision(
-    finalRepository,
-    request.trackedAtlas.locator.branch,
-    readGit,
-  );
-  if (revision === undefined) {
+  const usesCachedSnapshot = captured.state === "failed";
+  if (captured.state === "failed") {
     findings.push(
       finding(
-        /* c8 ignore next 6 -- both diagnostic arms are already exercised through resolved and cached-offline tests. */
-        /* c8 ignore next 6 -- both diagnostic arms are exercised elsewhere; this branch only formats the message. */
-        hadCache
-          ? "ATLAS_CROSS_ATLAS_CACHED_OFFLINE"
-          : "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE",
-        hadCache
-          ? "Cross-Atlas traversal could not read the cached tracked Atlas Snapshot."
-          : "Cross-Atlas first contact could not resolve the tracked Atlas Snapshot.",
-      ),
-    );
-    return Object.freeze({
-      findings: Object.freeze(findings),
-      state: "unreachable" as const,
-    });
-  }
-
-  const treePath =
-    request.trackedAtlas.locator.atlasPath === "."
-      ? ".atlas"
-      : `${request.trackedAtlas.locator.atlasPath}/.atlas`;
-  const captured = captureAtlasTree(
-    finalRepository,
-    revision,
-    treePath,
-    request.trackedAtlas.locator.atlasPath,
-    atlasCacheCaptureBudgets,
-    { readText: readGit },
-  );
-  if (captured.state !== "captured") {
-    findings.push(
-      finding(
-        /* c8 ignore next 3 -- both diagnostic arms are exercised elsewhere; this branch only formats the message. */
         hadCache
           ? "ATLAS_CROSS_ATLAS_CACHED_OFFLINE"
           : "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE",
         captured.reason,
       ),
     );
+    if (hadCache) captured = captureReference(finalRepository, activeReference);
+  }
+  if (
+    hadCache &&
+    !gitSucceeded(writeGit(finalRepository, ["update-ref", "-d", fetchReference]))
+  ) {
+    findings.push(
+      finding(
+        "ATLAS_CROSS_ATLAS_CACHE_CLEANUP_FAILED",
+        "Cross-Atlas traversal could not remove its temporary fetch reference.",
+      ),
+    );
+  }
+  if (captured.state !== "captured") {
+    const unresolved = finding(
+      hadCache
+        ? "ATLAS_CROSS_ATLAS_CACHED_OFFLINE"
+        : "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE",
+      captured.reason,
+    );
+    if (
+      !findings.some(
+        (item) => item.code === unresolved.code && item.message === unresolved.message,
+      )
+    ) {
+      findings.push(unresolved);
+    }
     return Object.freeze({
       findings: Object.freeze(findings),
       state: "unreachable" as const,
     });
   }
 
-  const dependency: AtlasLockDependency = Object.freeze({
-    cacheKey: cache.cacheKey,
-    fetchedAt: now(),
-    introducedByAnchorId: request.introducedByAnchorId,
-    introducedByEdgeId: request.introducedByEdgeId,
-    locator: request.trackedAtlas.locator,
-    slug: request.trackedAtlas.slug,
-    snapshot: revision,
-  });
-  writeMetadata(finalDirectory, dependency);
-  writeAtlasLock(request.homeAtlasDirectory, dependency);
+  if (!usesCachedSnapshot) {
+    const dependency: AtlasLockDependency = Object.freeze({
+      cacheKey: cache.cacheKey,
+      fetchedAt: now(),
+      introducedByAnchorId: request.introducedByAnchorId,
+      introducedByEdgeId: request.introducedByEdgeId,
+      locator: request.trackedAtlas.locator,
+      slug: request.trackedAtlas.slug,
+      snapshot: captured.revision,
+    });
+    writeMetadata(finalDirectory, dependency);
+    writeAtlasLock(request.homeAtlasDirectory, dependency);
+  }
 
   return Object.freeze({
     snapshot: Object.freeze({
       cacheDirectory: finalDirectory,
       capturedFiles: captured.capturedFiles,
       findings: Object.freeze(findings),
-      snapshot: revision,
+      snapshot: captured.revision,
       trackedAtlas: request.trackedAtlas,
     }),
     state: "resolved" as const,

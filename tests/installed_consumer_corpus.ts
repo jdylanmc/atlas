@@ -12,6 +12,18 @@ interface InstalledConsumerCase {
   readonly expectedRootAnchorId: string;
   readonly expectedAtlasPaths: readonly string[];
   readonly unmergedLintCode: string;
+  readonly connectedExplore?: {
+    readonly query: string;
+    readonly expectedConceptId: string;
+    readonly expectedSourceId: string;
+    readonly expectedSourceText: string;
+    readonly expectedTrackedSlug: string;
+  };
+  readonly cacheFailure?: {
+    readonly mode:
+      "missing-atlas" | "uncapturable-update" | "interrupted-first-contact";
+    readonly expectedCode: string;
+  };
   readonly retirement?: GovernanceRetirementProbe;
   readonly repeatedEmptyEdges?: {
     readonly alternatingPairs: number;
@@ -91,6 +103,20 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
     for (const path of entry.expectedAtlasPaths) {
       assert.equal(typeof path, "string");
       assert.match(path, /^\.atlas\//u);
+    }
+    if (entry.connectedExplore !== undefined) {
+      for (const value of Object.values(entry.connectedExplore)) {
+        assert.equal(typeof value, "string");
+        assert.ok(value.length > 0);
+      }
+    }
+    if (entry.cacheFailure !== undefined) {
+      assert.ok(
+        ["missing-atlas", "uncapturable-update", "interrupted-first-contact"].includes(
+          entry.cacheFailure.mode,
+        ),
+      );
+      assert.match(entry.cacheFailure.expectedCode, /^ATLAS_[A-Z_]+$/u);
     }
     if (entry.retirement !== undefined) {
       assert.ok(["retire", "delete"].includes(entry.retirement.action));

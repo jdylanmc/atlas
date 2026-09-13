@@ -53,6 +53,39 @@ must invoke installed Initialization, adopt its proposal through Git, and pass
 installed Lint and Explore. Add cases to `installed-consumer.json` to extend
 this gate without duplicating the installation harness.
 
+The `cacheFailure` probe imports the installed package root in the isolated
+consumer and fetches a real local Git repository with no Atlas tree. It requires
+an explicit first-contact refusal, no failed dependency in Atlas Lock, and
+unchanged Home Atlas bytes and Git state. Node sockets remain blocked; the probe
+exercises subprocess Git transport rather than treating the socket guard as
+proof about Git.
+
+Its update case first captures a real Atlas, then commits removal of the remote
+Atlas tree. The failed update and a subsequent offline retry must retain the
+same captured bytes and commit, preserve metadata and Atlas Lock bytes, and
+report cached-offline degradation rather than losing the usable snapshot.
+The interrupted-first-contact case makes subsequent Git contact unavailable
+after the first fetch. Initial resolution must retain that captured snapshot;
+later offline resolutions must preserve it and report degradation.
+
+The `connectedExplore` probe adds cited fixture knowledge and a tracked Atlas
+to the initialized consumer. A fresh external Node process imports only the
+installed package root, captures committed Home bytes through Git, and composes
+`runExploreOperation` with the real `resolveAtlasCache` adapter. Its existing
+`resolveRemote` seam maps fixture locators to local Git repositories; no parser,
+traversal, cache Snapshot, or Git result is mocked.
+
+Before any cache exists, an unavailable first connection must still return cited
+Home context with a pending human decision and no resolved Atlas Lock dependency.
+After cold online resolution, a repository-local URL rewrite in that disposable
+cache maps the canonical URL to the fixture transport for installed CLI runs.
+Online and offline CLI/API results must preserve cited Home and tracked Concepts,
+commit identities, routes and Re-anchoring. A missing never-cached connection
+adds explicit first-contact degradation and a pending human decision without
+losing Home or cached context or publishing the failed dependency. Each API
+invocation is a fresh process; all Explore runs leave Home Git/knowledge unchanged.
+This proves local Git transport behavior, not public-host authentication.
+
 The `retirement` probes establish real fixture governance in Git, then exercise
 both `retire` and `delete` for Principles and Atlas Policies through the source
 and installed CLIs. They require live-document purges, unchanged target branches,

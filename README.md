@@ -6,12 +6,23 @@ Today the package has these reachable command-line workflows:
 
 - `atlas lint --machine [--atlas-host-directory PATH]` validates a Home Atlas and prints an Operation Result as JSON.
 - `atlas initialize --machine [--atlas-host-directory PATH] [--resume-proposal-branch NAME]` creates or resumes an Atlas Initialization proposal in a Git-backed host directory.
-- `atlas explore --machine QUERY [--atlas-host-directory PATH]` reads a Home Atlas and returns routed Explore results as JSON.
+- `atlas explore --machine QUERY [--atlas-host-directory PATH]` reads a Home Atlas and reachable connected Atlases and returns routed Explore results as JSON.
 - `atlas ingest plan|reconcile --machine ...` hands out a Crawl Assignment for an approved Ingest Scope, then reconciles a returned Candidate Graph into one proposal.
 - `atlas govern --machine --request PATH [--atlas-host-directory PATH]` maintains a Principle or Atlas Policy through one reviewable Atlas Proposal. The request carries explicit Maintainer approval and any semantic Policy verdict as validated input; the command never supplies approval itself, so an agent may propose but never establish governance autonomously.
 - `atlas input-contract --machine NAME` describes a caller-authored JSON input without reading or changing an Atlas.
 
-Atlas SDK does not invoke a model, call a network service, or require an API key at runtime. Agentic judgment belongs to the calling agent workflow; Atlas SDK validates inputs, writes deterministic proposals, and returns Operation Results.
+Atlas SDK does not invoke a model or require a model API key. Agentic judgment belongs to the calling agent workflow; Atlas SDK validates inputs, writes deterministic proposals, and returns Operation Results.
+
+Connected Explore can use the network: online, it resolves reachable tracked
+Atlases through Git and materializes their read-only Atlas Cache entries.
+Offline, it retains usable Home Atlas knowledge and already captured tracked
+Atlas context, with explicit degradation Findings and Snapshot identities.
+An unreachable never-cached Atlas cannot contribute context; its first-contact
+Finding requests a human decision without discarding usable local results.
+Failed remote fetches or uncapturable updates preserve the last usable cache
+Snapshot and its recorded fetch time. A failed first capture is not published
+as a resolved dependency in Atlas Lock. Connected resolution has no per-host
+approval list or aggregate network-quota gate.
 
 ## Install
 

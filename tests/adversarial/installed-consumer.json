@@ -1152,6 +1152,77 @@
           ]
         }
       }
+    },
+    {
+      "name": "installed cache refuses an uncapturable first contact without publishing it in Atlas Lock",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "cacheFailure": {
+        "mode": "missing-atlas",
+        "expectedCode": "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE"
+      }
+    },
+    {
+      "name": "installed cache preserves its last usable snapshot through an invalid remote update and offline retry",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "cacheFailure": {
+        "mode": "uncapturable-update",
+        "expectedCode": "ATLAS_CROSS_ATLAS_CACHED_OFFLINE"
+      }
+    },
+    {
+      "name": "installed cache retains successful first contact when later remote contact is unavailable",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "cacheFailure": {
+        "mode": "interrupted-first-contact",
+        "expectedCode": "ATLAS_CROSS_ATLAS_CACHED_OFFLINE"
+      }
+    },
+    {
+      "name": "installed connected Explore retains cited Home and cached results when real Git transport is offline",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "connectedExplore": {
+        "query": "canonical serialization",
+        "expectedConceptId": "concept:canonical-serialization",
+        "expectedSourceId": "source:atlas-sdk-lint",
+        "expectedSourceText": "Atlas SDK documentation describing the deterministic Lint path.",
+        "expectedTrackedSlug": "github.com--fixture--connected-explore"
+      }
     }
   ]
 }

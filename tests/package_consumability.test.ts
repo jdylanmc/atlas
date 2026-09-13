@@ -8,12 +8,13 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
@@ -33,6 +34,8 @@ import {
   type AtlasGovernanceResult,
 } from "../src/operations/governance_operation.ts";
 import { attestationPayloadDigest } from "../src/operations/operation_support.ts";
+import { probeAtlasIngestSource } from "../src/operations/ingest_operation.ts";
+import type { AtlasLock } from "../src/domain/atlas_lock.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
@@ -962,6 +965,346 @@ for (const entry of readInstalledConsumerCorpus().cases) {
       const [firstResult] = exploreResult.payload.results;
       assert.ok(firstResult !== undefined);
       assert.equal(firstResult.route[0]?.objectId, entry.expectedRootAnchorId);
+      if (entry.cacheFailure !== undefined) {
+        const beforeHead = consumerGit(consumer, ["rev-parse", "HEAD"]);
+        const beforeRoot = readFileSync(join(consumer, ".atlas", "index.md"));
+        const remote = join(workspace, "remote-without-atlas");
+        mkdirSync(remote);
+        consumerGit(remote, ["init", "--quiet", "--initial-branch=main"]);
+        writeFileSync(join(remote, "README.md"), "# Repository without an Atlas\n");
+        if (entry.cacheFailure.mode !== "missing-atlas") {
+          mkdirSync(join(remote, ".atlas"));
+          writeFileSync(join(remote, ".atlas", "index.md"), beforeRoot);
+        }
+        consumerGit(remote, ["add", "."]);
+        consumerGit(remote, [
+          "-c",
+          "user.name=Fixture",
+          "-c",
+          "user.email=fixture@example.invalid",
+          "commit",
+          "--quiet",
+          "-m",
+          "Create a non-Atlas remote",
+        ]);
+        const probe = spawnSync(
+          process.execPath,
+          [
+            "--input-type=module",
+            "--eval",
+            [
+              'import assert from "node:assert/strict";',
+              'import { existsSync, readFileSync, renameSync } from "node:fs";',
+              'import { execFileSync } from "node:child_process";',
+              'import { join } from "node:path";',
+              'import { atlasLocatorFromParts, deriveAtlasSlug, resolveAtlasCache } from "@jdylanmc/atlas";',
+              `const input = ${JSON.stringify({ home: consumer, remote, mode: entry.cacheFailure.mode })};`,
+              'const locator = atlasLocatorFromParts({ host: "github.com", owner: "fixture", repository: "without-atlas", branch: "main", atlasPath: "." });',
+              "const slug = deriveAtlasSlug(locator);",
+              'const trackedAtlas = { declarationId: `tracked-atlas:${slug.value}`, defaultBranch: "main", locator, slug, title: "Missing Atlas" };',
+              'const request = { homeAtlasDirectory: input.home, introducedByAnchorId: "anchor:root", introducedByEdgeId: "edge:track", trackedAtlas };',
+              'let now = "2026-08-30T00:00:00Z";',
+              "let contacts = 0;",
+              'const options = { now: () => now, resolveRemote: () => input.mode === "interrupted-first-contact" && contacts++ > 0 ? `${input.remote}-unreachable` : input.remote };',
+              'const lockPath = join(input.home, ".atlas", "atlas-cache", "atlas-lock.json");',
+              'if (input.mode === "missing-atlas") {',
+              "const result = resolveAtlasCache(request, options);",
+              'assert.equal(result.state, "unreachable");',
+              'const dependencies = existsSync(lockPath) ? JSON.parse(readFileSync(lockPath, "utf8")).dependencies : [];',
+              "console.log(JSON.stringify({ state: result.state, code: result.findings[0]?.code, dependencies }));",
+              "} else {",
+              "const first = resolveAtlasCache(request, options);",
+              'assert.equal(first.state, "resolved");',
+              "assert.deepEqual(first.snapshot.findings, []);",
+              'const metadataPath = join(first.snapshot.cacheDirectory, "metadata.json");',
+              "const previousLock = readFileSync(lockPath);",
+              "const previousMetadata = readFileSync(metadataPath);",
+              'const git = (args) => execFileSync("git", args, { cwd: input.remote, encoding: "utf8", timeout: 30000 });',
+              'if (input.mode === "uncapturable-update") {',
+              'git(["rm", "-r", ".atlas"]);',
+              'git(["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "Remove the remote Atlas"]);',
+              "}",
+              'now = "2026-09-01T00:00:00Z";',
+              "const updated = resolveAtlasCache(request, options);",
+              'assert.equal(updated.state, "resolved");',
+              "assert.equal(updated.snapshot.snapshot, first.snapshot.snapshot);",
+              "assert.deepEqual(updated.snapshot.capturedFiles, first.snapshot.capturedFiles);",
+              "assert.deepEqual(readFileSync(lockPath), previousLock);",
+              "assert.deepEqual(readFileSync(metadataPath), previousMetadata);",
+              "renameSync(input.remote, `${input.remote}-offline`);",
+              "const offline = resolveAtlasCache(request, options);",
+              'assert.equal(offline.state, "resolved");',
+              "assert.equal(offline.snapshot.snapshot, first.snapshot.snapshot);",
+              "assert.deepEqual(offline.snapshot.capturedFiles, first.snapshot.capturedFiles);",
+              "assert.deepEqual(readFileSync(lockPath), previousLock);",
+              "assert.deepEqual(readFileSync(metadataPath), previousMetadata);",
+              "console.log(JSON.stringify({ state: updated.state, code: updated.snapshot.findings[0]?.code, offlineCode: offline.snapshot.findings[0]?.code }));",
+              "}",
+            ].join("\n"),
+          ],
+          {
+            cwd: consumer,
+            encoding: "utf8",
+            env: consumerEnvironment(guard),
+            killSignal: "SIGKILL",
+            timeout: 120_000,
+          },
+        );
+        assert.equal(probe.error, undefined);
+        assert.equal(probe.status, 0, probe.stderr);
+        assert.equal(probe.stderr, "");
+        assert.deepEqual(
+          JSON.parse(probe.stdout),
+          entry.cacheFailure.mode === "missing-atlas"
+            ? {
+                code: entry.cacheFailure.expectedCode,
+                dependencies: [],
+                state: "unreachable",
+              }
+            : {
+                code: entry.cacheFailure.expectedCode,
+                offlineCode: entry.cacheFailure.expectedCode,
+                state: "resolved",
+              },
+        );
+        assert.equal(consumerGit(consumer, ["rev-parse", "HEAD"]), beforeHead);
+        assert.deepEqual(
+          readFileSync(join(consumer, ".atlas", "index.md")),
+          beforeRoot,
+        );
+        assert.equal(consumerGit(consumer, ["status", "--porcelain"]), "");
+      }
+      if (entry.connectedExplore !== undefined) {
+        const probe = entry.connectedExplore;
+        const remote = join(workspace, "connected-explore");
+        mkdirSync(remote);
+        consumerGit(remote, ["init", "--quiet", "--initial-branch=main"]);
+        const rootBytes = readFileSync(join(consumer, ".atlas", "index.md"));
+        mkdirSync(join(remote, ".atlas"));
+        writeFileSync(join(remote, ".atlas", "index.md"), rootBytes);
+        for (const path of [
+          ".atlas/anchors/lint.md",
+          ".atlas/concepts/canonical-serialization.md",
+          ".atlas/edges/lint-covers-canonical-serialization.md",
+          ".atlas/sources/atlas-sdk-lint.md",
+        ]) {
+          const bytes = readFileSync(join(ROOT, "tests/fixtures/complete-atlas", path));
+          for (const host of [consumer, remote]) {
+            mkdirSync(dirname(join(host, path)), { recursive: true });
+            writeFileSync(join(host, path), bytes);
+          }
+        }
+        const commitFixture = (host: string, message: string) => {
+          consumerGit(host, ["add", "."]);
+          consumerGit(host, [
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            message,
+          ]);
+          return consumerGit(host, ["rev-parse", "HEAD"]);
+        };
+        const track = (repository: string) => {
+          const tracked = probeAtlasIngestSource({
+            approvedAt: "2026-08-25T00:00:00Z",
+            approvedBy: "Fixture Maintainer",
+            asOf: "2026-08-25T00:00:00Z",
+            atlasPath: ".",
+            branch: "main",
+            fromAnchorId: "anchor:root",
+            repositoryLocator: `https://github.com/fixture/${repository}.git`,
+            title: repository,
+          });
+          assert.equal(tracked.state, "tracked-atlas");
+          for (const change of tracked.changes) {
+            mkdirSync(dirname(join(consumer, change.path)), { recursive: true });
+            writeFileSync(join(consumer, change.path), change.content);
+          }
+          return tracked.changes.map(({ path }) => path);
+        };
+        const remoteHead = commitFixture(remote, "Seed connected knowledge");
+        let homeHead = consumerGit(consumer, ["rev-parse", "HEAD"]);
+        const moduleSource = readFileSync(
+          join(ROOT, "tests", "installed_explore_consumer.ts"),
+          "utf8",
+        );
+        const runModule = () => {
+          const result = spawnSync(
+            process.execPath,
+            [
+              "--input-type=module-typescript",
+              "--eval",
+              moduleSource,
+              JSON.stringify({
+                home: consumer,
+                query: probe.query,
+                remotes: {
+                  "connected-explore": remote,
+                  "never-cached": join(workspace, "never-cached"),
+                },
+              }),
+            ],
+            {
+              cwd: consumer,
+              encoding: "utf8",
+              env: consumerEnvironment(guard),
+              killSignal: "SIGKILL",
+              timeout: 120_000,
+            },
+          );
+          assert.equal(result.error, undefined);
+          assert.equal(result.status, 0, result.stderr);
+          assert.equal(result.stderr, "");
+          return parseMachineOperationResult(result.stdout) as ExploreOperationResult;
+        };
+        const verifyContext = (
+          result: ExploreOperationResult,
+          codes: readonly string[],
+          withTracked = true,
+        ) => {
+          assert.equal(result.completion, "completed");
+          assert.equal(result.disposition, "success");
+          assert.equal(result.handoff.baseSnapshot.state, "known");
+          assert.equal(result.handoff.baseSnapshot.reference, homeHead);
+          assert.deepEqual(
+            result.payload.degradation.diagnostics.map(({ code }) => code).toSorted(),
+            codes.toSorted(),
+          );
+          assert.equal(
+            result.handoff.degradationState.state,
+            codes.length === 0 ? "not-degraded" : "degraded",
+          );
+          for (const role of ["home", "tracked"] as const) {
+            if (role === "tracked" && !withTracked) {
+              assert.ok(
+                result.payload.results.every(
+                  ({ result: item }) => item.snapshot?.role === "home",
+                ),
+              );
+              continue;
+            }
+            const found = result.payload.results.find(
+              ({ result: item }) =>
+                item.id === probe.expectedConceptId && item.snapshot?.role === role,
+            );
+            assert.ok(
+              found !== undefined,
+              `Missing ${role} Concept: ${JSON.stringify(result)}`,
+            );
+            const expectedSnapshot = role === "home" ? homeHead : remoteHead;
+            assert.equal(found.result.snapshot?.snapshot, expectedSnapshot);
+            assert.equal(
+              found.result.snapshot.slug,
+              role === "home" ? "local-home-atlas" : probe.expectedTrackedSlug,
+            );
+            assert.match(found.result.body, /\[\^sdk-lint\]/u);
+            assert.equal(found.route[0]?.objectId, entry.expectedRootAnchorId);
+            assert.equal(found.route[0].snapshot?.role, "home");
+            assert.equal(found.route.at(-1)?.objectId, probe.expectedConceptId);
+            assert.equal(
+              found.route.at(-1)?.edgeId,
+              "edge:lint-covers-canonical-serialization",
+            );
+            const citation = found.citedContext.find(
+              ({ id }) => id === probe.expectedSourceId,
+            );
+            assert.ok(citation !== undefined);
+            assert.ok(citation.body.includes(probe.expectedSourceText));
+            assert.equal(citation.snapshot?.role, role);
+            assert.equal(citation.snapshot.snapshot, expectedSnapshot);
+            if (role === "tracked") {
+              assert.ok(
+                found.route.some(
+                  (step) =>
+                    step.objectId === "anchor:root" &&
+                    step.snapshot?.role === "tracked",
+                ),
+              );
+              assert.ok(
+                result.payload.reanchors.some(
+                  ({ anchor }) =>
+                    anchor.id === "anchor:root" && anchor.snapshot?.role === "tracked",
+                ),
+              );
+            }
+          }
+          assert.equal(consumerGit(consumer, ["rev-parse", "HEAD"]), homeHead);
+          assert.equal(consumerGit(consumer, ["status", "--porcelain"]), "");
+          assert.deepEqual(
+            readFileSync(join(consumer, ".atlas", "index.md")),
+            rootBytes,
+          );
+        };
+        const lockPath = join(consumer, ".atlas", "atlas-cache", "atlas-lock.json");
+        const unavailablePaths = track("never-cached");
+        homeHead = commitFixture(consumer, "Track an unavailable first connection");
+        const firstContact = runModule();
+        verifyContext(
+          firstContact,
+          ["ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE"],
+          false,
+        );
+        assert.equal(firstContact.handoff.unresolvedHumanDecisions.state, "pending");
+        assert.equal(existsSync(lockPath), false);
+        consumerGit(consumer, ["rm", "--", ...unavailablePaths]);
+        track("connected-explore");
+        homeHead = commitFixture(consumer, "Track connected fixture knowledge");
+        verifyContext(runModule(), []);
+        const lock = JSON.parse(readFileSync(lockPath, "utf8")) as AtlasLock;
+        assert.equal(lock.dependencies.length, 1);
+        const dependency = lock.dependencies[0];
+        assert.ok(dependency !== undefined);
+        assert.equal(dependency.slug.value, probe.expectedTrackedSlug);
+        assert.equal(dependency.snapshot, remoteHead);
+        const cacheDirectory = join(
+          consumer,
+          ".atlas",
+          "atlas-cache",
+          "atlases",
+          dependency.cacheKey,
+        );
+        // Only this disposable bare repository maps the canonical URL to real local Git transport.
+        consumerGit(join(cacheDirectory, "repository.git"), [
+          "config",
+          `url.${remote}.insteadOf`,
+          "https://github.com/fixture/connected-explore.git",
+        ]);
+        const runCli = () => {
+          const result = runInstalled(consumer, guard, [
+            "explore",
+            "--machine",
+            probe.query,
+            "--atlas-host-directory",
+            consumer,
+          ]);
+          assert.equal(result.status, exploreCommandExitCodes.success, result.stdout);
+          assert.equal(result.stderr, "");
+          return parseMachineOperationResult(result.stdout) as ExploreOperationResult;
+        };
+        verifyContext(runCli(), []);
+        const previousLock = readFileSync(lockPath);
+        const previousMetadata = readFileSync(join(cacheDirectory, "metadata.json"));
+        renameSync(remote, `${remote}-offline`);
+        verifyContext(runCli(), ["ATLAS_CROSS_ATLAS_CACHED_OFFLINE"]);
+        verifyContext(runModule(), ["ATLAS_CROSS_ATLAS_CACHED_OFFLINE"]);
+        track("never-cached");
+        homeHead = commitFixture(consumer, "Track an unavailable fixture");
+        const missing = runModule();
+        verifyContext(missing, [
+          "ATLAS_CROSS_ATLAS_CACHED_OFFLINE",
+          "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE",
+        ]);
+        assert.equal(missing.handoff.unresolvedHumanDecisions.state, "pending");
+        assert.deepEqual(readFileSync(lockPath), previousLock);
+        assert.deepEqual(
+          readFileSync(join(cacheDirectory, "metadata.json")),
+          previousMetadata,
+        );
+      }
       if (entry.retirement !== undefined) {
         exerciseGovernanceRetirement(consumer, entry.retirement, (arguments_) =>
           runInstalled(consumer, guard, arguments_),
