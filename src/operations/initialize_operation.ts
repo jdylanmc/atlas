@@ -49,6 +49,7 @@ import {
   governanceAttestationOperation,
   governanceAttestationPayload,
   prepareGovernanceFragment,
+  validateGovernanceApproval,
   type AtlasGovernanceRequest,
 } from "./governance_operation.ts";
 import { prepareIngestFragment, type AtlasIngestRequest } from "./ingest_operation.ts";
@@ -1100,24 +1101,26 @@ function prepareSiteFragment(
   // caller did not author.
   const operation = governanceAttestationOperation(requestFields);
   const nonce = "atlas-initialization-site-policy";
+  if (sitePolicy.approvedAt === undefined || sitePolicy.approvedBy === undefined) {
+    return Object.freeze({
+      changes: Object.freeze([]),
+      findings: validateGovernanceApproval(requestFields),
+    });
+  }
   const request: AtlasGovernanceRequest = Object.freeze({
     ...requestFields,
-    ...(sitePolicy.approvedAt === undefined || sitePolicy.approvedBy === undefined
-      ? {}
-      : {
-          attestation: Object.freeze({
-            "approval-attestation-schema": "1.0.0" as const,
-            approvedAt: sitePolicy.approvedAt,
-            approver: sitePolicy.approvedBy,
-            nonce,
-            operation,
-            payloadDigest: attestationPayloadDigest(
-              operation,
-              nonce,
-              governanceAttestationPayload(requestFields),
-            ),
-          }),
-        }),
+    attestation: Object.freeze({
+      "approval-attestation-schema": "1.0.0" as const,
+      approvedAt: sitePolicy.approvedAt,
+      approver: sitePolicy.approvedBy,
+      nonce,
+      operation,
+      payloadDigest: attestationPayloadDigest(
+        operation,
+        nonce,
+        governanceAttestationPayload(requestFields),
+      ),
+    }),
   });
   const prepared = prepareGovernanceFragment(request, virtualAtlas);
   return Object.freeze({

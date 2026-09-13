@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { dirname, resolve } from "node:path";
 import test, { after } from "node:test";
+import ts from "typescript";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
 import { captureAtlasHostDirectory, CaptureBudgetError } from "../scripts/atlas.ts";
 import { lintCommandCaptureBudgets } from "../src/interfaces/lint_command.ts";
@@ -1540,6 +1541,32 @@ test("the adversarial vocabulary corpus is structurally valid", () => {
 // validates the corpus; the installed CLI/Git test supplies the acceptance proof.
 test("the adversarial installed-consumer corpus is structurally valid", () => {
   readInstalledConsumerCorpus();
+});
+
+test("adversarial governance request types require approval only for mutations", () => {
+  const config = ts.getParsedCommandLineOfConfigFile(
+    resolve(ROOT, "tsconfig.json"),
+    {},
+    {
+      ...ts.sys,
+      onUnRecoverableConfigFileDiagnostic(diagnostic) {
+        assert.fail(ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"));
+      },
+    },
+  );
+  assert.ok(config);
+  assert.deepEqual(config.errors, []);
+  const fixture = resolve(ROOT, "tests/adversarial/governance-request-types.test-d.ts");
+  assert.ok(config.fileNames.includes(fixture));
+  const program = ts.createProgram([fixture], config.options);
+  assert.deepEqual(
+    ts
+      .getPreEmitDiagnostics(program)
+      .map((diagnostic) =>
+        ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"),
+      ),
+    [],
+  );
 });
 
 test("the adversarial atlas-cli corpus is structurally valid", () => {

@@ -44,7 +44,7 @@ function attestationFor(
   fields: Readonly<Record<string, unknown>>,
   approver = "Fixture Maintainer",
 ) {
-  const request = fields as unknown as AtlasGovernanceRequest;
+  const request = fields as unknown as Omit<AtlasGovernanceRequest, "attestation">;
   const operation = governanceAttestationOperation(request);
   const payload = governanceAttestationPayload(request);
   const nonce = "fixture-nonce";
@@ -127,7 +127,9 @@ function parseGovernResult(stdout: string): AtlasGovernanceResult {
 // package and the checked-out Atlas Host Directory: authored Principle page plus
 // drafted Changelog prose. It never derives a base snapshot digest, target head,
 // or operation ID — Atlas SDK supplies all of that bookkeeping.
-function amendPrincipleRequest(repository: string): AtlasGovernanceRequest {
+function amendPrincipleRequest(
+  repository: string,
+): AtlasGovernanceRequest & { readonly action: "amend" } {
   const principle = readFileSync(
     resolve(repository, ".atlas", "principles", "determinism.md"),
     "utf8",
@@ -302,11 +304,11 @@ function retirePrincipleRequest(
 function withoutSemanticVerdicts(
   request: AtlasGovernanceRequest,
 ): AtlasGovernanceRequest {
-  const copy: Record<string, unknown> = { ...request };
-  delete copy["semanticVerdicts"];
-  delete copy["attestation"];
-  const fields = copy as unknown as AtlasGovernanceRequest;
-  return { ...fields, attestation: attestationFor(copy) };
+  const fields = { ...request };
+  delete fields.semanticVerdicts;
+  return fields.action === "verify"
+    ? fields
+    : { ...fields, attestation: attestationFor(fields) };
 }
 
 test("atlas govern amends a Principle into one Linted Atlas Proposal", () => {
@@ -1078,6 +1080,43 @@ test("atlas govern refuses to establish a Principle without Maintainer approval 
   assert.equal(git(repository, ["branch", "--list", "atlas-governance-*"]), "");
 });
 
+test("Governance parsing never returns an unapproved mutation as a typed request", () => {
+  for (const subject of ["principle", "atlas-policy"] as const) {
+    for (const action of ["create", "amend", "retire", "delete"] as const) {
+      const parsed = parseGovernRequest({
+        "governance-request-schema": "1.0.0",
+        action,
+        subject,
+      });
+      assert.equal(parsed.ok, false);
+      assert.equal(
+        exitCodeForGovernOperationResult(parsed.result),
+        governCommandExitCodes.approvalRequired,
+      );
+      assert.equal(parsed.result.operation.subject, subject);
+      assert.deepEqual(
+        parsed.result.handoff.validationState.findings.map(({ code }) => code),
+        ["ATLAS_GOVERNANCE_APPROVAL_REQUIRED"],
+      );
+    }
+  }
+  const verify = {
+    "governance-request-schema": "1.0.0",
+    action: "verify",
+    subject: "principle",
+  };
+  assert.equal(parseGovernRequest(verify).ok, true);
+  const approvedVerify = parseGovernRequest({
+    ...verify,
+    attestation: attestationFor(verify),
+  });
+  assert.equal(approvedVerify.ok, false);
+  assert.equal(
+    exitCodeForGovernOperationResult(approvedVerify.result),
+    governCommandExitCodes.usage,
+  );
+});
+
 test("Governance command helpers preserve machine JSON and every exit class", () => {
   const repository = resolve(WORKSPACE, "helpers");
   initAtlasRepository(repository);
@@ -1133,11 +1172,12 @@ test("Governance request parser refuses every malformed axis as a determinate va
   assert.equal(parseGovernRequest([]).ok, false);
   assert.equal(parseGovernRequest({}).ok, false);
 
-  const base = {
+  const fields = {
     "governance-request-schema": "1.0.0",
     action: "create",
     subject: "principle",
   };
+  const base = { ...fields, attestation: attestationFor(fields) };
   assert.equal(parseGovernRequest(base).ok, true);
 
   const badCases: readonly unknown[] = [

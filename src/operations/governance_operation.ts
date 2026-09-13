@@ -95,10 +95,8 @@ export interface AtlasGovernanceSemanticVerdict {
   readonly verdict: "pass" | "fail";
 }
 
-export interface AtlasGovernanceRequest {
+interface AtlasGovernanceRequestFields {
   readonly "governance-request-schema": "1.0.0";
-  readonly action: "create" | "amend" | "retire" | "delete" | "verify";
-  readonly attestation?: AtlasApprovalAttestation;
   // The agent drafts the Atlas Changelog entry prose; Atlas SDK stamps it with
   // the stable operation ID and heads it with the approval date. The caller
   // does not supply the operation ID, base snapshot digest, or target head — the
@@ -111,6 +109,15 @@ export interface AtlasGovernanceRequest {
   readonly semanticVerdicts?: readonly AtlasGovernanceSemanticVerdict[];
   readonly subject: AtlasGovernanceSubject;
 }
+
+export type AtlasGovernanceRequest = AtlasGovernanceRequestFields &
+  (
+    | { readonly action: "verify"; readonly attestation?: never }
+    | {
+        readonly action: "create" | "amend" | "retire" | "delete";
+        readonly attestation: AtlasApprovalAttestation;
+      }
+  );
 
 /**
  * The operation string a Governance Request's Approval Attestation must bind
@@ -132,7 +139,7 @@ export function governanceAttestationOperation(
  * Maintainer attested to.
  */
 export function governanceAttestationPayload(
-  request: AtlasGovernanceRequest,
+  request: Omit<AtlasGovernanceRequest, "attestation">,
 ): Readonly<Record<string, ReadonlyJsonValue>> {
   return Object.freeze({
     action: request.action,
@@ -508,8 +515,10 @@ function validateSemanticVerdicts(
 // agent-authored content it approves, and content mutated after approval, or an
 // attestation replayed from a different action or subject, is refused rather
 // than accepted on the caller's word.
-function validateApproval(
-  request: AtlasGovernanceRequest,
+export function validateGovernanceApproval(
+  request: Omit<AtlasGovernanceRequest, "attestation"> & {
+    readonly attestation?: AtlasApprovalAttestation;
+  },
   now?: string,
 ): readonly Finding[] {
   if (request.action === "verify") return Object.freeze([]);
@@ -934,7 +943,7 @@ export function prepareGovernanceFragment(
     ),
   );
   const findings = Object.freeze([
-    ...validateApproval(request),
+    ...validateGovernanceApproval(request),
     ...validateAtlasGovernanceRequestInternal(request, {
       requireChangelog: false,
     }),
@@ -1125,7 +1134,7 @@ export function runAtlasGovernanceWorkflow(
         ? Object.freeze([])
         : validateResumeReceipts(state, changeSet);
     const findings = Object.freeze([
-      ...validateApproval(request, runtime.referenceTime?.()),
+      ...validateGovernanceApproval(request, runtime.referenceTime?.()),
       ...requestFindings,
       ...correspondenceFindings,
       ...changelogFindings,
