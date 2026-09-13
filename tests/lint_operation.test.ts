@@ -61,6 +61,109 @@ function completeAtlas(variant: "invalid" | "valid"): CapturedAtlasFile[] {
   return atlasPaths.map((path) => ({ bytes: fixtureBytes(variant, path), path }));
 }
 
+test("Lint warns at the Changelog byte threshold without invalidating history", () => {
+  const bytes = encoder.encode("\uFEFF" + "\u00E9".repeat(393214) + "x");
+  assert.equal(bytes.byteLength, 786432);
+  let measurements = 0;
+  Object.defineProperty(bytes, "byteLength", {
+    get(): number {
+      measurements += 1;
+      assert.equal(measurements, 1, "capacity must reuse the loader's measurement");
+      return bytes.length;
+    },
+  });
+  const files = completeAtlas("valid").map((file) =>
+    file.path === ".atlas/CHANGELOG.md" ? { ...file, bytes } : file,
+  );
+  const result = runLintOperation(files, {
+    maxFileBytes: 1048576,
+    maxTotalBytes: 16777216,
+  });
+  assert.equal(result.completion, "completed");
+  assert.equal(result.disposition, "success");
+  assert.equal(result.handoff.validationState.state, "passed");
+  assert.deepEqual(
+    result.handoff.validationState.findings.map(({ code, path, severity }) => ({
+      code,
+      path,
+      severity,
+    })),
+    [
+      {
+        code: "ATLAS_CHANGELOG_NEAR_CAPACITY",
+        path: ".atlas/CHANGELOG.md",
+        severity: "warning",
+      },
+    ],
+  );
+  assert.match(
+    result.handoff.validationState.findings[0]?.message ?? "",
+    /786432.*1048576/u,
+  );
+  assert.equal(measurements, 1);
+  assert.equal(bytes.length, 786432);
+  assert.deepEqual(
+    new Uint8Array(bytes),
+    encoder.encode("\uFEFF" + "\u00E9".repeat(393214) + "x"),
+  );
+});
+
+for (const entry of [
+  {
+    name: "below the default threshold",
+    size: 786431,
+    limit: 1048576,
+    code: undefined,
+  },
+  {
+    name: "at a tighter caller threshold",
+    size: 3072,
+    limit: 4096,
+    code: "ATLAS_CHANGELOG_NEAR_CAPACITY",
+  },
+  {
+    name: "below a tighter caller threshold",
+    size: 3071,
+    limit: 4096,
+    code: undefined,
+  },
+  {
+    name: "before the default cap with a looser caller budget",
+    size: 786432,
+    limit: 2097152,
+    code: "ATLAS_CHANGELOG_NEAR_CAPACITY",
+  },
+  {
+    name: "at the unchanged capture limit",
+    size: 1048576,
+    limit: 1048576,
+    code: "ATLAS_CHANGELOG_NEAR_CAPACITY",
+  },
+  {
+    name: "above the unchanged capture limit",
+    size: 1048577,
+    limit: 1048576,
+    code: "ATLAS_LOAD_FILE_TOO_LARGE",
+  },
+]) {
+  test(`Changelog capacity ${entry.name}`, () => {
+    const files = completeAtlas("valid").map((file) =>
+      file.path === ".atlas/CHANGELOG.md"
+        ? { ...file, bytes: new Uint8Array(entry.size).fill(0x78) }
+        : file,
+    );
+    const result = runLintOperation(files, {
+      maxFileBytes: entry.limit,
+      maxTotalBytes: 16777216,
+    });
+    assert.equal(result.disposition, entry.size > entry.limit ? "failed" : "success");
+    assert.deepEqual(
+      result.handoff.validationState.findings.map(({ code }) => code),
+      entry.code === undefined ? [] : [entry.code],
+    );
+  });
+}
+
 test("Operation Workflow returns a versioned completed Lint result and handoff for a valid Atlas", () => {
   const result = runLintOperation(completeAtlas("valid"), generousBudgets);
 

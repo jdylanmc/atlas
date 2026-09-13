@@ -1,6 +1,6 @@
 import type { Finding } from "../domain/finding.ts";
 import {
-  loadAtlasText,
+  loadAtlasTextWithByteLengths,
   AtlasLoadError,
   type CapturedAtlasFile,
   type AtlasLoadErrorCode,
@@ -10,6 +10,15 @@ import {
 import { rethrowProcessLimit } from "../atlas/process_limit.ts";
 import type { ParsedAtlasPage } from "../atlas/parse_atlas_pages.ts";
 import { validateAtlasStructureWithPages } from "./validate_atlas_structure.ts";
+
+interface LoadedInput {
+  readonly files: readonly AtlasTextFile[];
+  readonly captureMetadata: {
+    readonly state: "loaded";
+    readonly budgets: AtlasTextBudgets;
+    readonly byteLengths: Readonly<Record<string, number>>;
+  };
+}
 
 const attribution = Object.freeze({
   checkId: "sdk-core.atlas-input",
@@ -71,7 +80,7 @@ function captureOnce(
 function loadOrFinding(
   capturedFiles: readonly CapturedAtlasFile[],
   budgets: AtlasTextBudgets,
-): readonly AtlasTextFile[] | Finding {
+): LoadedInput | Finding {
   let captured;
   try {
     captured = captureOnce(capturedFiles, budgets);
@@ -88,7 +97,15 @@ function loadOrFinding(
   }
 
   try {
-    return loadAtlasText(captured.files, captured.budgets);
+    const loaded = loadAtlasTextWithByteLengths(captured.files, captured.budgets);
+    return Object.freeze({
+      files: loaded.files,
+      captureMetadata: Object.freeze({
+        state: "loaded" as const,
+        budgets: captured.budgets,
+        byteLengths: loaded.byteLengths,
+      }),
+    });
   } catch (error: unknown) {
     if (error instanceof AtlasLoadError) {
       return loadFinding(loadCodes[error.code], error.message);
@@ -107,6 +124,10 @@ const atlasInputValidationBrand: unique symbol = Symbol("atlas-input-validation"
 
 export interface AtlasInputValidation {
   readonly [atlasInputValidationBrand]: true;
+  /** Original measurements for operation-specific checks.
+   * tests/lint_operation.test.ts pins reuse without remeasuring decoded text. */
+  readonly captureMetadata:
+    LoadedInput["captureMetadata"] | { readonly state: "unavailable" };
   /**
    * The loaded Atlas text, empty when loading itself failed and otherwise the
    * text these Findings were decided from, whether or not the Atlas is valid.
@@ -130,8 +151,9 @@ function validationState(findings: readonly Finding[]): "invalid" | "valid" {
  * stable, sdk-core attributed Finding so invalid input escapes as neither an
  * uncaught exception nor a success-shaped result. A loading failure
  * short-circuits with one Finding, since the text it would parse is not
- * trustworthy; otherwise the loaded text flows through structural validation, whose
- * deterministic ordering, sanitization, and source evidence contracts are
+ * trustworthy; otherwise the loaded text flows through structural validation.
+ * Original byte measurements accompany it for operation-specific checks.
+ * Deterministic ordering, sanitization, and source evidence contracts are
  * preserved. Identical input bytes yield identical ordered Findings.
  *
  * A failure that describes the running process rather than the Atlas is raised
@@ -156,16 +178,18 @@ export function loadAndValidateAtlasInput(
     const findings = Object.freeze([loaded]);
     return Object.freeze({
       [atlasInputValidationBrand]: true as const,
+      captureMetadata: Object.freeze({ state: "unavailable" as const }),
       files: noFiles,
       findings,
       pages: noPages,
       validationState: "invalid" as const,
     });
   }
-  const structure = validateAtlasStructureWithPages(loaded);
+  const structure = validateAtlasStructureWithPages(loaded.files);
   return Object.freeze({
     [atlasInputValidationBrand]: true as const,
-    files: loaded,
+    captureMetadata: loaded.captureMetadata,
+    files: loaded.files,
     findings: structure.findings,
     pages: structure.pages,
     validationState: validationState(structure.findings),

@@ -268,9 +268,8 @@ test("decides one whole-Atlas Lint from one reading of every input", () => {
 test("decides the Lint from one loading of the captured bytes", () => {
   const honest = lintAtlas(completeAtlas("valid"), generousBudgets);
 
-  // Loading measures each file's byte length twice, so bytes that rewrite
-  // themselves on a third measurement change only what a second loading of the
-  // same captured Atlas would read.
+  // A second measurement rewrites the bytes, so reloading cannot silently
+  // decide a different Atlas from the same captured input.
   let measurements = 0;
   const atlas = completeAtlas("valid").map((file) => {
     if (file.path !== ".atlas/index.md") return file;
@@ -278,7 +277,7 @@ test("decides the Lint from one loading of the captured bytes", () => {
     Object.defineProperty(bytes, "byteLength", {
       get(): number {
         measurements += 1;
-        if (measurements > 2) bytes.fill(0x20);
+        if (measurements > 1) bytes.fill(0x20);
         return bytes.length;
       },
     });
@@ -286,7 +285,7 @@ test("decides the Lint from one loading of the captured bytes", () => {
   });
 
   assert.deepEqual(lintAtlas(atlas, generousBudgets), honest);
-  assert.equal(measurements, 2);
+  assert.equal(measurements, 1);
 });
 
 test("returns a deeply frozen result", () => {

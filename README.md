@@ -37,6 +37,24 @@ command also returns an `ATLAS_COMMAND_UNKNOWN` Finding naming the rejected valu
 `--machine` is required for dispatched commands. Command output is
 newline-terminated JSON so agents and scripts can parse it directly.
 
+### Changelog capacity warning
+
+Lint reports `ATLAS_CHANGELOG_NEAR_CAPACITY` when `.atlas/CHANGELOG.md` reaches
+75% of the smaller of the configured Lint per-file budget and the SDK's default
+snapshot per-file limit. With the default 1 MiB limit, the warning begins at
+786,432 bytes (768 KiB), leaving 256 KiB before the per-file boundary.
+The count uses the original captured UTF-8 bytes, including any byte-order mark,
+not the decoded character count.
+
+This is a warning, not invalidity: an otherwise valid Atlas still passes Lint
+with exit 0. The Finding appears in the ordinary Lint result and handoff.
+It does not change Explore's structural completeness, validation verdict, or
+reachable results; genuine Explore degradation diagnostics remain unchanged.
+Plan human-reviewed capacity maintenance that preserves history; Atlas SDK
+does not rotate, archive, truncate, or enlarge capture limits automatically.
+This warning does not predict remaining operation counts or prevent unrelated
+total-size, file-count, or runtime failures.
+
 ### Ingest planning output
 
 `atlas ingest plan --machine --ingest-scope /path/to/scope.json` returns a

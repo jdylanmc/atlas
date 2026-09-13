@@ -973,7 +973,7 @@ function bodyMarkdownBound(body: string): BodyMarkdownBound {
   return { lines, marks, nesting };
 }
 
-function compareFindings(left: Finding, right: Finding): number {
+export function compareFindings(left: Finding, right: Finding): number {
   const path = compareCodePoints(left.path, right.path);
   if (path !== 0) return path;
   const line = (left.location?.start.line ?? 0) - (right.location?.start.line ?? 0);

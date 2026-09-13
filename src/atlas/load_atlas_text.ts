@@ -16,6 +16,11 @@ export interface AtlasTextBudgets {
   readonly maxTotalBytes: number;
 }
 
+export const defaultAtlasTextBudgets: AtlasTextBudgets = Object.freeze({
+  maxFileBytes: 1024 * 1024,
+  maxTotalBytes: 16 * 1024 * 1024,
+});
+
 export type AtlasLoadErrorCode =
   | "DUPLICATE_PATH"
   | "FILE_TOO_LARGE"
@@ -162,6 +167,16 @@ export function loadAtlasText(
   capturedFiles: readonly CapturedAtlasFile[],
   budgets: AtlasTextBudgets,
 ): readonly AtlasTextFile[] {
+  return loadAtlasTextWithByteLengths(capturedFiles, budgets).files;
+}
+
+export function loadAtlasTextWithByteLengths(
+  capturedFiles: readonly CapturedAtlasFile[],
+  budgets: AtlasTextBudgets,
+): {
+  readonly files: readonly AtlasTextFile[];
+  readonly byteLengths: Readonly<Record<string, number>>;
+} {
   if (capturedFiles.some((file) => hasSharedBackingBuffer(file.bytes))) {
     throw new AtlasLoadError("SHARED_BYTES_NOT_ALLOWED");
   }
@@ -175,18 +190,21 @@ export function loadAtlasText(
 
   let previousPath: string | undefined;
   let totalBytes = 0;
+  const byteLengths: Record<string, number> = {};
   for (const file of normalized) {
     if (file.path === previousPath) {
       throw new AtlasLoadError("DUPLICATE_PATH");
     }
     previousPath = file.path;
-    if (file.bytes.byteLength > budgets.maxFileBytes) {
+    const byteLength = file.bytes.byteLength;
+    if (byteLength > budgets.maxFileBytes) {
       throw new AtlasLoadError("FILE_TOO_LARGE");
     }
-    totalBytes += file.bytes.byteLength;
+    totalBytes += byteLength;
     if (totalBytes > budgets.maxTotalBytes) {
       throw new AtlasLoadError("TOTAL_TOO_LARGE");
     }
+    byteLengths[file.path] = byteLength;
   }
 
   const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -204,5 +222,8 @@ export function loadAtlasText(
     }
     files.push(Object.freeze({ content, path: file.path }));
   }
-  return Object.freeze(files);
+  return Object.freeze({
+    files: Object.freeze(files),
+    byteLengths: Object.freeze(byteLengths),
+  });
 }

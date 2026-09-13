@@ -1,12 +1,36 @@
 import type { Finding } from "../domain/finding.ts";
-import type {
-  AtlasTextBudgets,
-  AtlasTextFile,
-  CapturedAtlasFile,
+import { atlasChangelogPath } from "../domain/atlas_changelog.ts";
+import {
+  defaultAtlasTextBudgets,
+  type AtlasTextBudgets,
+  type AtlasTextFile,
+  type CapturedAtlasFile,
 } from "../atlas/load_atlas_text.ts";
 import { classifyAtlasTextPath, parseAtlasPages } from "../atlas/parse_atlas_pages.ts";
 import { serializeAtlasPages } from "../atlas/serialize_atlas_pages.ts";
 import { loadAndValidateAtlasInput } from "./validate_atlas_input.ts";
+import { compareFindings } from "./validate_atlas_structure.ts";
+import { sdkFindings } from "./sdk_finding.ts";
+
+const capacityFinding = sdkFindings("sdk-core.changelog-capacity");
+
+function changelogCapacityFindings(
+  byteLength: number | undefined,
+  maxFileBytes: number,
+): readonly Finding[] {
+  const limit = Math.min(maxFileBytes, defaultAtlasTextBudgets.maxFileBytes);
+  const warningAt = Math.ceil(limit * 0.75);
+  if (byteLength === undefined || byteLength < warningAt) return Object.freeze([]);
+  return Object.freeze([
+    capacityFinding(
+      "ATLAS_CHANGELOG_NEAR_CAPACITY",
+      `The Atlas Changelog uses ${String(byteLength)} bytes against a ${String(limit)} byte reference limit: the smaller of this Lint budget and the SDK default snapshot cap (warning at ${String(warningAt)} bytes). Plan human-reviewed history preservation or capacity maintenance before further appends exhaust capture. Atlas SDK does not rotate history automatically.`,
+      atlasChangelogPath,
+      undefined,
+      "warning",
+    ),
+  ]);
+}
 
 export interface ValidAtlasLintResult {
   /**
@@ -77,7 +101,20 @@ function decideAtlasLint(
   capturedFiles: readonly CapturedAtlasFile[],
   budgets: AtlasTextBudgets,
 ): AtlasLintResult {
-  const { files, findings } = loadAndValidateAtlasInput(capturedFiles, budgets);
+  const validation = loadAndValidateAtlasInput(capturedFiles, budgets);
+  const { files, captureMetadata } = validation;
+  const findings =
+    captureMetadata.state === "loaded"
+      ? Object.freeze(
+          [
+            ...validation.findings,
+            ...changelogCapacityFindings(
+              captureMetadata.byteLengths[atlasChangelogPath],
+              captureMetadata.budgets.maxFileBytes,
+            ),
+          ].toSorted(compareFindings),
+        )
+      : validation.findings;
   if (deniesAtlasValidity(findings)) {
     return Object.freeze({ findings, outcome: "invalid" as const });
   }
@@ -117,7 +154,7 @@ function decideAtlasLint(
  * one immutable text, so serialization normalizes the content structural
  * validation accepted, and what a caller does to its own bytes afterwards does
  * not change what was judged: "decides one whole-Atlas Lint from one reading of
- * every input" pins the reads. Every stage decides from the text alone, and
+ * every input" pins the reads. Later stages use loaded text and capture metadata, and
  * declared bounds keep nesting short of the limits of the process, so identical
  * input yields identical ordered Findings and identical canonical pages on every
  * run, pinned by "produces identical ordered Findings and canonical pages across
