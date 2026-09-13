@@ -23,7 +23,7 @@ const finding = sdkFindings("sdk-core.vocabulary-agreement");
 const definitionPattern = /^\*\*(.+)\*\*:$/u;
 /** A glossary avoidance line, for example `_Avoid_: Bonfire, Landmark, Hub`. */
 const avoidancePattern = /^_Avoid_: (.+)$/u;
-/** A term Atlas SDK can bind: one capitalized word or one PascalCase compound. */
+/** Bound-term word shape; directory-plural support is checked separately. */
 const termPattern = /^\p{Lu}[\p{Ll}\p{N}]*(?:\p{Lu}[\p{Ll}\p{N}]*)*$/u;
 /** A contract vocabulary term Atlas SDK can require in the glossary. */
 const contractTermPattern = /^\p{Lu}[\p{L}\p{N}]*(?: \p{Lu}[\p{L}\p{N}]*)*$/u;
@@ -78,8 +78,8 @@ function isAvoidedName(entry: string): boolean {
   return avoidedTermPattern.test(entry);
 }
 
-/** The plural Atlas SDK spells a lower-case term with. */
-function pluralOf(word: string): string {
+/** A mechanical avoidance-matching alias, not a directory prescription. */
+function regularPluralOf(word: string): string {
   if (/[sxz]$/u.test(word) || /(?:ch|sh)$/u.test(word)) return `${word}es`;
   return /[^aeiou]y$/u.test(word) ? `${word.slice(0, -1)}ies` : `${word}s`;
 }
@@ -88,11 +88,24 @@ function kebabCaseTerm(term: string): string {
   return term.replace(/(?!^)([A-Z])/g, "-$1").toLowerCase();
 }
 
-function pluralizedIdentifier(base: string): string {
-  if (!base.includes("-")) return pluralOf(base);
-  const segments = base.split("-");
-  const last = segments.pop() as string;
-  return [...segments, pluralOf(last)].join("-");
+const directoryPlurals: ReadonlyMap<string, string> = new Map([
+  ["anchor", "anchors"],
+  ["atlas", "atlases"],
+  ["branch", "branches"],
+  ["class", "classes"],
+  ["concept", "concepts"],
+  ["edge", "edges"],
+  ["index", "indexes"],
+  ["policy", "policies"],
+  ["principle", "principles"],
+  ["source", "sources"],
+  ["status", "statuses"],
+]);
+
+function pluralizedIdentifier(base: string): string | undefined {
+  const terminalStart = base.lastIndexOf("-") + 1;
+  const plural = directoryPlurals.get(base.slice(terminalStart));
+  return plural === undefined ? undefined : `${base.slice(0, terminalStart)}${plural}`;
 }
 
 /**
@@ -114,7 +127,7 @@ export function parseGlossary(content: string): Glossary {
   const register = (names: readonly string[], line: number): void => {
     for (const name of names) {
       const singular = normalize(name);
-      for (const key of [singular, pluralOf(singular)]) {
+      for (const key of [singular, regularPluralOf(singular)]) {
         if (!avoided.has(key)) avoided.set(key, { line, name });
       }
     }
@@ -151,17 +164,14 @@ interface BindingDisagreement {
 }
 
 /**
- * The identifiers a glossary term requires. Atlas SDK spells a Core Archetype's
- * page type and page-ID prefix as the term in lower case, its `.atlas/`
- * directory as the plural of that word, and its diagnostic stem as the term in
- * upper case, so a binding records the spelling its term already fixes.
+ * Identifier conventions for a supported term. The caller supplies a directory
+ * spelling from the explicit plural registry rather than inflecting arbitrary words.
  */
 function disagreements(
-  term: string,
-  bindings: CoreArchetypeBindings,
+  base: string,
+  identifiers: CoreArchetypeBindings[string],
+  directory: string,
 ): readonly BindingDisagreement[] {
-  const identifiers = bindings[term] as CoreArchetypeBindings[string];
-  const base = kebabCaseTerm(term);
   const expectations: readonly BindingDisagreement[] = [
     {
       actual: identifiers.diagnosticStem,
@@ -170,7 +180,7 @@ function disagreements(
     },
     {
       actual: identifiers.directory,
-      expected: pluralizedIdentifier(base),
+      expected: directory,
       surface: "page directory",
     },
     { actual: identifiers.idPrefix, expected: base, surface: "page-ID prefix" },
@@ -224,7 +234,7 @@ function validateBindings(
       findings.push(
         finding(
           "ATLAS_VOCABULARY_TERM_UNSUPPORTED",
-          `Atlas SDK contracts bind the term ${JSON.stringify(term)}, which is not one capitalized word.`,
+          `Atlas SDK contracts bind the term ${JSON.stringify(term)}, which is not a capitalized word or PascalCase compound.`,
           glossaryPath,
         ),
       );
@@ -253,7 +263,24 @@ function validateBindings(
       );
       continue;
     }
-    for (const { actual, expected, surface } of disagreements(term, bindings)) {
+    const base = kebabCaseTerm(term);
+    const directory = pluralizedIdentifier(base);
+    if (directory === undefined) {
+      findings.push(
+        finding(
+          "ATLAS_VOCABULARY_TERM_UNSUPPORTED",
+          `Atlas SDK cannot prescribe a page directory for ${JSON.stringify(term)} without a supported plural spelling.`,
+          glossaryPath,
+          lineLocation(definitionLine),
+        ),
+      );
+      continue;
+    }
+    for (const { actual, expected, surface } of disagreements(
+      base,
+      bindings[term] as CoreArchetypeBindings[string],
+      directory,
+    )) {
       findings.push(
         finding(
           "ATLAS_VOCABULARY_IDENTIFIER_MISMATCH",

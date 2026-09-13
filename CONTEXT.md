@@ -199,7 +199,7 @@ _Avoid_: Fleet
 The proposed concepts, Edges, and Citations Crawlers return from one source, reconciled against existing knowledge before anything is written. It is working material, not Atlas knowledge.
 
 **Vocabulary Binding**:
-The correspondence between one term in this glossary and the identifiers Atlas SDK contracts spell that term with. A term fixes those spellings, so a binding records them and trusted validation verifies both sides agree: a disagreement between the glossary and the product is a reported Finding rather than an unnoticed rename, and an avoided term may never be bound.
+The correspondence between one term in this glossary and the supported identifiers Atlas SDK contracts spell that term with; a term alone does not determine a directory plural. A binding records spellings constrained by naming conventions, and trusted validation reports disagreements or unsupported derivations rather than guessing; an avoided term may not be bound.
 
 **Lint**:
 The human-facing workflow for validating an Atlas. Trusted deterministic validation runs before isolated Atlas-owned deterministic checks and semantic verification, and every semantic verdict must survive a Challenge before it counts; pure Lint reports findings without mutating knowledge. Lint also reports what an Atlas is missing, and validates an Atlas's edges into tracked Atlases rather than their contents.

@@ -76,6 +76,7 @@ interface CorpusCase {
   readonly expectation: "accept" | "reject";
   readonly gate: "vocabulary-agreement";
   readonly input: {
+    readonly archetypeBindings?: CoreArchetypeBindings;
     readonly glossaryAvoidance: string;
     readonly glossaryTerm?: string;
     readonly requiredExport?: string;
@@ -1161,6 +1162,24 @@ function parseLintStampCorpus(value: unknown): LintStampCorpus {
   return { allowedKeys, cases, literalFields, reviewResolutionRule, schema: 1 };
 }
 
+function parseArchetypeBindings(value: unknown, path: string): CoreArchetypeBindings {
+  assert.ok(isRecord(value), `${path} must be an object`);
+  const bindings = new Map<string, CoreArchetypeBindings[string]>();
+  for (const [term, identifiers] of Object.entries(value)) {
+    assert.ok(isRecord(identifiers), `${path}.${term} must be an object`);
+    bindings.set(term, {
+      diagnosticStem: assertString(
+        identifiers["diagnosticStem"],
+        `${path}.${term}.diagnosticStem`,
+      ),
+      directory: assertString(identifiers["directory"], `${path}.${term}.directory`),
+      idPrefix: assertString(identifiers["idPrefix"], `${path}.${term}.idPrefix`),
+      pageType: assertString(identifiers["pageType"], `${path}.${term}.pageType`),
+    });
+  }
+  return Object.fromEntries(bindings);
+}
+
 function parseCorpus(value: unknown): Corpus {
   assert.ok(isRecord(value), "corpus must be an object");
   assert.equal(value["schema"], 1, "corpus schema must be 1");
@@ -1188,6 +1207,14 @@ function parseCorpus(value: unknown): Corpus {
       );
       assert.ok(isRecord(entry["input"]), `${path}.input must be an object`);
       const input = {
+        ...(entry["input"]["archetypeBindings"] === undefined
+          ? {}
+          : {
+              archetypeBindings: parseArchetypeBindings(
+                entry["input"]["archetypeBindings"],
+                `${path}.input.archetypeBindings`,
+              ),
+            }),
         glossaryAvoidance: assertString(
           entry["input"]["glossaryAvoidance"],
           `${path}.input.glossaryAvoidance`,
@@ -2590,7 +2617,7 @@ for (const entry of corpus.cases) {
     executedCases += 1;
     assert.equal(entry.gate, "vocabulary-agreement");
     const findings = validateVocabularyAgreement(
-      binding,
+      { ...binding, ...entry.input.archetypeBindings },
       entry.input.requiredExport === undefined
         ? []
         : [
