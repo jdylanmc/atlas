@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import type { AtlasReadinessReport } from "../src/operations/initialize_operation.ts";
+import type { InitializationArtifactConflict } from "./initialization_artifact_probes.ts";
 
 interface InstalledConsumerCase {
   readonly name: string;
@@ -23,6 +25,16 @@ interface InstalledConsumerCase {
     readonly expectedCodes: readonly string[];
     readonly expectedRequired: readonly string[];
   }[];
+  readonly readinessArtifacts?: {
+    readonly headings: readonly string[];
+    readonly governance: string;
+    readonly enrichedReport: Pick<
+      AtlasReadinessReport,
+      "capabilities" | "unresolvedDecisions"
+    >;
+    readonly enrichedMarkdown: readonly string[];
+    readonly conflicts: readonly InitializationArtifactConflict[];
+  };
   readonly ingestPlan?: readonly (
     | {
         readonly expectation: "accept";
@@ -77,6 +89,32 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
     for (const path of entry.expectedAtlasPaths) {
       assert.equal(typeof path, "string");
       assert.match(path, /^\.atlas\//u);
+    }
+    if (entry.readinessArtifacts !== undefined) {
+      assert.ok(entry.readinessArtifacts.headings.length > 0);
+      for (const heading of entry.readinessArtifacts.headings) {
+        assert.match(heading, /^##? /u);
+      }
+      assert.ok(entry.readinessArtifacts.governance.length > 0);
+      assert.ok(Array.isArray(entry.readinessArtifacts.enrichedReport.capabilities));
+      assert.ok(
+        Array.isArray(entry.readinessArtifacts.enrichedReport.unresolvedDecisions),
+      );
+      assert.ok(entry.readinessArtifacts.enrichedMarkdown.length > 0);
+      assert.ok(entry.readinessArtifacts.conflicts.length > 0);
+      for (const probe of entry.readinessArtifacts.conflicts) {
+        assert.ok(["lintStamp", "readinessReportMarkdown"].includes(probe.artifact));
+        assert.ok(
+          [
+            "same-length",
+            "short",
+            "long",
+            "directory",
+            "symlink",
+            "parent-symlink",
+          ].includes(probe.kind),
+        );
+      }
     }
     if (entry.ingestPlan !== undefined) {
       assert.equal(Array.isArray(entry.ingestPlan), true);

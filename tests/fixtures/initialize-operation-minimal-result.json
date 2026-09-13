@@ -52,7 +52,7 @@
       "degradation": "No degraded dependency was needed for local, non-forge Initialization.",
       "evidence": "No founding knowledge was imported; Lint evidence is the proposal commit snapshot.",
       "foundingGraph": "None: minimal Initialization imports no founding knowledge.",
-      "governance": "The minimal Atlas proposes no Atlas Manifest; human-authored declaration is pending review.",
+      "governance": "The proposal includes a draft Atlas Manifest; human review of the declaration and governance is still required.",
       "guide": "None: minimal Initialization records no Guide Persona.",
       "integration": "The Operation Workspace produced a local proposal branch and no forge publication.",
       "lintStamp": {

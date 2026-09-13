@@ -17,6 +17,7 @@ import { join, resolve, sep } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
+import { exerciseInitializationArtifactConflicts } from "./initialization_artifact_probes.ts";
 import { parseMachineOperationResult } from "./machine_operation_result.ts";
 import type { AtlasInitializationResult } from "../src/operations/initialize_operation.ts";
 import type { LintOperationResult } from "../src/operations/lint_operation.ts";
@@ -771,6 +772,133 @@ for (const entry of readInstalledConsumerCorpus().cases) {
         initialization.payload.atlasReadinessReport?.lintStamp.atlasCommit,
         proposal,
       );
+      if (entry.readinessArtifacts !== undefined) {
+        const directory = join(
+          consumer,
+          ".atlas-operation-workspaces",
+          ".artifacts",
+          proposalBranch,
+        );
+        const markdownPath = join(directory, "readiness-report.md");
+        const stampPath = join(directory, "lint-stamp.json");
+        assert.equal(
+          existsSync(markdownPath),
+          true,
+          "initialize did not emit the documented Markdown Readiness Report",
+        );
+        const markdown = readFileSync(markdownPath, "utf8");
+        assert.deepEqual(
+          markdown.split("\n").filter((line) => /^#{1,2} /u.test(line)),
+          entry.readinessArtifacts.headings,
+        );
+        assert.ok(markdown.includes(entry.readinessArtifacts.governance));
+        assert.equal(
+          markdown.includes("proposes no Atlas Manifest"),
+          false,
+          "the report denied a Manifest present in the proposal",
+        );
+        assert.ok(markdown.includes(proposal));
+        assert.deepEqual(JSON.parse(readFileSync(stampPath, "utf8")), {
+          "lint-stamp-schema": "1.0.0",
+          atlasCommit: proposal,
+          evidenceRevision: proposal,
+        });
+        assert.ok(initialization.handoff.recommendedNextAction.includes(markdownPath));
+        assert.ok(initialization.handoff.recommendedNextAction.includes(stampPath));
+        assert.deepEqual(initialization.payload.outputArtifacts, {
+          lintStamp: stampPath,
+          readinessReportMarkdown: markdownPath,
+        });
+        const reportStat = statSync(markdownPath, { bigint: true });
+        const stampStat = statSync(stampPath, { bigint: true });
+        const resumed = runInstalled(consumer, guard, [
+          "initialize",
+          "--machine",
+          "--atlas-host-directory",
+          consumer,
+          "--resume-proposal-branch",
+          proposalBranch,
+        ]);
+        assert.equal(resumed.status, 0, resumed.stdout);
+        assert.equal(resumed.stderr, "");
+        assert.equal(readFileSync(markdownPath, "utf8"), markdown);
+        for (const [path, previous] of [
+          [markdownPath, reportStat],
+          [stampPath, stampStat],
+        ] as const) {
+          const current = statSync(path, { bigint: true });
+          assert.equal(current.ino, previous.ino);
+          assert.equal(current.mtimeNs, previous.mtimeNs);
+        }
+        const rendered = spawnSync(
+          process.execPath,
+          [
+            "--input-type=module",
+            "--eval",
+            [
+              'import { readFileSync } from "node:fs";',
+              'import { renderAtlasReadinessReportMarkdown } from "@jdylanmc/atlas";',
+              'const { report, enriched } = JSON.parse(readFileSync(0, "utf8"));',
+              "const empty = { ...report, capabilities: [], unresolvedDecisions: [] };",
+              "process.stdout.write(JSON.stringify({",
+              "  enriched: renderAtlasReadinessReportMarkdown({ ...report, ...enriched }),",
+              "  empty: renderAtlasReadinessReportMarkdown(empty),",
+              "}));",
+            ].join("\n"),
+          ],
+          {
+            cwd: consumer,
+            encoding: "utf8",
+            env: consumerEnvironment(guard),
+            input: JSON.stringify({
+              report: initialization.payload.atlasReadinessReport,
+              enriched: entry.readinessArtifacts.enrichedReport,
+            }),
+            killSignal: "SIGKILL",
+            timeout: 30_000,
+          },
+        );
+        assert.equal(rendered.status, 0, rendered.stderr);
+        assert.equal(rendered.stderr, "");
+        const renderedReports = JSON.parse(rendered.stdout) as {
+          readonly enriched: string;
+          readonly empty: string;
+        };
+        for (const text of entry.readinessArtifacts.enrichedMarkdown) {
+          assert.ok(renderedReports.enriched.includes(text), text);
+        }
+        assert.ok(
+          renderedReports.empty.includes("No capability entries were reported."),
+        );
+        assert.ok(
+          renderedReports.empty.includes("No unresolved decisions were reported."),
+        );
+        exerciseInitializationArtifactConflicts({
+          artifacts: initialization.payload.outputArtifacts,
+          cases: entry.readinessArtifacts.conflicts,
+          gitState: () =>
+            [
+              consumerGit(consumer, ["show-ref"]),
+              consumerGit(consumer, ["status", "--porcelain"]),
+            ].join("\n"),
+          resume: () => {
+            const resumed = runInstalled(consumer, guard, [
+              "initialize",
+              "--machine",
+              "--atlas-host-directory",
+              consumer,
+              "--resume-proposal-branch",
+              proposalBranch,
+            ]);
+            assert.equal(resumed.status, 2, resumed.stdout);
+            assert.equal(resumed.stderr, "");
+            return parseMachineOperationResult(
+              resumed.stdout,
+            ) as AtlasInitializationResult;
+          },
+        });
+        assert.equal(consumerGit(consumer, ["status", "--porcelain"]), beforePlan);
+      }
 
       const unmerged = runInstalled(consumer, guard, [
         "lint",

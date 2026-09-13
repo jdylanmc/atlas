@@ -97,6 +97,46 @@ invalidates the old truth and records a linked successor with a new ID.
 The CLI reference includes the exact Markdown forms. Its examples are
 illustrative templates, never human approval records.
 
+### Initialization report artifacts
+
+Successful `atlas initialize --machine` also writes two first-class outputs
+beneath the selected Atlas Host Directory:
+
+```text
+.atlas-operation-workspaces/.artifacts/<proposal-branch>/readiness-report.md
+.atlas-operation-workspaces/.artifacts/<proposal-branch>/lint-stamp.json
+```
+
+The Markdown Atlas Readiness Report is ready to use as a pull-request body.
+It describes the actual proposal, including its draft Atlas Manifest, pending
+human review, evidence, limitations, publication handoff and next action.
+Capability coverage and unresolved decisions are included when the workflow
+supplies them; the minimal workflow does not imply that those capabilities ran.
+Initialization still does not push, open a pull request, or merge.
+
+The Operation Handoff names both absolute file paths. They also appear in
+`payload.outputArtifacts.readinessReportMarkdown` and
+`payload.outputArtifacts.lintStamp`. Machine stdout remains one ordinary
+Operation Result; the existing nested report and stamp remain available.
+The local initialization adapter provides the same artifacts.
+
+These files are generated Operation Workspace state, outside `.atlas/` and
+outside the proposal worktree. They are ignored by Git and are not added to the
+proposal commit. The JSON stamp retains exactly `lint-stamp-schema`,
+`atlasCommit`, and `evidenceRevision`; it records the evidence produced by
+Initialization, not a new validation or approval. Any commit change invalidates
+that stamp. Semantic verdicts and the producing SDK version are not identified
+by it, and deterministic evidence is reproducible only within one SDK version.
+
+Resume reuses byte-identical artifacts without rewriting them. Conflicting
+files, symbolic links, and non-file destinations are refused rather than
+overwritten. Output failure returns `ATLAS_INITIALIZATION_OUTPUT_FAILED` and
+exit 2, retaining the proposal, Lint evidence and resumable workflow state.
+Files may already exist after a partial output failure; this is not an atomic
+two-file transaction. Inspect the named output directory, preserve or explicitly
+repair conflicts, and resume the proposal. Initialization does not delete
+conflicting or partially written files for you.
+
 ### Explore checkpoint references
 
 Each post-Anchor route step has a `reanchorIndex`: a zero-based reference into
@@ -155,6 +195,10 @@ import { lintCommandUsage, runLintCommandOperation } from "@jdylanmc/atlas";
 ```
 
 Internal source paths are not exported. Treat anything outside the package root as private implementation detail unless a future release adds it to the `exports` map.
+
+`renderAtlasReadinessReportMarkdown(report)` renders an existing
+`AtlasReadinessReport` without filesystem effects. It preserves the supplied
+report data; rendering does not validate a proposal or authenticate its stamp.
 
 `AtlasGovernanceRequest` is discriminated by `action`: `create`, `amend`, `retire`,
 and `delete` require an `attestation`; `verify` carries none. Required presence

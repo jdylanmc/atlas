@@ -53,6 +53,17 @@ must invoke installed Initialization, adopt its proposal through Git, and pass
 installed Lint and Explore. Add cases to `installed-consumer.json` to extend
 this gate without duplicating the installation harness.
 
+The optional `readinessArtifacts` probe requires installed Initialization to
+emit a complete Markdown Readiness Report and the exact three-field Lint Stamp
+outside the proposal tree, with direct handoff paths and unchanged target Git
+state. Resume must retain artifact bytes, inodes and modification times.
+Conflicting equal-length, shorter and longer files, directories, file symlinks
+and a symlinked artifact directory must fail without overwriting the original
+files or outside sentinels. The shared probes also run at the source adapter.
+Illustrative capability/decision data exercises the installed public Markdown
+renderer and its source counterpart; it is formatting evidence, not a claim
+that minimal Initialization performed composed founding or approved governance.
+
 The optional `ingestPlan` probes exercise approved and refused Scopes through
 the installed CLI before an Atlas exists. They use the same Operation Result
 parser as installed Initialize, Lint, Explore, and Governance, pin the complete

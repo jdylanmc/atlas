@@ -27,6 +27,9 @@ import {
 } from "../src/platform/local_atlas_initialization.ts";
 import { captureLocalAtlasSnapshot as captureSnapshot } from "../src/platform/local_atlas_snapshot.ts";
 import { exitCodeForInitializeOperationResult } from "../src/interfaces/initialize_command.ts";
+import { renderAtlasReadinessReportMarkdown } from "../src/index.ts";
+import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
+import { exerciseInitializationArtifactConflicts } from "./initialization_artifact_probes.ts";
 
 const WORKSPACE = resolve(
   import.meta.dirname,
@@ -141,6 +144,52 @@ test("atlas initialize --machine emits only the narrowed Lint Stamp keys", () =>
 test("atlas initialize --machine reports usage errors as machine JSON", () => {
   const command = spawnSync(process.execPath, [COMMAND, "initialize", "--bogus"], {
     encoding: "utf8",
+  });
+
+  test("Readiness artifacts preserve report fields and refuse conflicting outputs without overwrites", () => {
+    const probe = readInstalledConsumerCorpus().cases.find(
+      (entry) => entry.readinessArtifacts !== undefined,
+    )?.readinessArtifacts;
+    assert.ok(probe !== undefined);
+    const repository = resolve(WORKSPACE, "readiness-artifacts");
+    initRepository(repository);
+    const result = runLocalAtlasInitialization(repository);
+    assert.equal(result.completion, "completed");
+    const report = result.payload.atlasReadinessReport;
+    const artifacts = result.payload.outputArtifacts;
+    assert.ok(report !== undefined);
+    assert.ok(artifacts !== undefined);
+    assert.ok(Object.isFrozen(artifacts));
+    const markdown = renderAtlasReadinessReportMarkdown(report);
+    for (const value of Object.values(report)) {
+      if (typeof value === "string") assert.ok(markdown.includes(value), value);
+    }
+    const enriched = renderAtlasReadinessReportMarkdown({
+      ...report,
+      ...probe.enrichedReport,
+    });
+    for (const text of probe.enrichedMarkdown) assert.ok(enriched.includes(text), text);
+    const empty = renderAtlasReadinessReportMarkdown({
+      ...report,
+      capabilities: [],
+      unresolvedDecisions: [],
+    });
+    assert.ok(empty.includes("No capability entries were reported."));
+    assert.ok(empty.includes("No unresolved decisions were reported."));
+    exerciseInitializationArtifactConflicts({
+      artifacts,
+      cases: probe.conflicts,
+      gitState: () =>
+        [
+          git(repository, ["show-ref"]),
+          git(repository, ["status", "--porcelain"]),
+        ].join("\n"),
+      resume: () =>
+        resumeLocalAtlasInitialization(
+          repository,
+          result.payload.workflowState.proposalBranch,
+        ),
+    });
   });
 
   assert.equal(command.status, 64);
