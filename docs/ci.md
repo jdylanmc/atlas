@@ -121,6 +121,24 @@ manages. Until a release is published, a packed tarball or Git dependency built
 from this repository is how it is obtained. See
 [ADR-0002](./adr/0002-atlas-sdk-is-installed-on-the-machine.md).
 
+The `installed-consumer` adversarial corpus runs in
+`tests/package_consumability.test.ts` during both CI coverage passes. It packs
+through `prepack`, installs outside the SDK checkout with production dependencies
+only, and bootstraps offline from the pinned lockfile and the cache populated by
+`npm ci`. A fresh Git-backed consumer invokes the installed `atlas initialize`;
+the target branch remains without an Atlas and installed Lint rejects it until
+ordinary Git fast-forwards to the returned proposal. Installed Lint then
+completes successfully with no Findings, and installed Explore returns nonempty
+results routed from the Root Anchor. The runtime resolves declared dependencies
+under the consumer's `node_modules` and cannot import the SDK's development-only
+ESLint dependency.
+
+Runtime children receive no API keys or inherited Node loaders. A Node socket
+guard has a positive control, but does not block subprocess Git networking; this
+minimal local journey configures no Git remote. This is the small installed
+adoption proof for #203, not composed founding (#159), real-source ingestion and
+fresh-session answers (#234), or the full release/platform gate (#91).
+
 Review findings that describe a gate miss are resolved only after
 `tests/adversarial/` has a permanent reject or accept case that exercises the
 miss. Existing gate additions should be data-only corpus edits.
