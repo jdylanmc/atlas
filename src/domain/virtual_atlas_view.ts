@@ -5,6 +5,6 @@ export interface VirtualAtlasView {
 }
 
 export interface VirtualAtlasChange {
-  readonly content: string;
+  readonly content: string | null;
   readonly path: string;
 }

@@ -293,7 +293,9 @@ export function runLocalAtlasGovernance(
   }
 
   const workspace = workspacePath(root, workflowState.proposalBranch);
-  const progress = { created: false };
+  const progress: { created: boolean; retirementConflict?: string } = {
+    created: false,
+  };
   const result = runAtlasGovernanceWorkflow(workflowState, request, {
     commitProposal: () => {
       const tree = gitWrite(workspace, ["write-tree"]);
@@ -333,7 +335,6 @@ export function runLocalAtlasGovernance(
       const gitDirectoryPath = resolve(workspace, gitDirectory);
       mkdirSync(join(gitDirectoryPath, "info"), { recursive: true });
       gitWrite(workspace, ["read-tree", workflowState.targetHead]);
-      materializeCapturedAtlasFiles(workspace, capturedAtlasFiles(root));
       return { receipt: workflowState.proposalBranch };
     },
     currentBaseSnapshotDigest: () =>
@@ -353,7 +354,28 @@ export function runLocalAtlasGovernance(
     workspacePathValid: () =>
       workspacePathIsContained(root, workflowState.proposalBranch),
     writeChangeSet: (changeSet: AtlasGovernanceChangeSet) => {
+      const removals = new Set(
+        changeSet.changes
+          .filter((change) => change.content === null)
+          .map((change) => change.path),
+      );
+      for (const path of removals) {
+        if (lstatSync(join(workspace, path), { throwIfNoEntry: false }) !== undefined) {
+          progress.retirementConflict = path;
+          throw new Error(
+            `Refusing to overwrite an existing retirement target in the Operation Workspace: ${path}`,
+          );
+        }
+      }
+      materializeCapturedAtlasFiles(
+        workspace,
+        capturedAtlasFiles(root).filter((file) => !removals.has(file.path)),
+      );
       for (const change of changeSet.changes) {
+        if (change.content === null) {
+          gitWrite(workspace, ["update-index", "--force-remove", "--", change.path]);
+          continue;
+        }
         const path = join(workspace, change.path);
         mkdirSync(dirname(path), { recursive: true });
         writeFileSync(path, change.content, "utf8");
@@ -379,6 +401,15 @@ export function runLocalAtlasGovernance(
       };
     },
   });
+  if (progress.retirementConflict !== undefined) {
+    return Object.freeze({
+      ...result,
+      handoff: Object.freeze({
+        ...result.handoff,
+        recommendedNextAction: `Operation Workspace ${workspace} was retained for inspection: unexpected path ${progress.retirementConflict} was not removed. Resolve competing work before retrying.`,
+      }),
+    });
+  }
   // A worktree this invocation created but could not carry to a completed
   // proposal is torn down so a corrected retry at the same target HEAD is not
   // wedged. A completed proposal is kept for review; a pre-existing workspace

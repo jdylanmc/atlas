@@ -53,6 +53,23 @@ must invoke installed Initialization, adopt its proposal through Git, and pass
 installed Lint and Explore. Add cases to `installed-consumer.json` to extend
 this gate without duplicating the installation harness.
 
+The `retirement` probes establish real fixture governance in Git, then exercise
+both `retire` and `delete` for Principles and Atlas Policies through the source
+and installed CLIs. They require live-document purges, unchanged target branches,
+complete archived bytes, what/when/who/why provenance, and preservation of the
+existing proposal on repeat. Dependent Contradiction metadata and prose,
+governance Edges, and active-truth wiki/Markdown links must each produce specific
+refusals until the fixture dependencies are reconciled. Fixture approvals and
+semantic verdicts are synthetic, not production human authorization.
+
+`governance.json` additionally exercises retirement target, action, approval,
+rationale and provenance refusals at the operation boundary. Its
+`atFounding` case refuses retirement of an earlier composed founding fragment
+before any filesystem effect. Its
+`workspaceConflict` cases insert a real file or symlink at the filesystem write
+boundary in disposable Git repositories, proving refusal cleanup preserves both
+the competing path and any outside target with an inspection handoff.
+
 The optional `readinessArtifacts` probe requires installed Initialization to
 emit a complete Markdown Readiness Report and the exact three-field Lint Stamp
 outside the proposal tree, with direct handoff paths and unchanged target Git

@@ -13,7 +13,8 @@ export function createVirtualAtlasView(
 ): VirtualAtlasView {
   const files = new Map<string, string>();
   for (const change of changes) {
-    files.set(change.path, change.content);
+    if (change.content === null) files.delete(change.path);
+    else files.set(change.path, change.content);
   }
   return Object.freeze({ files });
 }
@@ -24,7 +25,8 @@ export function applyVirtualAtlasChanges(
 ): VirtualAtlasView {
   const files = new Map(view.files);
   for (const change of changes) {
-    files.set(change.path, change.content);
+    if (change.content === null) files.delete(change.path);
+    else files.set(change.path, change.content);
   }
   return Object.freeze({ files });
 }

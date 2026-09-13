@@ -21,6 +21,7 @@ import {
 import { createVirtualAtlasView } from "../src/operations/virtual_atlas_view.ts";
 import {
   attestationPayloadDigest,
+  changeSetDigest,
   type AtlasApprovalAttestation,
 } from "../src/operations/operation_support.ts";
 import {
@@ -35,8 +36,24 @@ const governanceCorpus = JSON.parse(
   readonly cases: readonly {
     readonly expectedCode: string;
     readonly gate: "governance";
-    readonly kind: "finding-merge" | "semantic";
+    readonly kind: "finding-merge" | "semantic" | "retirement" | "retirement-workspace";
+    readonly workspaceConflict?: {
+      readonly kind: "file" | "symlink";
+      readonly content: string;
+    };
     readonly name: string;
+    readonly retirement?: {
+      readonly atFounding?: boolean;
+      readonly request: {
+        readonly action: "amend" | "retire" | "delete";
+        readonly subject?: AtlasGovernanceRequest["subject"];
+        readonly changes: readonly AtlasGovernanceChange[];
+        readonly changelog?: string;
+      };
+      readonly target?: "malformed" | "wrong-type";
+      readonly unapproved?: boolean;
+      readonly approver?: string;
+    };
     readonly assembly?: "request" | "fragment" | "workflow";
     readonly expectedCodes?: readonly string[];
     readonly merge?: {
@@ -91,6 +108,42 @@ const changelog: CapturedAtlasFile = {
   bytes: new TextEncoder().encode("# Changelog\n\n## 2026-08-21\n\n- Base.\n"),
   path: ".atlas/CHANGELOG.md",
 };
+
+test("removals have distinct digests without changing existing write identities", () => {
+  const identity = { baseSnapshotDigest: "base", targetHead: "head" };
+  const path = ".atlas/principles/example.md";
+  assert.equal(
+    changeSetDigest({ ...identity, changes: [{ path, content: "rule" }] }),
+    "2b65824e012fee29e3da519e7a028a76f0f719a78753369fa47f234fb06b1438",
+  );
+  const removed = changeSetDigest({ ...identity, changes: [{ path, content: null }] });
+  for (const content of ["", "delete", "null", "rule"]) {
+    assert.notEqual(
+      removed,
+      changeSetDigest({ ...identity, changes: [{ path, content }] }),
+    );
+  }
+  assert.notEqual(removed, changeSetDigest({ ...identity, changes: [] }));
+});
+
+test("a retirement draft without authored targets cannot execute despite derived provenance", () => {
+  const draft = request({
+    action: "retire",
+    changeSet: undefined,
+    changelog: "The fixture workflow is obsolete.",
+  });
+  const proposed = buildAtlasGovernanceChangeSet(state(), draft, [root, changelog]);
+  assert.deepEqual(
+    proposed.changes.map(({ path }) => path),
+    [".atlas/CHANGELOG.md"],
+  );
+  assert.ok(proposed.changes[0]?.content?.includes("approved by"));
+  assert.ok(
+    validateAtlasGovernanceRequest(draft).some(
+      ({ code }) => code === "ATLAS_GOVERNANCE_CHANGE_SET_REQUIRED",
+    ),
+  );
+});
 
 function state(
   receipts: readonly AtlasGovernanceEffectReceipt[] = Object.freeze([]),
@@ -275,10 +328,13 @@ function applyChanges(
   const encoder = new TextEncoder();
   const byPath = new Map(files.map((file) => [file.path, file]));
   for (const change of changes) {
-    byPath.set(change.path, {
-      bytes: encoder.encode(change.content),
-      path: change.path,
-    });
+    if (change.content === null) byPath.delete(change.path);
+    else {
+      byPath.set(change.path, {
+        bytes: encoder.encode(change.content),
+        path: change.path,
+      });
+    }
   }
   return Object.freeze([...byPath.values()]);
 }
@@ -671,7 +727,7 @@ test("Governance proves every deterministic input gate can fail with specific co
     validateAtlasGovernanceRequest(request({ action: "delete" })).map(
       (entry) => entry.code,
     ),
-    ["ATLAS_GOVERNANCE_DELETE_RETIRES_TRUTHS"],
+    ["ATLAS_GOVERNANCE_RETIREMENT_REMOVAL_REQUIRED"],
   );
   assert.deepEqual(
     validateAtlasGovernanceRequest(
@@ -741,7 +797,7 @@ test("Governance proves every deterministic input gate can fail with specific co
     malformedHeadingGates.includes("ATLAS_GOVERNANCE_PRINCIPLE_TRUTH_REQUIRED"),
   );
 
-  // A retire that empties active truths is permitted, where amend is not.
+  // Retaining an empty page is not Governance Retirement.
   const retireRequest = request({
     action: "retire",
     changes: [
@@ -759,7 +815,12 @@ test("Governance proves every deterministic input gate can fail with specific co
     retireRequest,
     runtime(workflowState, retireRequest),
   );
-  assert.equal(retireGates.completion, "completed");
+  assert.equal(retireGates.completion, "not-completed");
+  assert.ok(
+    retireGates.handoff.validationState.findings.some(
+      (entry) => entry.code === "ATLAS_GOVERNANCE_RETIREMENT_REMOVAL_REQUIRED",
+    ),
+  );
 
   // Atlas Policy identity gates.
   const policyGates = runAtlasGovernanceWorkflow(
@@ -844,7 +905,11 @@ test("Governance proves every deterministic input gate can fail with specific co
       request({ changelog: undefined }),
       "ATLAS_GOVERNANCE_CHANGELOG_REQUIRED",
     ],
-    ["delete", request({ action: "delete" }), "ATLAS_GOVERNANCE_DELETE_RETIRES_TRUTHS"],
+    [
+      "delete",
+      request({ action: "delete" }),
+      "ATLAS_GOVERNANCE_RETIREMENT_REMOVAL_REQUIRED",
+    ],
     [
       "verify-read-only",
       request({ action: "verify" }),
@@ -1575,12 +1640,69 @@ test("Governance finding merge preserves trusted Findings against hostile downgr
   );
 });
 
+for (const entry of governanceCorpus.cases) {
+  const probe = entry.retirement;
+  if (probe === undefined || probe.atFounding === true) continue;
+  test(`adversarial Governance Retirement: ${entry.name}`, () => {
+    const fields = probe.request;
+    let maintenance = request({
+      ...fields,
+      ...(probe.unapproved === true ? { attestation: undefined } : {}),
+    });
+    if (probe.approver !== undefined) {
+      assert.ok(maintenance.attestation !== undefined);
+      maintenance = request({
+        ...fields,
+        attestation: { ...maintenance.attestation, approver: probe.approver },
+      });
+    }
+    const content =
+      probe.target === "malformed"
+        ? "Not a parsed Atlas page.\n"
+        : probe.target === "wrong-type"
+          ? new TextDecoder().decode(root.bytes)
+          : readFileSync(
+              new URL("./fixtures/governance/retirement-principle.md", import.meta.url),
+              "utf8",
+            );
+    const workflowState = state();
+    const result = runAtlasGovernanceWorkflow(
+      workflowState,
+      maintenance,
+      runtime(workflowState, maintenance, {
+        baseFiles: [
+          root,
+          changelog,
+          {
+            path: ".atlas/principles/retirement.md",
+            bytes: new TextEncoder().encode(content),
+          },
+        ],
+      }),
+    );
+    assert.equal(result.completion, "not-completed");
+    assert.ok(
+      result.handoff.validationState.findings.some(
+        (finding) => finding.code === entry.expectedCode,
+      ),
+      JSON.stringify(result.handoff.validationState.findings),
+    );
+    assert.deepEqual(result.payload.workflowState.effectReceipts, []);
+  });
+}
+
 test("the adversarial governance corpus maps to enforced gates", () => {
   assert.match(governanceCorpus.reviewResolutionRule, /review finding/u);
   assert.equal(governanceCorpus.schema, 1);
   assert.deepEqual(
     governanceCorpus.cases
-      .filter((entry) => entry.merge === undefined && entry.assembly === undefined)
+      .filter(
+        (entry) =>
+          entry.merge === undefined &&
+          entry.assembly === undefined &&
+          entry.retirement === undefined &&
+          entry.workspaceConflict === undefined,
+      )
       .map((entry) => [entry.gate, entry.kind, entry.expectedCode]),
     [
       ["governance", "semantic", "ATLAS_GOVERNANCE_SEMANTIC_EVIDENCE_REQUIRED"],

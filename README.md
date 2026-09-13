@@ -209,6 +209,16 @@ verification requests carrying an attestation are invalid input (exit 64).
 Blank, expired, mismatched, or otherwise invalid attestations still face the
 existing runtime guards, including when JavaScript callers bypass TypeScript.
 
+Governance Retirement uses `retire` or `delete` with `{ path, content: null }`
+changes to purge existing live Principles or Atlas Policies. It does not retain
+a tombstone: the derived Changelog records the document paths, supplied approver,
+approval instant, and caller-authored rationale; Git preserves the complete
+former documents. String content remains a write, and other actions cannot remove
+files. Empty live Principles are invalid. Remaining governance Edges,
+Contradiction markers, and wiki or Markdown links must resolve after the purge
+or proposal Lint refuses it. The target branch stays unchanged for human review.
+See [Governance maintenance](docs/workflows/governance-maintenance.md).
+
 Governance Findings are coalesced by code, path, and complete source range in
 request validation, composition fragments, operation handoffs, and Finding merges.
 Trusted attribution takes precedence for the same identity; at equal trust the

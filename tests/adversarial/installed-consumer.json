@@ -462,6 +462,138 @@
         },
         "expectedCodes": ["ATLAS_GOVERNANCE_PRINCIPLE_AMENDMENT_REQUIRED"]
       }
+    },
+    {
+      "name": "governed retirement purges a live Principle and preserves its complete Git archive",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "retire",
+        "subject": "principle",
+        "fixture": "retirement-principle.md",
+        "path": ".atlas/principles/retirement.md",
+        "reason": "The fixture workflow no longer requires this rule.",
+        "dependency": {
+          "governor": "retirement-v1",
+          "documentId": "principle:retirement",
+          "expectedCode": "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "expectedFindings": [
+            { "path": ".atlas/concepts/retirement-dependent.md", "count": 2 },
+            { "path": ".atlas/edges/retirement-dependent.md", "count": 1 },
+            { "path": ".atlas/principles/retirement-dependent.md", "count": 2 }
+          ]
+        },
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22"
+      }
+    },
+    {
+      "name": "governed retirement purges an Atlas Policy with a cited verdict and complete Git archive",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "retire",
+        "subject": "atlas-policy",
+        "fixture": "retirement-policy.md",
+        "path": ".atlas/types/policy/retirement.md",
+        "reason": "The fixture publication workflow was decommissioned.",
+        "dependency": {
+          "governor": "policy:retirement",
+          "documentId": "policy:retirement",
+          "expectedCode": "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "expectedFindings": [
+            { "path": ".atlas/concepts/retirement-dependent.md", "count": 2 },
+            { "path": ".atlas/edges/retirement-dependent.md", "count": 1 },
+            { "path": ".atlas/principles/retirement-dependent.md", "count": 2 }
+          ]
+        },
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "semanticVerdicts": [
+          {
+            "policyId": "policy:retirement",
+            "verdict": "pass",
+            "evidence": [".atlas/index.md#L1"],
+            "challenge": {
+              "position": "agree",
+              "argument": "The retained Root Anchor supplies the fixture Atlas context.",
+              "evidence": [".atlas/index.md#L1"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "governed delete purges a Principle and safely records escaped approval provenance",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "delete",
+        "subject": "principle",
+        "fixture": "retirement-principle.md",
+        "path": ".atlas/principles/retirement.md",
+        "reason": "The fixture workflow is obsolete.",
+        "expectedApprover": "Fixture \"Maintainer\"\n- forged: not an entry",
+        "expectedApprovalDate": "2026-08-22"
+      }
+    },
+    {
+      "name": "governed delete purges an Atlas Policy without bypassing its semantic verdict",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "delete",
+        "subject": "atlas-policy",
+        "fixture": "retirement-policy.md",
+        "path": ".atlas/types/policy/retirement.md",
+        "reason": "The fixture publication workflow is obsolete.",
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "semanticVerdicts": [
+          {
+            "policyId": "policy:retirement",
+            "verdict": "pass",
+            "evidence": [".atlas/index.md#L1"],
+            "challenge": {
+              "position": "agree",
+              "argument": "The retained Root Anchor supplies the fixture Atlas context.",
+              "evidence": [".atlas/index.md#L1"]
+            }
+          }
+        ]
+      }
     }
   ]
 }

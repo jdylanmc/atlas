@@ -4,6 +4,7 @@ import {
   type CapturedAtlasFile,
 } from "../atlas/load_atlas_text.ts";
 import type { VirtualAtlasView } from "../domain/virtual_atlas_view.ts";
+import { parseAtlasPage } from "../atlas/parse_atlas_pages.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import { virtualAtlasCapturedFiles } from "./virtual_atlas_view.ts";
 import {
@@ -67,7 +68,7 @@ export interface AtlasGovernanceWorkflowState {
 }
 
 export interface AtlasGovernanceChange {
-  readonly content: string;
+  readonly content: string | null;
   readonly path: string;
 }
 
@@ -345,7 +346,10 @@ function capturedPathSet(
   changes: readonly AtlasGovernanceChange[],
 ): ReadonlySet<string> {
   const paths = new Set(baseFiles.map((file) => file.path));
-  for (const change of changes) paths.add(change.path);
+  for (const change of changes) {
+    if (change.content === null) paths.delete(change.path);
+    else paths.add(change.path);
+  }
   return paths;
 }
 
@@ -380,7 +384,7 @@ function changedPolicyTargets(
         const baseId = frontmatterId(
           capturedText(existingByPath.get(change.path)) ?? "",
         );
-        const changedId = frontmatterId(change.content);
+        const changedId = frontmatterId(change.content ?? "");
         const expectedId = expectedIdFromPath(change.path, "policy");
         return Object.freeze({
           id: baseId ?? changedId ?? expectedId ?? "",
@@ -565,6 +569,7 @@ function validatePrincipleChangeSet(
   const existingByPath = new Map(existing.map((file) => [file.path, file]));
   for (const change of changes) {
     if (!change.path.startsWith(".atlas/principles/")) continue;
+    if (change.content === null) continue;
     const ids = atlasPrincipleActiveTruthIds(change.content);
     const baseContent = capturedText(existingByPath.get(change.path));
     const baseId = frontmatterId(baseContent ?? "");
@@ -615,7 +620,7 @@ function validatePrincipleChangeSet(
         }
       }
     }
-    if (ids.length === 0 && request.action !== "retire") {
+    if (ids.length === 0) {
       findings.push(
         finding(
           "ATLAS_GOVERNANCE_PRINCIPLE_TRUTH_REQUIRED",
@@ -671,6 +676,7 @@ function validatePolicyChangeSet(
   const findings: Finding[] = [];
   const existingByPath = new Map(existing.map((file) => [file.path, file]));
   for (const change of policyChanges) {
+    if (change.content === null) continue;
     const id = frontmatterId(change.content);
     const baseId = frontmatterId(capturedText(existingByPath.get(change.path)) ?? "");
     const expectedId = expectedIdFromPath(change.path, "policy");
@@ -743,6 +749,64 @@ function validatePolicyChangeSet(
   return Object.freeze(findings);
 }
 
+function isGovernanceRetirement(action: AtlasGovernanceRequest["action"]): boolean {
+  return action === "retire" || action === "delete";
+}
+
+function validateRetirementTargets(
+  request: AtlasGovernanceRequest,
+  existing: readonly CapturedAtlasFile[],
+): readonly Finding[] {
+  if (!isGovernanceRetirement(request.action)) return Object.freeze([]);
+  const prefix =
+    request.subject === "principle" ? ".atlas/principles/" : ".atlas/types/policy/";
+  const type = request.subject === "principle" ? "principle" : "policy";
+  const byPath = new Map(existing.map((file) => [file.path, file]));
+  const findings: Finding[] = [];
+  for (const change of request.changes ?? []) {
+    if (change.content !== null) continue;
+    const content = capturedText(byPath.get(change.path));
+    let valid = false;
+    if (
+      change.path.startsWith(prefix) &&
+      change.path.endsWith(".md") &&
+      content !== undefined
+    ) {
+      const parsed = parseAtlasPage({ path: change.path, content });
+      valid = !(parsed instanceof Error) && parsed.page.sdk.type === type;
+    }
+    if (!valid) {
+      findings.push(
+        finding(
+          "ATLAS_GOVERNANCE_RETIREMENT_TARGET_INVALID",
+          "Retirement may purge only existing governance documents of the selected subject.",
+          change.path,
+        ),
+      );
+    }
+  }
+  return Object.freeze(findings);
+}
+
+function governanceChangelogProse(request: AtlasGovernanceRequest): string {
+  const reason = (request.changelog ?? "").trim();
+  if (!isGovernanceRetirement(request.action) || request.attestation === undefined) {
+    return reason;
+  }
+  const paths = [
+    ...new Set(
+      (request.changes ?? [])
+        .filter((change) => change.content === null)
+        .map((change) => change.path),
+    ),
+  ].toSorted(compareCodePoints);
+  return (
+    `Retired and purged ${request.subject} ${paths.map((path) => JSON.stringify(path)).join(", ")}; ` +
+    `approved by ${JSON.stringify(request.attestation.approver)} at ${JSON.stringify(request.attestation.approvedAt)}. ` +
+    `Reason: ${reason}`
+  );
+}
+
 // The date the Atlas Changelog entry is headed with, derived from the
 // Maintainer's approval instant through the one shared timestamp contract. An
 // approval that does not parse to a comparable instant yields "unknown" rather
@@ -777,7 +841,7 @@ function governanceChangelogChange(
       existingContent,
       governanceChangelogDate(request.attestation?.approvedAt),
       state.operationId,
-      (request.changelog ?? "").trim(),
+      governanceChangelogProse(request),
     ),
     path: atlasChangelogPath,
   });
@@ -833,7 +897,7 @@ function validateDerivedChangelog(
   const entry = renderAtlasChangelogEntryBlock(
     governanceChangelogDate(request.attestation?.approvedAt),
     state.operationId,
-    (request.changelog ?? "").trim(),
+    governanceChangelogProse(request),
   );
   return isSingleAtlasChangelogEntry(entry)
     ? Object.freeze([])
@@ -847,7 +911,7 @@ function validateDerivedChangelog(
 }
 
 // Validates the caller-authored governance request shape before Atlas SDK derives
-// any bookkeeping. It refuses read-only and delete misuse, requires at least one
+// any bookkeeping. It refuses read-only and removal misuse, requires at least one
 // authored change, holds every authored path to canonical .atlas form, reserves
 // every SDK-derived path (the derived Atlas Changelog) against collision, and
 // requires the drafted Changelog prose the SDK will stamp. A stale base snapshot
@@ -868,14 +932,6 @@ function validateAtlasGovernanceRequestInternal(
           ),
         ]);
   }
-  if (request.action === "delete") {
-    return Object.freeze([
-      finding(
-        "ATLAS_GOVERNANCE_DELETE_RETIRES_TRUTHS",
-        "Principle deletion is not a product write primitive; retire or amend the Principle and reconcile dependents instead.",
-      ),
-    ]);
-  }
   const findings: Finding[] = [];
   if (changes.length === 0) {
     findings.push(
@@ -886,6 +942,23 @@ function validateAtlasGovernanceRequestInternal(
     );
   }
   for (const change of changes) {
+    if (isGovernanceRetirement(request.action) && change.content !== null) {
+      findings.push(
+        finding(
+          "ATLAS_GOVERNANCE_RETIREMENT_REMOVAL_REQUIRED",
+          "Retirement purges live documents: supply null content, not a retained or empty page.",
+          change.path,
+        ),
+      );
+    } else if (!isGovernanceRetirement(request.action) && change.content === null) {
+      findings.push(
+        finding(
+          "ATLAS_GOVERNANCE_REMOVAL_ACTION_REQUIRED",
+          "A governance removal requires the retire or delete action.",
+          change.path,
+        ),
+      );
+    }
     if (!pathIsCanonicalAtlasPath(change.path)) {
       findings.push(
         finding(
@@ -943,6 +1016,7 @@ export function prepareGovernanceFragment(
     }),
     ...validatePrincipleChangeSet(request, changes, existing),
     ...validatePolicyChangeSet(request, changes, existing),
+    ...validateRetirementTargets(request, existing),
     ...validateSemanticVerdicts(
       request,
       capturedPathSet(existing, changes),
@@ -1131,7 +1205,7 @@ export function runAtlasGovernanceWorkflow(
     const authoredChanges = request.changes ?? [];
     const paths = capturedPathSet(existing, authoredChanges);
     const policyTargets = changedPolicyTargets(existing, authoredChanges);
-    const isMutation = request.action !== "verify" && request.action !== "delete";
+    const isMutation = request.action !== "verify";
     // The internal Atlas Change Set is derived here rather than supplied by the
     // caller — so its base snapshot digest and target head match the
     // state this operation read. Staleness does not enter through it; it is caught
@@ -1147,6 +1221,7 @@ export function runAtlasGovernanceWorkflow(
       ? Object.freeze([
           ...validatePrincipleChangeSet(request, authoredChanges, existing),
           ...validatePolicyChangeSet(request, authoredChanges, existing),
+          ...validateRetirementTargets(request, existing),
         ])
       : Object.freeze([]);
     // Defence in depth: the derived Changelog entry the SDK is about to write must

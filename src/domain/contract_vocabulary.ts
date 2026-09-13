@@ -315,6 +315,11 @@ export const unboundGlossaryTerms = Object.freeze([
     term: "Atlas Policy",
   }),
   Object.freeze({
+    reason:
+      "An action of the generic governance request and Change Set contracts, not a distinct exported type.",
+    term: "Governance Retirement",
+  }),
+  Object.freeze({
     reason: "Not yet implemented (Ingest Type Skill feature).",
     term: "Ingest Type",
   }),

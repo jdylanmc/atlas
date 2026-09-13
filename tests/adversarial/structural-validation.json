@@ -3,6 +3,81 @@
   "reviewResolutionRule": "A review finding is resolved only after tests/adversarial has a case exercising the structural validation gate.",
   "cases": [
     {
+      "name": "governance-link-encoded-pipe-is-not-a-wiki-alias-in-a-markdown-url",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+      "body": "# Principle\n\n## Active truths\n\n- `one` Retain an active truth.\n\n[missing](./principle.md%7Cmissing)\n"
+    },
+    {
+      "name": "governance-link-encoded-hash-is-not-a-url-fragment",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+      "body": "# Principle\n\n## Active truths\n\n- `one` Retain an active truth.\n\n[missing](./principle.md%23missing)\n"
+    },
+    {
+      "name": "governance-link-network-share-is-not-the-home-atlas",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "accept",
+      "body": "# Principle\n\n## Active truths\n\n- `one` Retain an active truth.\n\n[network share](\\\\\\\\fileserver/share/.atlas/principles/missing.md)\n"
+    },
+    {
+      "name": "governance-link-reference-style-cannot-hide-a-retired-target",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+      "body": "# Principle\n\n## Active truths\n\n- `one` Retain an active truth.\n\nConsult [governor][retired].\n\n[retired]: ./missing.md\n"
+    },
+    {
+      "name": "governance-link-unused-reference-definition-is-not-live",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "accept",
+      "body": "# Principle\n\n## Active truths\n\n- `one` Retain an active truth.\n\n[unused]: ./missing.md\n"
+    },
+    {
+      "name": "governance-link-first-reference-definition-wins",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "accept",
+      "body": "# Principle\n\n## Active truths\n\n- `one` Retain an active truth.\n\nConsult [governor][rule].\n\n[rule]: ./principle.md\n[rule]: ./missing.md\n"
+    },
+    {
+      "name": "governance-link-later-definition-cannot-hide-a-retired-target",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+      "body": "# Principle\n\n## Active truths\n\n- `one` Retain an active truth.\n\nConsult [governor][rule].\n\n[rule]: ./missing.md\n[rule]: ./principle.md\n"
+    },
+    {
+      "name": "governance-link-existing-canonical-and-relative-targets-resolve",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "accept",
+      "body": "# Principle\n\n## Active truths\n\n- `one` Retain an active truth.\n\n[[.atlas/principles/principle#active-truths|self]] and [canonical](.atlas/principles/principle.md).\n\n[encoded](./%70rinciple.md) and [relative](../principles/principle.md#active-truths).\n"
+    },
+    {
+      "name": "governance-link-examples-and-external-links-are-not-local-dependencies",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "accept",
+      "body": "# Principle\n\n## Active truths\n\n- `one` Retain an active truth.\n\n`[[.atlas/principles/missing]]` and \\[[.atlas/principles/missing]].\n\n```md\n[[.atlas/principles/missing]]\n```\n\n[external [[.atlas/principles/missing]]](https://example.invalid/.atlas/principles/missing.md)\n\n[other Atlas](//example.invalid/.atlas/principles/missing.md)\n\n[[.atlas/concepts/other]]\n"
+    },
+    {
+      "name": "governance-link-malformed-local-url-is-an-explicit-refusal",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+      "body": "# Principle\n\n## Active truths\n\n- `one` Retain an active truth.\n\n[malformed](./%FF.md)\n"
+    },
+    {
       "name": "canonical-active-truths-block-is-accepted",
       "gate": "structural-validation",
       "kind": "principle-active-truths",
@@ -10,11 +85,20 @@
       "body": "# Principle\n\n## Active truths\n\n- `truth:one` Text.\n\n## Amendments\n"
     },
     {
-      "name": "retired-zero-active-truths-block-is-accepted",
+      "name": "an-empty-live-Principle-is-not-a-retirement-record",
       "gate": "structural-validation",
       "kind": "principle-active-truths",
-      "expectation": "accept",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PRINCIPLE_TRUTH_REQUIRED",
       "body": "# Principle\n\n## Active truths\n\n## Amendments\n\n### 2 - 2026-08-24\n\nRetired all active truths.\n"
+    },
+    {
+      "name": "a-live-Principle-without-a-truth-block-is-rejected",
+      "gate": "structural-validation",
+      "kind": "principle-active-truths",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_PRINCIPLE_TRUTH_REQUIRED",
+      "body": "# Principle\n\nA page without an active truth is not retired.\n"
     },
     {
       "name": "valid-truth-beside-missing-same-line-text-is-rejected",
