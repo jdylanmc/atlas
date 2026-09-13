@@ -3,6 +3,32 @@
   "reviewResolutionRule": "A review finding is resolved only after this corpus has an accept or reject case that exercises it.",
   "cases": [
     {
+      "name": "unmatched closing labels have subquadratic heading discovery",
+      "gate": "changelog",
+      "expectation": "accept",
+      "existingContent": "# Changelog\n\n## 2026-08-22\n\n- historic: {{history}}\n",
+      "date": "2026-08-22",
+      "operationId": "next",
+      "prose": "Next operation.",
+      "expected": "# Changelog\n\n## 2026-08-22\n\n- historic: {{history}}\n\n- next: Next operation.\n",
+      "growth": {
+        "marker": "{{history}}",
+        "unit": "x] ",
+        "small": 1024,
+        "large": 2048
+      }
+    },
+    {
+      "name": "inline syntax and reference definitions remain verbatim historical text",
+      "gate": "changelog",
+      "expectation": "accept",
+      "existingContent": "# Changelog\n\n## 2026-08-22\n\n- historic: **bold** _emphasis_ `code` [link][ref] ![image](image.png) <https://example.invalid> &amp; \\*literal\\*  \n  continuation\\\n  next line\n\n[ref]: https://example.invalid \"title\"\n",
+      "date": "2026-08-22",
+      "operationId": "next",
+      "prose": "Next operation.",
+      "expected": "# Changelog\n\n## 2026-08-22\n\n- historic: **bold** _emphasis_ `code` [link][ref] ![image](image.png) <https://example.invalid> &amp; \\*literal\\*  \n  continuation\\\n  next line\n\n[ref]: https://example.invalid \"title\"\n\n- next: Next operation.\n"
+    },
+    {
       "name": "delimiter-dense historical prose has subquadratic heading discovery",
       "gate": "changelog",
       "expectation": "accept",
