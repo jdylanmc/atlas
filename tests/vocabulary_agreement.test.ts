@@ -548,7 +548,7 @@ test("a substitution keeps the words after it at their own location", () => {
   });
 });
 
-test("a conditional avoidance stays advice, and an unconditional one binds", () => {
+test("a conditional avoidance is not enforced, and an unconditional one binds", () => {
   const lines = [
     "# Atlas SDK",
     "",

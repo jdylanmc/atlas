@@ -87,6 +87,35 @@
       }
     },
     {
+      "name": "accept qualified avoidance without emitting advice",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire, in prose",
+        "source": "const code = \"ATLAS_BONFIRE_MISSING\";\nconst message = \"Atlas SDK requires a Bonfire page here.\";"
+      }
+    },
+    {
+      "name": "reject unqualified avoidance before a qualified entry",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
+      "messages": ["BONFIRE"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire, Query, when naming the user-facing skill",
+        "source": "const code = \"ATLAS_BONFIRE_MISSING\";\nconst message = \"Atlas SDK uses Query for this skill.\";"
+      }
+    },
+    {
+      "name": "accept lowercase avoided word in an ordinary finding message",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const message = \"Atlas SDK requires a bonfire page here.\";"
+      }
+    },
+    {
       "name": "accept plural product name",
       "expectation": "accept",
       "gate": "vocabulary-agreement",
