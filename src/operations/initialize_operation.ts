@@ -196,6 +196,10 @@ export interface AtlasReadinessReport {
 
 export interface AtlasInitializationPayload {
   readonly atlasReadinessReport?: AtlasReadinessReport;
+  readonly outputArtifacts?: {
+    readonly lintStamp: string;
+    readonly readinessReportMarkdown: string;
+  };
   readonly changeSet?: AtlasInitializationChangeSet;
   readonly lint?: LintOperationResult;
   readonly state: "completed" | "not-completed";
@@ -1412,7 +1416,7 @@ function completedReport(evidence: SuccessfulProposalLint): AtlasReadinessReport
       "No founding knowledge was imported; Lint evidence is the proposal commit snapshot.",
     foundingGraph: "None: minimal Initialization imports no founding knowledge.",
     governance:
-      "The minimal Atlas proposes no Atlas Manifest; human-authored declaration is pending review.",
+      "The proposal includes a draft Atlas Manifest; human review of the declaration and governance is still required.",
     guide: "None: minimal Initialization records no Guide Persona.",
     integration:
       "The Operation Workspace produced a local proposal branch and no forge publication.",
