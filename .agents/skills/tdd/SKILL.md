@@ -1,6 +1,8 @@
 ---
 name: tdd
-description: Test-driven development. Use when the user wants to build features or fix bugs test-first, mentions "red-green-refactor", or wants integration tests.
+description: "Internal test-first helper for any authorized task. Prove red then green through real behavior, allow small behavior-preserving cleanup after green, and rerun affected tests."
+disable-model-invocation: false
+user-invocable: false
 ---
 
 # Test-Driven Development
@@ -18,37 +20,86 @@ Durable review findings require an accept or reject case in
 `tests/adversarial/`. Prefer data-only additions to an existing gate, following
 that directory's README. Unit fixtures do not substitute for an installed
 consumer or Git-backed integration proof when the requirement calls for one.
+Defer nonessential refactoring to review; after green, limit cleanup to the
+smallest behavior-preserving change needed by the current slice.
 
-TDD is the red → green loop. This skill is the reference that makes that loop produce tests worth keeping: what a good test is, where tests go, the anti-patterns, and the rules of the loop. Every section applies on every cycle: consult them before and during the loop, not after.
+**Entry:** Internal test-first helper for any authorized task. Prove red then green through real behavior, allow small behavior-preserving cleanup after green, and rerun affected tests. Follow the [invocation contract](../setup/INVOCATION.md).
 
-When exploring the codebase, read `CONTEXT.md` (if it exists) so test names and interface vocabulary match the project's domain language, and respect ADRs in the area you're touching.
+Follow [doctrine selection and application](../doctrine/APPLY.md), **requiring `testing`**. Preserve the work packet's selections. With no preselection, consider `test-seams` when choosing boundaries/doubles and `code` for implementation; load the selected full texts before applying them. Doctrine does not waive the observed red/green loop or grant unrelated refactoring authority.
 
-## What a good test is
+Work in vertical slices: one behavior, a demonstrated failure, the smallest implementation, and a demonstrated pass. Small, behavior-preserving refactoring is allowed **after green**, followed by another test run.
 
-Tests verify behavior through public interfaces, not implementation details. Code can change entirely; tests shouldn't. A good test reads like a specification: "user can checkout with valid cart" tells you exactly what capability exists, and it survives refactors because it doesn't care about internal structure.
+Read repository guidance, relevant `CONTEXT.md`, and architectural decisions before choosing test names or interfaces. Follow the project's existing test tools and conventions.
 
-See [tests.md](tests.md) for examples and [mocking.md](mocking.md) for mocking guidelines.
+## Agree what to test
 
-## Seams: where tests go
+A **seam** is the public boundary where a caller observes behavior without reaching into the implementation.
 
-A **seam** is the public boundary you test at: the interface where you observe behavior without reaching inside. Tests live at seams, never against internals.
+Use seams and acceptance behavior already agreed in the task or specification. If they are not settled, identify them and confirm with the user before writing tests. If the interface itself is uncertain, inspect existing interfaces and decisions, then agree the observable contract rather than inventing test-only entry points.
 
-**Test at agreed seams.** Reuse the seam already approved in the ticket or
-conversation. If it is unsettled, identify the public behavior and confirm the
-seam before adding tests; do not re-interview for an already settled decision.
+Cover the agreed critical paths, complex logic, and relevant errors or edge cases. Do not require a separate test for every private function or trivial forwarding method.
 
-Ask: "What's the public interface, and which seams should we test?"
+## Write tests worth keeping
 
-When the shape of that interface is itself in question (how deep the module is, where the seam belongs, what the interface should expose), call the Skill tool with "codebase-design" for the vocabulary. It is the shared source of the module, interface, depth, seam, adapter, leverage and locality terms, and it is a reference to consult, not a session to run.
+- Test behavior through the agreed public interface, not private structure or internal collaborator calls.
+- Name the realistic production defect the test should catch before writing it.
+- Derive expected results independently: a specification, hand-checked example, known literal, or independently verified fixture. Never recompute them using the implementation or its helpers.
+- Test one behavior per case. Use multiple assertions when they jointly establish that behavior.
+- Prefer real components. Use controlled doubles at system boundaries, keeping required side effects real. Assert arguments, order, or counts only when they are part of the observable boundary contract.
+- Keep test-only setup and cleanup in test utilities; do not add production methods solely to support a test.
 
-## Anti-patterns
+Use [tests.md](tests.md) for examples, [mocking.md](mocking.md) for boundary choices, and [writing-good-tests.md](writing-good-tests.md) for deeper guidance on independent expectations and meaningful failure sensitivity.
 
-- **Implementation-coupled**: mocks internal collaborators, tests private methods, or verifies through a side channel (querying the database instead of using the interface). The tell: the test breaks when you refactor but behavior hasn't changed.
-- **Tautological**: the assertion recomputes the expected value the way the code does (`assert.equal(add(a, b), a + b)`, a snapshot derived by hand the same way, a constant asserted equal to itself), so it passes by construction and can never disagree with the code. Expected values must come from an independent source of truth: a known-good literal, a worked example, the spec.
-- **Horizontal slicing**: writing all tests first, then all implementation. Bulk tests verify _imagined_ behavior: you test the _shape_ of things rather than user-facing behavior, the tests go insensitive to real changes, and you commit to test structure before understanding the implementation. Work in **vertical slices** instead: one test → one implementation → repeat, each test a **tracer bullet** that responds to what the last cycle taught you.
+## The loop
 
-## Rules of the loop
+### 1. Red
 
-- **Red before green.** Write the failing test first, then only enough code to pass it. Don't anticipate future tests or add speculative features.
-- **One slice at a time.** One seam, one test, one minimal implementation per cycle.
-- **Refactoring is not part of the loop.** It belongs to the review stage (see the `caveman-review` skill), not the red → green implementation cycle.
+Write one test for one missing or incorrect behavior. Run the focused test with the project's existing runner.
+
+Observe a failure caused by that behavior, not by a broken test harness, missing import, or unavailable environment. Read the result; a test that was never executed is not a demonstrated red.
+
+If it passes immediately, check that the runner selected the test and whether the behavior already exists. Choose an actually missing behavior, or describe the test as characterization of existing behavior. Do not manufacture a wrong expectation merely to produce red.
+
+### 2. Green
+
+Write only the code needed for that behavior. Do not anticipate later tests, add speculative options, or refactor unrelated code.
+
+Run the new test and affected existing tests. Fix the implementation when a valid assertion fails; do not weaken the assertion to force a pass. Correct a test only when its expectation or setup is demonstrably wrong.
+
+Distinguish a passing focused run from a passing full suite. Broaden checks when the change's impact or repository guidance requires it.
+
+### 3. Refactor, if useful
+
+Only after green, make small changes that preserve the agreed behavior: clarify a name, remove duplication, or simplify the code just exercised.
+
+Rerun affected tests after the cleanup. Restore green before starting another behavior. A new feature, changed interface contract, or broad architectural rewrite is not cleanup; return to requirements and the red step for behavior changes, and obtain direction for work outside the task.
+
+### 4. Repeat
+
+Choose the next agreed behavior using what the last slice taught you. Do not write a bulk suite of imagined tests and then implement everything horizontally.
+
+## Bugs and existing work
+
+For a bug, reproduce the original symptom and turn it into a regression test at
+a seam that exercises the real interaction. If cause or reproduction is unclear,
+return the evidence gap to the existing delivery owner. An active Patch owner
+continues its diagnosis; Joe-mode or the human chooses a new Patch delivery
+when appropriate. Do not automatically activate a separate Patch route from
+this helper. Resume the test-first loop after the cause is established, and
+verify both the minimized test and the original scenario after the fix.
+
+If production code already exists before the test, preserve the user's work and say so. Do not delete or rewrite others' changes to manufacture a test-first history. Add honest characterization or regression coverage; demonstrating a regression against a pre-fix state requires an isolated or explicitly authorized method.
+
+If no meaningful test boundary or runnable environment is available, state the blocker and the evidence needed. Do not substitute a shallow test, source-text assertion, or assumed pass.
+
+Exceptions to test-first implementation, such as a throwaway prototype or generated output, require agreement with the user. Do not silently claim the exception followed the loop.
+
+## Completion
+
+Use `verify` to check the agreed acceptance conditions. Confirm the relevant tests actually ran, the final state remains green after any refactor, and important regression scenarios are covered.
+
+Report missing coverage or blocked checks explicitly. Ship the tests with the implementation, without adding unrelated tests, cleanup, or features after the scoped work is complete.
+
+Use [Changelog](../changelog/SKILL.md) for notable outcomes, returning entry
+proposals to the integration owner when tests are part of another delivery.
+This internal helper does not start another PR or Shepherd.

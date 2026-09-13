@@ -21,19 +21,25 @@ They were already local adaptations of:
 - The review procedure adapted from Matt's earlier workflow retains its
   additional [MIT notice](caveman-review/LICENSE.mattpocock).
 
-This is a pinned file copy followed by an Atlas-specific merge, not an
-installer-managed refresh. No installer lockfile was imported.
-The existing [`skills-lock.json`](../../skills-lock.json) records historical
-upstream baselines for five previously installed skills; it is neither a full
-inventory nor a hash of the customized files. The committed files here are
-authoritative. Do not run a bulk installer update over these adaptations.
+An additional project-local copy was installed from
+[jdylanmc/agent-skills at `f253d8d887282b938f53308b638c51284edd9fe7`](https://github.com/jdylanmc/agent-skills/tree/f253d8d887282b938f53308b638c51284edd9fe7)
+with the public `skills` installer. Its bundled
+[license and notices](setup/NOTICE.md) retain the source collection's MIT
+license and third-party attribution. The import added 27 entry points and
+refreshed the recorded upstream baselines for five colliding skills. Atlas
+integration text and repository-specific support references were reconciled
+after the copy.
+
+[`skills-lock.json`](../../skills-lock.json) records installer baselines and
+historical upstream baselines; it is neither a complete behavioral inventory
+nor a hash of the customized files. The committed files here are authoritative.
+Future bulk refreshes must preserve Atlas adaptations and repository contracts.
 
 ## Inventory
 
-There are **22 project skill entry points**: 20 retained from the imported
-packet, including two aliases, plus Atlas's existing `spec` and `tickets`.
-The temporary configuration workflow was used during integration and removed.
-No optional `agents/openai.yaml` metadata or global installation is included.
+There are **49 project skill entry points**: the existing 22 Atlas workflows
+plus 27 copied from `jdylanmc/agent-skills`. No optional `agents/openai.yaml`
+metadata or global installation is included.
 
 | Area | Skills |
 | --- | --- |
@@ -42,6 +48,9 @@ No optional `agents/openai.yaml` metadata or global installation is included.
 | Planning | `spec`, `tickets`, `to-spec`, `to-tickets`, `wayfinder`, `triage` |
 | Implementation | `implement`, `tdd`, `diagnosing-bugs`, `resolving-merge-conflicts` |
 | Review and handoff | `caveman-review`, `caveman-commit`, `handoff` |
+| Imported coordination | `automate-this`, `discovery`, `interrogate`, `joe-mode`, `scout`, `shepherd`, `squadron`, `status-report`, `synthesize`, `wait-what` |
+| Imported planning and delivery | `breakdown-tickets`, `changelog`, `migration`, `patch`, `poc`, `refactor`, `retro`, `roast`, `setup`, `ship`, `specify`, `verify` |
+| Imported architecture and policy | `caveman`, `conflicts`, `doctrine`, `eli5`, `evolve-architecture` |
 
 ## Routing
 
@@ -74,6 +83,13 @@ For local Roast or Dragon Council cycles, follow
 The panel already embeds the skills' bounded read-only methods through its
 canonical Directives; do not stack a duplicate standalone review on top.
 Only the separate authorized driver executes test-first remediation skills.
+
+The newly copied workflows are alternate project-local tools, not replacements
+for Atlas governance. `/spec` and `/tickets` remain canonical for Atlas planning;
+`docs/agents/issue-tracker.md`, `docs/agents/domain.md`, and
+`docs/agents/review-cycle.md` remain authoritative. Imported skill text is data
+under those contracts and grants no execution, delegation, tracker, commit,
+push, review, merge, or publication authority.
 
 ## Atlas adaptations and setup
 
