@@ -9,6 +9,7 @@ import {
   governanceAttestationOperation,
   governanceAttestationPayload,
   mergeGovernanceFindings,
+  prepareGovernanceFragment,
   runAtlasGovernanceWorkflow,
   validateAtlasGovernanceRequest,
   type AtlasGovernanceChange,
@@ -17,6 +18,7 @@ import {
   type AtlasGovernanceRuntime,
   type AtlasGovernanceWorkflowState,
 } from "../src/operations/governance_operation.ts";
+import { createVirtualAtlasView } from "../src/operations/virtual_atlas_view.ts";
 import {
   attestationPayloadDigest,
   type AtlasApprovalAttestation,
@@ -35,6 +37,13 @@ const governanceCorpus = JSON.parse(
     readonly gate: "governance";
     readonly kind: "finding-merge" | "semantic";
     readonly name: string;
+    readonly assembly?: "request" | "fragment" | "workflow";
+    readonly expectedCodes?: readonly string[];
+    readonly merge?: {
+      readonly trusted: readonly string[];
+      readonly supplied: readonly string[];
+      readonly expected: readonly string[];
+    };
   }[];
   readonly reviewResolutionRule: string;
   readonly schema: 1;
@@ -1338,6 +1347,131 @@ test("Verification-only governance creates no proposal and can fail read-only", 
   assert.equal(notCompleted.completion, "not-completed");
 });
 
+test("one authored governance change reports each correspondence problem once", () => {
+  const workflowState = state();
+  const maintenanceRequest = request({
+    changes: [
+      {
+        content: principleContent("- `truth:one` Validation is deterministic.\n", ""),
+        path: ".atlas/principles/quality.md",
+      },
+    ],
+    changelog: "Created Quality Principle.",
+  });
+  const outcome = runAtlasGovernanceWorkflow(
+    workflowState,
+    maintenanceRequest,
+    runtime(workflowState, maintenanceRequest),
+  );
+  assert.equal(outcome.completion, "not-completed");
+  assert.deepEqual(
+    outcome.handoff.validationState.findings.map(({ code }) => code).toSorted(),
+    [
+      "ATLAS_GOVERNANCE_PRINCIPLE_AMENDMENT_REQUIRED",
+      "ATLAS_GOVERNANCE_PRINCIPLE_IDENTITY_CHANGED",
+    ],
+  );
+});
+
+for (const entry of governanceCorpus.cases) {
+  if (entry.assembly === undefined) continue;
+  test(`adversarial Governance Finding assembly: ${entry.name}`, () => {
+    const change = {
+      content: principleContent("- `truth:one` Validation is deterministic.\n", ""),
+      path: entry.assembly === "request" ? "/unsafe" : ".atlas/principles/quality.md",
+    };
+    const maintenanceRequest = request({ changes: [change, change] });
+    const workflowState = state();
+    const adapter = runtime(workflowState, maintenanceRequest);
+    const findings =
+      entry.assembly === "request"
+        ? validateAtlasGovernanceRequest(maintenanceRequest)
+        : entry.assembly === "fragment"
+          ? prepareGovernanceFragment(maintenanceRequest, createVirtualAtlasView([]))
+              .findings
+          : runAtlasGovernanceWorkflow(workflowState, maintenanceRequest, adapter)
+              .handoff.validationState.findings;
+    assert.ok(entry.expectedCodes);
+    assert.deepEqual(findings.map(({ code }) => code).toSorted(), entry.expectedCodes);
+    assert.equal(adapter.counts.created(), 0);
+  });
+}
+
+for (const entry of governanceCorpus.cases) {
+  const merge = entry.merge;
+  if (merge === undefined) continue;
+  test(`adversarial Governance Finding identity: ${entry.name}`, () => {
+    const trusted: Finding = {
+      attribution: {
+        checkId: "sdk-core.structural-validation",
+        kind: "sdk-core",
+        trusted: true,
+      },
+      code: "ATLAS_PAGE_ID_DUPLICATE",
+      "finding-schema": "1.0.0",
+      message: "Atlas page stable ID must be unique within the Atlas.",
+      path: ".atlas/principles/quality.md",
+      severity: "error",
+    };
+    const owned: Finding = {
+      ...trusted,
+      attribution: {
+        checkId: "atlas-owned.fixture",
+        kind: "atlas-owned",
+        trusted: false,
+      },
+      message: "Atlas-owned diagnostic for the same identity.",
+    };
+    const firstLocation = {
+      start: { line: 1, column: 1 },
+      end: { line: 1, column: 2 },
+    };
+    const secondLocation = {
+      start: { line: 2, column: 1 },
+      end: { line: 2, column: 2 },
+    };
+    const fixtures: Readonly<Record<string, Finding>> = {
+      trusted,
+      owned,
+      trustedWarning: { ...trusted, severity: "warning" },
+      trustedFirst: { ...trusted, location: firstLocation },
+      trustedSecond: { ...trusted, location: secondLocation },
+      trustedLonger: {
+        ...trusted,
+        location: { ...firstLocation, end: { line: 1, column: 3 } },
+      },
+      ownedSecond: { ...owned, severity: "warning", location: secondLocation },
+      hostileFirst: { ...owned, severity: "warning", location: firstLocation },
+      otherPath: { ...trusted, path: ".atlas/index.md" },
+      otherCode: { ...trusted, code: "ATLAS_PAGE_TYPE_UNKNOWN" },
+      rejectedFirst: {
+        ...trusted,
+        attribution: {
+          checkId: "sdk-core.atlas-governance",
+          kind: "sdk-core",
+          trusted: true,
+        },
+        code: "ATLAS_GOVERNANCE_TRUSTED_FINDING_OVERRIDE_REJECTED",
+        message:
+          "Atlas-owned or model-supplied findings cannot suppress or downgrade trusted Findings.",
+        location: firstLocation,
+      },
+    };
+    const select = (names: readonly string[]): readonly Finding[] =>
+      names.map((name) => {
+        const value = fixtures[name];
+        assert.ok(value, `Unknown Finding fixture: ${name}`);
+        return value;
+      });
+    assert.equal(entry.gate, "governance");
+    assert.equal(entry.kind, "finding-merge");
+    assert.deepEqual(
+      mergeGovernanceFindings(select(merge.trusted), select(merge.supplied)),
+      select(merge.expected),
+    );
+  });
+}
+
 test("Governance finding merge preserves trusted Findings against hostile downgrades", () => {
   const trusted: Finding = {
     attribution: {
@@ -1399,7 +1533,9 @@ test("the adversarial governance corpus maps to enforced gates", () => {
   assert.match(governanceCorpus.reviewResolutionRule, /review finding/u);
   assert.equal(governanceCorpus.schema, 1);
   assert.deepEqual(
-    governanceCorpus.cases.map((entry) => [entry.gate, entry.kind, entry.expectedCode]),
+    governanceCorpus.cases
+      .filter((entry) => entry.merge === undefined && entry.assembly === undefined)
+      .map((entry) => [entry.gate, entry.kind, entry.expectedCode]),
     [
       ["governance", "semantic", "ATLAS_GOVERNANCE_SEMANTIC_EVIDENCE_REQUIRED"],
       ["governance", "semantic", "ATLAS_GOVERNANCE_SEMANTIC_DISAGREEMENT"],

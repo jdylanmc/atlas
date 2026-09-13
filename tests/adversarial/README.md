@@ -26,3 +26,11 @@ includes it too. Its expected-error cases reject unapproved mutations and
 attested verification; positive cases exercise approved mutations, unattested
 verification, action narrowing, and the public workflow signature. Missing
 expected errors fail the gate rather than silently accepting weaker types.
+
+`governance.json` also carries data-driven `merge` and `assembly` cases executed
+by `tests/governance_operation.test.ts`. They pin Finding identity, attribution
+and severity precedence, distinct ranges, and deduplication at the public
+request, fragment, and workflow boundaries. The optional governance change in
+`installed-consumer.json` exercises one malformed Principle through installed
+`atlas govern` after Initialization and Git adoption, requiring each distinct
+Finding exactly once and no proposal or target mutation.

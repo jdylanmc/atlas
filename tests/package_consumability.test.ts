@@ -21,6 +21,13 @@ import type { LintOperationResult } from "../src/operations/lint_operation.ts";
 import { initializeCommandExitCodes } from "../src/interfaces/initialize_command.ts";
 import { lintCommandExitCodes } from "../src/interfaces/lint_command.ts";
 import { exploreCommandExitCodes } from "../src/interfaces/explore_command.ts";
+import { governCommandExitCodes } from "../src/interfaces/governance_command.ts";
+import {
+  governanceAttestationOperation,
+  governanceAttestationPayload,
+  type AtlasGovernanceResult,
+} from "../src/operations/governance_operation.ts";
+import { attestationPayloadDigest } from "../src/operations/operation_support.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
@@ -566,6 +573,65 @@ for (const entry of readInstalledConsumerCorpus().cases) {
       const [firstResult] = exploreResult.payload.results;
       assert.ok(firstResult !== undefined);
       assert.equal(firstResult.route[0]?.objectId, entry.expectedRootAnchorId);
+      if (entry.governance !== undefined) {
+        const fields = {
+          "governance-request-schema": "1.0.0" as const,
+          action: "create" as const,
+          changes: [entry.governance.change],
+          changelog: "Created Quality Principle.",
+          subject: "principle" as const,
+        };
+        const operation = governanceAttestationOperation(fields);
+        const nonce = "installed-governance-no-duplicates";
+        const requestPath = join(workspace, "governance-request.json");
+        writeFileSync(
+          requestPath,
+          JSON.stringify({
+            ...fields,
+            attestation: {
+              "approval-attestation-schema": "1.0.0",
+              approvedAt: "2026-08-21T00:00:00Z",
+              approver: "Fixture Maintainer",
+              nonce,
+              operation,
+              payloadDigest: attestationPayloadDigest(
+                operation,
+                nonce,
+                governanceAttestationPayload(fields),
+              ),
+            },
+          }),
+        );
+        const govern = runInstalled(consumer, guard, [
+          "govern",
+          "--machine",
+          "--request",
+          requestPath,
+          "--atlas-host-directory",
+          consumer,
+        ]);
+        assert.equal(
+          govern.status,
+          governCommandExitCodes.operationFailed,
+          govern.stdout,
+        );
+        assert.equal(govern.stderr, "");
+        const governed = JSON.parse(govern.stdout) as AtlasGovernanceResult;
+        assert.equal(governed.completion, "not-completed");
+        assert.equal(governed.disposition, "failed");
+        const findings = governed.handoff.validationState.findings;
+        assert.deepEqual(
+          findings.map(({ code }) => code).toSorted(),
+          entry.governance.expectedCodes,
+        );
+        assert.ok(findings.every(({ path }) => path === entry.governance?.change.path));
+        assert.equal(consumerGit(consumer, ["rev-parse", "HEAD"]), proposal);
+        assert.equal(
+          consumerGit(consumer, ["branch", "--list", "atlas-governance-*"]),
+          "",
+        );
+        assert.equal(consumerGit(consumer, ["status", "--porcelain"]), "");
+      }
     } finally {
       rmSync(workspace, { force: true, recursive: true });
     }

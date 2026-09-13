@@ -3,6 +3,164 @@
   "reviewResolutionRule": "A review finding is resolved only after tests/adversarial has a case exercising the governance gate.",
   "cases": [
     {
+      "name": "repeated-request-observations-coalesce",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_CHANGE_SET_PATH_INVALID",
+      "assembly": "request",
+      "expectedCodes": ["ATLAS_GOVERNANCE_CHANGE_SET_PATH_INVALID"]
+    },
+    {
+      "name": "repeated-fragment-observations-coalesce",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_PRINCIPLE_IDENTITY_CHANGED",
+      "assembly": "fragment",
+      "expectedCodes": [
+        "ATLAS_GOVERNANCE_PRINCIPLE_AMENDMENT_REQUIRED",
+        "ATLAS_GOVERNANCE_PRINCIPLE_IDENTITY_CHANGED"
+      ]
+    },
+    {
+      "name": "repeated-workflow-observations-coalesce",
+      "gate": "governance",
+      "kind": "semantic",
+      "expectedCode": "ATLAS_GOVERNANCE_PRINCIPLE_IDENTITY_CHANGED",
+      "assembly": "workflow",
+      "expectedCodes": [
+        "ATLAS_GOVERNANCE_PRINCIPLE_AMENDMENT_REQUIRED",
+        "ATLAS_GOVERNANCE_PRINCIPLE_IDENTITY_CHANGED"
+      ]
+    },
+    {
+      "name": "duplicate-trusted-findings-coalesce",
+      "gate": "governance",
+      "kind": "finding-merge",
+      "expectedCode": "ATLAS_PAGE_ID_DUPLICATE",
+      "merge": {
+        "trusted": ["trusted", "trusted"],
+        "supplied": [],
+        "expected": ["trusted"]
+      }
+    },
+    {
+      "name": "duplicate-supplied-findings-coalesce",
+      "gate": "governance",
+      "kind": "finding-merge",
+      "expectedCode": "ATLAS_PAGE_ID_DUPLICATE",
+      "merge": { "trusted": [], "supplied": ["owned", "owned"], "expected": ["owned"] }
+    },
+    {
+      "name": "trusted-attribution-wins-the-same-identity",
+      "gate": "governance",
+      "kind": "finding-merge",
+      "expectedCode": "ATLAS_PAGE_ID_DUPLICATE",
+      "merge": {
+        "trusted": ["trusted"],
+        "supplied": ["owned"],
+        "expected": ["trusted"]
+      }
+    },
+    {
+      "name": "later-trusted-attribution-replaces-an-untrusted-duplicate",
+      "gate": "governance",
+      "kind": "finding-merge",
+      "expectedCode": "ATLAS_PAGE_ID_DUPLICATE",
+      "merge": {
+        "trusted": ["owned", "trusted"],
+        "supplied": [],
+        "expected": ["trusted"]
+      }
+    },
+    {
+      "name": "untrusted-severity-cannot-replace-a-trusted-identity",
+      "gate": "governance",
+      "kind": "finding-merge",
+      "expectedCode": "ATLAS_PAGE_ID_DUPLICATE",
+      "merge": {
+        "trusted": ["trustedWarning"],
+        "supplied": ["owned"],
+        "expected": ["trustedWarning"]
+      }
+    },
+    {
+      "name": "a-distinct-location-is-not-a-trusted-downgrade",
+      "gate": "governance",
+      "kind": "finding-merge",
+      "expectedCode": "ATLAS_PAGE_ID_DUPLICATE",
+      "merge": {
+        "trusted": ["trustedFirst"],
+        "supplied": ["ownedSecond"],
+        "expected": ["trustedFirst", "ownedSecond"]
+      }
+    },
+    {
+      "name": "repeated-downgrades-produce-one-located-refusal",
+      "gate": "governance",
+      "kind": "finding-merge",
+      "expectedCode": "ATLAS_PAGE_ID_DUPLICATE",
+      "merge": {
+        "trusted": ["trustedFirst"],
+        "supplied": ["hostileFirst", "hostileFirst"],
+        "expected": ["rejectedFirst", "trustedFirst"]
+      }
+    },
+    {
+      "name": "the-complete-source-range-is-part-of-identity",
+      "gate": "governance",
+      "kind": "finding-merge",
+      "expectedCode": "ATLAS_PAGE_ID_DUPLICATE",
+      "merge": {
+        "trusted": ["trustedFirst", "trustedLonger", "trustedSecond"],
+        "supplied": [],
+        "expected": ["trustedFirst", "trustedLonger", "trustedSecond"]
+      }
+    },
+    {
+      "name": "different-paths-remain-distinct",
+      "gate": "governance",
+      "kind": "finding-merge",
+      "expectedCode": "ATLAS_PAGE_ID_DUPLICATE",
+      "merge": {
+        "trusted": ["trusted", "otherPath"],
+        "supplied": [],
+        "expected": ["otherPath", "trusted"]
+      }
+    },
+    {
+      "name": "different-codes-remain-distinct",
+      "gate": "governance",
+      "kind": "finding-merge",
+      "expectedCode": "ATLAS_PAGE_ID_DUPLICATE",
+      "merge": {
+        "trusted": ["otherCode", "trusted"],
+        "supplied": [],
+        "expected": ["trusted", "otherCode"]
+      }
+    },
+    {
+      "name": "coalescing-never-downgrades-equal-trust",
+      "gate": "governance",
+      "kind": "finding-merge",
+      "expectedCode": "ATLAS_PAGE_ID_DUPLICATE",
+      "merge": {
+        "trusted": ["trustedWarning", "trusted"],
+        "supplied": [],
+        "expected": ["trusted"]
+      }
+    },
+    {
+      "name": "an-absent-location-is-not-a-specified-range",
+      "gate": "governance",
+      "kind": "finding-merge",
+      "expectedCode": "ATLAS_PAGE_ID_DUPLICATE",
+      "merge": {
+        "trusted": ["trusted", "trustedFirst"],
+        "supplied": [],
+        "expected": ["trusted", "trustedFirst"]
+      }
+    },
+    {
       "name": "semantic-verdict-without-evidence-is-rejected",
       "gate": "governance",
       "kind": "semantic",

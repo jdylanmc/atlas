@@ -132,6 +132,8 @@ completes successfully with no Findings, and installed Explore returns nonempty
 results routed from the Root Anchor. The runtime resolves declared dependencies
 under the consumer's `node_modules` and cannot import the SDK's development-only
 ESLint dependency.
+Installed fixtures also submit one malformed governance change, requiring each
+of one or two distinct problems exactly once, with no proposal or target mutation.
 
 Runtime children receive no API keys or inherited Node loaders. A Node socket
 guard has a positive control, but does not block subprocess Git networking; this

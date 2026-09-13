@@ -56,6 +56,13 @@ verification requests carrying an attestation are invalid input (exit 64).
 Blank, expired, mismatched, or otherwise invalid attestations still face the
 existing runtime guards, including when JavaScript callers bypass TypeScript.
 
+Governance Findings are coalesced by code, path, and complete source range in
+request validation, composition fragments, operation handoffs, and Finding merges.
+Trusted attribution takes precedence for the same identity; at equal trust the
+strongest severity wins, with the first observation retained for ties. Different
+paths or locations remain distinct, including when checking for an attempted
+downgrade of a trusted Finding.
+
 ## Package contents
 
 The npm artifact ships only the compiled runtime, declaration files, `package.json`, and this README. Development fixtures, tests, local workspaces, and source-tree automation are not part of the package artifact.
