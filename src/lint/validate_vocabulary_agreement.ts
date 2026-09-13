@@ -34,8 +34,11 @@ const diagnosticPattern = /ATLAS_[A-Z0-9_]+/gu;
 /** An exported contract declaration identifier. */
 const exportedIdentifierPattern =
   /(?:^|\n)\s*export\s+(?:declare\s+)?(?:abstract\s+)?(?:interface|type|class|function|const|let|var)\s+([A-Za-z_$][\w$]*)/gu;
-/** An `.atlas/` directory reference, in plain or regular-expression form. */
-const directoryPattern = /\\?\.atlas\\?\/([A-Za-z0-9_.-]+)\\?\//dgu;
+/** A directory segment followed by a separator, or an extensionless terminal
+ * segment. Root filenames are not page directories. */
+const directoryPattern =
+  /\\?\.atlas\\?\/([A-Za-z0-9_.-]+(?=\\?\/)|[A-Za-z0-9_-]+(?=["'`\s]|$))/dgu;
+const pathModulePattern = /^(?:node:)?path$/u;
 /** A page-ID prefix, which requires an identifier or a substitution after its colon. */
 const idPrefixPattern = /(?<![\p{L}\p{N}_-])([a-z][a-z0-9-]*):(?=[a-z0-9$])/gu;
 /** A literal that is one lower-case identifier, the shape of a page type. */
@@ -424,12 +427,24 @@ function isModuleCall(expression: ts.Expression): boolean {
   );
 }
 
-function moduleSpecifiers(source: ts.SourceFile): ReadonlySet<ts.Node> {
+function contractSyntax(source: ts.SourceFile): {
+  readonly specifiers: ReadonlySet<ts.Node>;
+  readonly computed: boolean;
+} {
   const specifiers = new Set<ts.Node>();
+  const pathNames = new Set<string>();
+  const calls = new Set<string>();
+  const analysis = { computed: false };
   function add(node: ts.Node | undefined): void {
     if (node !== undefined && ts.isStringLiteralLike(node)) specifiers.add(node);
   }
   function visit(node: ts.Node): void {
+    if (
+      ts.isTemplateExpression(node) ||
+      (ts.isBinaryExpression(node) &&
+        node.operatorToken.kind === ts.SyntaxKind.PlusToken)
+    )
+      analysis.computed = true;
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
       add(node.moduleSpecifier);
     } else if (ts.isExternalModuleReference(node)) {
@@ -439,10 +454,31 @@ function moduleSpecifiers(source: ts.SourceFile): ReadonlySet<ts.Node> {
     } else if (ts.isCallExpression(node) && isModuleCall(node.expression)) {
       add(node.arguments[0]);
     }
+    if (ts.isCallExpression(node)) {
+      let target = node.expression;
+      while (ts.isPropertyAccessExpression(target)) target = target.expression;
+      if (ts.isIdentifier(target)) calls.add(target.text);
+    }
+    if (
+      ts.isImportDeclaration(node) &&
+      ts.isStringLiteral(node.moduleSpecifier) &&
+      pathModulePattern.test(node.moduleSpecifier.text)
+    ) {
+      const clause = node.importClause;
+      if (clause?.name !== undefined) pathNames.add(clause.name.text);
+      const bindings = clause?.namedBindings;
+      if (bindings !== undefined) {
+        if (ts.isNamespaceImport(bindings)) pathNames.add(bindings.name.text);
+        else for (const binding of bindings.elements) pathNames.add(binding.name.text);
+      }
+    }
     ts.forEachChild(node, visit);
   }
   visit(source);
-  return specifiers;
+  return {
+    specifiers,
+    computed: analysis.computed || [...pathNames].some((name) => calls.has(name)),
+  };
 }
 
 /** Only AST-proven module literals are blanked for whole-source identifier
@@ -471,6 +507,273 @@ function typescriptPositions(source: ts.SourceFile): PositionIndex {
   return {
     rangeAt: (start, end) => ({ end: positionAt(end), start: positionAt(start) }),
   };
+}
+
+function normalizedContractPath(path: string): string {
+  const parts: string[] = [];
+  for (const part of path.replaceAll("\\", "/").split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === "..") parts.pop();
+    else parts.push(part);
+  }
+  return `/${parts.join("/")}`;
+}
+
+function pathOperation(
+  expression: ts.Expression,
+  checker: ts.TypeChecker,
+): "join" | "resolve" | undefined {
+  let target = expression;
+  let operation: string | undefined;
+  if (ts.isPropertyAccessExpression(target)) {
+    operation = target.name.text;
+    target = target.expression;
+    if (
+      ts.isPropertyAccessExpression(target) &&
+      ["posix", "win32"].includes(target.name.text)
+    ) {
+      target = target.expression;
+    }
+  }
+  const declaration = checker.getSymbolAtLocation(target)?.declarations?.[0];
+  let imported: ts.Node | undefined;
+  if (declaration !== undefined) {
+    if (ts.isImportSpecifier(declaration)) {
+      const name = (declaration.propertyName ?? declaration.name).text;
+      if (operation === undefined || !["default", "posix", "win32"].includes(name))
+        operation = name;
+      imported = declaration.parent.parent.parent;
+    } else if (ts.isNamespaceImport(declaration)) {
+      imported = declaration.parent.parent;
+    } else if (ts.isImportClause(declaration)) {
+      imported = declaration.parent;
+    }
+  }
+  return (operation === "join" || operation === "resolve") &&
+    imported !== undefined &&
+    ts.isImportDeclaration(imported) &&
+    ts.isStringLiteral(imported.moduleSpecifier) &&
+    pathModulePattern.test(imported.moduleSpecifier.text)
+    ? operation
+    : undefined;
+}
+
+function contractProgram(contracts: readonly VocabularyTextFile[]): {
+  readonly program: ts.Program;
+  readonly names: ReadonlyMap<VocabularyTextFile, string>;
+  readonly checker: () => ts.TypeChecker;
+} {
+  const contents = new Map<string, string>();
+  const names = new Map<VocabularyTextFile, string>();
+  const directories = new Set<string>(["/"]);
+  for (const file of contracts) {
+    if (file.path.endsWith(".md") || file.content.length > CONTRACT_LIMIT) continue;
+    let name = normalizedContractPath(file.path);
+    if (contents.has(name)) name = `/duplicate-${String(names.size)}${name}`;
+    names.set(file, name);
+    contents.set(name, file.content);
+    for (
+      let slash = name.lastIndexOf("/");
+      slash > 0;
+      slash = name.lastIndexOf("/", slash - 1)
+    ) {
+      directories.add(name.slice(0, slash));
+    }
+  }
+  const options: ts.CompilerOptions = {
+    allowJs: true,
+    allowNonTsExtensions: true,
+    module: ts.ModuleKind.ESNext,
+    moduleDetection: ts.ModuleDetectionKind.Force,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    noEmit: true,
+    noLib: true,
+    target: ts.ScriptTarget.Latest,
+    types: [],
+  };
+  const parser = ts.createCompilerHost(options, true);
+  const readFile = contents.get.bind(contents);
+  parser.readFile = readFile;
+  const host: ts.CompilerHost = {
+    getSourceFile: parser.getSourceFile.bind(parser),
+    getDefaultLibFileName: parser.getDefaultLibFileName.bind(parser),
+    getNewLine: parser.getNewLine.bind(parser),
+    writeFile: parser.writeFile.bind(parser),
+    getCurrentDirectory: () => "/",
+    getCanonicalFileName: (name) => name,
+    useCaseSensitiveFileNames: () => true,
+    readFile,
+    fileExists: contents.has.bind(contents),
+    directoryExists: directories.has.bind(directories),
+  };
+  const program = ts.createProgram([...contents.keys()], options, host);
+  let checker: ts.TypeChecker | undefined;
+  return { names, program, checker: () => (checker ??= program.getTypeChecker()) };
+}
+
+/** Unknown values remain barriers between known text, not guessed identifiers.
+ * Null explicitly refuses an exhausted analysis budget. No source expression
+ * or filesystem module is executed. */
+function constantText(
+  checker: () => ts.TypeChecker,
+): (node: ts.Expression) => string | undefined | null {
+  const memo = new Map<ts.Expression, string | undefined | null>();
+  const visiting = new Set<ts.Expression>();
+  let remaining = CONTRACT_LIMIT;
+  function combine(
+    left: string | undefined | null,
+    right: string | undefined | null,
+  ): string | null {
+    if (left === null || right === null) return null;
+    const prefix = left ?? "\0";
+    const suffix = right ?? "\0";
+    const length = prefix.length + suffix.length;
+    if (length > remaining) return null;
+    remaining -= length;
+    return prefix + suffix;
+  }
+  function read(node: ts.Expression, depth: number): string | undefined | null {
+    if (memo.has(node)) return memo.get(node);
+    if (visiting.has(node)) return undefined;
+    if (depth >= 128) return null;
+    visiting.add(node);
+    let text: string | undefined | null;
+    if (ts.isStringLiteralLike(node)) {
+      text = node.text;
+    } else if (
+      ts.isParenthesizedExpression(node) ||
+      ts.isAsExpression(node) ||
+      ts.isTypeAssertionExpression(node) ||
+      ts.isSatisfiesExpression(node) ||
+      ts.isNonNullExpression(node)
+    ) {
+      text = read(node.expression, depth + 1);
+    } else if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.PlusToken
+    ) {
+      text = combine(read(node.left, depth + 1), read(node.right, depth + 1));
+    } else if (ts.isTemplateExpression(node)) {
+      text = node.head.text;
+      for (const span of node.templateSpans) {
+        text = combine(
+          combine(text, read(span.expression, depth + 1)),
+          span.literal.text,
+        );
+      }
+    } else if (ts.isCallExpression(node)) {
+      const operation = pathOperation(node.expression, checker());
+      if (operation !== undefined) {
+        text = "";
+        for (const argument of node.arguments) {
+          const part = read(argument, depth + 1);
+          if (
+            operation === "resolve" &&
+            typeof part === "string" &&
+            /^[\\/]/u.test(part)
+          )
+            text = "";
+          text = combine(combine(text, "/"), part);
+        }
+        if (typeof text === "string") text = normalizedContractPath(text);
+      }
+    } else if (ts.isIdentifier(node) || ts.isPropertyAccessExpression(node)) {
+      const typeChecker = checker();
+      let symbol = typeChecker.getSymbolAtLocation(node);
+      if (symbol !== undefined && (symbol.flags & ts.SymbolFlags.Alias) !== 0) {
+        symbol = typeChecker.getAliasedSymbol(symbol);
+      }
+      const declaration = symbol?.valueDeclaration;
+      if (
+        declaration !== undefined &&
+        ts.isVariableDeclaration(declaration) &&
+        ts.isVariableDeclarationList(declaration.parent) &&
+        (declaration.parent.flags & ts.NodeFlags.Const) !== 0 &&
+        declaration.initializer !== undefined
+      ) {
+        text = read(declaration.initializer, depth + 1);
+      }
+    }
+    visiting.delete(node);
+    memo.set(node, text);
+    return text;
+  }
+  return (node) => read(node, 0);
+}
+
+function scanDirectorySyntax(
+  vocabulary: ContractVocabulary,
+  file: VocabularyTextFile,
+  source: ts.SourceFile,
+  specifiers: ReadonlySet<ts.Node>,
+  checker: (() => ts.TypeChecker) | undefined,
+  positions: PositionIndex,
+  findings: Finding[],
+): string {
+  const read = checker === undefined ? undefined : constantText(checker);
+  const parts: string[] = [];
+  let offset = 0;
+  let limited = false;
+  function visit(node: ts.Node, representedBy: typeof read): void {
+    if (specifiers.has(node)) return;
+    let coveredBy = representedBy;
+    if (
+      coveredBy !== undefined &&
+      ts.isExpression(node) &&
+      coveredBy(node) === undefined
+    )
+      coveredBy = undefined;
+    const literal = ts.isStringLiteralLike(node);
+    if (
+      literal ||
+      ts.isTemplateExpression(node) ||
+      ts.isCallExpression(node) ||
+      (ts.isBinaryExpression(node) &&
+        node.operatorToken.kind === ts.SyntaxKind.PlusToken)
+    ) {
+      const text = literal ? node.text : read?.(node);
+      const start = node.getStart(source);
+      if (text === null && !limited) {
+        limited = true;
+        findings.push(
+          finding(
+            "ATLAS_VOCABULARY_PATH_ANALYSIS_LIMIT",
+            "Atlas SDK could not inspect a computed directory reference within its bounded constant-analysis budget.",
+            file.path,
+            positions.rangeAt(start, node.end),
+          ),
+        );
+      }
+      if (typeof text === "string") {
+        if (coveredBy === undefined) {
+          scanDirectories(
+            vocabulary,
+            { content: text.replaceAll(/\\(?![./])/gu, "/"), path: file.path },
+            {
+              rangeAt:
+                literal && source.text.slice(start + 1, node.end - 1) === text
+                  ? (from, to) => positions.rangeAt(start + 1 + from, start + 1 + to)
+                  : () => positions.rangeAt(start, node.end),
+            },
+            findings,
+          );
+        }
+        coveredBy = read;
+      }
+    }
+    if (literal || ts.isTemplateLiteralToken(node)) {
+      const start = node.getStart(source);
+      parts.push(file.content.slice(offset, start), " ".repeat(node.end - start));
+      offset = node.end;
+      return;
+    }
+    ts.forEachChild(node, (child) => {
+      visit(child, coveredBy);
+    });
+  }
+  visit(source, undefined);
+  parts.push(file.content.slice(offset));
+  return parts.join("");
 }
 
 interface TokenSpan {
@@ -745,6 +1048,7 @@ export function validateVocabularyAgreement(
     ),
     prefixes: new Set(identifiers.map((archetype) => archetype.idPrefix)),
   };
+  let compilation: ReturnType<typeof contractProgram> | undefined;
   for (const file of [...contracts].sort((left, right) =>
     compareCodePoints(left.path, right.path),
   )) {
@@ -758,11 +1062,21 @@ export function validateVocabularyAgreement(
       );
       continue;
     }
-    const source = file.path.endsWith(".md")
+    let source = file.path.endsWith(".md")
       ? undefined
       : ts.createSourceFile(file.path, file.content, ts.ScriptTarget.Latest);
-    const specifiers =
-      source === undefined ? new Set<ts.Node>() : moduleSpecifiers(source);
+    let syntax = source === undefined ? undefined : contractSyntax(source);
+    let typeChecker: (() => ts.TypeChecker) | undefined;
+    if (syntax?.computed === true) {
+      compilation ??= contractProgram(contracts);
+      const compiledSource = compilation.program.getSourceFile(
+        compilation.names.get(file) as string,
+      ) as ts.SourceFile;
+      source = compiledSource;
+      syntax = contractSyntax(compiledSource);
+      typeChecker = compilation.checker;
+    }
+    const specifiers = syntax?.specifiers ?? new Set<ts.Node>();
     const scanned: VocabularyTextFile = {
       content:
         source === undefined ? file.content : maskModuleSpecifiers(source, specifiers),
@@ -771,7 +1085,24 @@ export function validateVocabularyAgreement(
     const positions =
       source === undefined ? positionIndex(file.content) : typescriptPositions(source);
     scanDiagnostics(vocabulary, scanned, positions, findings);
-    scanDirectories(vocabulary, scanned, positions, findings);
+    const directoryContent =
+      source === undefined
+        ? scanned.content
+        : scanDirectorySyntax(
+            vocabulary,
+            scanned,
+            source,
+            specifiers,
+            typeChecker,
+            positions,
+            findings,
+          );
+    scanDirectories(
+      vocabulary,
+      { content: directoryContent, path: file.path },
+      positions,
+      findings,
+    );
     if (source === undefined) {
       scanRuns(
         vocabulary,

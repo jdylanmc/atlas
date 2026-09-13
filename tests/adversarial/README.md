@@ -9,6 +9,14 @@ gate. Additions for an existing gate should be data-only edits. If a new gate is
 needed, register that gate in `tests/adversarial_corpus.test.ts`, add the gate
 code, and then add the corpus case that proves the review finding stays covered.
 
+Directory-reference cases include whole and bare paths, decoded and Windows
+literals, constant aliases, template/concatenation forms, Node path constructors,
+shadowing, and legitimate Core Archetype/reserved-directory controls. Cycles and
+bounded-analysis refusals are pinned as data rather than executing fixture code.
+Partial-value cases preserve known directories around runtime hosts and filenames
+without guessing unknown names. Comment and nested-literal cases prevent folding
+from hiding other contract references.
+
 The `installed-consumer` gate is registered and its data validated in
 `tests/adversarial_corpus.test.ts`, but its cases execute in
 `tests/package_consumability.test.ts` alongside the other packing tests.

@@ -1256,6 +1256,61 @@ test("a directory name is located where it is written, not where it repeats", ()
   });
 });
 
+test("directory comments inside folded expressions retain one precise location", () => {
+  const findings = validate(anchorBinding, [
+    contract('const path = ".atlas" /* .atlas/unrecognized/page.md */ + "/anchors";'),
+  ]);
+  assert.deepEqual(
+    findings.map(({ code, location }) => ({ code, location })),
+    [
+      {
+        code: "ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED",
+        location: {
+          start: { line: 1, column: 33 },
+          end: { line: 1, column: 45 },
+        },
+      },
+    ],
+  );
+});
+
+test("computed directory references resolve only the supplied contract modules", () => {
+  const workspace = scratchRepository();
+  try {
+    const rootPath = join(workspace, "src", "lint", "root.ts");
+    const consumerPath = join(workspace, "src", "lint", "consumer.ts");
+    const rootContent = 'export const root = ".atlas";';
+    writeFileSync(rootPath, rootContent);
+    const consumer = contract(
+      'import { root } from "./root.ts"; export const path = `${root}/unrecognized/page.md`;',
+      consumerPath,
+    );
+    assert.deepEqual(validate(anchorBinding, [consumer]), []);
+    const findings = validate(anchorBinding, [
+      consumer,
+      contract(rootContent, rootPath),
+    ]);
+    assert.deepEqual(
+      findings.map(({ code, path }) => ({ code, path })),
+      [{ code: "ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED", path: consumerPath }],
+    );
+    assert.match(findings[0]?.message ?? "", /"unrecognized"/u);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("constant bindings stay isolated when contract records share a path", () => {
+  const findings = validate(anchorBinding, [
+    contract('const root = ".atlas"; const path = `${root}/unrecognized`;'),
+    contract('const root = "/elsewhere"; const path = `${root}/unrecognized`;'),
+  ]);
+  assert.deepEqual(
+    findings.map(({ code }) => code),
+    ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+  );
+});
+
 test("the validator command reports agreement and disagreement", () => {
   const logs: string[] = [];
   const errors: string[] = [];

@@ -3,6 +3,372 @@
   "reviewResolutionRule": "A review finding is resolved only after this corpus has a reject or accept case that exercises it.",
   "cases": [
     {
+      "name": "reject a declared root beneath an unknown template host",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["framework"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const root = \".atlas\"; function page(host: string) { return `${host}/${root}/framework/page.md`; }"
+      }
+    },
+    {
+      "name": "reject a declared root beneath an unknown concatenated host",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["unrecognized"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const root = \".atlas\"; const path = host + \"/\" + root + \"/unrecognized/page.md\";"
+      }
+    },
+    {
+      "name": "reject a known directory before an unknown template filename",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["framework"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const root = \".atlas\"; const path = `${root}/framework/${filename}`;"
+      }
+    },
+    {
+      "name": "reject a known directory before an unknown concatenated filename",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["unrecognized"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const root = \".atlas\"; const path = root + \"/unrecognized/\" + filename;"
+      }
+    },
+    {
+      "name": "accept recognized and reserved directories among unknown path portions",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const root = \".atlas\"; const page = `${host}/${root}/anchors/${filename}`; const schema = host + \"/\" + root + \"/types/\" + filename;"
+      }
+    },
+    {
+      "name": "accept an unknown complete or partial directory without guessing it",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const root = \".atlas\"; const first = `${root}/${directory}/page.md`; const second = `${root}/fram${tail}/page.md`;"
+      }
+    },
+    {
+      "name": "reject directory references in comments inside a folded concatenation",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["unrecognized"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const path = \".atlas\" /* .atlas/unrecognized/page.md */ + \"/anchors\";"
+      }
+    },
+    {
+      "name": "reject directory references in comments inside a folded path call",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["framework"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "import { join } from \"node:path\"; const path = join(\".atlas\", /* .atlas/framework/page.md */ \"anchors\");"
+      }
+    },
+    {
+      "name": "accept recognized directory comments inside folded expressions",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const path = \".atlas\" /* .atlas/anchors/page.md */ + \"/types\";"
+      }
+    },
+    {
+      "name": "reject nested literal references inside an unresolved substitution",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["framework"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const path = `${opaque(\"\\u002e\\u0061tlas/framework\")}/anchors`;"
+      }
+    },
+    {
+      "name": "accept module specifiers inside unresolved substitutions",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const path = `${import(\".atlas/framework\")}/anchors`;"
+      }
+    },
+    {
+      "name": "reject an unrecognized directory inside a decoded regular-expression string",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["framework"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const pattern = \"\\\\.atlas\\\\/framework\\\\/\";"
+      }
+    },
+    {
+      "name": "reject an unrecognized directory in a decoded string literal",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["framework"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const path = \"\\u002e\\u0061tlas/framework\";"
+      }
+    },
+    {
+      "name": "reject an unrecognized directory in a Windows path literal",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["framework"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const path = \".atlas\\\\framework\";"
+      }
+    },
+    {
+      "name": "accept recognized decoded and Windows path literals",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const first = \"\\u002e\\u0061tlas/anchors\"; const second = \".atlas\\\\anchors\";"
+      }
+    },
+    {
+      "name": "reject a normalized directory through a default path namespace",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["unrecognized"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "import paths from \"node:path\"; const root = \".atlas\"; const path = paths.posix.join(host, root, \"anchors\", \"..\", \"unrecognized\");"
+      }
+    },
+    {
+      "name": "accept unresolved cyclic constants without executing them",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const left = right; const right = left; const path = `${left}/unrecognized`;"
+      }
+    },
+    {
+      "name": "reject constant dependencies deeper than the analysis budget",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_PATH_ANALYSIS_LIMIT"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const root = \".atlas\"; const path = `${((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((root))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))}/anchors`;"
+      }
+    },
+    {
+      "name": "reject exponential constant expansion within bounded source",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_PATH_ANALYSIS_LIMIT"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const root = \".atlas\";\nconst value0 = \"x\";\nconst value1 = value0 + value0;\nconst value2 = value1 + value1;\nconst value3 = value2 + value2;\nconst value4 = value3 + value3;\nconst value5 = value4 + value4;\nconst value6 = value5 + value5;\nconst value7 = value6 + value6;\nconst value8 = value7 + value7;\nconst value9 = value8 + value8;\nconst value10 = value9 + value9;\nconst value11 = value10 + value10;\nconst value12 = value11 + value11;\nconst value13 = value12 + value12;\nconst value14 = value13 + value13;\nconst value15 = value14 + value14;\nconst value16 = value15 + value15;\nconst value17 = value16 + value16;\nconst value18 = value17 + value17;\nconst value19 = value18 + value18;\nconst value20 = value19 + value19;\nconst value21 = value20 + value20;\nconst value22 = value21 + value21;\nconst value23 = value22 + value22;\nconst value24 = value23 + value23;\nconst path = root + \"/\" + value24;"
+      }
+    },
+    {
+      "name": "reject a directory joined to a declared Atlas root beneath a runtime host",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["framework"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "import { join } from \"node:path\"; const root = \".atlas\"; const path = join(host, root, \"framework\", \"page.md\");"
+      }
+    },
+    {
+      "name": "reject a directory resolved through a path namespace import",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["unrecognized"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "import * as paths from \"node:path\"; const root = \".atlas\"; const path = paths.resolve(root, \"unrecognized\");"
+      }
+    },
+    {
+      "name": "accept a known directory joined through an aliased path import",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "import { join as locate } from \"path\"; const root = \".atlas\"; const path = locate(root, \"anchors\", \"page.md\");"
+      }
+    },
+    {
+      "name": "accept a path import shadowed by a caller function",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "import { join } from \"node:path\"; const root = \".atlas\"; function ordinary(join: Function) { return join(root, \"unrecognized\"); }"
+      }
+    },
+    {
+      "name": "reject a whole unrecognized Atlas directory reference",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["unrecognized"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const path = \".atlas/unrecognized/page.md\";"
+      }
+    },
+    {
+      "name": "reject the retired directory assembled from a declared Atlas root",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["framework"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const root = \".atlas\"; const path = `${root}/framework/page.md`;"
+      }
+    },
+    {
+      "name": "reject a generic directory assembled from a declared Atlas root",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["unrecognized"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const root = \".atlas\"; const path = `${root}/unrecognized/page.md`;"
+      }
+    },
+    {
+      "name": "reject a directory assembled by concatenating aliased constants",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["unrecognized"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const root = \".atlas\"; const alias = root; const directory = \"unrecognized\"; const path = alias + \"/\" + directory + \"/page.md\";"
+      }
+    },
+    {
+      "name": "accept recognized directories as whole and bare references",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const whole = \".atlas/anchors/page.md\"; const bare = \".atlas/anchors\";"
+      }
+    },
+    {
+      "name": "accept recognized directories built from declared constants",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const root = \".atlas\"; const directory = \"anchors\"; const template = `${root}/${directory}/page.md`; const concatenation = root + \"/\" + directory;"
+      }
+    },
+    {
+      "name": "accept reserved directories and root filenames in every path form",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const root = \".atlas\"; const types = `${root}/types`; const cache = \".atlas/atlas-cache\"; const file = root + \"/manifest.json\"; const index = \".atlas/index.md\"; const changelog = \".atlas/CHANGELOG.md\";"
+      }
+    },
+    {
+      "name": "accept a constant shadowed by a function parameter",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const root = \".atlas\"; function ordinary(root: string) { return `${root}/unrecognized`; }"
+      }
+    },
+    {
+      "name": "accept a constant shadowed by a recognized inner root",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const root = \".atlas\"; function ordinary() { const root = \"/elsewhere\"; return `${root}/unrecognized`; }"
+      }
+    },
+    {
+      "name": "reject the retired framework directory without a trailing separator",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["framework"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const path = \".atlas/framework\";"
+      }
+    },
+    {
+      "name": "reject an invented directory in a diagnostic fallback path",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["unknown"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "let path = \".atlas/unknown\";"
+      }
+    },
+    {
+      "name": "accept the actual Atlas root as an unknown-record diagnostic scope",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "let path = \".atlas\";"
+      }
+    },
+    {
+      "name": "reject an unrecognized Atlas directory without a trailing separator",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],
+      "messages": ["unrecognized"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "const path = \".atlas/unrecognized\";"
+      }
+    },
+    {
       "name": "reject retired page type literal",
       "expectation": "reject",
       "codes": ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"],
