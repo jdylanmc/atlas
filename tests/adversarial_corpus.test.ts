@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { dirname, resolve } from "node:path";
 import test, { after } from "node:test";
+import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
 import { captureAtlasHostDirectory, CaptureBudgetError } from "../scripts/atlas.ts";
 import { lintCommandCaptureBudgets } from "../src/interfaces/lint_command.ts";
 import {
@@ -1532,6 +1533,13 @@ test("the adversarial vocabulary corpus is structurally valid", () => {
   );
   assert.ok(corpus.cases.some((entry) => entry.expectation === "accept"));
   assert.ok(corpus.cases.some((entry) => entry.expectation === "reject"));
+});
+
+// Execution belongs to package_consumability.test.ts: concurrent prepack builds
+// delete dist while another test may be packing it. This only registers and
+// validates the corpus; the installed CLI/Git test supplies the acceptance proof.
+test("the adversarial installed-consumer corpus is structurally valid", () => {
+  readInstalledConsumerCorpus();
 });
 
 test("the adversarial atlas-cli corpus is structurally valid", () => {

@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -13,10 +14,11 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import test from "node:test";
-import {
-  atlasInitializationFiles,
-  initialAtlasInitializationWorkflowState,
-} from "../src/operations/initialize_operation.ts";
+import { pathToFileURL } from "node:url";
+import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
+import type { AtlasInitializationResult } from "../src/operations/initialize_operation.ts";
+import type { LintOperationResult } from "../src/operations/lint_operation.ts";
+import { initializeCommandExitCodes } from "../src/interfaces/initialize_command.ts";
 import { lintCommandExitCodes } from "../src/interfaces/lint_command.ts";
 import { exploreCommandExitCodes } from "../src/interfaces/explore_command.ts";
 
@@ -296,54 +298,65 @@ function createConsumer(workspace: string): string {
     offlineInstall,
   );
 
-  const state = initialAtlasInitializationWorkflowState({
-    baseSnapshotDigest: "0".repeat(64),
-    proposalBranch: "atlas/initialize",
-    targetBranch: "main",
-    targetHead: "0".repeat(40),
-  });
-  for (const file of atlasInitializationFiles(state)) {
-    const destination = join(consumer, file.path);
-    mkdirSync(resolve(destination, ".."), { recursive: true });
-    writeFileSync(destination, file.bytes);
-  }
-
-  // Atlas Snapshot capture reads committed bytes, so the Atlas must be a real
-  // commit rather than a working-tree file. Global and system Git configuration
-  // are neutralized: an operator with `commit.gpgsign` would otherwise send this
-  // into a `pinentry` prompt that blocks forever, and a synchronous test body
-  // has nothing above it that can interrupt.
-  const git = {
-    cwd: consumer,
-    env: {
-      ...process.env,
-      GIT_CONFIG_GLOBAL: "/dev/null",
-      GIT_CONFIG_SYSTEM: "/dev/null",
-    },
-    killSignal: "SIGKILL" as const,
-    stdio: "ignore" as const,
-    timeout: 30_000,
-  };
+  writeFileSync(join(consumer, ".gitignore"), "node_modules/\n");
   for (const argv of [
     ["init", "--quiet", "--initial-branch=main"],
     ["config", "user.email", "atlas@example.invalid"],
     ["config", "user.name", "Atlas Consumer"],
-    ["add", "--all"],
-    ["commit", "--quiet", "-m", "initialize atlas"],
+    ["add", "package.json", "package-lock.json", ".gitignore"],
+    ["commit", "--quiet", "-m", "Create consumer before Atlas Initialization"],
   ]) {
-    execFileSync("git", argv, git);
+    consumerGit(consumer, argv);
   }
   return consumer;
 }
 
+function consumerGit(consumer: string, arguments_: readonly string[]): string {
+  // Atlas Snapshot capture reads committed bytes. Global and system Git configuration
+  // are neutralized: an operator with `commit.gpgsign` would otherwise send this
+  // into a `pinentry` prompt that blocks forever, and a synchronous test body
+  // has nothing above it that can interrupt.
+  return execFileSync("git", arguments_, {
+    cwd: consumer,
+    encoding: "utf8",
+    env: consumerEnvironment(),
+    killSignal: "SIGKILL" as const,
+    timeout: 30_000,
+  }).trim();
+}
+
+function consumerEnvironment(guard?: string): NodeJS.ProcessEnv {
+  // Runtime children receive no API keys, NODE_PATH, or inherited Node loaders.
+  // Keep only process launch, workspace placement, and coverage requirements.
+  const environment: NodeJS.ProcessEnv = {
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1",
+  };
+  for (const key of [
+    "PATH",
+    "SystemRoot",
+    "WINDIR",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "NODE_V8_COVERAGE",
+  ]) {
+    if (process.env[key] !== undefined) environment[key] = process.env[key];
+  }
+  if (guard !== undefined) {
+    environment["NODE_OPTIONS"] = `--import=${pathToFileURL(guard).href}`;
+  }
+  return environment;
+}
+
 /**
- * Blocks outbound sockets in the child process. Only the network half of the
+ * Blocks Node sockets in the child process, not subprocess Git networking.
+ * Only the Node network half of the
  * guard the retired clean-clone test carried is restored: its filesystem half
  * wrapped `node:fs`, which the module loader does not read through, so it could
  * never have blocked the resolution it advertised. Patching
- * `net.Socket.prototype.connect` does work, and it is the only executable check
- * behind the runtime contract in `README.md` that an Atlas command never calls
- * a network service.
+ * `net.Socket.prototype.connect` does work. The local Git journey has no remote,
+ * and npm's offline lockfile/cache installation is enforced separately.
  */
 function writeNetworkGuard(path: string): void {
   writeFileSync(
@@ -369,10 +382,7 @@ function runInstalled(
     {
       cwd: consumer,
       encoding: "utf8",
-      env: {
-        ...process.env,
-        NODE_OPTIONS: `${process.env["NODE_OPTIONS"] ?? ""} --import=${guard}`.trim(),
-      },
+      env: consumerEnvironment(guard),
       killSignal: "SIGKILL",
       timeout: 120_000,
     },
@@ -386,111 +396,178 @@ function runInstalled(
 // it would read as a guarantee while bounding nothing. Every child process
 // carries its own timeout and SIGKILL instead, which is a bound that actually
 // holds and keeps the cleanup in `finally` reachable.
-test("the installed package lints and explores an Atlas with production dependencies only", () => {
-  const workspace = mkdtempSync(join(tmpdir(), "atlas-installed-"));
-  try {
-    const consumer = createConsumer(workspace);
-    assert.ok(!consumer.startsWith(ROOT));
+for (const entry of readInstalledConsumerCorpus().cases) {
+  test(`adversarial installed-consumer corpus: ${entry.name}`, () => {
+    const workspace = mkdtempSync(join(tmpdir(), "atlas-installed-"));
+    try {
+      const consumer = createConsumer(workspace);
+      assert.ok(!realpathSync(consumer).startsWith(`${realpathSync(ROOT)}${sep}`));
+      assert.equal(consumerGit(consumer, ["remote"]), "");
+      assert.equal(existsSync(join(consumer, "src")), false);
 
-    const guard = join(workspace, "network_guard.mjs");
-    writeNetworkGuard(guard);
+      const guard = join(workspace, "network_guard.mjs");
+      writeNetworkGuard(guard);
 
-    // Positive control. A guard nothing can trip is indistinguishable from a
-    // guard that is not armed, and the previous version of this test shipped
-    // exactly that. Prove the injection works before trusting what it permits.
-    const control = join(workspace, "control.mjs");
-    writeFileSync(
-      control,
-      'import net from "node:net";\nnet.connect(1, "127.0.0.1");\n',
-    );
-    const armed = spawnSync(process.execPath, [control], {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        NODE_OPTIONS: `${process.env["NODE_OPTIONS"] ?? ""} --import=${guard}`.trim(),
-      },
-      killSignal: "SIGKILL",
-      timeout: 30_000,
-    });
-    assert.notEqual(armed.status, 0, "the network guard did not arm");
-    assert.match(armed.stderr, /network access blocked/u);
-
-    const vocabulary = spawnSync(
-      process.execPath,
-      [
-        "--input-type=module",
-        "--eval",
-        [
-          'import assert from "node:assert/strict";',
-          'const { validateVocabularyAgreement } = await import(new URL("./dist/src/lint/validate_vocabulary_agreement.js", import.meta.resolve("@jdylanmc/atlas/package.json")));',
-          'const findings = validateVocabularyAgreement({}, [], [{ term: "Anchor", reason: "installed-package probe" }],',
-          '{ path: "CONTEXT.md", content: "**Anchor**:\\n_Avoid_: Bonfire\\n" },',
-          `[{ path: "scripts/atlas_sdk_agents.ts", content: ${JSON.stringify('const matcher = /"Bonfire"/u; const ratio = value! / "Bonfires" / divisor;')} }]);`,
-          'assert.deepEqual(findings.map(({ code }) => code), ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"]);',
-          'assert.match(findings[0].message, /"Bonfires"/u);',
-        ].join("\n"),
-      ],
-      {
-        cwd: consumer,
+      // Positive control. A guard nothing can trip is indistinguishable from a
+      // guard that is not armed, and the previous version of this test shipped
+      // exactly that. Prove the injection works before trusting what it permits.
+      const control = join(workspace, "control.mjs");
+      writeFileSync(
+        control,
+        'import net from "node:net";\nnet.connect(1, "127.0.0.1");\n',
+      );
+      const armed = spawnSync(process.execPath, [control], {
         encoding: "utf8",
-        env: {
-          ...process.env,
-          NODE_OPTIONS: `${process.env["NODE_OPTIONS"] ?? ""} --import=${guard}`.trim(),
-        },
+        env: consumerEnvironment(guard),
         killSignal: "SIGKILL",
         timeout: 30_000,
-      },
-    );
-    assert.equal(vocabulary.status, 0, vocabulary.stderr);
-    assert.equal(vocabulary.stderr, "");
+      });
+      assert.notEqual(armed.status, 0, "the network guard did not arm");
+      assert.match(armed.stderr, /network access blocked/u);
 
-    const lint = runInstalled(consumer, guard, [
-      "lint",
-      "--machine",
-      "--atlas-host-directory",
-      consumer,
-    ]);
-    assert.equal(lint.status, lintCommandExitCodes.success, lint.stderr);
-    assert.equal(lint.stderr, "");
-    const lintResult = JSON.parse(lint.stdout) as {
-      readonly completion: string;
-      readonly disposition: string;
-      readonly payload: { readonly lint: { readonly findings: readonly unknown[] } };
-    };
-    assert.equal(lintResult.completion, "completed");
-    assert.equal(lintResult.disposition, "success");
-    assert.deepEqual(lintResult.payload.lint.findings, []);
+      const vocabulary = spawnSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "--eval",
+          [
+            'import assert from "node:assert/strict";',
+            'import { readFileSync, realpathSync } from "node:fs";',
+            'import { createRequire } from "node:module";',
+            'import { resolve, sep } from "node:path";',
+            'import { fileURLToPath } from "node:url";',
+            'const packageUrl = import.meta.resolve("@jdylanmc/atlas/package.json");',
+            'const modules = realpathSync("node_modules");',
+            'assert.equal(realpathSync(fileURLToPath(packageUrl)), resolve(modules, "@jdylanmc/atlas/package.json"));',
+            'const { dependencies } = JSON.parse(readFileSync(new URL(packageUrl), "utf8"));',
+            "const require = createRequire(packageUrl);",
+            "for (const name of Object.keys(dependencies)) assert.ok(realpathSync(require.resolve(name)).startsWith(`${modules}${sep}`), name);",
+            'await assert.rejects(import("eslint"), { code: "ERR_MODULE_NOT_FOUND" });',
+            'await assert.rejects(import("@jdylanmc/atlas/src/operations/lint_operation.ts"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });',
+            'const { validateVocabularyAgreement } = await import(new URL("./dist/src/lint/validate_vocabulary_agreement.js", import.meta.resolve("@jdylanmc/atlas/package.json")));',
+            'const findings = validateVocabularyAgreement({}, [], [{ term: "Anchor", reason: "installed-package probe" }],',
+            '{ path: "CONTEXT.md", content: "**Anchor**:\\n_Avoid_: Bonfire\\n" },',
+            `[{ path: "scripts/atlas_sdk_agents.ts", content: ${JSON.stringify('const matcher = /"Bonfire"/u; const ratio = value! / "Bonfires" / divisor;')} }]);`,
+            'assert.deepEqual(findings.map(({ code }) => code), ["ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"]);',
+            'assert.match(findings[0].message, /"Bonfires"/u);',
+          ].join("\n"),
+        ],
+        {
+          cwd: consumer,
+          encoding: "utf8",
+          env: consumerEnvironment(guard),
+          killSignal: "SIGKILL",
+          timeout: 30_000,
+        },
+      );
+      assert.equal(vocabulary.status, 0, vocabulary.stderr);
+      assert.equal(vocabulary.stderr, "");
 
-    const explore = runInstalled(consumer, guard, [
-      "explore",
-      "--machine",
-      "Home Atlas",
-      "--atlas-host-directory",
-      consumer,
-    ]);
-    assert.equal(explore.status, exploreCommandExitCodes.success, explore.stderr);
-    assert.equal(explore.stderr, "");
-    const exploreResult = JSON.parse(explore.stdout) as {
-      readonly completion: string;
-      readonly disposition: string;
-      readonly handoff: { readonly homeAtlas: { readonly state: string } };
-      readonly payload: {
-        readonly results: readonly {
-          readonly route: readonly { readonly objectId: string }[];
-        }[];
+      assert.equal(existsSync(join(consumer, ".atlas")), false);
+      const base = consumerGit(consumer, ["rev-parse", "HEAD"]);
+      const initialize = runInstalled(consumer, guard, [
+        "initialize",
+        "--machine",
+        "--atlas-host-directory",
+        consumer,
+      ]);
+      assert.equal(
+        initialize.status,
+        initializeCommandExitCodes.success,
+        initialize.stdout,
+      );
+      assert.equal(initialize.stderr, "");
+      const initialization = JSON.parse(initialize.stdout) as AtlasInitializationResult;
+      assert.equal(initialization.completion, "completed");
+      assert.equal(initialization.disposition, "success");
+      const { proposalBranch, targetBranch, targetHead } =
+        initialization.payload.workflowState;
+      assert.equal(targetBranch, "main");
+      assert.equal(targetHead, base);
+      assert.notEqual(proposalBranch, targetBranch);
+      assert.equal(consumerGit(consumer, ["rev-parse", "HEAD"]), base);
+      assert.equal(existsSync(join(consumer, ".atlas")), false);
+      const proposal = consumerGit(consumer, ["rev-parse", proposalBranch]);
+      assert.notEqual(proposal, base);
+      assert.equal(consumerGit(consumer, ["rev-parse", `${proposal}^`]), base);
+      assert.deepEqual(
+        consumerGit(consumer, ["diff", "--name-only", base, proposal]).split("\n"),
+        entry.expectedAtlasPaths,
+      );
+      assert.equal(
+        initialization.payload.atlasReadinessReport?.lintStamp.atlasCommit,
+        proposal,
+      );
+
+      const unmerged = runInstalled(consumer, guard, [
+        "lint",
+        "--machine",
+        "--atlas-host-directory",
+        consumer,
+      ]);
+      assert.equal(unmerged.status, lintCommandExitCodes.usage, unmerged.stdout);
+      const unmergedLint = JSON.parse(unmerged.stdout) as LintOperationResult;
+      assert.equal(unmergedLint.completion, "not-completed");
+      assert.equal(unmergedLint.disposition, "failed");
+      assert.deepEqual(
+        unmergedLint.handoff.validationState.findings.map(({ code }) => code),
+        [entry.unmergedLintCode],
+      );
+
+      consumerGit(consumer, ["merge", "--ff-only", proposalBranch]);
+      assert.equal(consumerGit(consumer, ["rev-parse", "HEAD"]), proposal);
+      assert.equal(consumerGit(consumer, ["branch", "--show-current"]), targetBranch);
+      assert.equal(consumerGit(consumer, ["status", "--porcelain"]), "");
+      assert.equal(existsSync(join(consumer, ".atlas", "index.md")), true);
+
+      const lint = runInstalled(consumer, guard, [
+        "lint",
+        "--machine",
+        "--atlas-host-directory",
+        consumer,
+      ]);
+      assert.equal(lint.status, lintCommandExitCodes.success, lint.stderr);
+      assert.equal(lint.stderr, "");
+      const lintResult = JSON.parse(lint.stdout) as {
+        readonly completion: string;
+        readonly disposition: string;
+        readonly payload: { readonly lint: { readonly findings: readonly unknown[] } };
       };
-    };
-    assert.equal(exploreResult.completion, "completed");
-    assert.equal(exploreResult.disposition, "success");
-    assert.equal(exploreResult.handoff.homeAtlas.state, "known");
-    // Reachability is not function: an installed build whose search provider
-    // returned nothing would still complete, still classify the Home Atlas,
-    // and still exit zero.
-    assert.ok(exploreResult.payload.results.length > 0);
-    const [firstResult] = exploreResult.payload.results;
-    assert.ok(firstResult !== undefined);
-    assert.equal(firstResult.route[0]?.objectId, "anchor:root");
-  } finally {
-    rmSync(workspace, { force: true, recursive: true });
-  }
-});
+      assert.equal(lintResult.completion, "completed");
+      assert.equal(lintResult.disposition, "success");
+      assert.deepEqual(lintResult.payload.lint.findings, []);
+
+      const explore = runInstalled(consumer, guard, [
+        "explore",
+        "--machine",
+        entry.query,
+        "--atlas-host-directory",
+        consumer,
+      ]);
+      assert.equal(explore.status, exploreCommandExitCodes.success, explore.stderr);
+      assert.equal(explore.stderr, "");
+      const exploreResult = JSON.parse(explore.stdout) as {
+        readonly completion: string;
+        readonly disposition: string;
+        readonly handoff: { readonly homeAtlas: { readonly state: string } };
+        readonly payload: {
+          readonly results: readonly {
+            readonly route: readonly { readonly objectId: string }[];
+          }[];
+        };
+      };
+      assert.equal(exploreResult.completion, "completed");
+      assert.equal(exploreResult.disposition, "success");
+      assert.equal(exploreResult.handoff.homeAtlas.state, "known");
+      // Reachability is not function: an installed build whose search provider
+      // returned nothing would still complete, still classify the Home Atlas,
+      // and still exit zero.
+      assert.ok(exploreResult.payload.results.length > 0);
+      const [firstResult] = exploreResult.payload.results;
+      assert.ok(firstResult !== undefined);
+      assert.equal(firstResult.route[0]?.objectId, entry.expectedRootAnchorId);
+    } finally {
+      rmSync(workspace, { force: true, recursive: true });
+    }
+  });
+}
