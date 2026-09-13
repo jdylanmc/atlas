@@ -23,6 +23,13 @@ Contradictions, and governance markers before retiring their governor. If the
 remaining live Atlas is invalid, full proposal Lint refuses retirement rather
 than silently dropping or rewriting its dependents.
 
+Retirement checks Edge endpoints against the removed documents' actual IDs,
+including existing nested documents without a type-prefixed ID. Unqualified
+Contradiction metadata and SDK-authored prose must also be reconciled when their
+token belonged to a removed governor, even if a surviving Principle or Policy
+uses the same token. A remaining token match is not proof of the same governor;
+the SDK refuses that ambiguity rather than silently rebinding the claim.
+
 The deterministic command seam for this workflow is `atlas govern --machine
 --request PATH [--atlas-host-directory PATH]`. Author the request as JSON with
 the `governance-request-schema`, `action`, `subject`, the Maintainer's detached

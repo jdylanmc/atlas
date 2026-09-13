@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
+import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
 import type { CapturedAtlasFile } from "../src/atlas/load_atlas_text.ts";
 import type { Finding } from "../src/domain/finding.ts";
 import {
@@ -124,6 +125,201 @@ test("removals have distinct digests without changing existing write identities"
     );
   }
   assert.notEqual(removed, changeSetDigest({ ...identity, changes: [] }));
+});
+
+test("retirement fragments refuse captured identity loss and accept explicit reconciliation", () => {
+  const fixture = (name: string): string =>
+    readFileSync(new URL(`./fixtures/governance/${name}`, import.meta.url), "utf8");
+  for (const entry of readInstalledConsumerCorpus().cases) {
+    const probe = entry.retirement;
+    const dependency = probe?.dependency;
+    if (probe === undefined || dependency?.kind === undefined) continue;
+    const dependentPath =
+      dependency.kind === "edge"
+        ? ".atlas/edges/retirement-dependent.md"
+        : ".atlas/concepts/retirement-dependent.md";
+    let dependentContent = fixture(
+      dependency.kind === "edge"
+        ? "retirement-dependent-edge.md"
+        : "retirement-dependent-concept.md",
+    )
+      .replace("{document-id}", dependency.documentId)
+      .replaceAll("{governor}", dependency.governor);
+    if (dependency.kind === "metadata")
+      dependentContent = dependentContent.replace(
+        `This claim is an accepted Contradiction of ${dependency.governor}.\n`,
+        "",
+      );
+    if (dependency.kind === "prose")
+      dependentContent = dependentContent.replace(
+        `atlas:\n  contradicts: "${dependency.governor}"`,
+        "atlas: {}",
+      );
+    const files = [
+      { path: root.path, content: new TextDecoder().decode(root.bytes) },
+      { path: probe.path, content: fixture(probe.fixture) },
+      { path: dependentPath, content: dependentContent },
+      ...(dependency.survivingPrinciple === true
+        ? [
+            {
+              path: ".atlas/principles/retirement-survivor.md",
+              content: fixture("retirement-surviving-principle.md").replace(
+                "{governor}",
+                dependency.governor,
+              ),
+            },
+          ]
+        : []),
+    ];
+    const draft = request({
+      action: probe.action,
+      subject: probe.subject,
+      changes: [{ path: probe.path, content: null }],
+      semanticVerdicts: probe.semanticVerdicts,
+    });
+    const before = createVirtualAtlasView(files);
+    const refused = prepareGovernanceFragment(draft, before);
+    assert.deepEqual(
+      refused.findings.map(({ code, path }) => ({ code, path })),
+      [{ code: dependency.expectedCode, path: dependentPath }],
+      entry.name,
+    );
+    assert.equal(before.files.get(probe.path), fixture(probe.fixture));
+    const reconciled = prepareGovernanceFragment(
+      draft,
+      createVirtualAtlasView(files.filter(({ path }) => path !== dependentPath)),
+    );
+    assert.deepEqual(reconciled.findings, [], entry.name);
+    assert.deepEqual(reconciled.changes, [{ path: probe.path, content: null }]);
+  }
+});
+
+test("retirement fragments retain the shared Markdown limits before parsing dependency prose", () => {
+  const target = {
+    path: ".atlas/principles/retirement.md",
+    content: readFileSync(
+      new URL("./fixtures/governance/retirement-principle.md", import.meta.url),
+      "utf8",
+    ),
+  };
+  const oversized = page(
+    ".atlas/concepts/oversized.md",
+    "concept:oversized",
+    "concept",
+    "Oversized",
+    "> ".repeat(65) + "claim\n",
+  );
+  const prepared = prepareGovernanceFragment(
+    request({ action: "retire", changes: [{ path: target.path, content: null }] }),
+    createVirtualAtlasView([
+      target,
+      {
+        path: oversized.path,
+        content: new TextDecoder().decode(oversized.bytes),
+      },
+    ]),
+  );
+  assert.deepEqual(
+    prepared.findings.map(({ code }) => code),
+    ["ATLAS_PAGE_BODY_TOO_DEEP"],
+  );
+});
+
+test("retirement fragments preserve markers of unrelated governors and ignore quoted examples", () => {
+  const target = {
+    path: ".atlas/principles/determinism.md",
+    content: principleContent("- `truth:one` Preserve evidence.\n"),
+  };
+  const concept = page(
+    ".atlas/concepts/independent.md",
+    "concept:independent",
+    "concept",
+    "Independent",
+    [
+      "# Independent",
+      "",
+      "This claim is an accepted Contradiction of truth:other.",
+      "",
+      "> This claim is an accepted Contradiction of truth:one.",
+      "",
+      "```text",
+      "This claim is an accepted Contradiction of truth:one.",
+      "```",
+      "",
+    ].join("\n"),
+  );
+  const before = createVirtualAtlasView([
+    target,
+    {
+      path: ".atlas/principles/independent.md",
+      content: principleContent("- `truth:other` Preserve another workflow.\n").replace(
+        "principle:determinism",
+        "principle:independent",
+      ),
+    },
+    {
+      path: concept.path,
+      content: new TextDecoder()
+        .decode(concept.bytes)
+        .replace("atlas: {}", "atlas:\n  contradicts: truth:other"),
+    },
+  ]);
+  const prepared = prepareGovernanceFragment(
+    request({ action: "retire", changes: [{ path: target.path, content: null }] }),
+    before,
+  );
+  assert.deepEqual(prepared.findings, []);
+  assert.equal(before.files.size, 3);
+  assert.deepEqual(prepared.changes, [{ path: target.path, content: null }]);
+});
+
+test("retirement fragments retain refusal on malformed requests, targets and partial Edge metadata", () => {
+  const path = ".atlas/principles/determinism.md";
+  const target = {
+    path,
+    content: principleContent("- `truth:one` Preserve evidence.\n"),
+  };
+  for (const [changes, content, expectedCode] of [
+    [undefined, target.content, "ATLAS_GOVERNANCE_CHANGE_SET_REQUIRED"],
+    [[target], target.content, "ATLAS_GOVERNANCE_RETIREMENT_REMOVAL_REQUIRED"],
+    [
+      [{ path, content: null }],
+      new TextDecoder().decode(root.bytes),
+      "ATLAS_GOVERNANCE_RETIREMENT_TARGET_INVALID",
+    ],
+  ] as const) {
+    const prepared = prepareGovernanceFragment(
+      request({ action: "retire", changes }),
+      createVirtualAtlasView([{ path, content }]),
+    );
+    assert.ok(
+      prepared.findings.some(({ code }) => code === expectedCode),
+      expectedCode,
+    );
+  }
+  const edge = page(
+    ".atlas/edges/partial.md",
+    "edge:partial",
+    "edge",
+    "Partial",
+    "# Partial\n",
+  );
+  const prepared = prepareGovernanceFragment(
+    request({ action: "delete", changes: [{ path, content: null }] }),
+    createVirtualAtlasView([
+      target,
+      {
+        path: edge.path,
+        content: new TextDecoder()
+          .decode(edge.bytes)
+          .replace("atlas: {}", "atlas:\n  from: 42\n  to: principle:determinism"),
+      },
+    ]),
+  );
+  assert.deepEqual(
+    prepared.findings.map(({ code, path }) => ({ code, path })),
+    [{ code: "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED", path: edge.path }],
+  );
 });
 
 test("a retirement draft without authored targets cannot execute despite derived provenance", () => {

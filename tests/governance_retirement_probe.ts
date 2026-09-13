@@ -29,6 +29,8 @@ export interface GovernanceRetirementProbe {
   readonly expectedApprovalDate: string;
   readonly semanticVerdicts?: AtlasGovernanceRequest["semanticVerdicts"];
   readonly dependency?: {
+    readonly kind?: "edge" | "metadata" | "prose";
+    readonly survivingPrinciple?: boolean;
     readonly governor: string;
     readonly documentId: string;
     readonly expectedCode: string;
@@ -100,6 +102,7 @@ export function exerciseGovernanceRetirement(
   };
   const inputDirectory = mkdtempSync(join(dirname(repository), "retirement-input-"));
   const inputPath = join(inputDirectory, "request.json");
+  let survivor: { readonly path: string; readonly content: string } | undefined;
   try {
     writeFileSync(inputPath, JSON.stringify(request));
     if (probe.dependency !== undefined) {
@@ -113,18 +116,63 @@ export function exerciseGovernanceRetirement(
         ],
         ["retirement-evidence.md", ".atlas/sources/retirement-evidence.md"],
       ] as const) {
-        const content = readFileSync(
+        if (
+          (probe.dependency.kind !== undefined &&
+            path.startsWith(".atlas/principles/")) ||
+          (probe.dependency.kind === "edge" && path.startsWith(".atlas/concepts/"))
+        )
+          continue;
+        let content = readFileSync(
           new URL(`./fixtures/governance/${fixture}`, import.meta.url),
           "utf8",
         )
           .replaceAll("{governor}", probe.dependency.governor)
-          .replace("{document-id}", probe.dependency.documentId)
+          .replace(
+            "{document-id}",
+            probe.dependency.kind === "metadata" || probe.dependency.kind === "prose"
+              ? "concept:retirement-dependent"
+              : probe.dependency.documentId,
+          )
           .replace("{document-path}", probe.path.slice(0, -3))
           .replace("{relative-path}", `../${probe.path.slice(".atlas/".length)}`);
+        if (probe.dependency.kind !== undefined) {
+          content = content.replace(
+            "from: concept:retirement-dependent",
+            "from: anchor:root",
+          );
+        }
+        if (probe.dependency.kind === "metadata") {
+          content = content.replace(
+            `This claim is an accepted Contradiction of ${probe.dependency.governor}.\n`,
+            "",
+          );
+        } else if (probe.dependency.kind === "prose") {
+          content = content.replace(
+            `atlas:\n  contradicts: "${probe.dependency.governor}"`,
+            "atlas: {}",
+          );
+        }
         const absolute = join(repository, path);
         mkdirSync(dirname(absolute), { recursive: true });
         writeFileSync(absolute, content, { flag: "wx" });
         dependentPaths.push(path);
+      }
+      if (probe.dependency.survivingPrinciple === true) {
+        survivor = {
+          path: ".atlas/principles/retirement-survivor.md",
+          content: readFileSync(
+            new URL(
+              "./fixtures/governance/retirement-surviving-principle.md",
+              import.meta.url,
+            ),
+            "utf8",
+          ).replace("{governor}", probe.dependency.governor),
+        };
+        mkdirSync(dirname(join(repository, survivor.path)), { recursive: true });
+        writeFileSync(join(repository, survivor.path), survivor.content, {
+          flag: "wx",
+        });
+        git(["add", "--", survivor.path]);
       }
       git(["add", "--", ...dependentPaths]);
       git([
@@ -197,6 +245,13 @@ export function exerciseGovernanceRetirement(
     assert.equal(result.completion, "completed");
     const branch = result.payload.workflowState.proposalBranch;
     const proposal = git(["rev-parse", branch]).trim();
+    if (survivor !== undefined) {
+      assert.equal(git(["show", `${proposal}:${survivor.path}`]), survivor.content);
+      assert.equal(
+        readFileSync(join(repository, survivor.path), "utf8"),
+        survivor.content,
+      );
+    }
     assert.equal(git(["rev-parse", "HEAD"]).trim(), before);
     assert.equal(readFileSync(target, "utf8"), original);
     assert.deepEqual(

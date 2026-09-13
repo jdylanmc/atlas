@@ -594,6 +594,372 @@
           }
         ]
       }
+    },
+    {
+      "name": "retire refuses an isolated cited Edge to a nested Principle with an unprefixed identity until reconciliation",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "retire",
+        "subject": "principle",
+        "fixture": "retirement-legacy-principle.md",
+        "path": ".atlas/principles/legacy/rule.md",
+        "reason": "The legacy fixture rule is obsolete.",
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "dependency": {
+          "kind": "edge",
+          "governor": "legacy-v1",
+          "documentId": "legacy-rule",
+          "expectedCode": "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "expectedFindings": [
+            { "path": ".atlas/edges/retirement-dependent.md", "count": 1 }
+          ]
+        }
+      }
+    },
+    {
+      "name": "retire refuses isolated Policy Contradiction metadata despite a surviving Principle truth with the same token",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "retire",
+        "subject": "atlas-policy",
+        "fixture": "retirement-policy.md",
+        "path": ".atlas/types/policy/retirement.md",
+        "reason": "The fixture publication workflow is obsolete.",
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "dependency": {
+          "kind": "metadata",
+          "survivingPrinciple": true,
+          "governor": "policy:retirement",
+          "documentId": "policy:retirement",
+          "expectedCode": "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "expectedFindings": [
+            { "path": ".atlas/concepts/retirement-dependent.md", "count": 1 }
+          ]
+        },
+        "semanticVerdicts": [
+          {
+            "policyId": "policy:retirement",
+            "verdict": "pass",
+            "evidence": [".atlas/index.md#L1"],
+            "challenge": {
+              "position": "agree",
+              "argument": "The retained Root Anchor supplies the fixture Atlas context.",
+              "evidence": [".atlas/index.md#L1"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "retire refuses isolated Policy Contradiction prose despite a surviving Principle truth with the same token",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "retire",
+        "subject": "atlas-policy",
+        "fixture": "retirement-policy.md",
+        "path": ".atlas/types/policy/retirement.md",
+        "reason": "The fixture publication workflow is obsolete.",
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "dependency": {
+          "kind": "prose",
+          "survivingPrinciple": true,
+          "governor": "policy:retirement",
+          "documentId": "policy:retirement",
+          "expectedCode": "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "expectedFindings": [
+            { "path": ".atlas/concepts/retirement-dependent.md", "count": 1 }
+          ]
+        },
+        "semanticVerdicts": [
+          {
+            "policyId": "policy:retirement",
+            "verdict": "pass",
+            "evidence": [".atlas/index.md#L1"],
+            "challenge": {
+              "position": "agree",
+              "argument": "The retained Root Anchor supplies the fixture Atlas context.",
+              "evidence": [".atlas/index.md#L1"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "delete refuses isolated Policy Contradiction metadata despite a surviving Principle truth with the same token",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "delete",
+        "subject": "atlas-policy",
+        "fixture": "retirement-policy.md",
+        "path": ".atlas/types/policy/retirement.md",
+        "reason": "The fixture publication workflow is obsolete.",
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "dependency": {
+          "kind": "metadata",
+          "survivingPrinciple": true,
+          "governor": "policy:retirement",
+          "documentId": "policy:retirement",
+          "expectedCode": "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "expectedFindings": [
+            { "path": ".atlas/concepts/retirement-dependent.md", "count": 1 }
+          ]
+        },
+        "semanticVerdicts": [
+          {
+            "policyId": "policy:retirement",
+            "verdict": "pass",
+            "evidence": [".atlas/index.md#L1"],
+            "challenge": {
+              "position": "agree",
+              "argument": "The retained Root Anchor supplies the fixture Atlas context.",
+              "evidence": [".atlas/index.md#L1"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "delete refuses isolated Policy Contradiction prose despite a surviving Principle truth with the same token",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "delete",
+        "subject": "atlas-policy",
+        "fixture": "retirement-policy.md",
+        "path": ".atlas/types/policy/retirement.md",
+        "reason": "The fixture publication workflow is obsolete.",
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "dependency": {
+          "kind": "prose",
+          "survivingPrinciple": true,
+          "governor": "policy:retirement",
+          "documentId": "policy:retirement",
+          "expectedCode": "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "expectedFindings": [
+            { "path": ".atlas/concepts/retirement-dependent.md", "count": 1 }
+          ]
+        },
+        "semanticVerdicts": [
+          {
+            "policyId": "policy:retirement",
+            "verdict": "pass",
+            "evidence": [".atlas/index.md#L1"],
+            "challenge": {
+              "position": "agree",
+              "argument": "The retained Root Anchor supplies the fixture Atlas context.",
+              "evidence": [".atlas/index.md#L1"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "retire refuses isolated truth Contradiction metadata despite the same truth token in another Principle",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "retire",
+        "subject": "principle",
+        "fixture": "retirement-principle.md",
+        "path": ".atlas/principles/retirement.md",
+        "reason": "The fixture rule is obsolete.",
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "dependency": {
+          "kind": "metadata",
+          "survivingPrinciple": true,
+          "governor": "retirement-v1",
+          "documentId": "principle:retirement",
+          "expectedCode": "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "expectedFindings": [
+            { "path": ".atlas/concepts/retirement-dependent.md", "count": 1 }
+          ]
+        }
+      }
+    },
+    {
+      "name": "delete refuses isolated truth Contradiction metadata despite the same truth token in another Principle",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "delete",
+        "subject": "principle",
+        "fixture": "retirement-principle.md",
+        "path": ".atlas/principles/retirement.md",
+        "reason": "The fixture rule is obsolete.",
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "dependency": {
+          "kind": "metadata",
+          "survivingPrinciple": true,
+          "governor": "retirement-v1",
+          "documentId": "principle:retirement",
+          "expectedCode": "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "expectedFindings": [
+            { "path": ".atlas/concepts/retirement-dependent.md", "count": 1 }
+          ]
+        }
+      }
+    },
+    {
+      "name": "retire refuses isolated truth Contradiction prose despite the same truth token in another Principle",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "retire",
+        "subject": "principle",
+        "fixture": "retirement-principle.md",
+        "path": ".atlas/principles/retirement.md",
+        "reason": "The fixture rule is obsolete.",
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "dependency": {
+          "kind": "prose",
+          "survivingPrinciple": true,
+          "governor": "retirement-v1",
+          "documentId": "principle:retirement",
+          "expectedCode": "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "expectedFindings": [
+            { "path": ".atlas/concepts/retirement-dependent.md", "count": 1 }
+          ]
+        }
+      }
+    },
+    {
+      "name": "delete refuses isolated truth Contradiction prose despite the same truth token in another Principle",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "delete",
+        "subject": "principle",
+        "fixture": "retirement-principle.md",
+        "path": ".atlas/principles/retirement.md",
+        "reason": "The fixture rule is obsolete.",
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "dependency": {
+          "kind": "prose",
+          "survivingPrinciple": true,
+          "governor": "retirement-v1",
+          "documentId": "principle:retirement",
+          "expectedCode": "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "expectedFindings": [
+            { "path": ".atlas/concepts/retirement-dependent.md", "count": 1 }
+          ]
+        }
+      }
+    },
+    {
+      "name": "delete refuses an isolated cited Edge to a nested Principle with an unprefixed identity until reconciliation",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "delete",
+        "subject": "principle",
+        "fixture": "retirement-legacy-principle.md",
+        "path": ".atlas/principles/legacy/rule.md",
+        "reason": "The legacy fixture rule is obsolete.",
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "dependency": {
+          "kind": "edge",
+          "governor": "legacy-v1",
+          "documentId": "legacy-rule",
+          "expectedCode": "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "expectedFindings": [
+            { "path": ".atlas/edges/retirement-dependent.md", "count": 1 }
+          ]
+        }
+      }
     }
   ]
 }

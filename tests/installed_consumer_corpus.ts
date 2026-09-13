@@ -101,6 +101,15 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
       assert.ok(entry.retirement.expectedApprover.length > 0);
       assert.match(entry.retirement.expectedApprovalDate, /^\d{4}-\d{2}-\d{2}$/u);
       if (entry.retirement.dependency !== undefined) {
+        assert.ok(
+          entry.retirement.dependency.kind === undefined ||
+            ["edge", "metadata", "prose"].includes(entry.retirement.dependency.kind),
+        );
+        if (entry.retirement.dependency.survivingPrinciple !== undefined)
+          assert.equal(
+            typeof entry.retirement.dependency.survivingPrinciple,
+            "boolean",
+          );
         assert.ok(entry.retirement.dependency.governor.length > 0);
         assert.ok(entry.retirement.dependency.documentId.length > 0);
         assert.match(entry.retirement.dependency.expectedCode, /^ATLAS_[A-Z_]+$/u);

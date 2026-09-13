@@ -62,6 +62,13 @@ governance Edges, and active-truth wiki/Markdown links must each produce specifi
 refusals until the fixture dependencies are reconciled. Fixture approvals and
 semantic verdicts are synthetic, not production human authorization.
 
+Isolated identity cases cover an Edge to a nested Principle with a non-prefixed
+ID, and metadata-only/prose-only Contradictions whose token also belongs to a
+surviving Principle. Both actions must refuse cross-kind Policy/truth collisions
+and same-truth IDs in different Principles, then purge only after reconciliation
+while preserving the unrelated survivor. The reusable governance-fragment seam
+consumes the same corpus identities.
+
 `governance.json` additionally exercises retirement target, action, approval,
 rationale and provenance refusals at the operation boundary. Its
 `atFounding` case refuses retirement of an earlier composed founding fragment

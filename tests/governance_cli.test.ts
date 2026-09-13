@@ -133,12 +133,12 @@ test("Governance Retirement purges the proposal document while preserving the ta
     (entry) => entry.retirement !== undefined,
   );
   assert.ok(cases.length > 0);
-  for (const entry of cases) {
+  for (const [index, entry] of cases.entries()) {
     const probe = entry.retirement;
     assert.ok(probe !== undefined);
     const repository = resolve(
       WORKSPACE,
-      `retirement-${probe.subject}-${probe.action}`,
+      `retirement-${String(index)}-${probe.subject}-${probe.action}`,
     );
     initAtlasRepository(repository);
     exerciseGovernanceRetirement(repository, probe, runAtlas);

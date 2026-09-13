@@ -26,6 +26,7 @@ import {
 } from "./operation_support.ts";
 import type { Finding } from "../domain/finding.ts";
 import { sdkFindings } from "../lint/sdk_finding.ts";
+import { validateRemovedGovernorProse } from "../lint/validate_atlas_structure.ts";
 import type { LintOperationResult } from "./lint_operation.ts";
 import {
   operationHandoffSchemaVersion,
@@ -788,6 +789,66 @@ function validateRetirementTargets(
   return Object.freeze(findings);
 }
 
+function validateRetirementDependencies(
+  request: AtlasGovernanceRequest,
+  existing: readonly CapturedAtlasFile[],
+): readonly Finding[] {
+  if (!isGovernanceRetirement(request.action)) return Object.freeze([]);
+  const removedPaths = new Set(
+    (request.changes ?? [])
+      .filter((change) => change.content === null)
+      .map((change) => change.path),
+  );
+  const pages = existing.flatMap((file) => {
+    const parsed = parseAtlasPage({
+      path: file.path,
+      content: new TextDecoder().decode(file.bytes),
+    });
+    return parsed instanceof Error ? [] : [parsed];
+  });
+  const removedPages = pages.filter((parsed) => removedPaths.has(parsed.source.path));
+  const removedIds = new Set(removedPages.map((parsed) => parsed.page.sdk.id));
+  const removedGovernors = new Set(
+    removedPages.flatMap(({ page }) =>
+      page.sdk.type === "principle"
+        ? atlasPrincipleActiveTruthIds(page.body)
+        : page.sdk.type === "policy"
+          ? [page.sdk.id]
+          : [],
+    ),
+  );
+  const findings: Finding[] = [];
+  for (const parsed of pages) {
+    if (removedPaths.has(parsed.source.path)) continue;
+    if (
+      parsed.page.sdk.type === "edge" &&
+      [parsed.page.atlas["from"], parsed.page.atlas["to"]].some(
+        (endpoint) => typeof endpoint === "string" && removedIds.has(endpoint),
+      )
+    ) {
+      findings.push(
+        finding(
+          "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "A live Edge refers to a removed governance document; reconcile the relationship before retirement.",
+          parsed.source.path,
+        ),
+      );
+    }
+    const governor = parsed.page.atlas["contradicts"];
+    if (typeof governor === "string" && removedGovernors.has(governor)) {
+      findings.push(
+        finding(
+          "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "An unqualified Contradiction may refer to a removed governor even if another governor shares its token; reconcile the marker before retirement.",
+          parsed.source.path,
+        ),
+      );
+    }
+    findings.push(...validateRemovedGovernorProse(parsed, removedGovernors));
+  }
+  return Object.freeze(findings);
+}
+
 function governanceChangelogProse(request: AtlasGovernanceRequest): string {
   const reason = (request.changelog ?? "").trim();
   if (!isGovernanceRetirement(request.action) || request.attestation === undefined) {
@@ -1017,6 +1078,7 @@ export function prepareGovernanceFragment(
     ...validatePrincipleChangeSet(request, changes, existing),
     ...validatePolicyChangeSet(request, changes, existing),
     ...validateRetirementTargets(request, existing),
+    ...validateRetirementDependencies(request, existing),
     ...validateSemanticVerdicts(
       request,
       capturedPathSet(existing, changes),
@@ -1360,9 +1422,14 @@ export function runAtlasGovernanceWorkflow(
       latestState = nextState;
       runtime.persistState?.(nextState);
     }
+    const proposalFindings = uniqueGovernanceFindings([
+      ...linted.lint.handoff.validationState.findings,
+      ...validateRetirementDependencies(request, existing),
+    ]);
     if (
       linted.lint.completion !== "completed" ||
-      linted.lint.disposition !== "success"
+      linted.lint.disposition !== "success" ||
+      !canContinue(proposalFindings)
     ) {
       return result(
         nextState,
@@ -1370,8 +1437,10 @@ export function runAtlasGovernanceWorkflow(
         "not-completed",
         "failed",
         { changeSet: acceptedChangeSet, lint: linted.lint },
-        linted.lint.handoff.validationState.findings,
-        "Governance proposal did not pass trusted Lint.",
+        proposalFindings,
+        isGovernanceRetirement(request.action)
+          ? "Governance proposal did not pass trusted Lint and retirement dependency validation."
+          : "Governance proposal did not pass trusted Lint.",
       );
     }
     if (linted.receipt !== commit) {

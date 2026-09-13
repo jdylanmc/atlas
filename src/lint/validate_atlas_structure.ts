@@ -46,6 +46,12 @@ import {
   type ParsedAtlasPage,
 } from "../atlas/parse_atlas_pages.ts";
 
+interface GovernanceProseReference {
+  readonly governor: string;
+  readonly path: string;
+  readonly location: FindingLocation;
+}
+
 export interface AtlasStructureValidation {
   /**
    * Every page whose Atlas page envelope parsed from the validated text. Pages
@@ -1166,11 +1172,7 @@ function validateAtlasStructureWithPages(
   const pagePaths: ReadonlySet<string> = new Set(pageRecords.map((file) => file.path));
   const pages: ParsedAtlasPage[] = [];
   const parsed: { readonly file: AtlasTextFile; readonly page: ParsedAtlasPage }[] = [];
-  const proseGovernors: {
-    readonly governor: string;
-    readonly path: string;
-    readonly location: FindingLocation;
-  }[] = [];
+  const proseGovernors: GovernanceProseReference[] = [];
   for (const file of pageRecords) {
     const result = parseOne(file);
     if ("code" in result) findings.push(result);
@@ -1178,35 +1180,9 @@ function validateAtlasStructureWithPages(
       pages.push(result);
       // A body carrying more Markdown than Atlas SDK reads is reported from the
       // scan of its text rather than read.
-      const bound = bodyMarkdownBound(result.page.body);
-      if (bound.nesting > maxBodyNestingDepth) {
-        findings.push(
-          finding(
-            "ATLAS_PAGE_BODY_TOO_DEEP",
-            "Atlas page body nests deeper than Atlas SDK reads.",
-            file.path,
-          ),
-        );
-        continue;
-      }
-      if (bound.marks > maxBodyMarkupMarks) {
-        findings.push(
-          finding(
-            "ATLAS_PAGE_BODY_TOO_MARKED",
-            "Atlas page body carries more Markdown markup than Atlas SDK reads.",
-            file.path,
-          ),
-        );
-        continue;
-      }
-      if (bound.lines > maxBodyLines) {
-        findings.push(
-          finding(
-            "ATLAS_PAGE_BODY_TOO_LONG",
-            "Atlas page body holds more lines than Atlas SDK reads.",
-            file.path,
-          ),
-        );
+      const bodyFinding = bodyMarkdownFinding(result);
+      if (bodyFinding !== undefined) {
+        findings.push(bodyFinding);
         continue;
       }
       const tree = fromMarkdown(result.page.body, markdownOptions);
@@ -1215,24 +1191,7 @@ function validateAtlasStructureWithPages(
       validateCitations(file, result, tree, pagePaths, findings);
       validateGovernanceBodyReferences(result, tree, pagePaths, findings);
       if (result.page.sdk.type === coreArchetypes.Concept.pageType) {
-        for (const node of tree.children) {
-          if (node.type !== "paragraph") continue;
-          const position = node.position as MarkdownPosition;
-          const source = result.page.body.slice(
-            position.start.offset,
-            position.end.offset,
-          );
-          const governor = /^This claim is an accepted Contradiction of (.+)\.$/u.exec(
-            source,
-          )?.[1];
-          if (governor !== undefined) {
-            proseGovernors.push({
-              governor,
-              path: file.path,
-              location: markdownLocation(result, position),
-            });
-          }
-        }
+        proseGovernors.push(...governanceProseReferences(result, tree));
       }
     }
   }
@@ -1324,6 +1283,77 @@ function validateAtlasStructureWithPages(
     findings: Object.freeze(findings.toSorted(compareFindings)),
     pages: Object.freeze(pages),
   });
+}
+
+function bodyMarkdownFinding(parsed: ParsedAtlasPage): Finding | undefined {
+  const bound = bodyMarkdownBound(parsed.page.body);
+  if (bound.nesting > maxBodyNestingDepth) {
+    return finding(
+      "ATLAS_PAGE_BODY_TOO_DEEP",
+      "Atlas page body nests deeper than Atlas SDK reads.",
+      parsed.source.path,
+    );
+  }
+  if (bound.marks > maxBodyMarkupMarks) {
+    return finding(
+      "ATLAS_PAGE_BODY_TOO_MARKED",
+      "Atlas page body carries more Markdown markup than Atlas SDK reads.",
+      parsed.source.path,
+    );
+  }
+  if (bound.lines > maxBodyLines) {
+    return finding(
+      "ATLAS_PAGE_BODY_TOO_LONG",
+      "Atlas page body holds more lines than Atlas SDK reads.",
+      parsed.source.path,
+    );
+  }
+  return undefined;
+}
+
+function governanceProseReferences(
+  parsed: ParsedAtlasPage,
+  tree: ReturnType<typeof fromMarkdown>,
+): readonly GovernanceProseReference[] {
+  const references: GovernanceProseReference[] = [];
+  for (const node of tree.children) {
+    if (node.type !== "paragraph") continue;
+    const position = node.position as MarkdownPosition;
+    const source = parsed.page.body.slice(position.start.offset, position.end.offset);
+    const governor = /^This claim is an accepted Contradiction of (.+)\.$/u.exec(
+      source,
+    )?.[1];
+    if (governor !== undefined) {
+      references.push({
+        governor,
+        path: parsed.source.path,
+        location: markdownLocation(parsed, position),
+      });
+    }
+  }
+  return references;
+}
+
+export function validateRemovedGovernorProse(
+  parsed: ParsedAtlasPage,
+  removedGovernors: ReadonlySet<string>,
+): readonly Finding[] {
+  if (parsed.page.sdk.type !== coreArchetypes.Concept.pageType)
+    return Object.freeze([]);
+  const bodyFinding = bodyMarkdownFinding(parsed);
+  if (bodyFinding !== undefined) return Object.freeze([bodyFinding]);
+  return Object.freeze(
+    governanceProseReferences(parsed, fromMarkdown(parsed.page.body, markdownOptions))
+      .filter((reference) => removedGovernors.has(reference.governor))
+      .map((reference) =>
+        finding(
+          "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+          "An unqualified persisted Contradiction may refer to a removed governor even if another governor shares its token; reconcile the claim before retirement.",
+          reference.path,
+          reference.location,
+        ),
+      ),
+  );
 }
 
 /**
