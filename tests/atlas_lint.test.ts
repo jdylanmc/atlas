@@ -469,6 +469,31 @@ test("refuses every shape of Markdown that costs more than its bytes", () => {
   }
 });
 
+test("applies the markup gate when a caller admits the high-delimiter page", () => {
+  const path = ".atlas/anchors/lint.md";
+  const original = fixtureText(path);
+  const frontmatterEnd = original.lastIndexOf("\n---\n") + "\n---\n".length;
+  const highDelimiterPage = `${original.slice(0, frontmatterEnd)}\n# Lint\n\n${"x*\n".repeat(8191)}`;
+  const budgets = { maxFileBytes: 64 * 1024, maxTotalBytes: 128 * 1024 };
+  assert.ok(encoder.encode(highDelimiterPage).byteLength < budgets.maxFileBytes);
+  const atlas = completeAtlas("valid").map((file) =>
+    file.path === path
+      ? { bytes: encoder.encode(highDelimiterPage), path: file.path }
+      : file,
+  );
+
+  const result = lintAtlas(atlas, budgets);
+
+  assert.equal(result.outcome, "invalid");
+  assert.deepEqual(
+    result.findings.map(({ code, path: findingPath }) => ({
+      code,
+      path: findingPath,
+    })),
+    [{ code: "ATLAS_PAGE_BODY_TOO_MARKED", path }],
+  );
+});
+
 test("refuses frontmatter larger than it reads, and reads plain prose whole", () => {
   const megabyte = 1024 * 1024;
   const heavy = `{${Array.from({ length: megabyte / 8 }, (_, index) => `k${String(index)}: 1`).join(",")}}`;

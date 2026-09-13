@@ -480,10 +480,21 @@ interface StructuralValidationTimestampCase {
   readonly updatedAt: string;
 }
 
+interface StructuralValidationMarkupBudgetCase {
+  readonly expectation: "reject";
+  readonly expectedCode: string;
+  readonly gate: "structural-validation";
+  readonly kind: "body-markup-budget";
+  readonly line: string;
+  readonly name: string;
+  readonly repeat: number;
+}
+
 type StructuralValidationCase =
   | StructuralValidationTruthsCase
   | StructuralValidationSdkFieldCase
-  | StructuralValidationTimestampCase;
+  | StructuralValidationTimestampCase
+  | StructuralValidationMarkupBudgetCase;
 
 interface StructuralValidationCorpus {
   readonly cases: readonly StructuralValidationCase[];
@@ -666,7 +677,8 @@ function parseStructuralValidationCorpus(value: unknown): StructuralValidationCo
       assert.ok(
         kind === "principle-active-truths" ||
           kind === "sdk-unrecognized-field" ||
-          kind === "timestamp-order",
+          kind === "timestamp-order" ||
+          kind === "body-markup-budget",
         `${path}.kind is unsupported`,
       );
       if (kind === "timestamp-order") {
@@ -688,6 +700,25 @@ function parseStructuralValidationCorpus(value: unknown): StructuralValidationCo
           kind,
           name,
           updatedAt: assertString(entry["updatedAt"], `${path}.updatedAt`),
+        };
+      }
+      if (kind === "body-markup-budget") {
+        assert.equal(
+          entry["expectation"],
+          "reject",
+          `${path}.expectation must be reject for body-markup-budget`,
+        );
+        const repeat = assertNumber(entry["repeat"], `${path}.repeat`);
+        assert.equal(Number.isSafeInteger(repeat) && repeat > 0, true);
+        rejects += 1;
+        return {
+          expectation: "reject",
+          expectedCode: assertString(entry["expectedCode"], `${path}.expectedCode`),
+          gate: "structural-validation",
+          kind,
+          line: assertString(entry["line"], `${path}.line`),
+          name,
+          repeat,
         };
       }
       if (kind === "sdk-unrecognized-field") {
@@ -1954,6 +1985,23 @@ for (const entry of structuralValidationCorpus.cases) {
       assert.equal(
         findings.some(({ path }) => path === page.path),
         true,
+      );
+      return;
+    }
+    if (entry.kind === "body-markup-budget") {
+      const findings = validateAtlasStructure([
+        structuralRoot,
+        structuralAtlasPage(
+          ".atlas/concepts/markup.md",
+          "concept:markup",
+          "concept",
+          "Markup",
+          `# Markup\n\n${entry.line.repeat(entry.repeat)}`,
+        ),
+      ]);
+      assert.deepEqual(
+        findings.map(({ code, path }) => ({ code, path })),
+        [{ code: entry.expectedCode, path: ".atlas/concepts/markup.md" }],
       );
       return;
     }

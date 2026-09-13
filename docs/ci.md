@@ -94,6 +94,14 @@ affected frontmatter key. Comparable timestamps retain the existing
 `ATLAS_PAGE_UPDATED_BEFORE_CREATED` rule; equal instants remain valid. This
 does not change the page-envelope schema.
 
+Structural Lint caps each page body at 2,048 lexically counted Markdown markup
+marks, down from 8,192 to bound delimiter-heavy input before the Markdown reader
+runs. The markup guard reports `ATLAS_PAGE_BODY_TOO_MARKED` even when the caller's
+byte budget admits the page. Exactly 2,048 marks remain permitted when the other
+checks pass; plain prose is not charged as markup. The existing nesting-depth
+limit of 64, body-line limit of 16,384, and frontmatter limit of 32,768 characters
+are unchanged.
+
 The Actionlint launcher also pins ShellCheck `0.11.0`, disables Python-based
 Pyflakes integration, downloads only the assets for the current supported
 platform and architecture, and verifies their release checksums before

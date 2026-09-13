@@ -906,7 +906,7 @@ function parseOne(file: AtlasTextFile): ParsedAtlasPage | Finding {
 // scan reads the same lines the reader will.
 const markdownLineBreak = /\r\n|[\n\r]/u;
 const maxBodyNestingDepth = 64;
-const maxBodyMarkupMarks = 8192;
+const maxBodyMarkupMarks = 2048;
 const maxBodyLines = 16 * 1024;
 
 const listMarkerAt = /(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)/uy;
