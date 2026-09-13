@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { readChangelogCorpus } from "./changelog_corpus.ts";
+import { assertGrowthRatio } from "./growth.ts";
 import {
   containsLineBreak,
   isSingleAtlasChangelogEntry,
@@ -11,6 +12,31 @@ import {
 
 for (const entry of readChangelogCorpus()) {
   test(`adversarial Changelog corpus: ${entry.name}`, () => {
+    if (entry.growth !== undefined) {
+      const growth = entry.growth;
+      const render = (repetitions: number): void => {
+        const history = growth.unit.repeat(repetitions);
+        assert.equal(
+          renderAtlasChangelog(
+            entry.existingContent?.replace(growth.marker, history),
+            entry.date,
+            entry.operationId,
+            entry.prose,
+          ),
+          entry.expected.replace(growth.marker, history),
+        );
+      };
+      assertGrowthRatio({
+        name: entry.name,
+        small: () => {
+          render(growth.small);
+        },
+        large: () => {
+          render(growth.large);
+        },
+      });
+      return;
+    }
     assert.equal(
       renderAtlasChangelog(
         entry.existingContent,

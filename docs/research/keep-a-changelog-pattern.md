@@ -57,6 +57,9 @@ headings become date headings with a `Recorded at: <original instant>` marker;
 duplicate day sections retain their content under the first occurrence within
 the same top-level section. Flat operation entries stay ahead of historical
 subsections rather than inheriting an unrelated change category.
+Heading discovery disables inline emphasis resolution: historical prose is
+copied, not rendered, so delimiter density must not trigger that resolver's
+quadratic search for matching markers.
 Non-date headings, code examples, and other historical text remain content,
 not a schema to validate. The renderer preserves first-seen day order rather
 than reordering curated history; changing chronological presentation is separate

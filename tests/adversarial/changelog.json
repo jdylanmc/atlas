@@ -3,6 +3,22 @@
   "reviewResolutionRule": "A review finding is resolved only after this corpus has an accept or reject case that exercises it.",
   "cases": [
     {
+      "name": "delimiter-dense historical prose has subquadratic heading discovery",
+      "gate": "changelog",
+      "expectation": "accept",
+      "existingContent": "# Changelog\n\n## 2026-08-22\n\n- historic: {{history}}\n",
+      "date": "2026-08-22",
+      "operationId": "next",
+      "prose": "Next operation.",
+      "expected": "# Changelog\n\n## 2026-08-22\n\n- historic: {{history}}\n\n- next: Next operation.\n",
+      "growth": {
+        "marker": "{{history}}",
+        "unit": "x* ",
+        "small": 1024,
+        "large": 2048
+      }
+    },
+    {
       "name": "new operation entries do not inherit a historical change category",
       "gate": "changelog",
       "expectation": "accept",

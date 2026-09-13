@@ -11,6 +11,12 @@ interface ChangelogCase {
   readonly prose: string;
   readonly expected: string;
   readonly exerciseOperations?: true;
+  readonly growth?: {
+    readonly marker: string;
+    readonly unit: string;
+    readonly small: number;
+    readonly large: number;
+  };
 }
 
 export function readChangelogCorpus(): readonly ChangelogCase[] {
@@ -44,6 +50,15 @@ export function readChangelogCorpus(): readonly ChangelogCase[] {
     }
     if (entry.exerciseOperations !== undefined) {
       assert.equal(entry.exerciseOperations, true);
+    }
+    if (entry.growth !== undefined) {
+      assert.equal(typeof entry.growth.marker, "string");
+      assert.equal(typeof entry.growth.unit, "string");
+      assert.ok(entry.growth.unit.length > 0);
+      assert.ok(entry.existingContent?.includes(entry.growth.marker));
+      assert.ok(entry.expected.includes(entry.growth.marker));
+      assert.ok(Number.isSafeInteger(entry.growth.small) && entry.growth.small > 0);
+      assert.equal(entry.growth.large, entry.growth.small * 2);
     }
   }
   return corpus.cases;

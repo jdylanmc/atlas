@@ -97,7 +97,11 @@ function trimLineBreaks(value: string): string {
 }
 
 function markdownHeadings(content: string) {
-  const tree = fromMarkdown(content);
+  // Heading discovery needs block boundaries, not emphasis resolution.
+  // tests/atlas_changelog.test.ts pins delimiter-dense CPU growth.
+  const tree = fromMarkdown(content, {
+    extensions: [{ disable: { null: ["attention"] } }],
+  });
   // Parser-created nodes carry offsets; generic mdast types also allow
   // caller-assembled trees without positions. tests/atlas_changelog.test.ts
   // pins position-sensitive historical text preservation.
