@@ -402,6 +402,30 @@ function runInstalled(
   return { status: result.status, stderr: result.stderr, stdout: result.stdout };
 }
 
+function diagnosticIndices(text: string): ReadonlySet<number> {
+  const indices = new Set<number>();
+  const mask = /^mask@(\d+):([0-9a-f]+)$/u.exec(text);
+  if (mask !== null) {
+    const offset = Number(mask[1]);
+    const hex = mask[2] as string;
+    assert.equal(offset % 8, 0);
+    assert.equal(hex.length % 2, 0);
+    for (const [byte, value] of Buffer.from(hex, "hex").entries()) {
+      for (let bit = 0; bit < 8; bit += 1) {
+        if ((value & (2 ** bit)) !== 0) indices.add(offset + byte * 8 + bit);
+      }
+    }
+  } else {
+    for (const range of text.split(",")) {
+      assert.match(range, /^\d+(?:\.\.\d+)?$/u);
+      const [first, last = first] = range.split("..").map(Number);
+      assert.ok(first !== undefined && last !== undefined && first <= last);
+      for (let index = first; index <= last; index += 1) indices.add(index);
+    }
+  }
+  return indices;
+}
+
 // No `{ timeout }` on this test on purpose. Its body is synchronous, so it never
 // yields to the runner's event loop and a declared test timeout can never fire -
 // it would read as a guarantee while bounding nothing. Every child process
@@ -521,6 +545,59 @@ for (const entry of readInstalledConsumerCorpus().cases) {
               ),
             ),
             field,
+          );
+        }
+        for (const pairs of [
+          probe.alternatingPairs,
+          Math.floor((probe.maxRawBytes - Buffer.byteLength(empty) + 1) / 5),
+        ]) {
+          const alternating = empty.replace(
+            '"edges":[]',
+            `"edges":[${Array<string>(pairs).fill("{},0").join(",")}]`,
+          );
+          assert.ok(Buffer.byteLength(alternating) <= probe.maxRawBytes);
+          writeFileSync(inputPath, alternating.padEnd(probe.maxRawBytes, " "));
+          const rejected = runInstalled(
+            consumer,
+            guard,
+            ["ingest", "reconcile", "--machine", "--ingest-request", inputPath],
+            [`--max-old-space-size=${String(probe.maxHeapMiB)}`],
+          );
+          assert.equal(rejected.status, 64, rejected.stderr);
+          const result = parseMachineOperationResult(rejected.stdout);
+          const lines = result.handoff.validationState.findings.flatMap(({ message }) =>
+            message.split("\n"),
+          );
+          assert.equal(lines.length, probe.expectedFields.length + 11);
+          const edgeErrors = lines.filter((line) =>
+            line.startsWith("request.candidateGraph.edges["),
+          );
+          assert.equal(edgeErrors.length, probe.expectedFields.length + 1);
+          const observedFields = new Set<string>();
+          for (const line of edgeErrors) {
+            const match =
+              /^request\.candidateGraph\.edges\[([^\]]+)\](?:\.([a-zA-Z]+))? (.+)$/u.exec(
+                line,
+              );
+            assert.ok(match);
+            const indices = diagnosticIndices(match[1] as string);
+            const field = match[2];
+            const identity = field ?? "$object";
+            assert.equal(observedFields.has(identity), false);
+            observedFields.add(identity);
+            assert.ok(field === undefined || probe.expectedFields.includes(field));
+            if (field === undefined) assert.equal(match[3], "must be an object");
+            assert.equal(indices.size, pairs);
+            for (let index = 0; index < pairs * 2; index += 1) {
+              assert.equal(
+                indices.has(index),
+                index % 2 === (field === undefined ? 1 : 0),
+              );
+            }
+          }
+          assert.deepEqual(
+            [...observedFields].sort(),
+            ["$object", ...probe.expectedFields].sort(),
           );
         }
         assert.equal(consumerGit(consumer, ["rev-parse", "HEAD"]), base);

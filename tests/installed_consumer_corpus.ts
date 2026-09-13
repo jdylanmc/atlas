@@ -10,6 +10,7 @@ interface InstalledConsumerCase {
   readonly expectedAtlasPaths: readonly string[];
   readonly unmergedLintCode: string;
   readonly repeatedEmptyEdges?: {
+    readonly alternatingPairs: number;
     readonly maxRawBytes: number;
     readonly maxHeapMiB: number;
     readonly expectedFields: readonly string[];
@@ -110,6 +111,7 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
               for (const value of values) assert.equal(typeof value, "string");
             }
             if (entry.repeatedEmptyEdges !== undefined) {
+              assert.equal(entry.repeatedEmptyEdges.alternatingPairs, 40_000);
               assert.equal(entry.repeatedEmptyEdges.maxRawBytes, 1_048_576);
               assert.equal(entry.repeatedEmptyEdges.maxHeapMiB, 256);
               assert.ok(entry.repeatedEmptyEdges.expectedFields.length > 0);

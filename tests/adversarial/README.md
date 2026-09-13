@@ -74,6 +74,12 @@ represented by exact index ranges alongside the Scope errors. This guards
 against retaining millions of duplicate error objects, without adding a
 runtime quota or truncating diagnostics.
 
+The same bounded consumer also checks 40,000 alternating empty-object/number
+Edge pairs and a maximum-size variant. Independent diagnostic decoding proves
+every even index has exactly the missing-field errors and every odd index only
+the object-type error. A sparse-offset case pins hexadecimal mask byte/bit order
+and zero-filled holes at both the source parser and installed CLI boundaries.
+
 `governance-request-types.test-d.ts` is the compiler-backed governance contract
 corpus. The registered test in `tests/adversarial_corpus.test.ts` compiles it
 with the repository TypeScript settings, and ordinary `npm run typecheck`

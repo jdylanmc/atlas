@@ -72,6 +72,16 @@ printing millions of repeated messages from one small malformed document.
 ranges apply only when each listed parent has the same child index set.
 No error-count quota or diagnostic truncation is introduced.
 
+For irregular index sets, the shorter representation may be a hexadecimal
+byte mask. `items[mask@8:55].field` selects exactly indices 8, 10, 12, and 14.
+Read each pair of hex digits as one byte, least-significant bit first: bit `k`
+of byte `j` selects `offset + 8*j + k`. The offset after `@` is byte-aligned;
+zero bits do not select an index. Sparse storage avoids allocating a large
+bitmap for isolated high indices; dense masks are rendered only when shorter
+than exact ranges. Nested sets retain the same parent/child membership.
+Input byte limits are not stdout limits: consumers must accommodate complete
+Operation Results, including proposal payloads larger than their input.
+
 `x-maxUtf8Bytes` is an SDK annotation for encoded UTF-8 byte length, not JSON
 Schema's character-count `maxLength`. Generic validators must register that
 keyword to enforce byte budgets. Shape validity is not authorization, evidence

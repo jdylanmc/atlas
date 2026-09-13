@@ -101,6 +101,7 @@ function describeInputContract(name: InputContractName): InputContract {
       "x-maxUtf8Bytes bounds the UTF-8 encoded bytes of a string, not its character count. The CLI enforces this annotation; generic JSON Schema validators must register it to enforce byte budgets.",
       "Unknown object fields are ignored. All detectable shape violations are reported together; malformed or oversized containers report their container violation without inspecting children. Independent sibling fields are still checked. A forbidden field reports its prohibition, not errors within its unused contents.",
       "Identical array-field violations are compacted without omission: items[0..3,7].field means indices 0, 1, 2, 3, and 7, never 4 through 6. Nested ranges apply only to the same child index set at every listed parent. Each affected index is retained; no error-count quota is imposed.",
+      "When shorter, an index set uses an exact hexadecimal byte mask: items[mask@8:55].field selects indices 8, 10, 12, and 14. The offset after @ is byte-aligned; read each pair of hex digits as one byte, least-significant bit first. Set bit k in byte j selects offset + 8*j + k. Zero bits never select an index. This representation also preserves arbitrary gaps and nested child sets.",
       ...(name === "governance-request"
         ? governanceInputGuidance
         : [

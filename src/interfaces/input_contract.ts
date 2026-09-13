@@ -168,9 +168,7 @@ export function arrayInput<Value>(
         readonly suffix: string;
         readonly detail: string;
         readonly rule: InputIssue["rule"];
-        readonly ranges: string[];
-        start: number;
-        end: number;
+        readonly indices: ArrayIndexSet;
       }
     >();
     let valid = true;
@@ -190,21 +188,15 @@ export function arrayInput<Value>(
             suffix,
             detail,
             rule: issue.rule,
-            ranges: [],
-            start: index,
-            end: index,
+            indices: new ArrayIndexSet(index),
           });
         } else {
-          if (index !== group.end + 1) {
-            group.ranges.push(indexRange(group.start, group.end));
-            group.start = index;
-          }
-          group.end = index;
+          group.indices.add(index);
         }
       }
     }
     for (const group of groups.values()) {
-      const indices = [...group.ranges, indexRange(group.start, group.end)].join(",");
+      const indices = group.indices.format();
       const groupedPath = `${path}[${indices}]${group.suffix}`;
       issues.push(
         Object.freeze({
@@ -220,6 +212,53 @@ export function arrayInput<Value>(
 
 function indexRange(start: number, end: number): string {
   return start === end ? String(start) : `${String(start)}..${String(end)}`;
+}
+
+class ArrayIndexSet {
+  readonly #bytes = new Map<number, number>();
+  readonly #first: number;
+  #last: number;
+
+  constructor(index: number) {
+    this.#first = index;
+    this.#last = index;
+    this.add(index);
+  }
+
+  add(index: number): void {
+    const byte = Math.floor(index / 8);
+    this.#bytes.set(byte, (this.#bytes.get(byte) ?? 0) | (2 ** (index % 8)));
+    this.#last = index;
+  }
+
+  format(): string {
+    let start = this.#first;
+    let end = start;
+    const ranges: string[] = [];
+    // Indices arrive in array order, so sparse byte keys retain that order.
+    for (const [byte, bits] of this.#bytes) {
+      for (let bit = 0; bit < 8; bit += 1) {
+        const index = byte * 8 + bit;
+        if ((bits & (2 ** bit)) === 0 || index === this.#first) continue;
+        if (index !== end + 1) {
+          ranges.push(indexRange(start, end));
+          start = index;
+        }
+        end = index;
+      }
+    }
+    ranges.push(indexRange(start, end));
+    const text = ranges.join(",");
+    const firstByte = Math.floor(this.#first / 8);
+    const lastByte = Math.floor(this.#last / 8);
+    const prefix = `mask@${String(firstByte * 8)}:`;
+    if (prefix.length + (lastByte - firstByte + 1) * 2 >= text.length) return text;
+    const hex: string[] = [];
+    for (let byte = firstByte; byte <= lastByte; byte += 1) {
+      hex.push((this.#bytes.get(byte) ?? 0).toString(16).padStart(2, "0"));
+    }
+    return prefix + hex.join("");
+  }
 }
 
 interface InputRule<Value> {
