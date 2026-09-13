@@ -16,8 +16,10 @@ import { join, resolve, sep } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
+import { parseMachineOperationResult } from "./machine_operation_result.ts";
 import type { AtlasInitializationResult } from "../src/operations/initialize_operation.ts";
 import type { LintOperationResult } from "../src/operations/lint_operation.ts";
+import type { ExploreOperationResult } from "../src/operations/explore_operation.ts";
 import { initializeCommandExitCodes } from "../src/interfaces/initialize_command.ts";
 import { lintCommandExitCodes } from "../src/interfaces/lint_command.ts";
 import { exploreCommandExitCodes } from "../src/interfaces/explore_command.ts";
@@ -472,6 +474,54 @@ for (const entry of readInstalledConsumerCorpus().cases) {
 
       assert.equal(existsSync(join(consumer, ".atlas")), false);
       const base = consumerGit(consumer, ["rev-parse", "HEAD"]);
+      const beforePlan = consumerGit(consumer, ["status", "--porcelain"]);
+      const branchesBeforePlan = consumerGit(consumer, ["branch", "--list"]);
+      for (const probe of entry.ingestPlan ?? []) {
+        const scopePath = join(workspace, probe.scopeFixture);
+        writeFileSync(
+          scopePath,
+          readFileSync(join(ROOT, "tests", "fixtures", "ingest", probe.scopeFixture)),
+        );
+        const plan = runInstalled(consumer, guard, [
+          "ingest",
+          "plan",
+          "--machine",
+          "--ingest-scope",
+          scopePath,
+        ]);
+        assert.equal(plan.stderr, "");
+        assert.equal(
+          plan.status,
+          probe.expectation === "accept" ? 0 : probe.expectedExit,
+          plan.stdout,
+        );
+        const planned = parseMachineOperationResult(plan.stdout);
+        assert.equal(planned.operation.kind, "ingest");
+        const payload = planned.payload as Readonly<Record<string, unknown>>;
+        if (probe.expectation === "accept") {
+          assert.equal(planned.completion, "completed");
+          assert.equal(planned.disposition, "success");
+          assert.equal(planned.handoff.validationState.state, "passed");
+          assert.deepEqual(planned.handoff.validationState.findings, []);
+          assert.equal(planned.handoff.homeAtlas.state, "not-applicable");
+          assert.equal(planned.handoff.baseSnapshot.state, "not-applicable");
+          assert.equal(planned.handoff.proposedChanges.state, "not-applicable");
+          assert.equal(planned.handoff.reviewLink.state, "not-applicable");
+          assert.deepEqual(payload, { crawlAssignment: probe.expectedAssignment });
+        } else {
+          assert.equal(planned.completion, "not-completed");
+          assert.equal(planned.disposition, "failed");
+          assert.deepEqual(
+            planned.handoff.validationState.findings.map(({ code }) => code),
+            [probe.expectedCode],
+          );
+          assert.equal("crawlAssignment" in payload, false);
+        }
+        assert.equal(consumerGit(consumer, ["rev-parse", "HEAD"]), base);
+        assert.equal(consumerGit(consumer, ["branch", "--list"]), branchesBeforePlan);
+        assert.equal(consumerGit(consumer, ["status", "--porcelain"]), beforePlan);
+        assert.equal(existsSync(join(consumer, ".atlas")), false);
+      }
       const initialize = runInstalled(consumer, guard, [
         "initialize",
         "--machine",
@@ -484,7 +534,9 @@ for (const entry of readInstalledConsumerCorpus().cases) {
         initialize.stdout,
       );
       assert.equal(initialize.stderr, "");
-      const initialization = JSON.parse(initialize.stdout) as AtlasInitializationResult;
+      const initialization = parseMachineOperationResult(
+        initialize.stdout,
+      ) as AtlasInitializationResult;
       assert.equal(initialization.completion, "completed");
       assert.equal(initialization.disposition, "success");
       const { proposalBranch, targetBranch, targetHead } =
@@ -513,7 +565,9 @@ for (const entry of readInstalledConsumerCorpus().cases) {
         consumer,
       ]);
       assert.equal(unmerged.status, lintCommandExitCodes.usage, unmerged.stdout);
-      const unmergedLint = JSON.parse(unmerged.stdout) as LintOperationResult;
+      const unmergedLint = parseMachineOperationResult(
+        unmerged.stdout,
+      ) as LintOperationResult;
       assert.equal(unmergedLint.completion, "not-completed");
       assert.equal(unmergedLint.disposition, "failed");
       assert.deepEqual(
@@ -535,13 +589,12 @@ for (const entry of readInstalledConsumerCorpus().cases) {
       ]);
       assert.equal(lint.status, lintCommandExitCodes.success, lint.stderr);
       assert.equal(lint.stderr, "");
-      const lintResult = JSON.parse(lint.stdout) as {
-        readonly completion: string;
-        readonly disposition: string;
-        readonly payload: { readonly lint: { readonly findings: readonly unknown[] } };
-      };
+      const lintResult = parseMachineOperationResult(
+        lint.stdout,
+      ) as LintOperationResult;
       assert.equal(lintResult.completion, "completed");
       assert.equal(lintResult.disposition, "success");
+      assert.ok(lintResult.payload.state === "completed");
       assert.deepEqual(lintResult.payload.lint.findings, []);
 
       const explore = runInstalled(consumer, guard, [
@@ -553,16 +606,9 @@ for (const entry of readInstalledConsumerCorpus().cases) {
       ]);
       assert.equal(explore.status, exploreCommandExitCodes.success, explore.stderr);
       assert.equal(explore.stderr, "");
-      const exploreResult = JSON.parse(explore.stdout) as {
-        readonly completion: string;
-        readonly disposition: string;
-        readonly handoff: { readonly homeAtlas: { readonly state: string } };
-        readonly payload: {
-          readonly results: readonly {
-            readonly route: readonly { readonly objectId: string }[];
-          }[];
-        };
-      };
+      const exploreResult = parseMachineOperationResult(
+        explore.stdout,
+      ) as ExploreOperationResult;
       assert.equal(exploreResult.completion, "completed");
       assert.equal(exploreResult.disposition, "success");
       assert.equal(exploreResult.handoff.homeAtlas.state, "known");
@@ -616,7 +662,9 @@ for (const entry of readInstalledConsumerCorpus().cases) {
           govern.stdout,
         );
         assert.equal(govern.stderr, "");
-        const governed = JSON.parse(govern.stdout) as AtlasGovernanceResult;
+        const governed = parseMachineOperationResult(
+          govern.stdout,
+        ) as AtlasGovernanceResult;
         assert.equal(governed.completion, "not-completed");
         assert.equal(governed.disposition, "failed");
         const findings = governed.handoff.validationState.findings;

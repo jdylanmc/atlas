@@ -37,6 +37,24 @@ command also returns an `ATLAS_COMMAND_UNKNOWN` Finding naming the rejected valu
 `--machine` is required for dispatched commands. Command output is
 newline-terminated JSON so agents and scripts can parse it directly.
 
+### Ingest planning output
+
+`atlas ingest plan --machine --ingest-scope /path/to/scope.json` returns a
+versioned Operation Result on success and refusal, like the other commands.
+Check `completion` and `disposition` before consuming its command-specific payload.
+On success they are `completed` and `success`, and
+`payload.crawlAssignment` contains the versioned Crawl Assignment, including
+the approved Scope's boundaries, Source identity, and Approval Attestation.
+Consumers of the former raw Assignment output must read this payload field
+instead of the JSON root.
+
+Completion here means **planning completed**, not Ingest completed. Planning
+does not crawl a Source, read or select an Atlas, reconcile knowledge, or create
+a proposal. Its handoff marks the Atlas, snapshot, changes, and review link
+`not-applicable`, and directs the caller to crawl and then run
+`atlas ingest reconcile`. A refusal retains its existing nonzero exit code and
+Findings under `handoff.validationState.findings`; it carries no Crawl Assignment.
+
 ## Library usage
 
 The supported public API is the package root:

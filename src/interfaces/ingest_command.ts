@@ -24,6 +24,7 @@ import {
 import {
   operationHandoffSchemaVersion,
   operationResultSchemaVersion,
+  type OperationResult,
 } from "../operations/operation_result.ts";
 
 // Atlas SDK does not invoke a model (docs/adr/0001-sdk-is-a-deterministic-library.md).
@@ -463,9 +464,18 @@ export interface AtlasIngestCrawlAssignment {
   readonly sourceId: string;
 }
 
+export interface AtlasIngestPlanResult extends OperationResult<
+  AtlasIngestResult["operation"],
+  AtlasIngestHandoff,
+  { readonly crawlAssignment: AtlasIngestCrawlAssignment }
+> {
+  readonly completion: "completed";
+  readonly disposition: "success";
+}
+
 export type AtlasIngestPlanOutcome =
   | { readonly result: AtlasIngestResult; readonly state: "refused" }
-  | { readonly assignment: AtlasIngestCrawlAssignment; readonly state: "assigned" };
+  | { readonly result: AtlasIngestPlanResult; readonly state: "assigned" };
 
 // Approval is enforced here through the same validateApproval gate the Ingest
 // operation runs before it mutates, so a blank approval refuses the Crawl
@@ -515,7 +525,51 @@ export function planCrawlAssignment(
     refreshWindowDays: scope.freshnessWindowDays,
     sourceId: scope.sourceId,
   });
-  return { assignment, state: "assigned" };
+  const summary =
+    "Crawl Assignment prepared; crawling and reconciliation have not run.";
+  const result: AtlasIngestPlanResult = Object.freeze({
+    "operation-result-schema": operationResultSchemaVersion,
+    completion: "completed",
+    disposition: "success",
+    operation: ingestOperationIdentity,
+    payload: Object.freeze({ crawlAssignment: assignment }),
+    handoff: Object.freeze({
+      "operation-handoff-schema": operationHandoffSchemaVersion,
+      baseSnapshot: Object.freeze({
+        reason: "Planning does not read an Atlas snapshot.",
+        state: "not-applicable",
+      }),
+      degradationState: Object.freeze({
+        reason: "Planning requires no Atlas or connected Source access.",
+        state: "not-degraded",
+      }),
+      homeAtlas: Object.freeze({
+        reason: "Planning does not select an Atlas Host Directory.",
+        state: "not-applicable",
+      }),
+      operation: ingestOperationIdentity,
+      proposedChanges: Object.freeze({
+        reason: "Planning produces a Crawl Assignment, not knowledge changes.",
+        state: "not-applicable",
+      }),
+      recommendedNextAction:
+        "Give payload.crawlAssignment to a read-only Crawler, then submit the returned Candidate Graph through atlas ingest reconcile.",
+      result: Object.freeze({ disposition: "success", summary }),
+      reviewLink: Object.freeze({
+        reason: "Planning does not create an Atlas Proposal.",
+        state: "not-applicable",
+      }),
+      unresolvedHumanDecisions: Object.freeze({
+        state: "none",
+        summary: "The supplied Ingest Scope Approval Attestation passed validation.",
+      }),
+      validationState: Object.freeze({
+        findings: Object.freeze([]),
+        state: "passed",
+      }),
+    }),
+  });
+  return { result, state: "assigned" };
 }
 
 // The Candidate Graph must correspond to the approved Source, not merely parse.
@@ -547,13 +601,9 @@ export function correspondenceRefusalResult(
   );
 }
 
-export function serializeCrawlAssignmentMachineResult(
-  assignment: AtlasIngestCrawlAssignment,
+export function serializeIngestMachineResult(
+  result: AtlasIngestResult | AtlasIngestPlanResult,
 ): string {
-  return `${JSON.stringify(assignment)}\n`;
-}
-
-export function serializeIngestMachineResult(result: AtlasIngestResult): string {
   return `${JSON.stringify(result)}\n`;
 }
 
