@@ -181,7 +181,19 @@ read where that surface can actually occur:
 
 - `ATLAS_*` diagnostic codes and `.atlas/<directory>/` references are read
   anywhere in an SDK-owned source, comments included, because neither shape
-  occurs in ordinary English.
+  occurs in ordinary English. Extensionless directory references without a
+  trailing separator are included; root filenames such as `.atlas/index.md`
+  are not treated as directories.
+- Directory literals are checked as decoded values, including escaped and
+  Windows path spellings. Computed references follow `const` declarations,
+  aliases, and imports from the supplied contract set through templates,
+  concatenation, and imported Node path `join`/`resolve` calls. Lexical scopes
+  and shadowing are respected. Known directory segments remain checked beneath
+  an unknown runtime host path, but unknown directory values are not guessed.
+  Constant lookup uses an on-demand, memory-backed TypeScript program: it
+  neither executes source expressions nor reads additional filesystem modules.
+  Plain literal locations retain their exact token range; a decoded or composed
+  value that cannot be mapped directly points to its containing expression.
 - Page-ID prefixes, Atlas page types, Finding messages, and generated prompt
   fragments in TypeScript are read only inside
   string and template literals, because those shapes do occur in
@@ -202,15 +214,25 @@ read where that surface can actually occur:
   argument of a module call is exempt; computed expressions, nested strings,
   additional arguments, and unrelated methods such as `Buffer.from("…")` remain
   scanned. Prompt text that merely quotes `import` or `from` is not module syntax.
-  Exempt spans alone are blanked for diagnostic/directory scans, preserving their
-  original UTF-16 lengths; literal scanning uses the original AST and bytes.
+  Exempt spans are blanked for whole-source scans, preserving their original
+  UTF-16 lengths. Directory literals and resolved expressions are additionally
+  blanked after value-based inspection to avoid reporting their raw spelling
+  again; other literal scanning uses the original AST and bytes.
   A `node:` string reached any other way is not exempt and can be reported as an
   undeclared page-ID prefix.
-- A source longer than 1 MiB is reported rather than scanned, so no one
-  contract can spend a whole continuous integration run.
+- A source longer than 1,048,576 UTF-16 code units is reported rather than scanned.
+  Constant analysis also refuses dependency depth of 128 or more and cumulative
+  concatenation exceeding 1,048,576 code units per file, reporting
+  `ATLAS_VOCABULARY_PATH_ANALYSIS_LIMIT` instead of silently skipping exhausted
+  analysis. Cyclic or otherwise nonconstant expressions remain unresolved,
+  without execution.
 
 A directory name or page-ID prefix must resolve to a glossary term or to a
-directory Atlas SDK reserves without one. A term listed in an unqualified
+directory Atlas SDK reserves without one. The directory exceptions are exactly
+`types` and `atlas-cache`; invented fallback directories are not exceptions.
+Structural parse failures without a readable record path use `.atlas` as their
+diagnostic scope.
+A term listed in an unqualified
 `_Avoid_` entry is rejected in the identifier surfaces above and as a capitalized word or phrase
 in a Finding message or prompt fragment, including the opening word. Ordinary
 lowercase message text such as `"Atlas SDK requires a bonfire page here."`

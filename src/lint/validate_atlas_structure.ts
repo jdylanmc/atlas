@@ -986,7 +986,7 @@ function compareFindings(left: Finding, right: Finding): number {
 }
 
 function capturePageRecord(input: AtlasTextFile): AtlasTextFile | Finding | undefined {
-  let path = ".atlas/unknown";
+  let path = ".atlas";
   try {
     const candidatePath = (input as { readonly path?: unknown }).path;
     if (typeof candidatePath !== "string") throw new TypeError();

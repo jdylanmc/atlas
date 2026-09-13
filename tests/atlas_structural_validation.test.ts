@@ -622,10 +622,10 @@ test("sanitizes hostile captured records without accepting stale parse results",
   assert.deepEqual(
     findings.map(({ code, path }) => ({ code, path })),
     [
+      { code: "ATLAS_PAGE_PARSE_FAILED", path: ".atlas" },
+      { code: "ATLAS_PAGE_PARSE_FAILED", path: ".atlas" },
       { code: "ATLAS_PAGE_PARSE_FAILED", path: ".atlas/concepts/hostile.md" },
       { code: "ATLAS_PAGE_PARSE_FAILED", path: ".atlas/concepts/non-text.md" },
-      { code: "ATLAS_PAGE_PARSE_FAILED", path: ".atlas/unknown" },
-      { code: "ATLAS_PAGE_PARSE_FAILED", path: ".atlas/unknown" },
     ],
   );
   assert.equal(JSON.stringify(findings).includes("secret hostile"), false);
