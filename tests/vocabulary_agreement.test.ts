@@ -401,7 +401,7 @@ test("a contract rename that leaves the glossary behind names both sides", () =>
   });
 });
 
-test("a term spells its own directory, however that term pluralizes", () => {
+test("a supported consonant-y term prescribes its registered directory spelling", () => {
   const lines = [
     "# Atlas SDK",
     "",
@@ -438,6 +438,38 @@ test("a term spells its own directory, however that term pluralizes", () => {
   );
 });
 
+test("unsupported directory plurals are refused without prescribing a misspelling", () => {
+  const findings = validate(
+    {
+      Child: {
+        diagnosticStem: "CHILD",
+        directory: "children",
+        idPrefix: "child",
+        pageType: "child",
+      },
+    },
+    [],
+    ["**Child**:", "A child record."],
+  );
+
+  assert.deepEqual(
+    findings.map((entry) => entry.code),
+    ["ATLAS_VOCABULARY_TERM_UNSUPPORTED"],
+  );
+  const first = findings[0];
+  assert.ok(first);
+  assert.equal(first.severity, "error");
+  assert.deepEqual(first.attribution, {
+    checkId: "sdk-core.vocabulary-agreement",
+    kind: "sdk-core",
+    trusted: true,
+  });
+  assert.equal(
+    findings.some((entry) => entry.message.includes("childs")),
+    false,
+  );
+});
+
 test("a term Atlas SDK cannot spell is refused before it is bound", () => {
   assert.deepEqual(
     summarize(
@@ -461,7 +493,7 @@ test("a term Atlas SDK cannot spell is refused before it is bound", () => {
     ),
     [
       'ATLAS_VOCABULARY_TERM_UNDEFINED Atlas SDK contracts bind the term "Waypoint", which CONTEXT.md does not define.',
-      'ATLAS_VOCABULARY_TERM_UNSUPPORTED Atlas SDK contracts bind the term "Atlas Policy", which is not one capitalized word.',
+      'ATLAS_VOCABULARY_TERM_UNSUPPORTED Atlas SDK contracts bind the term "Atlas Policy", which is not a capitalized word or PascalCase compound.',
     ],
   );
 });

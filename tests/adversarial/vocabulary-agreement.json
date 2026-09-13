@@ -3,6 +3,287 @@
   "reviewResolutionRule": "A review finding is resolved only after this corpus has a reject or accept case that exercises it.",
   "cases": [
     {
+      "name": "preserve avoidance aliases independently of supported directory prescriptions",
+      "expectation": "reject",
+      "codes": [
+        "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
+        "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
+        "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED",
+        "ATLAS_VOCABULARY_IDENTIFIER_AVOIDED"
+      ],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "glossaryAvoidance": "_Avoid_: Class, Branch, Brush, Policy",
+        "source": "const a = \".atlas/classes/a.md\", b = \".atlas/branches/b.md\", c = \".atlas/brushes/c.md\", d = \".atlas/policies/d.md\";"
+      }
+    },
+    {
+      "name": "reject an unsupported irregular Child plural without prescribing childs",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_TERM_UNSUPPORTED"],
+      "messages": ["Child", "without a supported plural spelling"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "archetypeBindings": {
+          "Child": {
+            "diagnosticStem": "CHILD",
+            "directory": "children",
+            "idPrefix": "child",
+            "pageType": "child"
+          }
+        },
+        "glossaryTerm": "**Child**:\nA child record.",
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "export {};"
+      }
+    },
+    {
+      "name": "reject the old guessed childs spelling even when the binding supplies it",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_TERM_UNSUPPORTED"],
+      "messages": ["Child", "without a supported plural spelling"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "archetypeBindings": {
+          "Child": {
+            "diagnosticStem": "CHILD",
+            "directory": "childs",
+            "idPrefix": "child",
+            "pageType": "child"
+          }
+        },
+        "glossaryTerm": "**Child**:\nA child record.",
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "export {};"
+      }
+    },
+    {
+      "name": "reject a compound with an unsupported terminal word",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_TERM_UNSUPPORTED"],
+      "messages": ["LocalChild", "without a supported plural spelling"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "archetypeBindings": {
+          "LocalChild": {
+            "diagnosticStem": "LOCAL_CHILD",
+            "directory": "local-children",
+            "idPrefix": "local-child",
+            "pageType": "local-child"
+          }
+        },
+        "glossaryTerm": "**LocalChild**:\nA child record.",
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "export {};"
+      }
+    },
+    {
+      "name": "reject an unregistered apparently regular word rather than infer English",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_TERM_UNSUPPORTED"],
+      "messages": ["Widget", "without a supported plural spelling"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "archetypeBindings": {
+          "Widget": {
+            "diagnosticStem": "WIDGET",
+            "directory": "widgets",
+            "idPrefix": "widget",
+            "pageType": "widget"
+          }
+        },
+        "glossaryTerm": "**Widget**:\nA synthetic record.",
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "export {};"
+      }
+    },
+    {
+      "name": "reject an unsupported sibilant requiring consonant doubling",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_TERM_UNSUPPORTED"],
+      "messages": ["Quiz", "without a supported plural spelling"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "archetypeBindings": {
+          "Quiz": {
+            "diagnosticStem": "QUIZ",
+            "directory": "quizzes",
+            "idPrefix": "quiz",
+            "pageType": "quiz"
+          }
+        },
+        "glossaryTerm": "**Quiz**:\nA quiz record.",
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "export {};"
+      }
+    },
+    {
+      "name": "reject an unsupported analysis inflection",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_TERM_UNSUPPORTED"],
+      "messages": ["Analysis", "without a supported plural spelling"],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "archetypeBindings": {
+          "Analysis": {
+            "diagnosticStem": "ANALYSIS",
+            "directory": "analyses",
+            "idPrefix": "analysis",
+            "pageType": "analysis"
+          }
+        },
+        "glossaryTerm": "**Analysis**:\nAn analysis record.",
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "export {};"
+      }
+    },
+    {
+      "name": "accept the supported Index directory spelling",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "archetypeBindings": {
+          "Index": {
+            "diagnosticStem": "INDEX",
+            "directory": "indexes",
+            "idPrefix": "index",
+            "pageType": "index"
+          }
+        },
+        "glossaryTerm": "**Index**:\nAn index record.",
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "export {};"
+      }
+    },
+    {
+      "name": "reject an obsolete sibilant spelling for a supported term",
+      "expectation": "reject",
+      "codes": ["ATLAS_VOCABULARY_IDENTIFIER_MISMATCH"],
+      "messages": ["indexs", "requires \"indexes\""],
+      "gate": "vocabulary-agreement",
+      "input": {
+        "archetypeBindings": {
+          "Index": {
+            "diagnosticStem": "INDEX",
+            "directory": "indexs",
+            "idPrefix": "index",
+            "pageType": "index"
+          }
+        },
+        "glossaryTerm": "**Index**:\nAn index record.",
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "export {};"
+      }
+    },
+    {
+      "name": "accept the supported Class directory spelling",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "archetypeBindings": {
+          "Class": {
+            "diagnosticStem": "CLASS",
+            "directory": "classes",
+            "idPrefix": "class",
+            "pageType": "class"
+          }
+        },
+        "glossaryTerm": "**Class**:\nA class record.",
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "export {};"
+      }
+    },
+    {
+      "name": "accept the supported Branch directory spelling",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "archetypeBindings": {
+          "Branch": {
+            "diagnosticStem": "BRANCH",
+            "directory": "branches",
+            "idPrefix": "branch",
+            "pageType": "branch"
+          }
+        },
+        "glossaryTerm": "**Branch**:\nA branch record.",
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "export {};"
+      }
+    },
+    {
+      "name": "accept the supported Status directory spelling",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "archetypeBindings": {
+          "Status": {
+            "diagnosticStem": "STATUS",
+            "directory": "statuses",
+            "idPrefix": "status",
+            "pageType": "status"
+          }
+        },
+        "glossaryTerm": "**Status**:\nA status record.",
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "export {};"
+      }
+    },
+    {
+      "name": "accept the supported Atlas directory spelling",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "archetypeBindings": {
+          "Atlas": {
+            "diagnosticStem": "ATLAS",
+            "directory": "atlases",
+            "idPrefix": "atlas",
+            "pageType": "atlas"
+          }
+        },
+        "glossaryTerm": "**Atlas**:\nAn Atlas record.",
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "export {};"
+      }
+    },
+    {
+      "name": "accept the supported consonant-y Policy spelling",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "archetypeBindings": {
+          "Policy": {
+            "diagnosticStem": "POLICY",
+            "directory": "policies",
+            "idPrefix": "policy",
+            "pageType": "policy"
+          }
+        },
+        "glossaryTerm": "**Policy**:\nA policy record.",
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "export {};"
+      }
+    },
+    {
+      "name": "accept a compound using a supported terminal plural",
+      "expectation": "accept",
+      "gate": "vocabulary-agreement",
+      "input": {
+        "archetypeBindings": {
+          "LocalPolicy": {
+            "diagnosticStem": "LOCAL_POLICY",
+            "directory": "local-policies",
+            "idPrefix": "local-policy",
+            "pageType": "local-policy"
+          }
+        },
+        "glossaryTerm": "**LocalPolicy**:\nA policy record.",
+        "glossaryAvoidance": "_Avoid_: Bonfire",
+        "source": "export {};"
+      }
+    },
+    {
       "name": "reject a declared root beneath an unknown template host",
       "expectation": "reject",
       "codes": ["ATLAS_VOCABULARY_IDENTIFIER_UNDECLARED"],

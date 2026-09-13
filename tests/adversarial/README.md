@@ -17,6 +17,16 @@ Partial-value cases preserve known directories around runtime hosts and filename
 without guessing unknown names. Comment and nested-literal cases prevent folding
 from hiding other contract references.
 
+Plural-prescription cases supply optional `archetypeBindings` alongside the
+baseline Anchor binding. They refuse unsupported irregular, compound and
+apparently regular words without guessing a directory, preserve the explicitly
+supported sibilant and consonant-y spellings, and reject stale misspellings.
+Directory prescriptions use the closed `directoryPlurals` table in
+`src/lint/validate_vocabulary_agreement.ts`; adding a terminal word requires an
+explicit spelling and a corresponding acceptance case. This is a bounded SDK
+naming capability, not a general English inflector. Existing mechanical
+avoidance aliases remain separate from authoritative directory prescriptions.
+
 Changelog-capacity cases in `atlas-cli.json` generate committed UTF-8 history
 with a byte-order mark at and one byte below the default warning threshold.
 They require a visible warning without invalidity at the threshold, no warning
