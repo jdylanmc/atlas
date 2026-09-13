@@ -21,7 +21,7 @@ export const atlasChangelogPath = ".atlas/CHANGELOG.md";
 // `\u0085` is NEL, and `\u000b`/`\u000c` are vertical tab and form feed. A string
 // of the break characters is used rather than a regular expression so the
 // definition stays exhaustive without embedding control characters in a pattern.
-const lineBreakCharacters = "\n\r\u000b\u000c\u0085\u2028\u2029";
+export const lineBreakCharacters = "\n\r\u000b\u000c\u0085\u2028\u2029";
 
 /** True when the value contains any character that could begin a new line. */
 export function containsLineBreak(value: string): boolean {

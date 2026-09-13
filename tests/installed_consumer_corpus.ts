@@ -9,6 +9,19 @@ interface InstalledConsumerCase {
   readonly expectedRootAnchorId: string;
   readonly expectedAtlasPaths: readonly string[];
   readonly unmergedLintCode: string;
+  readonly repeatedEmptyEdges?: {
+    readonly maxRawBytes: number;
+    readonly maxHeapMiB: number;
+    readonly expectedFields: readonly string[];
+  };
+  readonly inputContracts?: readonly {
+    readonly name: "ingest-scope" | "ingest-request" | "governance-request";
+    readonly arguments: readonly string[];
+    readonly input: unknown;
+    readonly expectedPaths: readonly string[];
+    readonly expectedCodes: readonly string[];
+    readonly expectedRequired: readonly string[];
+  }[];
   readonly ingestPlan?: readonly (
     | {
         readonly expectation: "accept";
@@ -77,6 +90,33 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
           assert.equal(probe.expectation, "reject");
           assert.ok(Number.isInteger(probe.expectedExit) && probe.expectedExit > 0);
           assert.match(probe.expectedCode, /^ATLAS_[A-Z_]+$/u);
+        }
+        if (entry.inputContracts !== undefined) {
+          assert.ok(entry.inputContracts.length > 0);
+          for (const probe of entry.inputContracts) {
+            assert.ok(
+              ["ingest-scope", "ingest-request", "governance-request"].includes(
+                probe.name,
+              ),
+            );
+            assert.ok(Object.hasOwn(probe, "input"));
+            for (const values of [
+              probe.arguments,
+              probe.expectedPaths,
+              probe.expectedCodes,
+              probe.expectedRequired,
+            ]) {
+              assert.ok(Array.isArray(values) && values.length > 0);
+              for (const value of values) assert.equal(typeof value, "string");
+            }
+            if (entry.repeatedEmptyEdges !== undefined) {
+              assert.equal(entry.repeatedEmptyEdges.maxRawBytes, 1_048_576);
+              assert.equal(entry.repeatedEmptyEdges.maxHeapMiB, 256);
+              assert.ok(entry.repeatedEmptyEdges.expectedFields.length > 0);
+              for (const field of entry.repeatedEmptyEdges.expectedFields)
+                assert.equal(typeof field, "string");
+            }
+          }
         }
       }
     }

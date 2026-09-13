@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { InputContractResult } from "../src/interfaces/input_contract_command.ts";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -384,10 +385,11 @@ function runInstalled(
   consumer: string,
   guard: string,
   arguments_: readonly string[],
+  nodeArguments: readonly string[] = [],
 ): InstalledCommandResult {
   const result = spawnSync(
     process.execPath,
-    [join(consumer, "node_modules", ".bin", "atlas"), ...arguments_],
+    [...nodeArguments, join(consumer, "node_modules", ".bin", "atlas"), ...arguments_],
     {
       cwd: consumer,
       encoding: "utf8",
@@ -476,6 +478,141 @@ for (const entry of readInstalledConsumerCorpus().cases) {
       const base = consumerGit(consumer, ["rev-parse", "HEAD"]);
       const beforePlan = consumerGit(consumer, ["status", "--porcelain"]);
       const branchesBeforePlan = consumerGit(consumer, ["branch", "--list"]);
+      if (entry.repeatedEmptyEdges !== undefined) {
+        const probe = entry.repeatedEmptyEdges;
+        const empty = JSON.stringify({
+          "ingest-request-schema": "1.0.0",
+          scope: {},
+          candidateGraph: {
+            "candidate-graph-schema": "1.0.0",
+            concepts: [],
+            disputes: [],
+            edges: [],
+            sources: [],
+          },
+        });
+        const count = Math.floor(
+          (probe.maxRawBytes - Buffer.byteLength(empty) + 1) / 3,
+        );
+        const json = empty.replace(
+          '"edges":[]',
+          `"edges":[${Array<string>(count).fill("{}").join(",")}]`,
+        );
+        assert.ok(Buffer.byteLength(json) <= probe.maxRawBytes);
+        const inputPath = join(workspace, "maximum-malformed-input.json");
+        writeFileSync(inputPath, json.padEnd(probe.maxRawBytes, " "));
+        const refused = runInstalled(
+          consumer,
+          guard,
+          ["ingest", "reconcile", "--machine", "--ingest-request", inputPath],
+          [`--max-old-space-size=${String(probe.maxHeapMiB)}`],
+        );
+        assert.equal(refused.status, 64, refused.stderr);
+        const result = parseMachineOperationResult(refused.stdout);
+        const messages = result.handoff.validationState.findings.flatMap(
+          ({ message }) => message.split("\n"),
+        );
+        assert.equal(messages.length, probe.expectedFields.length + 10);
+        for (const field of probe.expectedFields) {
+          assert.ok(
+            messages.some((message) =>
+              message.startsWith(
+                `request.candidateGraph.edges[0..${String(count - 1)}].${field} `,
+              ),
+            ),
+            field,
+          );
+        }
+        assert.equal(consumerGit(consumer, ["rev-parse", "HEAD"]), base);
+        assert.equal(consumerGit(consumer, ["branch", "--list"]), branchesBeforePlan);
+        assert.equal(consumerGit(consumer, ["status", "--porcelain"]), beforePlan);
+        assert.equal(existsSync(join(consumer, ".atlas")), false);
+      }
+      let principleExample:
+        { readonly path: string; readonly content: string } | undefined;
+      if (entry.inputContracts !== undefined) {
+        const usage = runInstalled(consumer, guard, []);
+        assert.equal(usage.status, 64);
+        assert.match(
+          parseMachineOperationResult(usage.stdout).handoff.recommendedNextAction,
+          /input-contract/u,
+        );
+        const discovery = runInstalled(consumer, guard, [
+          "input-contract",
+          "--machine",
+        ]);
+        assert.equal(discovery.status, 64);
+        const available = parseMachineOperationResult(discovery.stdout).handoff
+          .recommendedNextAction;
+        for (const probe of entry.inputContracts) {
+          assert.ok(available.includes(probe.name));
+          const described = runInstalled(consumer, guard, [
+            "input-contract",
+            "--machine",
+            probe.name,
+          ]);
+          assert.equal(described.status, 0, described.stdout);
+          assert.equal(described.stderr, "");
+          const document = parseMachineOperationResult(
+            described.stdout,
+          ) as InputContractResult;
+          assert.equal(document.operation.kind, "input-contract");
+          assert.equal(document.completion, "completed");
+          assert.equal(document.disposition, "success");
+          assert.equal(document.handoff.homeAtlas.state, "not-applicable");
+          assert.equal(document.handoff.baseSnapshot.state, "not-applicable");
+          assert.equal(document.handoff.proposedChanges.state, "not-applicable");
+          assert.ok(document.payload.state === "completed");
+          const contract = document.payload.contract;
+          assert.equal(contract.name, probe.name);
+          assert.equal(
+            contract.schema.$schema,
+            "https://json-schema.org/draft/2020-12/schema",
+          );
+          assert.deepEqual(contract.schema["required"], probe.expectedRequired);
+          assert.equal(contract.maxFileBytes, 1_048_576);
+          if (probe.name === "governance-request") {
+            assert.ok(contract.principleExample);
+            assert.match(contract.principleExample.notice, /not approval/u);
+            principleExample = contract.principleExample;
+          }
+          const inputPath = join(workspace, `${probe.name}-invalid.json`);
+          writeFileSync(inputPath, JSON.stringify(probe.input));
+          const refused = runInstalled(consumer, guard, [
+            ...probe.arguments,
+            inputPath,
+          ]);
+          assert.equal(refused.status, 64, refused.stdout);
+          assert.equal(refused.stderr, "");
+          const refusal = parseMachineOperationResult(refused.stdout);
+          assert.equal(refusal.completion, "not-completed");
+          const findings = refusal.handoff.validationState.findings;
+          assert.deepEqual(
+            findings.map(({ code }) => code),
+            probe.expectedCodes,
+          );
+          const invalid = findings.filter(({ code }) =>
+            code.endsWith("_INPUT_INVALID"),
+          );
+          const messages = invalid.flatMap(({ message }) => message.split("\n"));
+          assert.equal(messages.length, probe.expectedPaths.length);
+          for (const path of probe.expectedPaths) {
+            assert.ok(
+              messages.some((message) => message.startsWith(`${path} `)),
+              path,
+            );
+          }
+          assert.ok(
+            refusal.handoff.recommendedNextAction.includes(
+              `atlas input-contract --machine ${probe.name}`,
+            ),
+          );
+        }
+        assert.equal(consumerGit(consumer, ["rev-parse", "HEAD"]), base);
+        assert.equal(consumerGit(consumer, ["branch", "--list"]), branchesBeforePlan);
+        assert.equal(consumerGit(consumer, ["status", "--porcelain"]), beforePlan);
+        assert.equal(existsSync(join(consumer, ".atlas")), false);
+      }
       for (const probe of entry.ingestPlan ?? []) {
         const scopePath = join(workspace, probe.scopeFixture);
         writeFileSync(
@@ -619,6 +756,69 @@ for (const entry of readInstalledConsumerCorpus().cases) {
       const [firstResult] = exploreResult.payload.results;
       assert.ok(firstResult !== undefined);
       assert.equal(firstResult.route[0]?.objectId, entry.expectedRootAnchorId);
+      if (principleExample !== undefined) {
+        const fields = {
+          "governance-request-schema": "1.0.0" as const,
+          action: "create" as const,
+          subject: "principle" as const,
+          changelog:
+            "Created the fixture Quality Principle from the CLI authoring reference.",
+          changes: [
+            {
+              path: principleExample.path,
+              content: principleExample.content.replaceAll(
+                "Example Maintainer",
+                "Fixture Maintainer",
+              ),
+            },
+          ],
+        };
+        const operation = governanceAttestationOperation(fields);
+        const nonce = "installed-cli-authoring-reference";
+        const requestPath = join(workspace, "documented-principle.json");
+        writeFileSync(
+          requestPath,
+          JSON.stringify({
+            ...fields,
+            attestation: {
+              "approval-attestation-schema": "1.0.0",
+              approvedAt: "2026-08-22T00:00:00Z",
+              approver: "Fixture Maintainer",
+              nonce,
+              operation,
+              payloadDigest: attestationPayloadDigest(
+                operation,
+                nonce,
+                governanceAttestationPayload(fields),
+              ),
+            },
+          }),
+        );
+        const governed = runInstalled(consumer, guard, [
+          "govern",
+          "--machine",
+          "--request",
+          requestPath,
+          "--atlas-host-directory",
+          consumer,
+        ]);
+        assert.equal(governed.status, 0, governed.stdout);
+        assert.equal(governed.stderr, "");
+        const result = parseMachineOperationResult(
+          governed.stdout,
+        ) as AtlasGovernanceResult;
+        assert.equal(result.completion, "completed");
+        assert.equal(result.disposition, "success");
+        const proposedBranch = result.payload.workflowState.proposalBranch;
+        const proposedPage = consumerGit(consumer, [
+          "show",
+          `${proposedBranch}:${principleExample.path}`,
+        ]);
+        assert.match(proposedPage, /id: principle:quality/u);
+        assert.match(proposedPage, /## Amendments/u);
+        assert.equal(consumerGit(consumer, ["rev-parse", "HEAD"]), proposal);
+        assert.equal(consumerGit(consumer, ["status", "--porcelain"]), "");
+      }
       if (entry.governance !== undefined) {
         const fields = {
           "governance-request-schema": "1.0.0" as const,
