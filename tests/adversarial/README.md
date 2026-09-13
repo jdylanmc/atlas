@@ -26,6 +26,13 @@ Explore runs before and after the capacity fixture is committed, requiring
 unchanged reachable IDs/routes, complete structure and passed validation while
 Lint retains its maintenance warning.
 
+The `explore-ranking` cases also resolve route `reanchorIndex` references
+against the emitted checkpoint table. Literal expected Anchor IDs cover the
+SDK Atlas and the complete fixture's Root -> Lint Anchor -> Concept route,
+including the entry step's absent reference and the incoming-hop checkpoint
+at an Anchor transition. Missing, dangling, negative or incorrect references
+fail the black-box CLI gate.
+
 The `installed-consumer` gate is registered and its data validated in
 `tests/adversarial_corpus.test.ts`, but its cases execute in
 `tests/package_consumability.test.ts` alongside the other packing tests.

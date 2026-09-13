@@ -965,6 +965,18 @@ test("Explore crosses to the tracked Atlas Root Anchor, re-anchors, and preserve
     result.payload.reanchors.map((entry) => entry.anchor.snapshot?.slug),
     ["local-home-atlas", trackedSlug],
   );
+  assert.deepEqual(
+    firstResult.route.map((step) => [
+      step.objectId,
+      step.snapshot?.snapshot,
+      step.reanchorIndex,
+    ]),
+    [
+      ["anchor:root", "home-sha", undefined],
+      ["anchor:root", "tracked-sha", 0],
+      ["concept:answer", "tracked-sha", 1],
+    ],
+  );
   assert.ok(firstResult.citedContext[1]?.snapshot);
   assert.equal(firstResult.citedContext[1].snapshot.slug, trackedSlug);
   assert.equal(

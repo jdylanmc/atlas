@@ -12,17 +12,18 @@ import { extractAtlasPrincipleActiveTruths } from "../domain/atlas_principle.ts"
 import type { Finding } from "../domain/finding.ts";
 import { parseTrackedAtlas, type TrackedAtlas } from "../domain/tracked_atlas.ts";
 import { loadAndValidateAtlasInput } from "../lint/validate_atlas_input.ts";
-import type {
-  ExploreBudgets,
-  ExploreCandidate,
-  ExplorePayload,
-  ExploreReanchor,
-  ExploreResultItem,
-  ExploreRouteStep,
-  ExploreSearchDocument,
-  ExploreSnapshotContext,
-  ExploreSourceContext,
-  SearchProvider,
+import {
+  createReanchorRouteLinker,
+  type ExploreBudgets,
+  type ExploreCandidate,
+  type ExplorePayload,
+  type ExploreReanchor,
+  type ExploreResultItem,
+  type ExploreRouteStep,
+  type ExploreSearchDocument,
+  type ExploreSnapshotContext,
+  type ExploreSourceContext,
+  type SearchProvider,
 } from "../graph/explore_atlas.ts";
 
 export interface ResolvedTrackedAtlasSnapshot {
@@ -700,6 +701,7 @@ export function exploreConnectedAtlas(
   const documents = graphDocuments(built.nodes);
   const candidates = rankDocuments(provider, documents, query, budgets);
   const discovered = discoverRoutes(root, adjacency, built.nodeByKey, query, budgets);
+  const linkReanchors = createReanchorRouteLinker(discovered.reanchors);
   const results: ExploreResultItem[] = [];
   for (const candidate of candidates) {
     const node = built.nodeByKey.get(candidate.objectId);
@@ -716,7 +718,7 @@ export function exploreConnectedAtlas(
           ...sourceContext(node, budgets.maxContextCharacters),
           type: node.object.type,
         }),
-        route: Object.freeze(
+        route: linkReanchors(
           route.nodes.map((key, index) => {
             const stepNode = built.nodeByKey.get(key) as ResolvedNode;
             return routeStep(

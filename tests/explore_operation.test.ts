@@ -201,7 +201,7 @@ function graphAtlas(): CapturedAtlasFile[] {
   ];
 }
 
-test("single-Atlas Explore output remains byte-identical for the complete fixture", () => {
+test("single-Atlas Explore serializes the checkpoint-linked fixture deterministically", () => {
   const result = runExploreOperation({
     baseSnapshot: {
       reference: "0123456789abcdef0123456789abcdef01234567",
@@ -306,6 +306,37 @@ test("cyclic Edges terminate and preserve independently reachable results", () =
       ["anchor:root", "anchor:b", "concept:independent"],
     ],
   );
+  assert.deepEqual(
+    result.results.map((entry) => entry.route.map((step) => step.reanchorIndex)),
+    [
+      [undefined, 0, 1],
+      [undefined, 0, 1],
+      [undefined, 0, 2],
+    ],
+  );
+});
+
+test("Re-anchor references persist across Concept hops without adopting another route's checkpoint", () => {
+  const result = exploreCaptured(
+    graphAtlas().filter((file) => file.path !== ".atlas/edges/a-target.md"),
+    "needle",
+  );
+  const target = result.results.find((entry) => entry.result.id === "concept:target");
+  assert.ok(target);
+  assert.deepEqual(
+    target.route.map((step) => [step.objectId, step.reanchorIndex]),
+    [
+      ["anchor:root", undefined],
+      ["anchor:a", 0],
+      ["concept:other", 1],
+      ["concept:target", 1],
+    ],
+  );
+  assert.deepEqual(
+    result.reanchors.map((checkpoint) => checkpoint.anchor.id),
+    ["anchor:root", "anchor:a", "anchor:b"],
+  );
+  assert.equal(result.reanchors[1]?.governingTruths[0]?.truthId, "truth:one");
 });
 
 test("Root Anchor catalogs otherwise unreachable non-Anchor pages", () => {
