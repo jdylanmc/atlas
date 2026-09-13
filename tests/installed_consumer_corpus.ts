@@ -123,6 +123,15 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
         assert.ok(Array.isArray(entry.retirement.semanticVerdicts));
         assert.ok(entry.retirement.semanticVerdicts.length > 0);
       }
+      if (entry.retirement.wrongPolicyVerdict !== undefined) {
+        assert.equal(entry.retirement.subject, "atlas-policy");
+        assert.ok(entry.retirement.wrongPolicyVerdict.length > 0);
+        assert.ok(entry.retirement.semanticVerdicts !== undefined);
+      }
+      if (entry.retirement.opaqueExamples !== undefined) {
+        assert.ok(entry.retirement.opaqueExamples.governor.length > 0);
+        assert.ok(entry.retirement.opaqueExamples.documentId.length > 0);
+      }
     }
     if (entry.readinessArtifacts !== undefined) {
       assert.ok(entry.readinessArtifacts.headings.length > 0);

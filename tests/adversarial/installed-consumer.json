@@ -931,6 +931,198 @@
       }
     },
     {
+      "name": "retire binds a quoted SDK ID to the actual Policy verdict rather than its raw spelling",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "retire",
+        "subject": "atlas-policy",
+        "fixture": "retirement-quoted-policy.md",
+        "path": ".atlas/types/policy/retirement.md",
+        "reason": "The fixture publication workflow is obsolete.",
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "wrongPolicyVerdict": "\"policy:retirement\"",
+        "semanticVerdicts": [
+          {
+            "policyId": "policy:retirement",
+            "verdict": "pass",
+            "evidence": [".atlas/index.md#L1"],
+            "challenge": {
+              "position": "agree",
+              "argument": "The retained Root Anchor supplies the fixture Atlas context.",
+              "evidence": [".atlas/index.md#L1"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "delete binds a quoted SDK ID to the actual Policy verdict rather than its raw spelling",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "delete",
+        "subject": "atlas-policy",
+        "fixture": "retirement-quoted-policy.md",
+        "path": ".atlas/types/policy/retirement.md",
+        "reason": "The fixture publication workflow is obsolete.",
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "wrongPolicyVerdict": "\"policy:retirement\"",
+        "semanticVerdicts": [
+          {
+            "policyId": "policy:retirement",
+            "verdict": "pass",
+            "evidence": [".atlas/index.md#L1"],
+            "challenge": {
+              "position": "agree",
+              "argument": "The retained Root Anchor supplies the fixture Atlas context.",
+              "evidence": [".atlas/index.md#L1"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "retire ignores an earlier Atlas metadata ID when binding the removed Policy verdict",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "retire",
+        "subject": "atlas-policy",
+        "fixture": "retirement-metadata-first-policy.md",
+        "path": ".atlas/types/policy/retirement.md",
+        "reason": "The fixture publication workflow is obsolete.",
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "wrongPolicyVerdict": "policy:other",
+        "semanticVerdicts": [
+          {
+            "policyId": "policy:retirement",
+            "verdict": "pass",
+            "evidence": [".atlas/index.md#L1"],
+            "challenge": {
+              "position": "agree",
+              "argument": "The retained Root Anchor supplies the fixture Atlas context.",
+              "evidence": [".atlas/index.md#L1"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "delete ignores an earlier Atlas metadata ID when binding the removed Policy verdict",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "delete",
+        "subject": "atlas-policy",
+        "fixture": "retirement-metadata-first-policy.md",
+        "path": ".atlas/types/policy/retirement.md",
+        "reason": "The fixture publication workflow is obsolete.",
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "wrongPolicyVerdict": "policy:other",
+        "semanticVerdicts": [
+          {
+            "policyId": "policy:retirement",
+            "verdict": "pass",
+            "evidence": [".atlas/index.md#L1"],
+            "challenge": {
+              "position": "agree",
+              "argument": "The retained Root Anchor supplies the fixture Atlas context.",
+              "evidence": [".atlas/index.md#L1"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "retire preserves opaque Concept and Edge examples without promoting them into live dependencies",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "retire",
+        "subject": "principle",
+        "fixture": "retirement-principle.md",
+        "path": ".atlas/principles/retirement.md",
+        "reason": "The fixture rule is obsolete.",
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "opaqueExamples": {
+          "governor": "retirement-v1",
+          "documentId": "principle:retirement"
+        }
+      }
+    },
+    {
+      "name": "delete preserves opaque Concept and Edge examples without promoting them into live dependencies",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "retirement": {
+        "action": "delete",
+        "subject": "principle",
+        "fixture": "retirement-principle.md",
+        "path": ".atlas/principles/retirement.md",
+        "reason": "The fixture rule is obsolete.",
+        "expectedApprover": "Fixture Maintainer",
+        "expectedApprovalDate": "2026-08-22",
+        "opaqueExamples": {
+          "governor": "retirement-v1",
+          "documentId": "principle:retirement"
+        }
+      }
+    },
+    {
       "name": "delete refuses an isolated cited Edge to a nested Principle with an unprefixed identity until reconciliation",
       "gate": "installed-consumer",
       "expectation": "accept",

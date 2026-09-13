@@ -194,6 +194,133 @@ test("retirement fragments refuse captured identity loss and accept explicit rec
   }
 });
 
+for (const entry of readInstalledConsumerCorpus().cases) {
+  const probe = entry.retirement;
+  if (probe?.wrongPolicyVerdict === undefined) continue;
+  test(`Policy retirement fragment identity: ${entry.name}`, () => {
+    const wrongPolicyId = probe.wrongPolicyVerdict;
+    assert.ok(wrongPolicyId !== undefined && probe.semanticVerdicts !== undefined);
+    const content = readFileSync(
+      new URL(`./fixtures/governance/${probe.fixture}`, import.meta.url),
+      "utf8",
+    );
+    const view = createVirtualAtlasView([
+      { path: root.path, content: new TextDecoder().decode(root.bytes) },
+      { path: probe.path, content },
+    ]);
+    const fields = {
+      action: probe.action,
+      subject: probe.subject,
+      changes: [{ path: probe.path, content: null }],
+      semanticVerdicts: probe.semanticVerdicts,
+    };
+    const accepted = prepareGovernanceFragment(request(fields), view);
+    assert.deepEqual(accepted.findings, []);
+    const rejected = prepareGovernanceFragment(
+      request({
+        ...fields,
+        semanticVerdicts: probe.semanticVerdicts.map((verdict) => ({
+          ...verdict,
+          policyId: wrongPolicyId,
+        })),
+      }),
+      view,
+    );
+    assert.deepEqual(
+      rejected.findings.map(({ code }) => code),
+      [
+        "ATLAS_GOVERNANCE_POLICY_VERDICT_MISSING",
+        "ATLAS_GOVERNANCE_POLICY_VERDICT_UNMATCHED",
+      ],
+    );
+    assert.equal(view.files.get(probe.path), content);
+  });
+}
+
+for (const entry of readInstalledConsumerCorpus().cases) {
+  const probe = entry.retirement;
+  if (probe?.opaqueExamples === undefined) continue;
+  test(`Retirement opaque-record fragment: ${entry.name}`, () => {
+    const examples = probe.opaqueExamples;
+    assert.ok(examples !== undefined);
+    const fixture = (name: string): string =>
+      readFileSync(new URL(`./fixtures/governance/${name}`, import.meta.url), "utf8");
+    const records = [
+      {
+        fixture: "retirement-dependent-concept.md",
+        path: ".atlas/notes/concepts/not-a-page.md",
+      },
+      {
+        fixture: "retirement-dependent-edge.md",
+        path: ".atlas/notes/edges/not-a-page.md",
+      },
+    ].map(({ fixture: name, path }) => ({
+      path,
+      content: fixture(name)
+        .replaceAll("{governor}", examples.governor)
+        .replace("{document-id}", examples.documentId),
+    }));
+    const target = { path: probe.path, content: fixture(probe.fixture) };
+    const draft = request({
+      action: probe.action,
+      changes: [{ path: probe.path, content: null }],
+    });
+    const opaqueView = createVirtualAtlasView([target, ...records]);
+    assert.deepEqual(prepareGovernanceFragment(draft, opaqueView).findings, []);
+    for (const record of records)
+      assert.equal(opaqueView.files.get(record.path), record.content);
+    const liveView = createVirtualAtlasView([
+      target,
+      ...records.map((record) => ({
+        ...record,
+        path: record.path.replace(".atlas/notes/", ".atlas/"),
+      })),
+    ]);
+    assert.deepEqual(
+      prepareGovernanceFragment(draft, liveView).findings.map(({ code }) => code),
+      [
+        "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+        "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+        "ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED",
+      ],
+    );
+  });
+}
+
+test("Policy retirement never invents semantic targets for absent, malformed or wrong-type captures", () => {
+  const path = ".atlas/types/policy/retirement.md";
+  for (const content of [
+    undefined,
+    "id: policy:retirement\n",
+    new TextDecoder().decode(root.bytes),
+  ]) {
+    const view = createVirtualAtlasView([
+      { path: root.path, content: new TextDecoder().decode(root.bytes) },
+      ...(content === undefined ? [] : [{ path, content }]),
+    ]);
+    for (const action of ["retire", "delete"] as const) {
+      const prepared = prepareGovernanceFragment(
+        request({
+          action,
+          subject: "atlas-policy",
+          changes: [{ path, content: null }],
+          semanticVerdicts: semanticVerdict("policy:retirement"),
+        }),
+        view,
+      );
+      for (const expectedCode of [
+        "ATLAS_GOVERNANCE_RETIREMENT_TARGET_INVALID",
+        "ATLAS_GOVERNANCE_POLICY_VERDICT_UNMATCHED",
+      ]) {
+        assert.ok(
+          prepared.findings.some(({ code }) => code === expectedCode),
+          expectedCode,
+        );
+      }
+    }
+  }
+});
+
 test("retirement fragments retain the shared Markdown limits before parsing dependency prose", () => {
   const target = {
     path: ".atlas/principles/retirement.md",

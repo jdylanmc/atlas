@@ -29,6 +29,8 @@ Contradiction metadata and SDK-authored prose must also be reconciled when their
 token belonged to a removed governor, even if a surviving Principle or Policy
 uses the same token. A remaining token match is not proof of the same governor;
 the SDK refuses that ambiguity rather than silently rebinding the claim.
+Only classified live pages participate in these dependency checks; opaque
+records containing page-shaped examples remain opaque and are preserved.
 
 The deterministic command seam for this workflow is `atlas govern --machine
 --request PATH [--atlas-host-directory PATH]`. Author the request as JSON with
@@ -85,6 +87,9 @@ Its `changelog` prose supplies the reason. Approval Attestations bind content;
 they are not cryptographic signatures or proof of the human's identity.
 Atlas Policy retirement still requires its cited semantic verdict and Challenge;
 evidence must remain resolvable after the purge.
+The verdict names the removed Policy's parsed `sdk.id`. YAML quoting and
+unrelated Atlas-owned `id` fields do not change that identity; missing or
+malformed targets never acquire an identity from their path or raw text.
 
 The command changes only its reviewable Atlas Proposal, not the target branch.
 Review the deletion and provenance, then obtain the required human approval

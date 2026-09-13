@@ -28,6 +28,11 @@ export interface GovernanceRetirementProbe {
   readonly expectedApprover: string;
   readonly expectedApprovalDate: string;
   readonly semanticVerdicts?: AtlasGovernanceRequest["semanticVerdicts"];
+  readonly wrongPolicyVerdict?: string;
+  readonly opaqueExamples?: {
+    readonly governor: string;
+    readonly documentId: string;
+  };
   readonly dependency?: {
     readonly kind?: "edge" | "metadata" | "prose";
     readonly survivingPrinciple?: boolean;
@@ -59,7 +64,34 @@ export function exerciseGovernanceRetirement(
   const target = join(repository, probe.path);
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, original, { flag: "wx" });
-  git(["add", "--", probe.path]);
+  const opaqueExamples = probe.opaqueExamples;
+  const preservedOpaque =
+    opaqueExamples === undefined
+      ? []
+      : [
+          {
+            fixture: "retirement-dependent-concept.md",
+            path: ".atlas/notes/concepts/not-a-page.md",
+          },
+          {
+            fixture: "retirement-dependent-edge.md",
+            path: ".atlas/notes/edges/not-a-page.md",
+          },
+        ].map(({ fixture, path }) => ({
+          path,
+          content: readFileSync(
+            new URL(`./fixtures/governance/${fixture}`, import.meta.url),
+            "utf8",
+          )
+            .replaceAll("{governor}", opaqueExamples.governor)
+            .replace("{document-id}", opaqueExamples.documentId),
+        }));
+  for (const example of preservedOpaque) {
+    const path = join(repository, example.path);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, example.content, { flag: "wx" });
+  }
+  git(["add", "--", probe.path, ...preservedOpaque.map(({ path }) => path)]);
   git([
     "-c",
     "user.name=Fixture",
@@ -105,6 +137,58 @@ export function exerciseGovernanceRetirement(
   let survivor: { readonly path: string; readonly content: string } | undefined;
   try {
     writeFileSync(inputPath, JSON.stringify(request));
+    if (probe.wrongPolicyVerdict !== undefined) {
+      const wrongPolicyVerdict = probe.wrongPolicyVerdict;
+      // Keep these fixtures sensitive to the replaced raw-text identity shortcut.
+      assert.equal(/^\s*id:\s*([^\s]+)\s*$/mu.exec(original)?.[1], wrongPolicyVerdict);
+      assert.ok(fields.semanticVerdicts !== undefined);
+      const wrongFields = {
+        ...fields,
+        semanticVerdicts: fields.semanticVerdicts.map((verdict) => ({
+          ...verdict,
+          policyId: wrongPolicyVerdict,
+        })),
+      };
+      const wrongRequest = {
+        ...wrongFields,
+        attestation: {
+          ...request.attestation,
+          payloadDigest: attestationPayloadDigest(
+            operation,
+            nonce,
+            governanceAttestationPayload(wrongFields),
+          ),
+        },
+      };
+      writeFileSync(inputPath, JSON.stringify(wrongRequest));
+      const refused = run([
+        "govern",
+        "--machine",
+        "--atlas-host-directory",
+        repository,
+        "--request",
+        inputPath,
+      ]);
+      assert.equal(refused.status, 1, refused.stdout);
+      const refusal = parseMachineOperationResult(
+        refused.stdout,
+      ) as AtlasGovernanceResult;
+      assert.equal(refusal.completion, "not-completed");
+      for (const code of [
+        "ATLAS_GOVERNANCE_POLICY_VERDICT_MISSING",
+        "ATLAS_GOVERNANCE_POLICY_VERDICT_UNMATCHED",
+      ]) {
+        assert.ok(
+          refusal.handoff.validationState.findings.some((entry) => entry.code === code),
+          refused.stdout,
+        );
+      }
+      assert.deepEqual(refusal.payload.workflowState.effectReceipts, []);
+      assert.equal(git(["rev-parse", "HEAD"]).trim(), before);
+      assert.equal(readFileSync(target, "utf8"), original);
+      assert.equal(git(["branch", "--list", "atlas-governance-*"]).trim(), "");
+      writeFileSync(inputPath, JSON.stringify(request));
+    }
     if (probe.dependency !== undefined) {
       const dependentPaths: string[] = [];
       for (const [fixture, path] of [
@@ -245,6 +329,13 @@ export function exerciseGovernanceRetirement(
     assert.equal(result.completion, "completed");
     const branch = result.payload.workflowState.proposalBranch;
     const proposal = git(["rev-parse", branch]).trim();
+    for (const example of preservedOpaque) {
+      assert.equal(git(["show", `${proposal}:${example.path}`]), example.content);
+      assert.equal(
+        readFileSync(join(repository, example.path), "utf8"),
+        example.content,
+      );
+    }
     if (survivor !== undefined) {
       assert.equal(git(["show", `${proposal}:${survivor.path}`]), survivor.content);
       assert.equal(

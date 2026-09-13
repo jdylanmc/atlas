@@ -69,6 +69,13 @@ and same-truth IDs in different Principles, then purge only after reconciliation
 while preserving the unrelated survivor. The reusable governance-fragment seam
 consumes the same corpus identities.
 
+Policy serialization cases preserve quoted SDK IDs and earlier Atlas-owned
+`id` fields. Both actions reject verdicts for raw spelling or unrelated metadata
+before effects, then accept the actual Policy's verdict and retain its complete
+archive. Opaque-record cases preserve unchanged Concept/Edge examples without
+promoting them into live dependencies; the fragment seam retains paired
+live-page refusal controls.
+
 `governance.json` additionally exercises retirement target, action, approval,
 rationale and provenance refusals at the operation boundary. Its
 `atFounding` case refuses retirement of an earlier composed founding fragment

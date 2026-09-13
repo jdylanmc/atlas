@@ -4,7 +4,11 @@ import {
   type CapturedAtlasFile,
 } from "../atlas/load_atlas_text.ts";
 import type { VirtualAtlasView } from "../domain/virtual_atlas_view.ts";
-import { parseAtlasPage } from "../atlas/parse_atlas_pages.ts";
+import {
+  classifyAtlasTextPath,
+  parseAtlasPage,
+  type ParsedAtlasPage,
+} from "../atlas/parse_atlas_pages.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import { virtualAtlasCapturedFiles } from "./virtual_atlas_view.ts";
 import {
@@ -358,6 +362,17 @@ function capturedText(file: CapturedAtlasFile | undefined): string | undefined {
   return file === undefined ? undefined : new TextDecoder().decode(file.bytes);
 }
 
+function capturedPage(
+  file: CapturedAtlasFile | undefined,
+): ParsedAtlasPage | undefined {
+  if (file === undefined) return undefined;
+  const parsed = parseAtlasPage({
+    path: file.path,
+    content: new TextDecoder().decode(file.bytes),
+  });
+  return parsed instanceof Error ? undefined : parsed;
+}
+
 function frontmatterId(content: string): string | undefined {
   return /^\s*id:\s*([^\s]+)\s*$/mu.exec(content)?.[1];
 }
@@ -382,10 +397,17 @@ function changedPolicyTargets(
     changes
       .filter((change) => change.path.startsWith(".atlas/types/policy/"))
       .map((change) => {
+        if (change.content === null) {
+          const parsed = capturedPage(existingByPath.get(change.path));
+          return Object.freeze({
+            id: parsed?.page.sdk.type === "policy" ? parsed.page.sdk.id : "",
+            path: change.path,
+          });
+        }
         const baseId = frontmatterId(
           capturedText(existingByPath.get(change.path)) ?? "",
         );
-        const changedId = frontmatterId(change.content ?? "");
+        const changedId = frontmatterId(change.content);
         const expectedId = expectedIdFromPath(change.path, "policy");
         return Object.freeze({
           id: baseId ?? changedId ?? expectedId ?? "",
@@ -766,15 +788,10 @@ function validateRetirementTargets(
   const findings: Finding[] = [];
   for (const change of request.changes ?? []) {
     if (change.content !== null) continue;
-    const content = capturedText(byPath.get(change.path));
     let valid = false;
-    if (
-      change.path.startsWith(prefix) &&
-      change.path.endsWith(".md") &&
-      content !== undefined
-    ) {
-      const parsed = parseAtlasPage({ path: change.path, content });
-      valid = !(parsed instanceof Error) && parsed.page.sdk.type === type;
+    if (change.path.startsWith(prefix) && change.path.endsWith(".md")) {
+      const parsed = capturedPage(byPath.get(change.path));
+      valid = parsed !== undefined && parsed.page.sdk.type === type;
     }
     if (!valid) {
       findings.push(
@@ -799,13 +816,12 @@ function validateRetirementDependencies(
       .filter((change) => change.content === null)
       .map((change) => change.path),
   );
-  const pages = existing.flatMap((file) => {
-    const parsed = parseAtlasPage({
-      path: file.path,
-      content: new TextDecoder().decode(file.bytes),
+  const pages = existing
+    .filter((file) => classifyAtlasTextPath(file.path) === "page")
+    .flatMap((file) => {
+      const parsed = capturedPage(file);
+      return parsed === undefined ? [] : [parsed];
     });
-    return parsed instanceof Error ? [] : [parsed];
-  });
   const removedPages = pages.filter((parsed) => removedPaths.has(parsed.source.path));
   const removedIds = new Set(removedPages.map((parsed) => parsed.page.sdk.id));
   const removedGovernors = new Set(
