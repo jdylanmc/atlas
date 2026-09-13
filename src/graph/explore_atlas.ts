@@ -63,6 +63,8 @@ export interface ExploreRouteStep {
   readonly edgeId: string | undefined;
   readonly objectId: string;
   readonly path: string;
+  /** Index into this payload's Re-anchor records governing the incoming route hop. */
+  readonly reanchorIndex?: number;
   readonly snapshot?: ExploreSnapshotContext;
   readonly title: string;
   readonly type: string;
@@ -453,6 +455,47 @@ function governingTruths(
   );
 }
 
+function reanchorSourceKey(
+  id: string,
+  snapshot: ExploreSnapshotContext | undefined,
+): string {
+  return JSON.stringify([
+    id,
+    snapshot?.atlas,
+    snapshot?.role,
+    snapshot?.slug,
+    snapshot?.snapshot,
+  ]);
+}
+
+export function createReanchorRouteLinker(
+  reanchors: readonly ExploreReanchor[],
+): (route: readonly ExploreRouteStep[]) => readonly ExploreRouteStep[] {
+  const indices = new Map(
+    reanchors.map((checkpoint, index) => [
+      reanchorSourceKey(checkpoint.anchor.id, checkpoint.anchor.snapshot),
+      index,
+    ]),
+  );
+  return (route) => {
+    let precedingCheckpoint: number | undefined;
+    return Object.freeze(
+      route.map((step) => {
+        const linked =
+          precedingCheckpoint === undefined
+            ? step
+            : Object.freeze({ ...step, reanchorIndex: precedingCheckpoint });
+        if (step.type === "anchor") {
+          precedingCheckpoint = indices.get(
+            reanchorSourceKey(step.objectId, step.snapshot),
+          );
+        }
+        return linked;
+      }),
+    );
+  };
+}
+
 function routeSteps(route: Route, view: TraversalIndex): readonly ExploreRouteStep[] {
   return Object.freeze(
     route.nodes.map((node, index) => {
@@ -661,6 +704,7 @@ export function exploreAtlas(
     ranked.map((candidate) => [candidate.objectId, candidate.score]),
   );
   const { reanchors, routes } = discoverRoutes(view, query, budgets);
+  const linkReanchors = createReanchorRouteLinker(reanchors);
   const results = ranked
     .flatMap((candidate): readonly ExploreResultItem[] => {
       const object = view.objects.get(candidate.objectId);
@@ -677,7 +721,7 @@ export function exploreAtlas(
             ...contextOf(object, budgets.maxContextCharacters),
             type: object.type,
           }),
-          route: routeSteps(route, view),
+          route: linkReanchors(routeSteps(route, view)),
         }),
       ];
     })

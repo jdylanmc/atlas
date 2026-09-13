@@ -123,14 +123,16 @@
             "objectId": "anchor:lint",
             "path": ".atlas/anchors/lint.md",
             "title": "Lint",
-            "type": "anchor"
+            "type": "anchor",
+            "reanchorIndex": 0
           },
           {
             "edgeId": "edge:lint-covers-canonical-serialization",
             "objectId": "concept:canonical-serialization",
             "path": ".atlas/concepts/canonical-serialization.md",
             "title": "Canonical Serialization",
-            "type": "concept"
+            "type": "concept",
+            "reanchorIndex": 1
           }
         ]
       },
@@ -168,7 +170,8 @@
             "objectId": "anchor:lint",
             "path": ".atlas/anchors/lint.md",
             "title": "Lint",
-            "type": "anchor"
+            "type": "anchor",
+            "reanchorIndex": 0
           }
         ]
       }

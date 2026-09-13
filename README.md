@@ -37,6 +37,19 @@ command also returns an `ATLAS_COMMAND_UNKNOWN` Finding naming the rejected valu
 `--machine` is required for dispatched commands. Command output is
 newline-terminated JSON so agents and scripts can parse it directly.
 
+### Explore checkpoint references
+
+Each post-Anchor route step has a `reanchorIndex`: a zero-based reference into
+the same result payload's `reanchors` array. It identifies the checkpoint
+governing the hop **into** that step. The entry step omits the field. A hop
+arriving at an Anchor references the preceding Anchor's checkpoint; subsequent
+hops use the newly reached Anchor's checkpoint.
+
+References are local to one response, not persistent checkpoint identities.
+Connected traversal keeps Atlas and snapshot context on checkpoint records,
+so identically named Anchors from different snapshots remain distinct.
+Checkpoint contents, route selection and cited context are unchanged.
+
 ### Changelog capacity warning
 
 Lint reports `ATLAS_CHANGELOG_NEAR_CAPACITY` when `.atlas/CHANGELOG.md` reaches

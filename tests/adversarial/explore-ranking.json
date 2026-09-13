@@ -10,6 +10,7 @@
       "expectedTopResultId": "concept:atx-style-headings",
       "expectedRouteEdgeId": "edge:root-covers-atx-style-headings",
       "expectedCitationId": "source:google-markdown-style-guide",
+      "expectedReanchorIds": [null, "anchor:root"],
       "expectedBodyIncludes": "ATX-style (#) headings rather than Setext-style"
     },
     {
@@ -20,6 +21,7 @@
       "expectedTopResultId": "concept:character-line-limit",
       "expectedRouteEdgeId": "edge:root-covers-character-line-limit",
       "expectedCitationId": "source:google-markdown-style-guide",
+      "expectedReanchorIds": [null, "anchor:root"],
       "expectedBodyIncludes": "80-character line limit"
     },
     {
@@ -30,6 +32,7 @@
       "expectedTopResultId": "concept:single-h1-heading",
       "expectedRouteEdgeId": "edge:root-covers-single-h1-heading",
       "expectedCitationId": "source:google-markdown-style-guide",
+      "expectedReanchorIds": [null, "anchor:root"],
       "expectedBodyIncludes": "one H1 heading as its title"
     },
     {
@@ -40,7 +43,20 @@
       "expectedTopResultId": "concept:no-trailing-whitespace",
       "expectedRouteEdgeId": "edge:root-covers-no-trailing-whitespace",
       "expectedCitationId": "source:google-markdown-style-guide",
+      "expectedReanchorIds": [null, "anchor:root"],
       "expectedBodyIncludes": "trailing whitespace"
+    },
+    {
+      "name": "post-Anchor route hops reference the preceding checkpoint rather than the destination Anchor",
+      "gate": "explore-ranking",
+      "expectation": "accept",
+      "atlasHostFixture": "complete-atlas",
+      "query": "canonical bytes",
+      "expectedTopResultId": "concept:canonical-serialization",
+      "expectedRouteEdgeId": "edge:lint-covers-canonical-serialization",
+      "expectedCitationId": "source:atlas-sdk-lint",
+      "expectedReanchorIds": [null, "anchor:root", "anchor:lint"],
+      "expectedBodyIncludes": "one byte sequence"
     }
   ]
 }

@@ -109,8 +109,10 @@ interface InitializationCorpus {
 }
 
 interface ExploreRankingCorpusCase {
+  readonly atlasHostFixture?: "complete-atlas";
   readonly expectedBodyIncludes: string;
   readonly expectedCitationId: string;
+  readonly expectedReanchorIds: readonly (string | null)[];
   readonly expectedRouteEdgeId: string;
   readonly expectedTopResultId: string;
   readonly expectation: "accept";
@@ -621,7 +623,16 @@ function parseExploreRankingCorpus(value: unknown): ExploreRankingCorpus {
       names.add(name);
       assert.equal(entry["gate"], "explore-ranking", `${path}.gate is unsupported`);
       assert.equal(entry["expectation"], "accept", `${path}.expectation`);
+      const atlasHostFixture = entry["atlasHostFixture"];
+      assert.ok(
+        atlasHostFixture === undefined || atlasHostFixture === "complete-atlas",
+        `${path}.atlasHostFixture is unsupported`,
+      );
+      const expectedReanchorIds = entry["expectedReanchorIds"];
+      assert.ok(Array.isArray(expectedReanchorIds), `${path}.expectedReanchorIds`);
+      assert.notEqual(expectedReanchorIds.length, 0);
       return {
+        ...(atlasHostFixture === undefined ? {} : { atlasHostFixture }),
         expectedBodyIncludes: assertString(
           entry["expectedBodyIncludes"],
           `${path}.expectedBodyIncludes`,
@@ -629,6 +640,11 @@ function parseExploreRankingCorpus(value: unknown): ExploreRankingCorpus {
         expectedCitationId: assertString(
           entry["expectedCitationId"],
           `${path}.expectedCitationId`,
+        ),
+        expectedReanchorIds: expectedReanchorIds.map((id: unknown, hop: number) =>
+          id === null
+            ? null
+            : assertString(id, `${path}.expectedReanchorIds[${String(hop)}]`),
         ),
         expectedRouteEdgeId: assertString(
           entry["expectedRouteEdgeId"],
@@ -2400,11 +2416,22 @@ for (const entry of atlasCliCorpus.cases) {
 for (const entry of exploreRankingCorpus.cases) {
   test(`adversarial Explore ranking corpus: ${entry.name}`, () => {
     executedCases += 1;
-    const command = spawnSync(
-      process.execPath,
-      [resolve(ROOT, "scripts", "atlas.ts"), "explore", "--machine", entry.query],
-      { cwd: ROOT, encoding: "utf8" },
-    );
+    const arguments_ = [
+      resolve(ROOT, "scripts", "atlas.ts"),
+      "explore",
+      "--machine",
+      entry.query,
+    ];
+    if (entry.atlasHostFixture !== undefined) {
+      arguments_.push(
+        "--atlas-host-directory",
+        resolve(ROOT, "tests", "fixtures", entry.atlasHostFixture),
+      );
+    }
+    const command = spawnSync(process.execPath, arguments_, {
+      cwd: ROOT,
+      encoding: "utf8",
+    });
     assert.equal(command.error, undefined);
     assert.equal(command.status, 0, command.stderr);
     assert.equal(command.stderr, "");
@@ -2421,6 +2448,17 @@ for (const entry of exploreRankingCorpus.cases) {
     assert.equal(top.route[0]?.objectId, "anchor:root");
     assert.equal(top.route.at(-1)?.objectId, entry.expectedTopResultId);
     assert.equal(top.route.at(-1)?.edgeId, entry.expectedRouteEdgeId);
+    assert.deepEqual(
+      top.route.map((step) => {
+        if (step.reanchorIndex === undefined) return null;
+        assert.ok(Number.isSafeInteger(step.reanchorIndex));
+        assert.ok(step.reanchorIndex >= 0);
+        const checkpoint = result.payload.reanchors[step.reanchorIndex];
+        assert.ok(checkpoint, "route references a missing Re-anchor checkpoint");
+        return checkpoint.anchor.id;
+      }),
+      entry.expectedReanchorIds,
+    );
     assert.equal(
       top.citedContext.some((citation) => citation.id === entry.expectedCitationId),
       true,

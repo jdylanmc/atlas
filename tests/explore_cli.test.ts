@@ -117,6 +117,10 @@ test("atlas explore --machine returns routed context from the complete fixture",
     result.payload.reanchors.map((entry) => entry.anchor.id),
     ["anchor:root", "anchor:lint"],
   );
+  assert.deepEqual(
+    result.payload.results[0].route.map((step) => step.reanchorIndex),
+    [undefined, 0, 1],
+  );
   assert.equal(result.handoff.baseSnapshot.state, "known");
 });
 
