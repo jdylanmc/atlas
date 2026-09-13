@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
+import { parseMachineOperationResult } from "./machine_operation_result.ts";
 import {
   correspondenceRefusalResult,
   exitCodeForIngestOperationResult,
@@ -21,6 +22,7 @@ import {
   planCrawlAssignment,
   serializeIngestMachineResult,
   usageIngestOperationResult,
+  type AtlasIngestPlanResult,
 } from "../src/interfaces/ingest_command.ts";
 import type { AtlasIngestRequest } from "../src/operations/ingest_operation.ts";
 import {
@@ -125,14 +127,10 @@ function initAtlasRepository(repository: string): string {
 }
 
 function parseIngestResult(stdout: string): ReturnType<typeof runLocalAtlasIngest> {
-  const parsed = JSON.parse(stdout) as ReturnType<typeof runLocalAtlasIngest>;
-  assert.equal(parsed["operation-result-schema"], "1.0.0");
-  assert.equal(parsed.handoff["operation-handoff-schema"], "1.0.0");
-  assert.deepEqual(parsed.handoff.operation, parsed.operation);
-  return parsed;
+  return parseMachineOperationResult(stdout) as ReturnType<typeof runLocalAtlasIngest>;
 }
 
-test("atlas ingest plan emits a Crawler assignment only for an approved Ingest Scope", () => {
+test("atlas ingest plan emits an Operation Result carrying the approved Crawl Assignment", () => {
   const command = runAtlas([
     "ingest",
     "plan",
@@ -143,13 +141,20 @@ test("atlas ingest plan emits a Crawler assignment only for an approved Ingest S
 
   assert.equal(command.status, ingestCommandExitCodes.success);
   assert.equal(command.stderr, "");
-  const assignment = JSON.parse(command.stdout) as Readonly<Record<string, unknown>>;
+  const result = parseMachineOperationResult(command.stdout) as AtlasIngestPlanResult;
+  assert.equal(result.completion, "completed");
+  assert.equal(result.disposition, "success");
+  assert.equal(result.handoff.validationState.state, "passed");
+  assert.deepEqual(result.handoff.validationState.findings, []);
+  assert.equal(result.handoff.homeAtlas.state, "not-applicable");
+  assert.equal(result.handoff.baseSnapshot.state, "not-applicable");
+  assert.equal(result.handoff.proposedChanges.state, "not-applicable");
+  assert.equal(result.handoff.reviewLink.state, "not-applicable");
+  assert.equal("workflowState" in result.payload, false);
+  const assignment = result.payload.crawlAssignment;
   assert.equal(assignment["crawl-assignment-schema"], "1.0.0");
   assert.equal(assignment["sourceId"], "source:readme");
-  assert.equal(
-    (assignment["attestation"] as Readonly<Record<string, unknown>>)["approver"],
-    "Fixture Maintainer",
-  );
+  assert.equal(assignment.attestation.approver, "Fixture Maintainer");
   assert.equal(assignment["refreshWindowDays"], 30);
 });
 

@@ -27,6 +27,12 @@ must invoke installed Initialization, adopt its proposal through Git, and pass
 installed Lint and Explore. Add cases to `installed-consumer.json` to extend
 this gate without duplicating the installation harness.
 
+The optional `ingestPlan` probes exercise approved and refused Scopes through
+the installed CLI before an Atlas exists. They use the same Operation Result
+parser as installed Initialize, Lint, Explore, and Governance, pin the complete
+Assignment payload, and require no Git or Atlas mutation. Fixture attestations
+are synthetic test input, not claims of production human approval.
+
 `governance-request-types.test-d.ts` is the compiler-backed governance contract
 corpus. The registered test in `tests/adversarial_corpus.test.ts` compiles it
 with the repository TypeScript settings, and ordinary `npm run typecheck`

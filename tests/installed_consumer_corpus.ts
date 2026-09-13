@@ -9,6 +9,19 @@ interface InstalledConsumerCase {
   readonly expectedRootAnchorId: string;
   readonly expectedAtlasPaths: readonly string[];
   readonly unmergedLintCode: string;
+  readonly ingestPlan?: readonly (
+    | {
+        readonly expectation: "accept";
+        readonly scopeFixture: string;
+        readonly expectedAssignment: Readonly<Record<string, unknown>>;
+      }
+    | {
+        readonly expectation: "reject";
+        readonly scopeFixture: string;
+        readonly expectedExit: number;
+        readonly expectedCode: string;
+      }
+  )[];
   readonly governance?: {
     readonly change: { readonly path: string; readonly content: string };
     readonly expectedCodes: readonly string[];
@@ -50,6 +63,22 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
     for (const path of entry.expectedAtlasPaths) {
       assert.equal(typeof path, "string");
       assert.match(path, /^\.atlas\//u);
+    }
+    if (entry.ingestPlan !== undefined) {
+      assert.equal(Array.isArray(entry.ingestPlan), true);
+      assert.ok(entry.ingestPlan.length > 0);
+      for (const probe of entry.ingestPlan) {
+        assert.match(probe.scopeFixture, /^scope-[a-z-]+\.json$/u);
+        if (probe.expectation === "accept") {
+          assert.equal(typeof probe.expectedAssignment, "object");
+          assert.notEqual(probe.expectedAssignment, null);
+          assert.equal(Array.isArray(probe.expectedAssignment), false);
+        } else {
+          assert.equal(probe.expectation, "reject");
+          assert.ok(Number.isInteger(probe.expectedExit) && probe.expectedExit > 0);
+          assert.match(probe.expectedCode, /^ATLAS_[A-Z_]+$/u);
+        }
+      }
     }
     if (entry.governance !== undefined) {
       assert.equal(typeof entry.governance.change.content, "string");

@@ -3,6 +3,56 @@
   "reviewResolutionRule": "A review finding is resolved only after this corpus has an installed-package case that exercises it.",
   "cases": [
     {
+      "name": "installed Ingest planning shares the Operation Result contract on success and refusal",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "ingestPlan": [
+        {
+          "expectation": "accept",
+          "scopeFixture": "scope-approved.json",
+          "expectedAssignment": {
+            "crawl-assignment-schema": "1.0.0",
+            "asOf": "2026-08-22T00:00:00Z",
+            "attestation": {
+              "approval-attestation-schema": "1.0.0",
+              "approver": "Fixture Maintainer",
+              "approvedAt": "2026-08-22T00:00:00Z",
+              "nonce": "fixture-nonce",
+              "operation": "ingest-scope/source:readme",
+              "payloadDigest": "cdaf7b2b80ba18cb67309360d13ccd61eb8e4500ac359390be63bfdfc93a9941"
+            },
+            "authority": "official",
+            "entryPoint": "docs",
+            "excludedPaths": ["docs/private"],
+            "includedPaths": ["docs"],
+            "maxDepth": 4,
+            "refreshWindowDays": 30,
+            "sourceId": "source:readme"
+          }
+        },
+        {
+          "expectation": "reject",
+          "scopeFixture": "scope-unapproved.json",
+          "expectedExit": 4,
+          "expectedCode": "ATLAS_INGEST_APPROVAL_REQUIRED"
+        },
+        {
+          "expectation": "reject",
+          "scopeFixture": "scope-bad-asof.json",
+          "expectedExit": 1,
+          "expectedCode": "ATLAS_INGEST_SCOPE_AS_OF_INVALID"
+        }
+      ]
+    },
+    {
       "name": "minimal Initialization remains a proposal until ordinary Git adoption",
       "gate": "installed-consumer",
       "expectation": "accept",

@@ -67,7 +67,6 @@ import {
   oversizedInputIngestOperationResult,
   parseIngestScope,
   planCrawlAssignment,
-  serializeCrawlAssignmentMachineResult,
   serializeIngestMachineResult,
   usageIngestOperationResult,
   validateRequestCorrespondence,
@@ -690,11 +689,7 @@ function mainIngestPlan(command: ParsedIngestPlanCommand): number {
     return exitCodeForIngestOperationResult(parsed.result);
   }
   const outcome = planCrawlAssignment(parsed.value, new Date().toISOString());
-  if (outcome.state === "refused") {
-    process.stdout.write(serializeIngestMachineResult(outcome.result));
-    return exitCodeForIngestPlanOutcome(outcome);
-  }
-  process.stdout.write(serializeCrawlAssignmentMachineResult(outcome.assignment));
+  process.stdout.write(serializeIngestMachineResult(outcome.result));
   return exitCodeForIngestPlanOutcome(outcome);
 }
 
