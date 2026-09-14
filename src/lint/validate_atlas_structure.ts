@@ -35,6 +35,10 @@ import type { Finding, FindingLocation } from "../domain/finding.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import type { AtlasTextFile } from "../atlas/load_atlas_text.ts";
 import { rethrowProcessLimit } from "../atlas/process_limit.ts";
+import {
+  citationSequencesEqual,
+  resolvedCitationSequence,
+} from "../atlas/resolve_citations.ts";
 import { positionIndex } from "./source_position.ts";
 import { sdkFindings } from "./sdk_finding.ts";
 import {
@@ -884,6 +888,25 @@ function validateCitations(
   }
 }
 
+function validateCitationCorrespondenceMetadata(
+  parsed: ParsedAtlasPage,
+  findings: Finding[],
+): void {
+  const expected = parsed.page.sdk["citation-correspondence"];
+  if (expected === undefined) return;
+  const resolved = resolvedCitationSequence(parsed.page.body);
+  const equal =
+    resolved.complete && citationSequencesEqual(resolved.citations, expected);
+  if (equal) return;
+  findings.push(
+    finding(
+      "ATLAS_CITATION_CORRESPONDENCE_MISMATCH",
+      "Citation markers and displayed quotations must exactly match the ordered citation metadata retained by Ingest.",
+      parsed.source.path,
+    ),
+  );
+}
+
 function validatePage(
   file: AtlasTextFile,
   parsed: ParsedAtlasPage,
@@ -979,6 +1002,7 @@ function validatePage(
 
   const heading = markdownHeadingFinding(parsed, file.content, tree);
   if (heading !== undefined) findings.push(heading);
+  validateCitationCorrespondenceMetadata(parsed, findings);
 
   if (parsed.page.sdk.type === coreArchetypes.Principle.pageType) {
     const malformedLines = malformedAtlasPrincipleTruthLines(parsed.page.body);

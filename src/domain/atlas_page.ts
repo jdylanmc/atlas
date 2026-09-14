@@ -12,6 +12,15 @@ const ActorSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const CitationCorrespondenceSchema = Type.Object(
+  {
+    occurrence: Type.Readonly(Type.Integer({ minimum: 1 })),
+    quotation: Type.Readonly(Type.String()),
+    target: Type.Readonly(Type.String({ minLength: 1, pattern: nonBlank })),
+  },
+  { additionalProperties: false },
+);
+
 export const AtlasDateTimeSchema = Type.String({ format: "date-time" });
 
 // A newer Atlas SDK may add an SDK-owned field an older one predates. ADR-0002
@@ -28,6 +37,17 @@ const SdkPageMetadataSchema = Type.Object(
     "atlas-sdk-schema": Type.Readonly(Type.String({ minLength: 1, pattern: nonBlank })),
     "created-at": Type.Readonly(AtlasDateTimeSchema),
     "created-by": Type.Readonly(ActorSchema),
+    "citation-correspondence": Type.Readonly(
+      Type.Optional(
+        Type.Unsafe<
+          readonly {
+            readonly occurrence: number;
+            readonly quotation: string;
+            readonly target: string;
+          }[]
+        >(Type.Array(CitationCorrespondenceSchema)),
+      ),
+    ),
     id: Type.Readonly(Type.String({ minLength: 1, pattern: nonBlank })),
     "originating-operation": Type.Readonly(
       Type.Optional(Type.String({ minLength: 1, pattern: nonBlank })),
