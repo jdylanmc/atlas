@@ -43,6 +43,15 @@ including the entry step's absent reference and the incoming-hop checkpoint
 at an Anchor transition. Missing, dangling, negative or incorrect references
 fail the black-box CLI gate.
 
+Literal `expectedCatalogAnchorIds` also distinguish inferred Root Anchor
+catalog hops from persisted Edges. Fallback hops must omit `edgeId`, identify
+the actual Root Anchor checkpoint, and leave real Edge and entry steps
+unmarked. Installed `connectedExplore` cases carry an
+`expectedCatalogTargetId` and exercise the same contract before tracking,
+through real online Git resolution, and through cached-offline CLI/API
+results. Equal local Root IDs are resolved in each hop's Snapshot context;
+Home knowledge and Git state remain unchanged.
+
 The `installed-consumer` gate is registered and its data validated in
 `tests/adversarial_corpus.test.ts`, but its cases execute in
 `tests/package_consumability.test.ts` alongside the other packing tests.

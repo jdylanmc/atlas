@@ -51,6 +51,8 @@ export interface ExploreSourceContext {
 }
 
 export interface ExploreRouteStep {
+  /** Inferred Root Anchor reachability, not a persisted Edge or catalog entry. */
+  readonly catalogFallback?: { readonly anchorId: string };
   readonly edgeId: string | undefined;
   readonly objectId: string;
   readonly path: string;
@@ -106,7 +108,7 @@ interface AtlasObject {
 }
 
 interface Route {
-  readonly edges: readonly string[];
+  readonly edges: readonly (string | undefined)[];
   readonly nodes: readonly string[];
 }
 
@@ -492,8 +494,12 @@ function routeSteps(route: Route, view: TraversalIndex): readonly ExploreRouteSt
   return Object.freeze(
     route.nodes.map((node, index) => {
       const object = view.objects.get(node) as AtlasObject;
+      const edgeId = index === 0 ? undefined : route.edges[index - 1];
       return Object.freeze({
-        edgeId: index === 0 ? undefined : route.edges[index - 1],
+        ...(index > 0 && edgeId === undefined
+          ? { catalogFallback: Object.freeze({ anchorId: rootAnchorPageId }) }
+          : {}),
+        edgeId,
         objectId: object.id,
         path: object.path,
         title: object.title,
@@ -548,7 +554,7 @@ function discoverRoutes(
       enqueued.add(step.objectId);
       queue.push(
         Object.freeze({
-          edges: Object.freeze([...route.edges, step.edgeId ?? "root-anchor-catalog"]),
+          edges: Object.freeze([...route.edges, step.edgeId]),
           nodes: Object.freeze([...route.nodes, step.objectId]),
         }),
       );
