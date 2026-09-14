@@ -55,6 +55,7 @@ interface InstalledConsumerCase {
     readonly expectedCodes: readonly string[];
   };
   readonly governanceTreeReceipt?: boolean;
+  readonly isolatedPackPreservesProducerOutput?: boolean;
 }
 
 interface InstalledConsumerCorpus {
@@ -89,6 +90,9 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
     }
     assert.equal(Array.isArray(entry.expectedAtlasPaths), true);
     assert.ok(entry.expectedAtlasPaths.length > 0);
+    if (entry.isolatedPackPreservesProducerOutput !== undefined) {
+      assert.equal(entry.isolatedPackPreservesProducerOutput, true);
+    }
     for (const path of entry.expectedAtlasPaths) {
       assert.equal(typeof path, "string");
       assert.match(path, /^\.atlas\//u);

@@ -233,10 +233,9 @@ test("prepack rebuild removes ignored dist files before packaging", () => {
 // runtime import that only a development dependency satisfies fails here rather
 // than on an adopter's first command.
 //
-// It lives in this file rather than its own so that it cannot run concurrently
-// with the packing tests above. Every `npm pack` here rebuilds `dist/` through
-// `prepack`, whose first act is to delete it; two such tests in separate files
-// race, and the loser installs a truncated tarball.
+// It remains in this file so one permanent package-test surface owns dry-run and
+// installed artifacts. Each pack builds from an isolated copy, allowing prepack
+// to replace its private `dist/` without mutating the producer's build output.
 
 interface InstalledCommandResult {
   readonly status: number | null;
@@ -484,8 +483,36 @@ function diagnosticIndices(text: string): ReadonlySet<number> {
 for (const entry of readInstalledConsumerCorpus().cases) {
   test(`adversarial installed-consumer corpus: ${entry.name}`, () => {
     const workspace = mkdtempSync(join(tmpdir(), "atlas-installed-"));
+    const producerOutputProof =
+      entry.isolatedPackPreservesProducerOutput === true
+        ? join(ROOT, "dist", "proof-producer-output.js")
+        : undefined;
+    let producerOutputIdentity:
+      | { readonly ino: bigint; readonly mtimeNs: bigint; readonly size: bigint }
+      | undefined;
     try {
+      if (producerOutputProof !== undefined) {
+        // Test-sensitivity control: root prepack would delete this file.
+        writeFileSync(producerOutputProof, 'console.error("producer output");\n');
+        const stats = statSync(producerOutputProof, { bigint: true });
+        producerOutputIdentity = {
+          ino: stats.ino,
+          mtimeNs: stats.mtimeNs,
+          size: stats.size,
+        };
+      }
       const consumer = createConsumer(workspace);
+      if (producerOutputProof !== undefined) {
+        assert.equal(
+          readFileSync(producerOutputProof, "utf8"),
+          'console.error("producer output");\n',
+        );
+        const stats = statSync(producerOutputProof, { bigint: true });
+        assert.deepEqual(
+          { ino: stats.ino, mtimeNs: stats.mtimeNs, size: stats.size },
+          producerOutputIdentity,
+        );
+      }
       assert.ok(!realpathSync(consumer).startsWith(`${realpathSync(ROOT)}${sep}`));
       assert.equal(consumerGit(consumer, ["remote"]), "");
       assert.equal(existsSync(join(consumer, "src")), false);
@@ -1316,6 +1343,9 @@ for (const entry of readInstalledConsumerCorpus().cases) {
         assert.equal(consumerGit(consumer, ["status", "--porcelain"]), "");
       }
     } finally {
+      if (producerOutputProof !== undefined) {
+        rmSync(producerOutputProof, { force: true });
+      }
       rmSync(workspace, { force: true, recursive: true });
     }
   });
