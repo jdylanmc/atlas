@@ -257,7 +257,7 @@ test("Operation Workflow returns a degraded but valid Lint result when a page ta
       bytes: new TextEncoder().encode(
         decoder
           .decode(file.bytes)
-          .replace("atlas-sdk-schema: 1.0.0", "atlas-sdk-schema: 1.1.0"),
+          .replace("atlas-sdk-schema: 1.0.0", "atlas-sdk-schema: 1.2.0"),
       ),
       path: file.path,
     };
@@ -282,12 +282,12 @@ test("Operation Workflow returns a degraded but valid Lint result when a page ta
     ],
   );
   assert.deepEqual(result.handoff.degradationState, {
-    reason: `Atlas page targets atlas-sdk-schema 1.1.0, newer than the running Atlas SDK's 1.0.0 contract. Update Atlas SDK to interpret it fully.`,
+    reason: `Atlas page targets atlas-sdk-schema 1.2.0, newer than the running Atlas SDK's 1.1.0 contract. Update Atlas SDK to interpret it fully.`,
     state: "degraded",
   });
   assert.equal(
     result.handoff.recommendedNextAction,
-    "Update Atlas SDK. Atlas page targets atlas-sdk-schema 1.1.0, newer than the running Atlas SDK's 1.0.0 contract. Update Atlas SDK to interpret it fully.",
+    "Update Atlas SDK. Atlas page targets atlas-sdk-schema 1.2.0, newer than the running Atlas SDK's 1.1.0 contract. Update Atlas SDK to interpret it fully.",
   );
 });
 

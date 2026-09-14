@@ -1048,7 +1048,13 @@ function validatePage(
       );
     }
   }
-  if (createdAt !== undefined && updatedAt !== undefined && createdAt > updatedAt) {
+  if (
+    parsed.page.sdk["created-at-source"] !== "sentinel" &&
+    parsed.page.sdk["updated-at-source"] !== "sentinel" &&
+    createdAt !== undefined &&
+    updatedAt !== undefined &&
+    createdAt > updatedAt
+  ) {
     findings.push(
       finding(
         "ATLAS_PAGE_UPDATED_BEFORE_CREATED",

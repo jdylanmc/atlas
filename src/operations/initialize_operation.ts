@@ -25,6 +25,7 @@ import {
   type AgentPersonaDesignRequest,
 } from "../domain/agent_persona.ts";
 import { atlasChangelogPath, renderAtlasChangelog } from "../domain/atlas_changelog.ts";
+import { currentAtlasSchemaVersion } from "../domain/atlas_schema_version.ts";
 import {
   checkpointInputDigest,
   foundingCapabilityIds,
@@ -144,8 +145,7 @@ export interface AtlasInitializationChangeSet {
 // page already declares, rather than a page this schema itself governs.
 export const atlasManifestPath = ".atlas/manifest.json";
 
-export const canonicalAtlasManifest =
-  '{\n  "atlas-manifest-schema": "1.0.0",\n  "atlas-sdk-schema": "1.0.0",\n  "local-atlas-schema": "1.0.0"\n}\n';
+export const canonicalAtlasManifest = `{\n  "atlas-manifest-schema": "1.0.0",\n  "atlas-sdk-schema": "${currentAtlasSchemaVersion}",\n  "local-atlas-schema": "1.0.0"\n}\n`;
 
 const lintStampBrand: unique symbol = Symbol("lint-stamp");
 const successfulProposalLintBrand: unique symbol = Symbol("successful-proposal-lint");
@@ -842,10 +842,11 @@ function renderTypedAtlasPage(input: {
     content: [
       "---",
       "sdk:",
-      "  atlas-sdk-schema: 1.0.0",
+      `  atlas-sdk-schema: ${currentAtlasSchemaVersion}`,
       '  created-at: "2026-01-01T00:00:00Z"',
+      "  created-at-source: sentinel",
       "  created-by:",
-      "    kind: agent",
+      "    kind: runtime",
       "    name: Atlas SDK",
       `  id: ${input.id}`,
       "  local-atlas-schema: 1.0.0",
@@ -854,8 +855,9 @@ function renderTypedAtlasPage(input: {
       `  title: ${input.title}`,
       `  type: ${input.type}`,
       '  updated-at: "2026-01-01T00:00:00Z"',
+      "  updated-at-source: sentinel",
       "  updated-by:",
-      "    kind: agent",
+      "    kind: runtime",
       "    name: Atlas SDK",
       atlasBlock,
       "---",
@@ -1280,7 +1282,17 @@ const minimalAtlasInitializationOperationId = "atlas-initialization";
 function minimalAtlasChangeSet(
   state: AtlasInitializationWorkflowState,
 ): AtlasInitializationChangeSet {
-  const rootAnchor = `---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  created-at: "2026-01-01T00:00:00Z"\n  created-by:\n    kind: agent\n    name: Atlas SDK\n  id: anchor:root\n  local-atlas-schema: 1.0.0\n  originating-operation: atlas-initialization\n  tags: []\n  title: Home Atlas\n  type: anchor\n  updated-at: "2026-01-01T00:00:00Z"\n  updated-by:\n    kind: agent\n    name: Atlas SDK\natlas: {}\n---\n\n# Home Atlas\n\nThis Root Anchor starts a minimal Home Atlas with no Guide Persona, founding knowledge, or Atlas Site.\n`;
+  const rootAnchor = renderTypedAtlasPage({
+    body: [
+      "# Home Atlas",
+      "",
+      "This Root Anchor starts a minimal Home Atlas with no Guide Persona, founding knowledge, or Atlas Site.",
+    ],
+    id: "anchor:root",
+    path: ".atlas/index.md",
+    title: "Home Atlas",
+    type: "anchor",
+  }).content;
   const changelog = Object.freeze({
     content: renderAtlasChangelog(
       undefined,

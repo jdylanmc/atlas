@@ -487,7 +487,7 @@ test("reports a page targeting a newer atlas-sdk-schema as a warning without den
     ...page(".atlas/concepts/page.md", "# Page"),
     content: page(".atlas/concepts/page.md", "# Page").content.replace(
       "  atlas-sdk-schema: 1.0.0",
-      "  atlas-sdk-schema: 1.1.0",
+      "  atlas-sdk-schema: 1.2.0",
     ),
   };
   const findings = validateAtlasStructure([validFiles[2] as AtlasTextFile, newerPage]);
@@ -506,8 +506,8 @@ test("reports a page targeting a newer atlas-sdk-schema as a warning without den
     true,
   );
   const [finding] = findings;
+  assert.match(finding?.message ?? "", /1\.2\.0/u);
   assert.match(finding?.message ?? "", /1\.1\.0/u);
-  assert.match(finding?.message ?? "", /1\.0\.0/u);
   assert.equal(checkFinding(finding), true);
 
   // A schema version at or below the running SDK's contract produces no such

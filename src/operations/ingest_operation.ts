@@ -16,6 +16,7 @@ import {
   type ResolvedCitation,
 } from "../atlas/resolve_citations.ts";
 import { serializeAtlasPages } from "../atlas/serialize_atlas_pages.ts";
+import { currentAtlasSchemaVersion } from "../domain/atlas_schema_version.ts";
 import type { ParsedAtlasPage } from "../atlas/parse_atlas_pages.ts";
 import {
   dateTimeMilliseconds,
@@ -1276,10 +1277,10 @@ function sdkMetadata(
   citations?: readonly ResolvedCitation[],
 ): AtlasPageEnvelope["sdk"] {
   return {
-    "atlas-sdk-schema": "1.0.0",
+    "atlas-sdk-schema": currentAtlasSchemaVersion,
     ...(citations === undefined ? {} : { "citation-correspondence": citations }),
     "created-at": asOf,
-    "created-by": { kind: "agent" as const, name: "Atlas SDK" },
+    "created-by": { kind: "runtime" as const, name: "Atlas SDK" },
     id,
     "local-atlas-schema": "1.0.0",
     "originating-operation": operationId,
@@ -1287,7 +1288,7 @@ function sdkMetadata(
     title,
     type,
     "updated-at": asOf,
-    "updated-by": { kind: "agent" as const, name: "Atlas SDK" },
+    "updated-by": { kind: "runtime" as const, name: "Atlas SDK" },
   };
 }
 
