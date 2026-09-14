@@ -77,6 +77,20 @@ leave the recovered Lock and metadata bytes unchanged. Source controls also
 reject malformed or mismatched metadata, preserve unrelated dependencies and
 report combined cleanup and repair failures through `maintenanceFindings`.
 
+The malformed-Lock case (`BOLAS-216-R2-01`) runs both online first contact and
+updates through the installed Explore Operation. Invalid objects, lists,
+entries, keys and truncated JSON must retain their bytes and return usable
+Home and tracked context with maintenance Findings, not knowledge degradation.
+The persistence case (`BALERION-216-R2-01`) starts with an unrelated dependency
+and the current dependency missing. It injects failures at Node's filesystem
+boundary: a redundant read, an actual prefix write followed by failure, failed
+replacement after the full sibling file is written, exclusive-creation
+conflict, and failed cleanup. Original Lock and metadata bytes survive
+persistence failure; successful recovery preserves both dependencies and the
+original fetch time. Only invocation-owned files may be removed. Source
+Operation controls additionally cover close failures, unreadable Locks, and
+first-contact/update metadata persistence errors.
+
 The `connectedExplore` probe adds cited fixture knowledge and a tracked Atlas
 to the initialized consumer. A fresh external Node process imports only the
 installed package root, captures committed Home bytes through Git, and composes

@@ -1261,6 +1261,40 @@
         "mode": "unrecorded-publication",
         "expectedCode": "ATLAS_CROSS_ATLAS_CACHED_OFFLINE"
       }
+    },
+    {
+      "name": "installed online cache preserves malformed Lock records and returns usable knowledge (BOLAS-216-R2-01)",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "cacheFailure": {
+        "mode": "invalid-lock-on-update",
+        "expectedCode": "ATLAS_CROSS_ATLAS_LOCK_REPAIR_FAILED"
+      }
+    },
+    {
+      "name": "installed Lock recovery preserves dependencies through persistence faults (BALERION-216-R2-01)",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "cacheFailure": {
+        "mode": "lock-persistence",
+        "expectedCode": "ATLAS_CROSS_ATLAS_LOCK_REPAIR_FAILED"
+      }
     }
   ]
 }

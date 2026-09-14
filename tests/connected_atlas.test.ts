@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import fs, {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import {
@@ -1933,6 +1940,7 @@ test("Atlas cache recovers only missing Lock entries from matching published met
     readonly missingMetadata?: boolean;
     readonly repairable?: boolean;
     readonly failCleanup?: boolean;
+    readonly online?: boolean;
   }[] = [
     { name: "missing-entry", repairable: true },
     { name: "missing-metadata", missingMetadata: true },
@@ -1970,6 +1978,9 @@ test("Atlas cache recovers only missing Lock entries from matching published met
     { name: "invalid-lock-list", lockText: '{"dependencies":null}' },
     { name: "invalid-lock-entry", lockText: '{"dependencies":[null]}' },
     { name: "invalid-lock-key", lockText: '{"dependencies":[{"cacheKey":0}]}' },
+    { name: "online-invalid-list", lockText: '{"dependencies":null}', online: true },
+    { name: "online-invalid-entry", lockText: '{"dependencies":[null]}', online: true },
+    { name: "online-truncated-lock", lockText: '{"dependencies":[', online: true },
     { name: "cleanup-and-repair-failures", metadataText: "{}", failCleanup: true },
   ];
   const remote = createBareRemote("tracked-metadata-repair", [
@@ -2019,7 +2030,9 @@ test("Atlas cache recovers only missing Lock entries from matching published met
       : undefined;
     const result = resolveAtlasCache(request, {
       resolveRemote: () =>
-        scenario.failCleanup === true ? remote : `${remote}-offline`,
+        scenario.failCleanup === true || scenario.online === true
+          ? remote
+          : `${remote}-offline`,
       writeGit: (repository, args) =>
         scenario.failCleanup === true && args[0] === "update-ref"
           ? { reason: "Fixture publication and cleanup failure", state: "failed" }
@@ -2032,7 +2045,10 @@ test("Atlas cache recovers only missing Lock entries from matching published met
       initial.snapshot.capturedFiles,
       scenario.name,
     );
-    assert.equal(result.snapshot.findings[0]?.code, "ATLAS_CROSS_ATLAS_CACHED_OFFLINE");
+    assert.deepEqual(
+      result.snapshot.findings.map(({ code }) => code),
+      scenario.online === true ? [] : ["ATLAS_CROSS_ATLAS_CACHED_OFFLINE"],
+    );
     if (scenario.repairable === true) {
       assert.equal(result.maintenanceFindings, undefined);
       assert.deepEqual(
@@ -2053,9 +2069,303 @@ test("Atlas cache recovers only missing Lock entries from matching published met
       assert.equal(readFileSync(lockFile, "utf8"), lockText, scenario.name);
     }
     if (metadataBefore === undefined) assert.equal(existsSync(metadataFile), false);
-    else assert.deepEqual(readFileSync(metadataFile), metadataBefore, scenario.name);
+    else if (scenario.online !== true)
+      assert.deepEqual(readFileSync(metadataFile), metadataBefore, scenario.name);
   }
 });
+
+for (const fault of [
+  "second-read",
+  "partial-write",
+  "replacement",
+  "creation-conflict",
+  "cleanup-failure",
+  "close-failure",
+  "unreadable-lock",
+  "online-invalid-lock",
+  "online-metadata-partial",
+  "first-metadata-partial",
+  "first-invalid-lock",
+] as const) {
+  test(`Explore preserves Lock dependencies through ${fault}`, (context) => {
+    type Dependency = ReturnType<typeof createAtlasLock>["dependencies"][number];
+    const name = `lock-persistence-${fault}`;
+    const home = resolve(WORKSPACE, `home-${name}`);
+    initRepository(home);
+    const root = page(
+      ".atlas/index.md",
+      "anchor:root",
+      "anchor",
+      "Home",
+      "atlas: {}",
+      "# Home",
+    );
+    const tracking = probeAtlasIngestSource({
+      approvedAt: "2026-08-25T00:00:00Z",
+      approvedBy: "Fixture Maintainer",
+      asOf: "2026-08-25T00:00:00Z",
+      atlasPath: ".",
+      branch: "main",
+      fromAnchorId: "anchor:root",
+      repositoryLocator: `https://github.com/owner/${name}.git`,
+      title: name,
+    });
+    assert.equal(tracking.state, "tracked-atlas");
+    const homeFiles = [
+      root,
+      ...tracking.changes.map(({ path, content }) => ({ path, text: content })),
+    ];
+    for (const file of homeFiles) {
+      mkdirSync(resolve(home, file.path, ".."), { recursive: true });
+      writeFileSync(resolve(home, file.path), file.text);
+    }
+    const homeRevision = commitAll(home, "Track Lock persistence fixture");
+    const remote = createBareRemote(name, [root]);
+    const tracked = trackedAtlasDeclaration("github.com", "owner", name);
+    const request = {
+      homeAtlasDirectory: home,
+      introducedByAnchorId: "anchor:root",
+      introducedByEdgeId: "edge:track",
+      trackedAtlas: tracked,
+    };
+    const first = resolveAtlasCache(request, {
+      now: () => "2026-08-30T00:00:00Z",
+      resolveRemote: () => remote,
+    });
+    assert.equal(first.state, "resolved");
+    const metadataFile = join(first.snapshot.cacheDirectory, "metadata.json");
+    const metadataBytes = readFileSync(metadataFile);
+    const metadata = JSON.parse(metadataBytes.toString("utf8")) as Dependency;
+    const other = trackedAtlasDeclaration("github.com", "owner", "other");
+    const otherDependency = {
+      ...metadata,
+      cacheKey: atlasCacheKey(other.locator),
+      locator: other.locator,
+      slug: other.slug,
+    };
+    const lockFile = join(home, ".atlas", "atlas-cache", "atlas-lock.json");
+    const online = fault.startsWith("online-") || fault.startsWith("first-");
+    const invalidLock = fault.endsWith("invalid-lock");
+    const originalLock = invalidLock
+      ? '{"dependencies":null}'
+      : `${JSON.stringify({ dependencies: [otherDependency] }, null, 2)}\n`;
+    writeFileSync(lockFile, originalLock);
+    if (fault.startsWith("first-"))
+      rmSync(first.snapshot.cacheDirectory, { recursive: true });
+    const originalRead = fs.readFileSync;
+    const originalWrite = fs.writeFileSync;
+    const originalOpen = fs.openSync;
+    const originalRename = fs.renameSync;
+    const originalRemove = fs.rmSync;
+    const originalClose = fs.closeSync;
+    const ownedFiles = new Map<number, string>();
+    const artifacts = new Set<string>();
+    let reads = 0;
+    let injected = false;
+    const open = context.mock.method(
+      fs,
+      "openSync",
+      (...args: Parameters<typeof fs.openSync>) => {
+        const path = String(args[0]);
+        if (fault === "creation-conflict" && path.startsWith(lockFile)) {
+          injected = true;
+          originalWrite(path, "Another invocation owns this file");
+          artifacts.add(path);
+        }
+        const fd = originalOpen(...args);
+        ownedFiles.set(fd, path);
+        if (path.startsWith(lockFile)) artifacts.add(path);
+        return fd;
+      },
+    );
+    const read = context.mock.method(
+      fs,
+      "readFileSync",
+      (...args: Parameters<typeof fs.readFileSync>) => {
+        if (
+          String(args[0]) === lockFile &&
+          ((++reads === 2 && fault === "second-read") || fault === "unreadable-lock")
+        ) {
+          injected = true;
+          throw new Error("Fixture second Lock read failure");
+        }
+        return originalRead(...args);
+      },
+    );
+    const write = context.mock.method(
+      fs,
+      "writeFileSync",
+      (...args: Parameters<typeof fs.writeFileSync>) => {
+        const file =
+          typeof args[0] === "number" ? ownedFiles.get(args[0]) : String(args[0]);
+        const partialLock =
+          ["partial-write", "cleanup-failure"].includes(fault) &&
+          file?.startsWith(lockFile) === true;
+        const partialMetadata =
+          fault.endsWith("metadata-partial") &&
+          file?.includes("metadata.json") === true &&
+          !injected;
+        if (partialLock || partialMetadata) {
+          originalWrite(args[0], '{"dependencies":[', args[2]);
+          injected = true;
+          throw new Error("Fixture partial Lock write failure");
+        }
+        return originalWrite(...args);
+      },
+    );
+    const rename = context.mock.method(
+      fs,
+      "renameSync",
+      (...args: Parameters<typeof fs.renameSync>) => {
+        if (fault === "replacement" && String(args[1]) === lockFile) {
+          injected = true;
+          assert.deepEqual(
+            JSON.parse(originalRead(args[0], "utf8")),
+            createAtlasLock([otherDependency, metadata]),
+          );
+          throw new Error("Fixture Lock replacement failure");
+        }
+        return originalRename(...args);
+      },
+    );
+    const remove = context.mock.method(
+      fs,
+      "rmSync",
+      (...args: Parameters<typeof fs.rmSync>) => {
+        if (fault === "cleanup-failure" && artifacts.has(String(args[0])))
+          throw new Error("Fixture record cleanup failure");
+        return originalRemove(...args);
+      },
+    );
+    const close = context.mock.method(
+      fs,
+      "closeSync",
+      (...args: Parameters<typeof fs.closeSync>) => {
+        originalClose(...args);
+        if (
+          fault === "close-failure" &&
+          ownedFiles.get(args[0])?.startsWith(lockFile) === true
+        ) {
+          injected = true;
+          throw new Error("Fixture record close failure");
+        }
+      },
+    );
+    syncBuiltinESMExports();
+    let result: ReturnType<typeof runExploreOperation>;
+    try {
+      result = runExploreOperation({
+        atlasCacheResolver: {
+          resolve: (entry) =>
+            resolveAtlasCache(
+              { ...entry, homeAtlasDirectory: home },
+              {
+                now: () => "2026-09-01T00:00:00Z",
+                resolveRemote: () => (online ? remote : `${remote}-offline`),
+              },
+            ),
+        },
+        baseSnapshot: { reference: homeRevision, state: "known" },
+        capturedFiles: homeFiles.map(captured),
+        homeAtlas: { reference: "local-home-atlas", state: "known" },
+        query: "Home",
+      });
+    } finally {
+      close.mock.restore();
+      remove.mock.restore();
+      rename.mock.restore();
+      write.mock.restore();
+      read.mock.restore();
+      open.mock.restore();
+      syncBuiltinESMExports();
+    }
+    assert.equal(result.completion, "completed");
+    assert.equal(result.disposition, "success");
+    assert.equal(result.handoff.unresolvedHumanDecisions.state, "none");
+    assert.deepEqual(
+      result.payload.degradation.diagnostics.map(({ code }) => code),
+      online ? [] : ["ATLAS_CROSS_ATLAS_CACHED_OFFLINE"],
+    );
+    assert.equal(
+      result.handoff.degradationState.state,
+      online ? "not-degraded" : "degraded",
+    );
+    if (online) {
+      assert.equal(result.payload.degradation.level, "valid-structured");
+      assert.equal(result.handoff.validationState.state, "passed");
+    }
+    const trackedContext = result.payload.results.find(
+      ({ result: item }) => item.snapshot?.role === "tracked",
+    );
+    assert.ok(trackedContext !== undefined);
+    assert.equal(trackedContext.result.snapshot?.snapshot, first.snapshot.snapshot);
+    assert.match(trackedContext.result.body, /# Home/u);
+    if (!fault.startsWith("first-"))
+      assert.deepEqual(readFileSync(metadataFile), metadataBytes);
+    if (fault === "second-read") {
+      assert.deepEqual(
+        JSON.parse(readFileSync(lockFile, "utf8")),
+        createAtlasLock([otherDependency, metadata]),
+        "A failed redundant read must not discard unrelated dependencies",
+      );
+      assert.equal(result.payload.maintenanceFindings, undefined);
+    } else {
+      if (!invalidLock) assert.equal(injected, true);
+      if (fault === "first-metadata-partial") {
+        const recovered = JSON.parse(readFileSync(lockFile, "utf8")) as ReturnType<
+          typeof createAtlasLock
+        >;
+        assert.equal(recovered.dependencies.length, 2);
+        assert.deepEqual(
+          recovered.dependencies.find(
+            ({ cacheKey }) => cacheKey === otherDependency.cacheKey,
+          ),
+          otherDependency,
+        );
+        const current = recovered.dependencies.find(
+          ({ cacheKey }) => cacheKey === metadata.cacheKey,
+        );
+        assert.equal(current?.snapshot, first.snapshot.snapshot);
+        assert.equal(current.fetchedAt, "2026-09-01T00:00:00Z");
+      } else {
+        assert.equal(
+          readFileSync(lockFile, "utf8"),
+          originalLock,
+          "Failed persistence must preserve the existing Lock",
+        );
+      }
+      assert.deepEqual(
+        result.payload.maintenanceFindings?.map(({ code }) => code),
+        [
+          ...(fault === "cleanup-failure"
+            ? ["ATLAS_CROSS_ATLAS_CACHE_CLEANUP_FAILED"]
+            : []),
+          "ATLAS_CROSS_ATLAS_LOCK_REPAIR_FAILED",
+        ],
+      );
+    }
+    for (const path of artifacts) {
+      if (fault === "creation-conflict" || fault === "cleanup-failure") {
+        assert.equal(
+          readFileSync(path, "utf8"),
+          fault === "creation-conflict"
+            ? "Another invocation owns this file"
+            : '{"dependencies":[',
+        );
+        if (fault === "cleanup-failure")
+          assert.equal(result.payload.maintenanceFindings?.[0]?.path, path);
+        rmSync(path);
+      } else
+        assert.equal(
+          existsSync(path),
+          false,
+          "Only unpublished owned files should be cleaned up",
+        );
+    }
+    assert.equal(git(home, ["rev-parse", "HEAD"]), homeRevision);
+    assert.equal(git(home, ["status", "--porcelain"]), "");
+  });
+}
 
 test("Atlas cache reports unreadable revisions and missing cached trees", () => {
   const home = resolve(WORKSPACE, "home-cache-errors");

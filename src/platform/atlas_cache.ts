@@ -1,7 +1,9 @@
 import {
   appendFileSync,
+  closeSync,
   existsSync,
   mkdirSync,
+  openSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -196,8 +198,46 @@ function ensureBareRepository(
   return gitSucceeded(bootstrap(repository, ["init", "--bare", "."]));
 }
 
-function writeMetadata(directory: string, dependency: AtlasLockDependency): void {
-  writeFileSync(
+function writeCacheRecord(
+  path: string,
+  text: string,
+  maintenanceFindings: Finding[],
+): void {
+  const pending = `${path}.pending-${randomUUID()}`;
+  let owned = false;
+  try {
+    const descriptor = openSync(pending, "wx");
+    owned = true;
+    try {
+      writeFileSync(descriptor, text, "utf8");
+    } finally {
+      closeSync(descriptor);
+    }
+    renameSync(pending, path);
+    owned = false;
+  } finally {
+    if (owned) {
+      try {
+        rmSync(pending);
+      } catch {
+        maintenanceFindings.push(
+          finding(
+            "ATLAS_CROSS_ATLAS_CACHE_CLEANUP_FAILED",
+            "Cross-Atlas traversal could not remove its unpublished cache record. Inspect the retained file.",
+            pending,
+          ),
+        );
+      }
+    }
+  }
+}
+
+function writeMetadata(
+  directory: string,
+  dependency: AtlasLockDependency,
+  maintenanceFindings: Finding[],
+): void {
+  writeCacheRecord(
     metadataPath(directory),
     `${JSON.stringify(
       {
@@ -212,32 +252,43 @@ function writeMetadata(directory: string, dependency: AtlasLockDependency): void
       null,
       2,
     )}\n`,
-    "utf8",
+    maintenanceFindings,
   );
 }
 
 function readAtlasLock(homeAtlasDirectory: string): AtlasLock {
+  let lock: unknown;
   try {
-    return JSON.parse(
-      readFileSync(atlasLockPath(homeAtlasDirectory), "utf8"),
-    ) as AtlasLock;
-  } catch {
-    return createAtlasLock([]);
+    lock = JSON.parse(readFileSync(atlasLockPath(homeAtlasDirectory), "utf8"));
+  } catch (error) {
+    if (isRecord(error) && error["code"] === "ENOENT") return createAtlasLock([]);
+    throw error;
   }
+  if (
+    !isRecord(lock) ||
+    !Array.isArray(lock["dependencies"]) ||
+    !lock["dependencies"].every(
+      (entry: unknown) => isRecord(entry) && nonBlank(entry["cacheKey"]),
+    )
+  ) {
+    throw new Error("Atlas Lock has an invalid dependency list.");
+  }
+  return lock as unknown as AtlasLock;
 }
 
 function writeAtlasLock(
   homeAtlasDirectory: string,
+  current: AtlasLock,
   dependency: AtlasLockDependency,
+  maintenanceFindings: Finding[],
 ): void {
-  const current = readAtlasLock(homeAtlasDirectory);
   const next = createAtlasLock([
     ...current.dependencies.filter((entry) => entry.cacheKey !== dependency.cacheKey),
     dependency,
   ]);
   const path = atlasLockPath(homeAtlasDirectory);
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  writeCacheRecord(path, `${JSON.stringify(next, null, 2)}\n`, maintenanceFindings);
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -263,23 +314,11 @@ function restoreMissingLock(
   directory: string,
   cacheKey: string,
   snapshot: string,
+  maintenanceFindings: Finding[],
 ): Finding | undefined {
   try {
-    const path = atlasLockPath(request.homeAtlasDirectory);
-    const lock: unknown = existsSync(path)
-      ? JSON.parse(readFileSync(path, "utf8"))
-      : { dependencies: [] };
-    if (
-      !isRecord(lock) ||
-      !Array.isArray(lock["dependencies"]) ||
-      !lock["dependencies"].every(
-        (entry: unknown): entry is { readonly cacheKey: string } =>
-          isRecord(entry) && nonBlank(entry["cacheKey"]),
-      )
-    ) {
-      throw new Error("Atlas Lock has an invalid dependency list.");
-    }
-    if (lock["dependencies"].some((entry) => entry.cacheKey === cacheKey))
+    const lock = readAtlasLock(request.homeAtlasDirectory);
+    if (lock.dependencies.some((entry) => entry.cacheKey === cacheKey))
       return undefined;
 
     const metadata: unknown = JSON.parse(readFileSync(metadataPath(directory), "utf8"));
@@ -295,15 +334,20 @@ function restoreMissingLock(
     ) {
       throw new Error("Cache metadata does not identify the captured dependency.");
     }
-    writeAtlasLock(request.homeAtlasDirectory, {
-      cacheKey,
-      fetchedAt: metadata["fetchedAt"],
-      introducedByAnchorId: metadata["introducedByAnchorId"],
-      introducedByEdgeId: metadata["introducedByEdgeId"],
-      locator: request.trackedAtlas.locator,
-      slug: request.trackedAtlas.slug,
-      snapshot,
-    });
+    writeAtlasLock(
+      request.homeAtlasDirectory,
+      lock,
+      {
+        cacheKey,
+        fetchedAt: metadata["fetchedAt"],
+        introducedByAnchorId: metadata["introducedByAnchorId"],
+        introducedByEdgeId: metadata["introducedByEdgeId"],
+        locator: request.trackedAtlas.locator,
+        slug: request.trackedAtlas.slug,
+        snapshot,
+      },
+      maintenanceFindings,
+    );
     return undefined;
   } catch {
     return finding(
@@ -367,6 +411,7 @@ export function resolveAtlasCache(
   mkdirSync(cacheRoot(request.homeAtlasDirectory), { recursive: true });
 
   const hadCache = existsSync(finalDirectory);
+  const maintenanceFindings: Finding[] = [];
   if (!hadCache) {
     rmSync(pendingDirectory, { force: true, recursive: true });
     mkdirSync(pendingDirectory, { recursive: true });
@@ -442,7 +487,16 @@ export function resolveAtlasCache(
       slug: request.trackedAtlas.slug,
       snapshot: revision,
     });
-    writeMetadata(pendingDirectory, dependency);
+    try {
+      writeMetadata(pendingDirectory, dependency, maintenanceFindings);
+    } catch {
+      maintenanceFindings.push(
+        finding(
+          "ATLAS_CROSS_ATLAS_LOCK_REPAIR_FAILED",
+          `The captured Snapshot remains usable, but its cache metadata for ${request.trackedAtlas.slug.value} could not be recorded.`,
+        ),
+      );
+    }
     publishAtlasCacheDirectory(finalDirectory, pendingDirectory);
   }
 
@@ -471,7 +525,6 @@ export function resolveAtlasCache(
       : { reason: captured.reason, state: "failed" as const };
   };
   const findings: Finding[] = [];
-  const maintenanceFindings: Finding[] = [];
   const fetchReference = hadCache
     ? `refs/atlas-cache-pending/${randomUUID()}`
     : activeReference;
@@ -560,14 +613,25 @@ export function resolveAtlasCache(
       slug: request.trackedAtlas.slug,
       snapshot: captured.revision,
     });
-    writeMetadata(finalDirectory, dependency);
-    writeAtlasLock(request.homeAtlasDirectory, dependency);
+    try {
+      const lock = readAtlasLock(request.homeAtlasDirectory);
+      writeMetadata(finalDirectory, dependency, maintenanceFindings);
+      writeAtlasLock(request.homeAtlasDirectory, lock, dependency, maintenanceFindings);
+    } catch {
+      maintenanceFindings.push(
+        finding(
+          "ATLAS_CROSS_ATLAS_LOCK_REPAIR_FAILED",
+          `The captured Snapshot remains usable, but its Atlas Lock dependency or cache metadata for ${request.trackedAtlas.slug.value} could not be recorded. Inspect the generated Lock and cache metadata.`,
+        ),
+      );
+    }
   } else {
     const repair = restoreMissingLock(
       request,
       finalDirectory,
       cache.cacheKey,
       captured.revision,
+      maintenanceFindings,
     );
     if (repair !== undefined) maintenanceFindings.push(repair);
   }

@@ -32,8 +32,16 @@ the ordinary degradation diagnostics.
 If a usable published cache is missing from Atlas Lock, offline resolution
 restores only that missing dependency from matching cache metadata, retaining
 its original Snapshot, fetch time and introducer identities. Existing entries
-are left unchanged. Unreadable or mismatched metadata and Lock repair failures
-produce maintenance Findings without discarding the usable cached knowledge.
+are left unchanged. Online and offline resolution use the same validating Lock
+boundary: malformed or unreadable records are preserved and reported, never
+treated as an empty dependency list. Recovery keeps the validated prior list
+without rereading it. Cache records are fully written to exclusively created
+sibling files before replacement, so a failed write or replacement leaves the
+original record intact. Unreadable or mismatched metadata and persistence
+failures produce maintenance Findings without discarding usable knowledge.
+Cleanup removes only invocation-owned unpublished files; a cleanup failure
+identifies the retained file. These are sequential record-write guarantees,
+not a multi-record transaction or a concurrent/crash-durability guarantee.
 
 ## Install
 

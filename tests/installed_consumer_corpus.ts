@@ -25,7 +25,9 @@ interface InstalledConsumerCase {
       | "missing-atlas"
       | "uncapturable-update"
       | "interrupted-first-contact"
-      | "unrecorded-publication";
+      | "unrecorded-publication"
+      | "invalid-lock-on-update"
+      | "lock-persistence";
     readonly expectedCode: string;
   };
   readonly retirement?: GovernanceRetirementProbe;
@@ -124,6 +126,8 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
           "uncapturable-update",
           "interrupted-first-contact",
           "unrecorded-publication",
+          "invalid-lock-on-update",
+          "lock-persistence",
         ].includes(entry.cacheFailure.mode),
       );
       assert.match(entry.cacheFailure.expectedCode, /^ATLAS_[A-Z_]+$/u);
