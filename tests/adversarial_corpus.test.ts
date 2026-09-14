@@ -19,6 +19,7 @@ import { gfmFootnote } from "micromark-extension-gfm-footnote";
 import ts from "typescript";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
 import { parseMachineOperationResult } from "./machine_operation_result.ts";
+import { readChangelogCorpus } from "./changelog_corpus.ts";
 import { captureAtlasHostDirectory, CaptureBudgetError } from "../scripts/atlas.ts";
 import { captureLocalAtlasSnapshot } from "../src/platform/local_atlas_snapshot.ts";
 import { lintCommandCaptureBudgets } from "../src/interfaces/lint_command.ts";
@@ -1688,6 +1689,10 @@ test("the adversarial vocabulary corpus is structurally valid", () => {
 // repository build output; this test only registers and validates the corpus.
 test("the adversarial installed-consumer corpus is structurally valid", () => {
   readInstalledConsumerCorpus();
+});
+
+test("the adversarial Changelog corpus is structurally valid", () => {
+  readChangelogCorpus();
 });
 
 test("the adversarial Search Provider envelope corpus is structurally valid", () => {
