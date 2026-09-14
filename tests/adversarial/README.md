@@ -53,6 +53,15 @@ must invoke installed Initialization, adopt its proposal through Git, and pass
 installed Lint and Explore. Add cases to `installed-consumer.json` to extend
 this gate without duplicating the installation harness.
 
+The `writerProvenance` probe runs public installed Lint over actual installed
+Initialization and Ingest output and inspects its canonical pages. It
+requires runtime attribution, schema 1.1.0, explicit Initialization sentinel
+markers and unchanged supplied Ingest timestamps without those markers.
+The structural timestamp corpus covers each sentinel independently, retains
+date-order refusal when the same value has no marker, and refuses unparseable
+dates even when marked. Existing legacy page fixtures remain unchanged;
+the current Initialization golden records the new metadata.
+
 The `cacheFailure` probe imports the installed package root in the isolated
 consumer and fetches a real local Git repository with no Atlas tree. It requires
 an explicit first-contact refusal, no failed dependency in Atlas Lock, and

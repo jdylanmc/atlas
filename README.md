@@ -172,6 +172,35 @@ two-file transaction. Inspect the named output directory, preserve or explicitly
 repair conflicts, and resume the proposal. Initialization does not delete
 conflicting or partially written files for you.
 
+### Page writer and timestamp provenance
+
+The `atlas-sdk-schema` 1.1.0 contract adds `runtime` alongside the existing
+`agent` and `human` actor kinds. Initialization and Ingest attribute pages they
+generate to `{ kind: runtime, name: "Atlas SDK" }`: the deterministic writer,
+not a model, an inferred initiating human, a DRI, or proof of approval.
+Caller-authored governance pages retain their own provenance.
+
+Initialization has no operation-time input and deliberately uses the fixed
+`2026-01-01T00:00:00Z` placeholder instead of reading a hidden clock. It now
+marks each generated page's SDK metadata with `created-at-source: sentinel`
+and `updated-at-source: sentinel`. These markers describe the corresponding
+date independently; a placeholder is not a claim about when the event happened.
+Its initial Changelog day is the same placeholder. Recover recorded chronology
+from Git history and correlate the page's `originating-operation`; Git metadata
+is recorded history, not authenticated time or an inferred approval.
+
+Ingest retains its validated, caller-supplied `asOf` for generated page dates,
+without sentinel markers. Source Revision Time remains separate evidence from
+the source, not the page's creation time. Lint still checks every date's format
+and comparability, but does not order a sentinel against an event date. Without
+markers, existing date-order validation remains unchanged; matching the
+placeholder's numeric value alone never marks a date as a sentinel.
+
+Existing 1.0.0 pages remain readable and are not migrated or reattributed.
+Absence of a marker does not authenticate an old date or author. New SDK-written
+pages and Initialization's Atlas Manifest declare 1.1.0; local Atlas schema,
+Operation Result, and Lint Stamp versions are separate contracts.
+
 ### Explore checkpoint references
 
 Each post-Anchor route step has a `reanchorIndex`: a zero-based reference into

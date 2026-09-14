@@ -25,7 +25,7 @@ export interface AtlasSchemaVersion {
  * Atlas's declared version against "the running SDK" reads this one constant
  * instead of restating the current contract per caller.
  */
-export const currentAtlasSchemaVersion = "1.0.0";
+export const currentAtlasSchemaVersion = "1.1.0";
 
 /**
  * Reports whether `value` is a well-formed `atlas-sdk-schema` version: three

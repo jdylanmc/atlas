@@ -884,6 +884,77 @@ for (const entry of readInstalledConsumerCorpus().cases) {
         initialization.payload.atlasReadinessReport?.lintStamp.atlasCommit,
         proposal,
       );
+      function verifyWriterProvenance(
+        revision: string,
+        paths: readonly string[],
+        time: string,
+        sentinel: boolean,
+      ): void {
+        const probe = entry.writerProvenance;
+        assert.ok(probe !== undefined);
+        const script = [
+          'import assert from "node:assert/strict";',
+          'import { readFileSync } from "node:fs";',
+          'import { runLintOperation } from "@jdylanmc/atlas";',
+          'import { parse } from "yaml";',
+          "const input = JSON.parse(readFileSync(0, 'utf8'));",
+          "const files = input.files.map(({ path, content }) => ({ path, bytes: new TextEncoder().encode(content) }));",
+          "const result = runLintOperation(files, { maxFileBytes: 1048576, maxTotalBytes: 5242880 });",
+          "assert.equal(result.payload.lint.outcome, 'valid', JSON.stringify(result));",
+          "const metadata = input.paths.map((path) => {",
+          "  const page = result.payload.lint.pages.find((page) => page.path === path);",
+          "  assert.ok(page, path);",
+          "  const closing = page.content.indexOf('\\n---\\n', 4);",
+          "  assert.notEqual(closing, -1);",
+          "  return parse(page.content.slice(4, closing)).sdk;",
+          "});",
+          "process.stdout.write(JSON.stringify(metadata));",
+        ].join("\n");
+        const result = spawnSync(
+          process.execPath,
+          ["--input-type=module", "--eval", script],
+          {
+            cwd: consumer,
+            encoding: "utf8",
+            env: consumerEnvironment(guard),
+            input: JSON.stringify({
+              files: consumerGit(consumer, [
+                "ls-tree",
+                "-r",
+                "--name-only",
+                revision,
+                ".atlas",
+              ])
+                .split("\n")
+                .map((path) => ({
+                  content: consumerGit(consumer, ["show", `${revision}:${path}`]),
+                  path,
+                })),
+              paths,
+            }),
+          },
+        );
+        assert.equal(result.status, 0, result.stderr);
+        const metadata = JSON.parse(result.stdout) as Record<string, unknown>[];
+        assert.equal(metadata.length, paths.length);
+        for (const sdk of metadata) {
+          assert.deepEqual(sdk["created-by"], probe.actor);
+          assert.deepEqual(sdk["updated-by"], probe.actor);
+          assert.equal(sdk["atlas-sdk-schema"], probe.schemaVersion);
+          assert.equal(sdk["created-at"], time);
+          assert.equal(sdk["updated-at"], time);
+          assert.equal(sdk["created-at-source"], sentinel ? "sentinel" : undefined);
+          assert.equal(sdk["updated-at-source"], sentinel ? "sentinel" : undefined);
+        }
+      }
+      if (entry.writerProvenance !== undefined) {
+        verifyWriterProvenance(
+          proposal,
+          [".atlas/index.md"],
+          entry.writerProvenance.sentinelTime,
+          true,
+        );
+      }
       if (entry.readinessArtifacts !== undefined) {
         const directory = join(
           consumer,
@@ -2164,6 +2235,14 @@ for (const entry of readInstalledConsumerCorpus().cases) {
         const ingestBranch = result.payload.workflowState.proposalBranch;
         const conceptPath = ".atlas/concepts/installed-citation.md";
         const edgePath = ".atlas/edges/root-covers-installed-citation.md";
+        if (entry.writerProvenance !== undefined) {
+          verifyWriterProvenance(
+            ingestBranch,
+            [conceptPath, edgePath, ".atlas/sources/installed-citation.md"],
+            scopeFields.asOf,
+            false,
+          );
+        }
         const conceptText = consumerGit(consumer, [
           "show",
           `${ingestBranch}:${conceptPath}`,

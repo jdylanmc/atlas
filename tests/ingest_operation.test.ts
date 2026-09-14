@@ -397,6 +397,37 @@ test("Ingest produces one Linted proposal with cited Source and derived knowledg
   assert.equal(adapter.counts.linted(), 1);
 });
 
+test("Ingest attributes its pages to the runtime and retains supplied operation time", () => {
+  const changeSet = reconcileCandidateGraph(state(), request());
+  const paths = [
+    ".atlas/sources/readme.md",
+    ".atlas/concepts/determinism.md",
+    ".atlas/edges/root-covers-determinism.md",
+  ];
+  const pages = changeSet.changes.filter(
+    (change) => change.path !== ".atlas/CHANGELOG.md",
+  );
+  assert.equal(pages.length, 3);
+  for (const change of pages) {
+    const parsed = parseAtlasPage({ content: change.content, path: change.path });
+    assert.ok("page" in parsed);
+    assert.deepEqual(parsed.page.sdk["created-by"], {
+      kind: "runtime",
+      name: "Atlas SDK",
+    });
+    assert.deepEqual(parsed.page.sdk["updated-by"], {
+      kind: "runtime",
+      name: "Atlas SDK",
+    });
+    assert.equal(parsed.page.sdk["created-at"], "2026-08-22T00:00:00Z");
+    assert.equal(parsed.page.sdk["updated-at"], "2026-08-22T00:00:00Z");
+    assert.equal(parsed.page.sdk["created-at-source"], undefined);
+    assert.equal(parsed.page.sdk["updated-at-source"], undefined);
+    assert.equal(parsed.page.sdk["atlas-sdk-schema"], "1.1.0");
+  }
+  assert.deepEqual(pages.map((page) => page.path).sort(), paths.sort());
+});
+
 test("reconciliation is deterministic: the same validated graph reconciles to the same bytes", () => {
   const workflowState = state();
   const ingestRequest = request();

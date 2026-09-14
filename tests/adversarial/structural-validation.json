@@ -3,6 +3,45 @@
   "reviewResolutionRule": "A review finding is resolved only after tests/adversarial has a case exercising the structural validation gate.",
   "cases": [
     {
+      "name": "sentinel-creation-is-not-an-ordering-claim",
+      "gate": "structural-validation",
+      "kind": "timestamp-order",
+      "expectation": "accept",
+      "expectedCodes": [],
+      "createdAt": "2026-01-01T00:00:00Z",
+      "createdAtSource": "sentinel",
+      "updatedAt": "2025-01-01T00:00:00Z"
+    },
+    {
+      "name": "sentinel-update-is-not-an-ordering-claim",
+      "gate": "structural-validation",
+      "kind": "timestamp-order",
+      "expectation": "accept",
+      "expectedCodes": [],
+      "createdAt": "2026-08-17T00:00:00Z",
+      "updatedAt": "2026-01-01T00:00:00Z",
+      "updatedAtSource": "sentinel"
+    },
+    {
+      "name": "sentinel-date-without-marker-keeps-ordering-validation",
+      "gate": "structural-validation",
+      "kind": "timestamp-order",
+      "expectation": "reject",
+      "expectedCodes": ["ATLAS_PAGE_UPDATED_BEFORE_CREATED"],
+      "createdAt": "2026-08-17T00:00:00Z",
+      "updatedAt": "2026-01-01T00:00:00Z"
+    },
+    {
+      "name": "sentinel-marker-does-not-admit-an-unparseable-date",
+      "gate": "structural-validation",
+      "kind": "timestamp-order",
+      "expectation": "reject",
+      "expectedCodes": ["ATLAS_PAGE_TIMESTAMP_UNPARSEABLE"],
+      "createdAt": "1990-12-31T23:59:60Z",
+      "createdAtSource": "sentinel",
+      "updatedAt": "2026-01-01T00:00:00Z"
+    },
+    {
       "name": "governance-link-encoded-pipe-is-not-a-wiki-alias-in-a-markdown-url",
       "gate": "structural-validation",
       "kind": "principle-active-truths",

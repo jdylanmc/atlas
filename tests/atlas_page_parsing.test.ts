@@ -6,6 +6,7 @@ import { FormatRegistry } from "@sinclair/typebox";
 import {
   checkAtlasPageEnvelope,
   AtlasPageEnvelopeSchema,
+  type AtlasPageEnvelope,
 } from "../src/domain/atlas_page.ts";
 import {
   atlasFrontmatterSpan,
@@ -51,6 +52,55 @@ test("direct page parsing rejects non-canonical line terminators", () => {
     assert.equal(error.code, "NON_CANONICAL_LINE_TERMINATOR");
     assert.equal(error.sourceLine, 1);
   }
+});
+
+test("page provenance admits runtimes and explicit sentinel dates without changing legacy actors", () => {
+  const original = fixture(".atlas/index.md");
+  const baseline = parseAtlasPages([original])[0];
+  assert.ok(baseline !== undefined);
+  for (const kind of ["agent", "human", "runtime"] as const) {
+    const value: AtlasPageEnvelope = {
+      ...baseline.page,
+      sdk: {
+        ...baseline.page.sdk,
+        "created-by": { kind, name: "Writer" },
+        "updated-by": { kind, name: "Writer" },
+      },
+    };
+    assert.equal(checkAtlasPageEnvelope(value), true, kind);
+    for (const field of ["created-at-source", "updated-at-source"]) {
+      assert.equal(
+        checkAtlasPageEnvelope({
+          ...value,
+          sdk: { ...value.sdk, [field]: "sentinel" },
+        }),
+        true,
+      );
+      for (const invalid of ["", "observed", "unknown", true, null, []]) {
+        assert.equal(
+          checkAtlasPageEnvelope({
+            ...value,
+            sdk: { ...value.sdk, [field]: invalid },
+          }),
+          false,
+          `${kind} ${field} ${JSON.stringify(invalid)}`,
+        );
+      }
+    }
+  }
+  for (const invalid of ["tool", "system", "", true, null]) {
+    assert.equal(
+      checkAtlasPageEnvelope({
+        ...baseline.page,
+        sdk: {
+          ...baseline.page.sdk,
+          "created-by": { kind: invalid, name: "Writer" },
+        },
+      }),
+      false,
+    );
+  }
+  assert.equal(fixture(".atlas/index.md").content, original.content);
 });
 
 test("classifies only settled core Atlas page locations", () => {
