@@ -1,4 +1,8 @@
 export type { CapturedAtlasFile } from "./atlas/load_atlas_text.ts";
+export {
+  verifyLocalAtlasLintStamp,
+  type LintStampVerification,
+} from "./platform/local_lint_stamp.ts";
 export type { Finding } from "./domain/finding.ts";
 export {
   composeDirective,

@@ -181,6 +181,29 @@ test("returns stable Findings without partial or success-shaped output", () => {
   for (const finding of result.findings) assert.equal(checkFinding(finding), true);
 });
 
+test("validated content has a reproducible original-byte identity before serialization", () => {
+  const result = lintAtlas(completeAtlas("valid"), generousBudgets);
+  assert.equal(result.outcome, "valid");
+  assert.equal(
+    result.atlasContentDigest,
+    "5facc7b61da5111e6e24c52416a15ee492b4c9070d61a81563cd06a4433e67e1",
+  );
+  const modified = completeAtlas("valid").map((file) =>
+    file.path === ".atlas/index.md"
+      ? {
+          ...file,
+          bytes: encoder.encode(fixtureText(file.path).replace("sdk:\n", "sdk: \n")),
+        }
+      : file,
+  );
+  const changed = lintAtlas(modified, generousBudgets);
+  assert.equal(changed.outcome, "valid");
+  assert.notEqual(changed.atlasContentDigest, result.atlasContentDigest);
+  assert.deepEqual(changed.pages, result.pages);
+  const invalid = lintAtlas(completeAtlas("invalid"), generousBudgets);
+  assert.equal("atlasContentDigest" in invalid, false);
+});
+
 test("reports a whole-Atlas loading failure without serializing any page", () => {
   const result = lintAtlas(completeAtlas("valid"), {
     maxFileBytes: 4096,

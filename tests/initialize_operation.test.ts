@@ -115,6 +115,25 @@ test("Atlas Initialization writes a valid proposal while the target branch commi
   });
 });
 
+test("Atlas Initialization stamps the validated content independently of its commit locator", () => {
+  const repository = resolve(WORKSPACE, "content-identity");
+  initRepository(repository);
+  const result = runLocalAtlasInitialization(repository);
+  assert.equal(result.disposition, "success");
+  const stamp = result.payload.atlasReadinessReport?.lintStamp;
+  assert.ok(stamp !== undefined);
+  const digest: unknown = Reflect.get(stamp, "atlasContentDigest");
+  assert.ok(typeof digest === "string", "the stamp must contain a content identity");
+  assert.match(digest, /^[a-f0-9]{64}$/u);
+  assert.notEqual(digest, stamp.atlasCommit);
+  assert.equal(stamp.evidenceRevision, stamp.atlasCommit);
+  const lint = result.payload.lint;
+  assert.ok(lint !== undefined);
+  assert.equal(lint.payload.state, "completed");
+  assert.equal(lint.payload.lint.outcome, "valid");
+  assert.equal(Reflect.get(lint.payload.lint, "atlasContentDigest"), digest);
+});
+
 test("atlas initialize --machine emits only the narrowed Lint Stamp keys", () => {
   const repository = resolve(WORKSPACE, "cli-proposal");
   const before = initRepository(repository);
@@ -133,6 +152,7 @@ test("atlas initialize --machine emits only the narrowed Lint Stamp keys", () =>
   assert.deepEqual(Object.keys(parsed.payload.atlasReadinessReport?.lintStamp ?? {}), [
     "lint-stamp-schema",
     "atlasCommit",
+    "atlasContentDigest",
     "evidenceRevision",
   ]);
   assert.equal(
@@ -231,13 +251,16 @@ test("Atlas Initialization resumes from effect receipts without replaying comple
     },
     currentTargetHead: () => interrupted.targetHead,
     currentBaseSnapshotDigest: () => interrupted.baseSnapshotDigest,
-    lintProposal: () => ({
-      lint: runLintOperation(atlasInitializationFiles(interrupted), {
-        maxFileBytes: 4096,
-        maxTotalBytes: 65536,
-      }),
-      receipt: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    }),
+    lintProposal: (commit) => {
+      assert.equal(commit, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+      return {
+        lint: runLintOperation(atlasInitializationFiles(interrupted), {
+          maxFileBytes: 4096,
+          maxTotalBytes: 65536,
+        }),
+        receipt: commit,
+      };
+    },
     writeChangeSet: () => {
       written += 1;
       return { receipt: "written-again" };

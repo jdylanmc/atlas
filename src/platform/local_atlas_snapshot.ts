@@ -1,13 +1,15 @@
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
+import { resolve } from "node:path";
 import {
   defaultAtlasTextBudgets,
   type CapturedAtlasFile,
 } from "../atlas/load_atlas_text.ts";
 import type { OperationReference } from "../operations/operation_result.ts";
 import { runTrustedGit, runTrustedGitBytes } from "./trusted_git.ts";
+import { findGitRoot } from "./local_git_root.ts";
 
 export interface AtlasSnapshot {
-  readonly baseSnapshot: OperationReference;
+  readonly baseSnapshot: Extract<OperationReference, { readonly state: "known" }>;
   readonly capturedFiles: readonly CapturedAtlasFile[];
   readonly homeAtlas: OperationReference;
 }
@@ -37,8 +39,23 @@ export type AtlasSnapshotCaptureResult =
 export function captureLocalAtlasSnapshot(
   repository: string,
   budgets: LocalAtlasSnapshotBudgets = localAtlasSnapshotBudgets,
+  commit = "HEAD",
 ): AtlasSnapshotCaptureResult {
-  const revisionResult = runTrustedGit(repository, ["rev-parse", "HEAD"]);
+  const root = findGitRoot(repository);
+  if (root === undefined) {
+    return Object.freeze({
+      reason: "Atlas Snapshot capture requires a Git worktree.",
+      state: "failed" as const,
+    });
+  }
+  const hostArguments = ["-C", resolve(repository), "--no-replace-objects"];
+  const revisionResult = runTrustedGit(root, [
+    ...hostArguments,
+    "rev-parse",
+    "--verify",
+    "--end-of-options",
+    `${commit}^{commit}`,
+  ]);
   if (revisionResult.state === "failed") {
     return Object.freeze({
       reason: "Git failed while capturing the local Atlas Snapshot.",
@@ -46,10 +63,10 @@ export function captureLocalAtlasSnapshot(
     });
   }
   const revision = revisionResult.stdout.trim();
-  const listedResult = runTrustedGit(repository, [
+  const listedResult = runTrustedGit(root, [
+    ...hostArguments,
     "ls-tree",
     "-rz",
-    "--name-only",
     revision,
     ".atlas",
   ]);
@@ -59,10 +76,17 @@ export function captureLocalAtlasSnapshot(
       state: "failed" as const,
     });
   }
-  const paths = listedResult.stdout
-    .split("\0")
-    .filter((path) => path !== "")
-    .toSorted(compareCodePoints);
+  const paths: string[] = [];
+  for (const entry of listedResult.stdout.split("\0").filter((entry) => entry !== "")) {
+    const separator = entry.indexOf("\t");
+    if (!/^100(?:644|755) blob [0-9a-f]+$/u.test(entry.slice(0, separator))) {
+      return Object.freeze({
+        reason: "The local Atlas Snapshot contains a non-regular file.",
+        state: "failed" as const,
+      });
+    }
+    paths.push(entry.slice(separator + 1));
+  }
   if (paths.length > budgets.maxFiles) {
     return Object.freeze({
       reason: "The local Atlas Snapshot exceeded the declared file budget.",
@@ -71,8 +95,12 @@ export function captureLocalAtlasSnapshot(
   }
   const capturedFiles: CapturedAtlasFile[] = [];
   let totalBytes = 0;
-  for (const path of paths) {
-    const result = runTrustedGitBytes(repository, ["show", `${revision}:${path}`]);
+  for (const path of paths.toSorted(compareCodePoints)) {
+    const result = runTrustedGitBytes(root, [
+      ...hostArguments,
+      "show",
+      `${revision}:./${path}`,
+    ]);
     if (result.state === "failed") {
       return Object.freeze({
         reason: "Git failed while reading the local Atlas Snapshot.",

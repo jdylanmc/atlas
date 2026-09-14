@@ -56,8 +56,9 @@
       "guide": "None: minimal Initialization records no Guide Persona.",
       "integration": "The Operation Workspace produced a local proposal branch and no forge publication.",
       "lintStamp": {
-        "lint-stamp-schema": "1.0.0",
+        "lint-stamp-schema": "1.1.0",
         "atlasCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "atlasContentDigest": "c89b61e5b6537ef7c94ec3d1cf8192296cb8b07996ab7ca8357312c6561b74f4",
         "evidenceRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       },
       "nextAction": "Review and publish the local proposal branch, then merge through Git governance.",
@@ -143,6 +144,7 @@
               "path": ".atlas/manifest.json"
             }
           ],
+          "atlasContentDigest": "c89b61e5b6537ef7c94ec3d1cf8192296cb8b07996ab7ca8357312c6561b74f4",
           "outcome": "valid",
           "pages": [
             {
