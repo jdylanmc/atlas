@@ -42,9 +42,10 @@ export interface AtlasCacheResolverRequest {
   readonly trackedAtlas: TrackedAtlas;
 }
 
-export type AtlasCacheResolverResult =
+export type AtlasCacheResolverResult = (
   | { readonly snapshot: ResolvedTrackedAtlasSnapshot; readonly state: "resolved" }
-  | { readonly findings: readonly Finding[]; readonly state: "unreachable" };
+  | { readonly findings: readonly Finding[]; readonly state: "unreachable" }
+) & { readonly maintenanceFindings?: readonly Finding[] };
 
 export interface AtlasCacheResolver {
   readonly resolve: (request: AtlasCacheResolverRequest) => AtlasCacheResolverResult;
@@ -204,10 +205,12 @@ function resolveSnapshots(
   resolver: AtlasCacheResolver,
 ): {
   readonly diagnostics: readonly Finding[];
+  readonly maintenanceFindings: readonly Finding[];
   readonly portals: ReadonlyMap<string, PortalBinding>;
   readonly snapshots: readonly SnapshotEntry[];
 } {
   const diagnostics: Finding[] = [];
+  const maintenanceFindings: Finding[] = [];
   const snapshots = new Map<string, SnapshotEntry>();
   const portals = new Map<string, PortalBinding>();
   const homeEntry = Object.freeze({
@@ -243,6 +246,7 @@ function resolveSnapshots(
         introducedByEdgeId: edge.id,
         trackedAtlas: parsed.trackedAtlas,
       });
+      maintenanceFindings.push(...(resolved.maintenanceFindings ?? []));
       if (resolved.state === "unreachable") {
         diagnostics.push(...resolved.findings);
         continue;
@@ -276,6 +280,7 @@ function resolveSnapshots(
 
   return Object.freeze({
     diagnostics: Object.freeze(diagnostics),
+    maintenanceFindings: Object.freeze(maintenanceFindings),
     portals: new Map(portals),
     snapshots: Object.freeze([...snapshots.values()]),
   });
@@ -745,6 +750,9 @@ export function exploreConnectedAtlas(
     if (results.length >= budgets.maxResults) break;
   }
   return Object.freeze({
+    ...(resolved.maintenanceFindings.length === 0
+      ? {}
+      : { maintenanceFindings: resolved.maintenanceFindings }),
     degradation: Object.freeze({
       diagnostics: Object.freeze([...resolved.diagnostics, ...ranking.diagnostics]),
       level:

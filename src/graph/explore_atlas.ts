@@ -84,6 +84,7 @@ export type ExploreDegradationLevel =
   "blocked" | "partial-structure" | "raw-markdown" | "valid-structured";
 
 export interface ExplorePayload {
+  readonly maintenanceFindings?: readonly Finding[];
   readonly degradation: {
     readonly diagnostics: readonly Finding[];
     readonly level: ExploreDegradationLevel;
