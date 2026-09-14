@@ -119,7 +119,9 @@
             "type": "anchor"
           },
           {
-            "edgeId": "root-anchor-catalog",
+            "catalogFallback": {
+              "anchorId": "anchor:root"
+            },
             "objectId": "anchor:lint",
             "path": ".atlas/anchors/lint.md",
             "title": "Lint",
@@ -166,7 +168,9 @@
             "type": "anchor"
           },
           {
-            "edgeId": "root-anchor-catalog",
+            "catalogFallback": {
+              "anchorId": "anchor:root"
+            },
             "objectId": "anchor:lint",
             "path": ".atlas/anchors/lint.md",
             "title": "Lint",

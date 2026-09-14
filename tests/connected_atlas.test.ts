@@ -1014,6 +1014,58 @@ test("Explore uses the tracked Atlas Root Anchor catalog for unreachable tracked
         "# Catalog\n\nneedle catalog.",
       ),
     ),
+    captured(
+      page(
+        ".atlas/anchors/topic.md",
+        "anchor:topic",
+        "anchor",
+        "Topic",
+        "atlas: {}",
+        "# Topic\n\nneedle.",
+      ),
+    ),
+    captured(
+      page(
+        ".atlas/edges/root-topic.md",
+        "edge:root-topic",
+        "edge",
+        "Root Topic",
+        "atlas:\n  from: anchor:root\n  to: anchor:topic\n  semantics: [covers]",
+        "# Root Topic",
+      ),
+    ),
+    ...["a", "b"].flatMap((name) => [
+      captured(
+        page(
+          `.atlas/anchors/${name}.md`,
+          `anchor:${name}`,
+          "anchor",
+          name,
+          "atlas: {}",
+          `# ${name}\n\nneedle.`,
+        ),
+      ),
+      captured(
+        page(
+          `.atlas/edges/${name}-shared.md`,
+          `edge:${name}-shared`,
+          "edge",
+          `${name} Shared`,
+          `atlas:\n  from: anchor:${name}\n  to: concept:shared\n  semantics: [covers]`,
+          "# Shared route",
+        ),
+      ),
+    ]),
+    captured(
+      page(
+        ".atlas/concepts/shared.md",
+        "concept:shared",
+        "concept",
+        "Shared",
+        "atlas: {}",
+        "# Shared\n\nneedle.",
+      ),
+    ),
   ];
   const homeFiles = [
     captured(
@@ -1060,6 +1112,33 @@ test("Explore uses the tracked Atlas Root Anchor catalog for unreachable tracked
     query: "needle catalog",
   });
   assert.equal(result.payload.results[0]?.result.id, "concept:catalog");
+  const route = result.payload.results[0].route;
+  assert.equal(route.at(-1)?.edgeId, undefined);
+  assert.deepEqual(route.at(-1)?.catalogFallback, { anchorId: "anchor:root" });
+  assert.equal(route.at(-1)?.snapshot?.snapshot, "catalog-sha");
+  assert.equal(route.at(-1)?.snapshot?.role, "tracked");
+  assert.equal(route[0]?.catalogFallback, undefined);
+  assert.equal(route[1]?.edgeId, "edge:root-track-catalog");
+  assert.equal(route[1].catalogFallback, undefined);
+  const checkpoint = result.payload.reanchors[route.at(-1)?.reanchorIndex ?? -1];
+  assert.equal(checkpoint?.anchor.id, "anchor:root");
+  assert.equal(checkpoint.anchor.snapshot?.snapshot, "catalog-sha");
+  const explicit = result.payload.results.find(
+    ({ result }) => result.id === "anchor:topic",
+  );
+  assert.ok(explicit);
+  assert.equal(explicit.route.at(-1)?.edgeId, "edge:root-topic");
+  assert.equal(explicit.route.at(-1)?.catalogFallback, undefined);
+  const shared = result.payload.results.find(
+    ({ result }) => result.id === "concept:shared",
+  );
+  assert.ok(shared);
+  assert.deepEqual(
+    shared.route.map(({ objectId }) => objectId),
+    ["anchor:root", "anchor:root", "anchor:a", "concept:shared"],
+  );
+  assert.equal(shared.route.at(-1)?.edgeId, "edge:a-shared");
+  assert.deepEqual(shared.route[2]?.catalogFallback, { anchorId: "anchor:root" });
 });
 
 test("Explore crosses to the tracked Atlas Root Anchor, re-anchors, and preserves source identity", () => {

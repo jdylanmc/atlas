@@ -1510,8 +1510,56 @@ for (const entry of readInstalledConsumerCorpus().cases) {
           }
           return tracked.changes.map(({ path }) => path);
         };
+        const verifyCatalogHop = (
+          result: ExploreOperationResult,
+          found: ExploreOperationResult["payload"]["results"][number],
+        ) => {
+          const hop = found.route.find(
+            ({ objectId }) => objectId === probe.expectedCatalogTargetId,
+          );
+          assert.ok(hop);
+          assert.equal(Object.hasOwn(hop, "edgeId"), false);
+          assert.deepEqual(hop.catalogFallback, {
+            anchorId: entry.expectedRootAnchorId,
+          });
+          const anchor = result.payload.reanchors[hop.reanchorIndex ?? -1]?.anchor;
+          assert.equal(anchor?.id, entry.expectedRootAnchorId);
+          assert.equal(anchor.path, ".atlas/index.md");
+          assert.deepEqual(anchor.snapshot, hop.snapshot);
+          assert.equal(found.route[0]?.catalogFallback, undefined);
+          assert.equal(found.route.at(-1)?.catalogFallback, undefined);
+          for (const step of found.route.slice(1)) {
+            assert.ok(
+              step.catalogFallback !== undefined || typeof step.edgeId === "string",
+            );
+          }
+        };
         let remoteHead = commitFixture(remote, "Seed connected knowledge");
-        let homeHead = consumerGit(consumer, ["rev-parse", "HEAD"]);
+        let homeHead = commitFixture(consumer, "Seed Home catalog knowledge");
+        const singleArguments = [
+          "explore",
+          "--machine",
+          probe.query,
+          "--atlas-host-directory",
+          consumer,
+        ];
+        const single = runInstalled(consumer, guard, singleArguments);
+        assert.equal(single.status, 0, single.stderr);
+        assert.equal(single.stderr, "");
+        const repeatedSingle = runInstalled(consumer, guard, singleArguments);
+        assert.equal(repeatedSingle.status, 0, repeatedSingle.stderr);
+        assert.equal(repeatedSingle.stdout, single.stdout);
+        const singleResult = parseMachineOperationResult(
+          single.stdout,
+        ) as ExploreOperationResult;
+        const singleFound = singleResult.payload.results.find(
+          ({ result }) => result.id === probe.expectedConceptId,
+        );
+        assert.ok(singleFound);
+        verifyCatalogHop(singleResult, singleFound);
+        assert.equal(consumerGit(consumer, ["rev-parse", "HEAD"]), homeHead);
+        assert.equal(consumerGit(consumer, ["status", "--porcelain"]), "");
+        assert.deepEqual(readFileSync(join(consumer, ".atlas/index.md")), rootBytes);
         const moduleSource = [
           'import assert from "node:assert/strict";',
           'import { execFileSync, spawnSync } from "node:child_process";',
@@ -1628,6 +1676,7 @@ for (const entry of readInstalledConsumerCorpus().cases) {
               found.route.at(-1)?.edgeId,
               "edge:lint-covers-canonical-serialization",
             );
+            verifyCatalogHop(result, found);
             const citation = found.citedContext.find(
               ({ id }) => id === probe.expectedSourceId,
             );
