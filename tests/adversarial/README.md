@@ -53,6 +53,16 @@ must invoke installed Initialization, adopt its proposal through Git, and pass
 installed Lint and Explore. Add cases to `installed-consumer.json` to extend
 this gate without duplicating the installation harness.
 
+The Initialization case's `lintStampVerification` probes consume the declared
+installed binary's stamp through the installed package root. They accept
+metadata-only commits, unrelated host changes and regular executable files,
+and reject changed raw bytes or paths, symlink modes, empty Atlas captures,
+unavailable commits, malformed evidence and unsupported stamp schemas. Git
+metadata is varied only in fixtures, never frozen in production. Source controls
+also pin nested host selection, replacement-object isolation, dirty-worktree
+independence, unexpected fault propagation and an independently derived SHA-256
+golden digest for the complete Atlas fixture.
+
 The `cacheFailure` probe imports the installed package root in the isolated
 consumer and fetches a real local Git repository with no Atlas tree. It requires
 an explicit first-contact refusal, no failed dependency in Atlas Lock, and

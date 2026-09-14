@@ -14,6 +14,7 @@ import { validateAtlasStructureWithPages } from "./validate_atlas_structure.ts";
 interface LoadedInput {
   readonly files: readonly AtlasTextFile[];
   readonly captureMetadata: {
+    readonly atlasContentDigest: string;
     readonly state: "loaded";
     readonly budgets: AtlasTextBudgets;
     readonly byteLengths: Readonly<Record<string, number>>;
@@ -101,6 +102,7 @@ function loadOrFinding(
     return Object.freeze({
       files: loaded.files,
       captureMetadata: Object.freeze({
+        atlasContentDigest: loaded.atlasContentDigest,
         state: "loaded" as const,
         budgets: captured.budgets,
         byteLengths: loaded.byteLengths,

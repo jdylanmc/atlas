@@ -33,6 +33,7 @@ function changelogCapacityFindings(
 }
 
 export interface ValidAtlasLintResult {
+  readonly atlasContentDigest: string;
   /**
    * Findings that report on the Atlas without denying its validity: warnings,
    * suggestions, inconclusive verdicts, and skipped checks.
@@ -115,7 +116,7 @@ function decideAtlasLint(
           ].toSorted(compareFindings),
         )
       : validation.findings;
-  if (deniesAtlasValidity(findings)) {
+  if (captureMetadata.state !== "loaded" || deniesAtlasValidity(findings)) {
     return Object.freeze({ findings, outcome: "invalid" as const });
   }
 
@@ -126,6 +127,7 @@ function decideAtlasLint(
   // at the boundary rather than raised.
   const pages = serializeAtlasPages(parseAtlasPages(files));
   return Object.freeze({
+    atlasContentDigest: captureMetadata.atlasContentDigest,
     findings,
     opaque: Object.freeze(
       files.filter((file) => classifyAtlasTextPath(file.path) === "opaque"),
