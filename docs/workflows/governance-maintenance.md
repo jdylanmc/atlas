@@ -50,11 +50,11 @@ bookkeeping. Do not attempt to supply a base snapshot digest, a target head, or
 the operation ID — there is no field for them, and Atlas SDK reserves the
 `.atlas/CHANGELOG.md` entry for itself.
 
-| Who | Supplies |
-|---|---|
-| Maintainer (human) | the truth or rule itself, the intent, and the detached Approval Attestation naming its approver and approval instant |
-| Agent | the authored `changes` — page content for creation/amendment or an explicit removal for retirement — and the drafted `changelog` rationale |
-| Atlas SDK | the base snapshot digest, the target head, the Atlas Changelog entry's stable operation ID, identity derivation, and validation |
+| Who                | Supplies                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Maintainer (human) | the truth or rule itself, the intent, and the detached Approval Attestation naming its approver and approval instant                       |
+| Agent              | the authored `changes` — page content for creation/amendment or an explicit removal for retirement — and the drafted `changelog` rationale |
+| Atlas SDK          | the base snapshot digest, the target head, the Atlas Changelog entry's stable operation ID, identity derivation, and validation            |
 
 Each authored change is `{ path, content }` against a canonical `.atlas/` path.
 String `content` creates or amends a live document. For `retire` or `delete`,
@@ -101,3 +101,9 @@ An existing proposal is not overwritten by repeating the command. If a file
 or symlink unexpectedly occupies a retirement target in a newly created
 Operation Workspace, the command refuses and retains that workspace for human
 inspection instead of deleting competing work during cleanup.
+
+When another Atlas Proposal merges first, follow
+[Rebase concurrent Atlas Proposals](concurrent-proposals.md). Rebase and fully
+Lint the actual governance Proposal again; preserve every accepted knowledge
+change and each stamped Atlas Changelog operation entry during conflict
+resolution.

@@ -14,13 +14,14 @@ import { dirname, join, resolve } from "node:path";
 import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
 import { sha256Hex } from "../atlas/sha256.ts";
 import {
+  governanceAttestationPayload,
   runAtlasGovernanceWorkflow,
   type AtlasGovernanceChangeSet,
   type AtlasGovernanceRequest,
   type AtlasGovernanceResult,
-  type AtlasGovernanceSubject,
   type AtlasGovernanceWorkflowState,
 } from "../operations/governance_operation.ts";
+import { canonicalJson } from "../operations/operation_support.ts";
 import { runLintOperation } from "../operations/lint_operation.ts";
 import { captureLocalAtlasSnapshot } from "./local_atlas_snapshot.ts";
 import {
@@ -86,12 +87,9 @@ function digestSnapshot(repository: string, targetHead: string): string {
   return hash.digest("hex");
 }
 
-function operationLabel(
-  subject: AtlasGovernanceSubject,
-  action: AtlasGovernanceRequest["action"],
-  targetHead: string,
-): string {
-  return `${targetHead.slice(0, 12)}-${sha256Hex(`${subject}:${action}`).slice(0, 8)}`;
+function operationLabel(request: AtlasGovernanceRequest, targetHead: string): string {
+  const intent = canonicalJson(governanceAttestationPayload(request));
+  return `${targetHead.slice(0, 12)}-${sha256Hex(intent).slice(0, 8)}`;
 }
 
 function proposalBranchName(label: string): string {
@@ -174,8 +172,8 @@ function excludeOperationWorkspaces(repository: string): void {
 }
 
 // Best-effort teardown of the branch and Operation Workspace a failed attempt
-// created. The proposal label is deterministic in (target HEAD, subject,
-// action), so without this an ordinary authoring mistake — content that fails
+// created. The proposal label is deterministic in (target HEAD, authored
+// intent), so without this an ordinary authoring mistake — content that fails
 // Lint — would leave the worktree and branch behind and wedge every retry at the
 // same HEAD behind ATLAS_GOVERNANCE_WORKSPACE_EXISTS. Failures here are swallowed
 // on purpose: the worst case is the pre-existing orphan, and surfacing a
@@ -198,7 +196,7 @@ export function createLocalAtlasGovernanceState(
   const root = resolve(repository);
   const targetBranch = git(root, ["rev-parse", "--abbrev-ref", "HEAD"]);
   const targetHead = git(root, ["rev-parse", "HEAD"]);
-  const label = operationLabel(request.subject, request.action, targetHead);
+  const label = operationLabel(request, targetHead);
   return Object.freeze({
     "operation-workflow-schema": "1.0.0" as const,
     baseSnapshotDigest: digestSnapshot(root, targetHead),
@@ -317,6 +315,7 @@ export function runLocalAtlasGovernance(
         `refs/heads/${workflowState.proposalBranch}`,
         commit,
       ]);
+      gitWrite(workspace, ["checkout", "--", "."]);
       return { commit, receipt: commit };
     },
     createProposalWorktree: () => {

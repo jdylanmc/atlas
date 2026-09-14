@@ -37,7 +37,16 @@ const governanceCorpus = JSON.parse(
   readonly cases: readonly {
     readonly expectedCode: string;
     readonly gate: "governance";
-    readonly kind: "finding-merge" | "semantic" | "retirement" | "retirement-workspace";
+    readonly kind:
+      | "finding-merge"
+      | "proposal-concurrency"
+      | "semantic"
+      | "retirement"
+      | "retirement-workspace";
+    readonly concurrentProposals?: {
+      readonly first: Readonly<Record<string, string>>;
+      readonly second: Readonly<Record<string, string>>;
+    };
     readonly workspaceConflict?: {
       readonly kind: "file" | "symlink";
       readonly content: string;
@@ -2024,7 +2033,8 @@ test("the adversarial governance corpus maps to enforced gates", () => {
           entry.merge === undefined &&
           entry.assembly === undefined &&
           entry.retirement === undefined &&
-          entry.workspaceConflict === undefined,
+          entry.workspaceConflict === undefined &&
+          entry.concurrentProposals === undefined,
       )
       .map((entry) => [entry.gate, entry.kind, entry.expectedCode]),
     [
