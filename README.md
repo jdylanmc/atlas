@@ -132,6 +132,43 @@ invalidates the old truth and records a linked successor with a new ID.
 The CLI reference includes the exact Markdown forms. Its examples are
 illustrative templates, never human approval records.
 
+### Explicit-time Source freshness
+
+```sh
+atlas lint --machine --atlas-host-directory /path/to/atlas --as-of 2026-09-14T18:00:00Z
+```
+
+The installed package root also accepts
+`runLintOperation(capturedFiles, budgets, { asOf: observationTime })`, with exported
+`AtlasLintOptions`. A valid result echoes the supplied time as
+`payload.lint.asOf`. Repeating the same captured input and time produces the same
+ordered output. This check does not use a hidden wall clock or mutate knowledge.
+
+Without `--as-of` / `options.asOf`, existing non-time-dependent Lint behavior is
+preserved and Source freshness is **not assessed**. With an explicit comparable
+date-time, Lint uses each Source's persisted `atlas.revision-time` and
+`atlas.refresh-window-days`: neither SDK creation/update timestamps nor an old
+Ingest request's stricter freshness window substitutes for that evidence.
+Elapsed days must be **strictly greater** than the persisted window to be stale;
+equality is still within the window. Zero and fractional windows are supported.
+
+| Finding | Severity | Meaning |
+| --- | --- | --- |
+| `ATLAS_SOURCE_STALE` | warning | The persisted Source revision has expired. |
+| `ATLAS_SOURCE_FRESHNESS_UNAVAILABLE` | skipped | Revision time or a non-negative numeric window is missing or unusable. |
+| `ATLAS_SOURCE_REVISION_AFTER_OBSERVATION` | inconclusive | Source Revision Time is later than the requested observation. |
+
+These Findings preserve successful structural validity. Structural errors,
+including unresolved Contradiction governors, still fail Lint; freshness is
+assessed only after structural validation succeeds. Invalid observation input
+produces `ATLAS_LINT_AS_OF_INVALID` through the API; invalid, missing or repeated
+CLI `--as-of` values produce usage exit 64. Date-only and noncomparable leap-second
+values are refused.
+
+This is the first Knowledge Health slice, not complete whole-Atlas health.
+Orphan reachability and persisted Dispute reporting remain unimplemented here;
+the existing structural Contradiction checks are reused, not replaced.
+
 ### Initialization report artifacts
 
 Successful `atlas initialize --machine` also writes two first-class outputs

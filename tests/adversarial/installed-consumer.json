@@ -22,6 +22,36 @@
       "isolatedPackPreservesProducerOutput": true,
       "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
       "citationCorrespondence": {
+        "freshness": {
+          "requestWindowDays": 1,
+          "cases": [
+            {
+              "elapsedMilliseconds": 0,
+              "expectedCode": null,
+              "expectedSeverity": null
+            },
+            {
+              "elapsedMilliseconds": 172800000,
+              "expectedCode": null,
+              "expectedSeverity": null
+            },
+            {
+              "elapsedMilliseconds": 2592000000,
+              "expectedCode": null,
+              "expectedSeverity": null
+            },
+            {
+              "elapsedMilliseconds": 2592000001,
+              "expectedCode": "ATLAS_SOURCE_STALE",
+              "expectedSeverity": "warning"
+            },
+            {
+              "elapsedMilliseconds": -1,
+              "expectedCode": "ATLAS_SOURCE_REVISION_AFTER_OBSERVATION",
+              "expectedSeverity": "inconclusive"
+            }
+          ]
+        },
         "claim": "# Installed **claim** with [a link](https://example.invalid), &copy;, <b>HTML</b>, and [^forged].\n\n    indented claim\n- unordered claim\n1. ordered claim\n```ts\nconst claimFence = true;\n```",
         "context": "> Installed ~~context~~ with `code`, &copy;, and [^forged].\n\n\tindented context\n+ unordered context\n2. ordered context\n~~~txt\ncontext fence\n~~~",
         "sourceContent": "Installed citation one. Installed citation two.",
