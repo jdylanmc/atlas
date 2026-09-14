@@ -111,6 +111,10 @@ test("package metadata declares the supported consumption contract", () => {
       types: "./dist/src/index.d.ts",
       default: "./dist/src/index.js",
     },
+    "./atlas-qmd": {
+      types: "./dist/src/extensions/atlas_qmd.d.ts",
+      default: "./dist/src/extensions/atlas_qmd.js",
+    },
     "./package.json": "./package.json",
   });
 });
@@ -133,6 +137,15 @@ test("package root is importable and internal subpaths are private", async () =>
 
   assert.match(atlas.lintCommandUsage, /^usage: atlas lint/u);
   assert.equal(typeof atlas.runLintCommandOperation, "function");
+  const atlasQmd = await import("@jdylanmc/atlas/atlas-qmd");
+  const unsupported = atlasQmd.prepareAtlasQmd({
+    architecture: "arm64",
+    atlasHostDirectory: "/fixture/atlas",
+    atlasVersion: "fixture-snapshot",
+    platform: "win32",
+  });
+  assert.equal(unsupported.capability.state, "unsupported");
+  assert.equal(unsupported.mode, "lexical-fallback");
   const internalSpecifier = "@jdylanmc/atlas/src/operations/lint_operation.ts";
   await assert.rejects(import(internalSpecifier), {
     code: "ERR_PACKAGE_PATH_NOT_EXPORTED",
@@ -481,6 +494,10 @@ for (const entry of readInstalledConsumerCorpus().cases) {
             "for (const name of Object.keys(dependencies)) assert.ok(realpathSync(require.resolve(name)).startsWith(`${modules}${sep}`), name);",
             'await assert.rejects(import("eslint"), { code: "ERR_MODULE_NOT_FOUND" });',
             'await assert.rejects(import("@jdylanmc/atlas/src/operations/lint_operation.ts"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });',
+            'const { prepareAtlasQmd } = await import("@jdylanmc/atlas/atlas-qmd");',
+            'const optional = prepareAtlasQmd({ architecture: "arm64", atlasHostDirectory: ".", atlasVersion: "fixture", platform: "win32" });',
+            'assert.equal(optional.capability.state, "unsupported");',
+            'assert.equal(optional.mode, "lexical-fallback");',
             'const { validateVocabularyAgreement } = await import(new URL("./dist/src/lint/validate_vocabulary_agreement.js", import.meta.resolve("@jdylanmc/atlas/package.json")));',
             'const findings = validateVocabularyAgreement({}, [], [{ term: "Anchor", reason: "installed-package probe" }],',
             '{ path: "CONTEXT.md", content: "**Anchor**:\\n_Avoid_: Bonfire\\n" },',

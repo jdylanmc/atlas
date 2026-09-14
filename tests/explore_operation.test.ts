@@ -15,6 +15,7 @@ import { buildAtlasView } from "../src/atlas/atlas_view.ts";
 import {
   exploreAtlas,
   type ExploreBudgets,
+  type SearchProviderDiagnostic,
   type SearchProvider,
 } from "../src/graph/explore_atlas.ts";
 import {
@@ -1028,6 +1029,71 @@ test("invalid Search Provider candidates degrade visibly instead of throwing", (
   assert.deepEqual(
     result.results.map((entry) => entry.result.id),
     ["concept:target"],
+  );
+});
+
+test("Search Provider diagnostics remain visible without granting candidate authority", () => {
+  const providerDiagnostic: SearchProviderDiagnostic = Object.freeze({
+    code: "ATLAS_INDEXING_EXTENSION_FALLBACK",
+    message: "The optional index was unavailable, so lexical ranking was used.",
+    severity: "warning",
+  });
+  const provider: SearchProvider = Object.freeze({
+    rank: () =>
+      Object.freeze({
+        candidates: Object.freeze([
+          Object.freeze({ objectId: "missing", score: 100 }),
+          Object.freeze({ objectId: "concept:target", score: 1 }),
+        ]),
+        diagnostics: Object.freeze([providerDiagnostic]),
+      }),
+  });
+
+  const result = exploreCaptured(graphAtlas(), "needle", provider, budgets);
+
+  assert.deepEqual(
+    result.results.map((entry) => entry.result.id),
+    ["concept:target"],
+  );
+  assert.ok(
+    result.degradation.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === providerDiagnostic.code &&
+        diagnostic.message === providerDiagnostic.message,
+    ),
+  );
+  assert.ok(
+    result.degradation.diagnostics.some(
+      (diagnostic) => diagnostic.code === "ATLAS_EXPLORE_PROVIDER_CANDIDATE_INVALID",
+    ),
+  );
+});
+
+test("a failing Search Provider falls back visibly to built-in lexical Explore", () => {
+  const provider: SearchProvider = Object.freeze({
+    rank: () => {
+      throw new Error("optional provider unavailable");
+    },
+  });
+
+  const result = runExploreOperation({
+    baseSnapshot: { reference: "fixture-base", state: "known" },
+    capturedFiles: completeAtlas(),
+    homeAtlas: { reference: "fixture", state: "known" },
+    provider,
+    query: "canonical serialization",
+    budgets,
+  });
+
+  assert.equal(result.disposition, "success");
+  assert.equal(result.payload.results.length > 0, true);
+  assert.ok(
+    result.payload.degradation.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === "ATLAS_EXPLORE_PROVIDER_FALLBACK" &&
+        diagnostic.severity === "warning" &&
+        diagnostic.message.includes("optional provider unavailable"),
+    ),
   );
 });
 

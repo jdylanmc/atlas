@@ -5,6 +5,12 @@ import {
   type ExplorePayload,
   type SearchProvider,
 } from "../graph/explore_atlas.ts";
+import type {
+  ExploreCandidate,
+  ExploreSearchDocument,
+  SearchProviderDiagnostic,
+  SearchProviderRanking,
+} from "../graph/search_provider.ts";
 import {
   exploreConnectedAtlas,
   type AtlasCacheResolver,
@@ -93,6 +99,35 @@ function budgetsOf(request: ExploreOperationRequest): ExploreBudgets {
   return Object.freeze({
     ...defaultBudgetValues,
     ...request.budgets,
+  });
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function providerWithLexicalFallback(provider: SearchProvider): SearchProvider {
+  if (provider === lexicalSearchProvider) return provider;
+  return Object.freeze({
+    rank(
+      documents: readonly ExploreSearchDocument[],
+      query: string,
+      budgets: Pick<ExploreBudgets, "maxQueryCharacters" | "maxTerms">,
+    ): SearchProviderRanking | readonly ExploreCandidate[] {
+      try {
+        return provider.rank(documents, query, budgets);
+      } catch (error) {
+        const fallbackDiagnostic: SearchProviderDiagnostic = Object.freeze({
+          code: "ATLAS_EXPLORE_PROVIDER_FALLBACK",
+          message: `Search Provider failed; built-in lexical ranking was used: ${errorMessage(error)}`,
+          severity: "warning",
+        });
+        return Object.freeze({
+          candidates: lexicalSearchProvider.rank(documents, query, budgets),
+          diagnostics: Object.freeze([fallbackDiagnostic]),
+        });
+      }
+    },
   });
 }
 
@@ -220,7 +255,7 @@ export function runExploreOperation(
       : exploreConnectedAtlas(
           atlasView,
           request.query,
-          request.provider ?? lexicalSearchProvider,
+          providerWithLexicalFallback(request.provider ?? lexicalSearchProvider),
           budgets,
           request.atlasCacheResolver,
         );
@@ -229,7 +264,7 @@ export function runExploreOperation(
     exploreAtlas(
       atlasView,
       request.query,
-      request.provider ?? lexicalSearchProvider,
+      providerWithLexicalFallback(request.provider ?? lexicalSearchProvider),
       budgets,
     );
   const operationHandoff = handoff(request, resolvedPayload);

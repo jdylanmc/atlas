@@ -160,6 +160,13 @@ export {
   runExploreOperationFromSnapshotCapture,
 } from "./operations/explore_operation.ts";
 export type {
+  ExploreCandidate,
+  ExploreSearchDocument,
+  SearchProvider,
+  SearchProviderDiagnostic,
+  SearchProviderRanking,
+} from "./graph/search_provider.ts";
+export type {
   ExploreCapturedSnapshot,
   ExploreOperationHandoff,
   ExploreOperationIdentity,
