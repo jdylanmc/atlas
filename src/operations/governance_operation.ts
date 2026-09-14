@@ -190,7 +190,11 @@ export type AtlasGovernanceResult = OperationResult<
 >;
 
 export interface AtlasGovernanceRuntime {
-  readonly commitProposal: () => { readonly commit: string; readonly receipt: string };
+  readonly commitProposal: () => {
+    readonly commit: string;
+    readonly receipt: string;
+    readonly tree: string;
+  };
   readonly createProposalWorktree: () => { readonly receipt: string };
   readonly currentBaseSnapshotDigest: () => string;
   readonly currentTargetHead: () => string;
@@ -208,6 +212,7 @@ export interface AtlasGovernanceRuntime {
   readonly workspacePathValid?: () => boolean;
   readonly writeChangeSet: (changeSet: AtlasGovernanceChangeSet) => {
     readonly receipt: string;
+    readonly verifiedChangeSet: boolean;
   };
 }
 
@@ -950,6 +955,29 @@ const reservedGovernanceCollisionKeys: ReadonlySet<string> = new Set(
   governanceDerivedPaths().map(atlasPathCollisionKey),
 );
 
+function authoredChangePathCollisionFindings(
+  changes: readonly AtlasGovernanceChange[],
+): readonly Finding[] {
+  const firstPathByCollisionKey = new Map<string, string>();
+  const findings: Finding[] = [];
+  for (const change of changes) {
+    const collisionKey = atlasPathCollisionKey(change.path);
+    const firstPath = firstPathByCollisionKey.get(collisionKey);
+    if (firstPath === undefined) {
+      firstPathByCollisionKey.set(collisionKey, change.path);
+      continue;
+    }
+    findings.push(
+      finding(
+        "ATLAS_GOVERNANCE_CHANGE_PATH_COLLISION",
+        `Governance authored changes must name distinct filesystem paths; ${change.path} collides with ${firstPath}.`,
+        change.path,
+      ),
+    );
+  }
+  return Object.freeze(findings);
+}
+
 // Defence in depth against Changelog prose injection. The seam bounds `changelog`
 // to a single line, so a newline does not reach the renderer; this asserts the
 // derived entry actually is a single dated heading and a single operation bullet
@@ -1007,6 +1035,7 @@ function validateAtlasGovernanceRequestInternal(
       ),
     );
   }
+  findings.push(...authoredChangePathCollisionFindings(changes));
   for (const change of changes) {
     if (isGovernanceRetirement(request.action) && change.content !== null) {
       findings.push(
@@ -1393,6 +1422,23 @@ export function runAtlasGovernanceWorkflow(
     }
     if (receiptFor(nextState, "write-change-set") === undefined) {
       const written = runtime.writeChangeSet(acceptedChangeSet);
+      if (!written.verifiedChangeSet) {
+        const writeFindings = Object.freeze([
+          finding(
+            "ATLAS_GOVERNANCE_WRITTEN_CHANGE_SET_MISMATCH",
+            "Atlas Governance refused written content that does not match the canonical Atlas Change Set.",
+          ),
+        ]);
+        return result(
+          nextState,
+          request,
+          "not-completed",
+          "failed",
+          { changeSet: acceptedChangeSet },
+          writeFindings,
+          "Governance refused written content that differed from the accepted Atlas Change Set.",
+        );
+      }
       nextState = addReceipt(nextState, {
         changeSetDigest: digest,
         effect: "write-change-set",
@@ -1402,9 +1448,31 @@ export function runAtlasGovernanceWorkflow(
       latestState = nextState;
       runtime.persistState?.(nextState);
     }
+    const writeReceipt = receiptFor(
+      nextState,
+      "write-change-set",
+    ) as AtlasGovernanceEffectReceipt & { readonly writtenTree: string };
+    const writtenTree = writeReceipt.writtenTree;
     let commit = receiptFor(nextState, "commit-proposal")?.commit;
     if (commit === undefined) {
       const committed = runtime.commitProposal();
+      if (committed.tree !== writtenTree) {
+        const commitFindings = Object.freeze([
+          finding(
+            "ATLAS_GOVERNANCE_COMMITTED_TREE_MISMATCH",
+            "Atlas Governance refused a proposal commit whose tree differs from the verified written tree.",
+          ),
+        ]);
+        return result(
+          nextState,
+          request,
+          "not-completed",
+          "failed",
+          { changeSet: acceptedChangeSet },
+          commitFindings,
+          "Governance refused a proposal commit that did not preserve the verified written tree.",
+        );
+      }
       commit = committed.commit;
       nextState = addReceipt(nextState, {
         changeSetDigest: digest,

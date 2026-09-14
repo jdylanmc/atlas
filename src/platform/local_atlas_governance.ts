@@ -26,6 +26,7 @@ import { captureLocalAtlasSnapshot } from "./local_atlas_snapshot.ts";
 import {
   runTrustedGit,
   runTrustedGitForWrite,
+  runTrustedGitWithInput,
   type TrustedGitResult,
 } from "./trusted_git.ts";
 
@@ -44,16 +45,19 @@ const lintBudgets = Object.freeze({
 
 type GitRunner = (repository: string, args: readonly string[]) => TrustedGitResult;
 
+function trustedGitOutput(result: TrustedGitResult): string {
+  if (result.state === "failed") {
+    throw new Error("trusted git command failed");
+  }
+  return result.stdout.trim();
+}
+
 function runOrThrow(
   run: GitRunner,
   repository: string,
   args: readonly string[],
 ): string {
-  const result = run(repository, args);
-  if (result.state === "failed") {
-    throw new Error("trusted git command failed");
-  }
-  return result.stdout.trim();
+  return trustedGitOutput(run(repository, args));
 }
 
 function git(repository: string, args: readonly string[]): string {
@@ -64,8 +68,81 @@ function gitWrite(repository: string, args: readonly string[]): string {
   return runOrThrow(runTrustedGitForWrite, repository, args);
 }
 
+function gitWithInput(
+  repository: string,
+  args: readonly string[],
+  input: string,
+): string {
+  return trustedGitOutput(
+    runTrustedGitWithInput(
+      repository,
+      args,
+      input,
+      Math.max(1024, Buffer.byteLength(input, "utf8") + 1024),
+    ),
+  );
+}
+
 function gitSucceeds(repository: string, args: readonly string[]): boolean {
   return runTrustedGit(repository, args).state === "succeeded";
+}
+
+function treeEntry(
+  repository: string,
+  tree: string,
+  path: string,
+):
+  | { readonly mode: string; readonly object: string; readonly path: string }
+  | undefined {
+  const output = git(repository, ["ls-tree", "-z", tree, "--", path]);
+  if (output === "") return undefined;
+  const [metadata = "", entryPath = ""] = output.replace(/\0$/u, "").split("\t", 2);
+  const [mode = "", , object = ""] = metadata.split(" ", 3);
+  return {
+    mode,
+    object,
+    path: entryPath,
+  };
+}
+
+export function writtenTreeMatchesChangeSet(
+  repository: string,
+  targetHead: string,
+  tree: string,
+  changeSet: AtlasGovernanceChangeSet,
+): boolean {
+  const intendedPaths = new Set(changeSet.changes.map(({ path }) => path));
+  const changedPaths = git(repository, [
+    "diff",
+    "--name-only",
+    "-z",
+    targetHead,
+    tree,
+    "--",
+  ])
+    .split("\0")
+    .filter((path) => path.length > 0);
+  if (changedPaths.some((path) => !intendedPaths.has(path))) return false;
+  for (const change of changeSet.changes) {
+    const entry = treeEntry(repository, tree, change.path);
+    if (change.content === null) {
+      if (entry !== undefined) return false;
+      continue;
+    }
+    const expectedObject = gitWithInput(
+      repository,
+      ["hash-object", "--stdin"],
+      change.content,
+    );
+    if (
+      entry?.mode !== "100644" ||
+      entry.object !== expectedObject ||
+      entry.path !== change.path
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function capturedAtlasFiles(repository: string): readonly CapturedAtlasFile[] {
@@ -317,7 +394,7 @@ export function runLocalAtlasGovernance(
         `refs/heads/${workflowState.proposalBranch}`,
         commit,
       ]);
-      return { commit, receipt: commit };
+      return { commit, receipt: commit, tree };
     },
     createProposalWorktree: () => {
       progress.created = true;
@@ -394,10 +471,15 @@ export function runLocalAtlasGovernance(
           change.path,
         ]);
       }
+      const writtenTree = gitWrite(workspace, ["write-tree"]);
       return {
-        receipt: createHash("sha256")
-          .update(workflowState.baseSnapshotDigest)
-          .digest("hex"),
+        receipt: writtenTree,
+        verifiedChangeSet: writtenTreeMatchesChangeSet(
+          workspace,
+          workflowState.targetHead,
+          writtenTree,
+          changeSet,
+        ),
       };
     },
   });

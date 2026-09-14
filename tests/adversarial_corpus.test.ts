@@ -1681,9 +1681,9 @@ test("the adversarial vocabulary corpus is structurally valid", () => {
   assert.ok(corpus.cases.some((entry) => entry.expectation === "reject"));
 });
 
-// Execution belongs to package_consumability.test.ts: concurrent prepack builds
-// delete dist while another test may be packing it. This only registers and
-// validates the corpus; the installed CLI/Git test supplies the acceptance proof.
+// Execution stays in package_consumability.test.ts so one permanent surface owns
+// package production and installed behavior. Its isolated pack source protects
+// repository build output; this test only registers and validates the corpus.
 test("the adversarial installed-consumer corpus is structurally valid", () => {
   readInstalledConsumerCorpus();
 });
