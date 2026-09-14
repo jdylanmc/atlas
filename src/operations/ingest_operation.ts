@@ -9,7 +9,12 @@ import { atlasChangelogPath, renderAtlasChangelog } from "../domain/atlas_change
 import type { VirtualAtlasView } from "../domain/virtual_atlas_view.ts";
 import { virtualAtlasCapturedFiles, virtualAtlasDigest } from "./virtual_atlas_view.ts";
 import { atlasPrincipleActiveTruthIds } from "../domain/atlas_principle.ts";
-import { resolvedCitationSourcePaths } from "../atlas/resolve_citations.ts";
+import {
+  citationSequence,
+  citationSequencesEqual,
+  resolvedCitationSequence,
+  type ResolvedCitation,
+} from "../atlas/resolve_citations.ts";
 import { serializeAtlasPages } from "../atlas/serialize_atlas_pages.ts";
 import type { ParsedAtlasPage } from "../atlas/parse_atlas_pages.ts";
 import {
@@ -1268,9 +1273,11 @@ function sdkMetadata(
   title: string,
   asOf: string,
   operationId: string,
+  citations?: readonly ResolvedCitation[],
 ): AtlasPageEnvelope["sdk"] {
   return {
     "atlas-sdk-schema": "1.0.0",
+    ...(citations === undefined ? {} : { "citation-correspondence": citations }),
     "created-at": asOf,
     "created-by": { kind: "agent" as const, name: "Atlas SDK" },
     id,
@@ -1313,7 +1320,7 @@ function citationBody(citations: readonly AtlasIngestCandidateCitation[]): {
   const definitions = citations
     .map(
       (citation, index) =>
-        `[^s${String(index + 1)}]: [[.atlas/sources/${slugForId(citation.sourceId, "source") as string}]] Quoted span ${JSON.stringify(citation.sourceClaim.trim())}.`,
+        `[^s${String(index + 1)}]: [[.atlas/sources/${slugForId(citation.sourceId, "source") as string}]] Quoted span ${markdownLiteral(JSON.stringify(citation.sourceClaim.trim()))}.`,
     )
     .join("\n");
   return { definitions, markers };
@@ -1479,6 +1486,26 @@ function sourcePage(
   );
 }
 
+function markdownLiteral(value: string): string {
+  return value
+    .replace(/[&\\`*_[\]<>#~|^]/gu, "\\$&")
+    .replace(/^([ \t]{0,3})([-+=])/gmu, "$1\\$2")
+    .replace(/^([ \t]{0,3}\d+)\.(?=\s)/gmu, "$1\\.")
+    .split("\n")
+    .map((line) =>
+      line.trim() === ""
+        ? ""
+        : line
+            .replace(/^[ \t]+/u, (indentation) =>
+              indentation.replaceAll(" ", "&#32;").replaceAll("\t", "&#9;"),
+            )
+            .replace(/[ \t]+$/u, (trailing) =>
+              trailing.replaceAll(" ", "&#32;").replaceAll("\t", "&#9;"),
+            ),
+    )
+    .join("\n");
+}
+
 function conceptPage(
   concept: AtlasIngestCandidateConcept,
   scope: AtlasIngestScope,
@@ -1496,14 +1523,25 @@ function conceptPage(
     evidence,
   };
   const { definitions, markers } = citationBody(concept.citations);
-  const bodyLines = [`# ${concept.title}`, "", `${concept.claim}${markers}`];
+  const bodyLines = [
+    `# ${concept.title}`,
+    "",
+    `${markdownLiteral(concept.claim)}${markers}`,
+  ];
   if (governor !== undefined) {
     bodyLines.push("", `This claim is an accepted Contradiction of ${governor}.`);
   }
   bodyLines.push("", definitions, "");
   return pageEnvelope(
     `.atlas/concepts/${slug}.md`,
-    sdkMetadata(concept.id, "concept", concept.title, scope.asOf, operationId),
+    sdkMetadata(
+      concept.id,
+      "concept",
+      concept.title,
+      scope.asOf,
+      operationId,
+      structuredCitations(concept.citations),
+    ),
     atlas,
     bodyLines.join("\n"),
   );
@@ -1524,14 +1562,21 @@ function edgePage(
   const body = [
     `# ${edge.title}`,
     "",
-    `${edge.context}${markers}`,
+    `${markdownLiteral(edge.context)}${markers}`,
     "",
     definitions,
     "",
   ].join("\n");
   return pageEnvelope(
     `.atlas/edges/${slug}.md`,
-    sdkMetadata(edge.id, "edge", edge.title, scope.asOf, operationId),
+    sdkMetadata(
+      edge.id,
+      "edge",
+      edge.title,
+      scope.asOf,
+      operationId,
+      structuredCitations(edge.citations),
+    ),
     atlas,
     body,
   );
@@ -1564,20 +1609,14 @@ function changelogEntry(
   });
 }
 
-/** The Source paths a citation footnote for these structured Citations resolves
- * to, so the emitted body can be checked against the structured evidence. */
-function structuredCitationPaths(
+function structuredCitations(
   citations: readonly AtlasIngestCandidateCitation[],
-): readonly string[] {
-  return Object.freeze(
-    [
-      ...new Set(
-        citations.map(
-          (citation) =>
-            `.atlas/sources/${slugForId(citation.sourceId, "source") as string}.md`,
-        ),
-      ),
-    ].sort(compareCodePoints),
+): readonly ResolvedCitation[] {
+  return citationSequence(
+    citations.map((citation) => ({
+      quotation: citation.sourceClaim.trim(),
+      target: `.atlas/sources/${slugForId(citation.sourceId, "source") as string}.md`,
+    })),
   );
 }
 
@@ -1675,11 +1714,10 @@ export function validateCitationCorrespondence(
     const path = `.atlas/${directory}/${slug}.md`;
     const change = byPath.get(path);
     if (change === undefined) return;
-    const bodyPaths = resolvedCitationSourcePaths(bodyOf(change.content));
-    const expected = structuredCitationPaths(citations);
+    const resolved = resolvedCitationSequence(bodyOf(change.content));
+    const expected = structuredCitations(citations);
     const equal =
-      bodyPaths.length === expected.length &&
-      bodyPaths.every((value, index) => value === expected[index]);
+      resolved.complete && citationSequencesEqual(resolved.citations, expected);
     if (!equal) {
       findings.push(
         finding(
