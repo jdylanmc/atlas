@@ -15,12 +15,14 @@ import { buildAtlasView } from "../src/atlas/atlas_view.ts";
 import {
   exploreAtlas,
   type ExploreBudgets,
+  type SearchProviderDiagnostic,
   type SearchProvider,
 } from "../src/graph/explore_atlas.ts";
 import {
   exploreLexicalTokens,
   lexicalSearchProvider,
 } from "../src/graph/lexical_search_provider.ts";
+import { validateSearchProviderRanking } from "../src/graph/search_provider.ts";
 import { loadAndValidateAtlasInput } from "../src/lint/validate_atlas_input.ts";
 import {
   runExploreOperation,
@@ -29,6 +31,10 @@ import {
 import { runLintOperation } from "../src/operations/lint_operation.ts";
 import { captureLocalAtlasSnapshot } from "../src/platform/local_atlas_snapshot.ts";
 import { assertGrowthRatio } from "./growth.ts";
+import {
+  malformedProviderEnvelope,
+  readSearchProviderEnvelopeCorpus,
+} from "./search_provider_envelope_corpus.ts";
 
 declare global {
   var __atlasExploreExecuted: boolean | undefined;
@@ -1028,6 +1034,256 @@ test("invalid Search Provider candidates degrade visibly instead of throwing", (
   assert.deepEqual(
     result.results.map((entry) => entry.result.id),
     ["concept:target"],
+  );
+});
+
+test("Search Provider diagnostics remain visible without granting candidate authority", () => {
+  const providerDiagnostic: SearchProviderDiagnostic = Object.freeze({
+    code: "ATLAS_INDEXING_EXTENSION_FALLBACK",
+    message: "The optional index was unavailable, so lexical ranking was used.",
+    severity: "warning",
+  });
+  const provider: SearchProvider = Object.freeze({
+    rank: () =>
+      Object.freeze({
+        candidates: Object.freeze([
+          Object.freeze({ objectId: "missing", score: 100 }),
+          Object.freeze({ objectId: "concept:target", score: 1 }),
+        ]),
+        diagnostics: Object.freeze([providerDiagnostic]),
+      }),
+  });
+
+  const result = exploreCaptured(graphAtlas(), "needle", provider, budgets);
+
+  assert.deepEqual(
+    result.results.map((entry) => entry.result.id),
+    ["concept:target"],
+  );
+  assert.ok(
+    result.degradation.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === providerDiagnostic.code &&
+        diagnostic.message === providerDiagnostic.message,
+    ),
+  );
+  assert.ok(
+    result.degradation.diagnostics.some(
+      (diagnostic) => diagnostic.code === "ATLAS_EXPLORE_PROVIDER_CANDIDATE_INVALID",
+    ),
+  );
+});
+
+test("Search Provider validation rejects a ranking without candidates", () => {
+  assert.throws(
+    () =>
+      validateSearchProviderRanking(
+        {
+          diagnostics: [],
+        },
+        new Set(["concept:target"]),
+      ),
+    /must return candidates/u,
+  );
+  assert.throws(
+    () => validateSearchProviderRanking(null, new Set(["concept:target"])),
+    /must return candidates/u,
+  );
+});
+
+test("Search Provider validation replaces malformed diagnostics within its bound", () => {
+  const validation = validateSearchProviderRanking(
+    {
+      candidates: [{ objectId: "concept:target", score: 1 }],
+      diagnostics: Array.from({ length: 40 }, (_, index) =>
+        index % 2 === 0
+          ? null
+          : {
+              code: "not-an-atlas-code",
+              message: "",
+              severity: "error",
+            },
+      ),
+    },
+    new Set(["concept:target"]),
+  );
+
+  assert.deepEqual(validation.ranked, [{ objectId: "concept:target", score: 1 }]);
+  assert.equal(validation.diagnostics.length, 32);
+  assert.equal(
+    validation.diagnostics.every(
+      (finding) =>
+        finding.code === "ATLAS_EXPLORE_PROVIDER_DIAGNOSTIC_INVALID" &&
+        finding.message ===
+          "Search Provider returned a diagnostic Explore could not use." &&
+        finding.severity === "warning",
+    ),
+    true,
+  );
+});
+
+test("Search Provider validation preserves inconclusive diagnostics", () => {
+  const validation = validateSearchProviderRanking(
+    {
+      candidates: [{ objectId: "concept:target", score: 1 }],
+      diagnostics: [
+        {
+          code: "ATLAS_INDEXING_EXTENSION_INCONCLUSIVE",
+          message: "The optional index could not establish a confident ranking.",
+          severity: "inconclusive",
+        },
+      ],
+    },
+    new Set(["concept:target"]),
+  );
+
+  assert.deepEqual(
+    validation.diagnostics.map(({ code, message, severity }) => ({
+      code,
+      message,
+      severity,
+    })),
+    [
+      {
+        code: "ATLAS_INDEXING_EXTENSION_INCONCLUSIVE",
+        message: "The optional index could not establish a confident ranking.",
+        severity: "inconclusive",
+      },
+    ],
+  );
+});
+
+test("Search Provider validation bounds candidate intake to Atlas identity", () => {
+  const validation = validateSearchProviderRanking(
+    [
+      { objectId: "concept:a", score: 2 },
+      { objectId: "concept:b", score: 1 },
+      "not-a-candidate",
+      { objectId: "concept:outside", score: 100 },
+    ],
+    new Set(["concept:a", "concept:b"]),
+  );
+
+  assert.deepEqual(validation.ranked, [
+    { objectId: "concept:a", score: 2 },
+    { objectId: "concept:b", score: 1 },
+  ]);
+  assert.deepEqual(
+    validation.diagnostics.map((finding) => finding.message),
+    [
+      "Search Provider returned a candidate Explore could not use.",
+      "Search Provider returned more candidates than Explore could use.",
+    ],
+  );
+});
+
+test("a failing Search Provider falls back visibly to built-in lexical Explore", () => {
+  const provider: SearchProvider = Object.freeze({
+    rank: () => {
+      throw new Error("optional provider unavailable");
+    },
+  });
+
+  const result = runExploreOperation({
+    baseSnapshot: { reference: "fixture-base", state: "known" },
+    capturedFiles: completeAtlas(),
+    homeAtlas: { reference: "fixture", state: "known" },
+    provider,
+    query: "canonical serialization",
+    budgets,
+  });
+
+  assert.equal(result.disposition, "success");
+  assert.equal(result.payload.results.length > 0, true);
+  assert.ok(
+    result.payload.degradation.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === "ATLAS_EXPLORE_PROVIDER_FALLBACK" &&
+        diagnostic.severity === "warning" &&
+        diagnostic.message.includes("optional provider unavailable"),
+    ),
+  );
+});
+
+test("malformed Search Provider envelopes visibly recover for structured Explore", () => {
+  for (const entry of readSearchProviderEnvelopeCorpus().cases) {
+    const provider = Object.freeze({
+      rank: () => malformedProviderEnvelope(entry.value),
+    }) as SearchProvider;
+    const result = runExploreOperation({
+      baseSnapshot: { reference: "fixture-base", state: "known" },
+      capturedFiles: completeAtlas(),
+      homeAtlas: { reference: "fixture", state: "known" },
+      provider,
+      query: "canonical serialization",
+      budgets,
+    });
+
+    assert.equal(result.disposition, "success", entry.name);
+    assert.equal(
+      result.payload.results[0]?.result.id,
+      "concept:canonical-serialization",
+      entry.name,
+    );
+    assert.ok(
+      result.payload.degradation.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === "ATLAS_EXPLORE_PROVIDER_FALLBACK" &&
+          diagnostic.message.includes("must return candidates"),
+      ),
+      entry.name,
+    );
+  }
+});
+
+test("malformed Search Provider envelopes visibly recover for raw Markdown Explore", () => {
+  for (const entry of readSearchProviderEnvelopeCorpus().cases) {
+    const provider = Object.freeze({
+      rank: () => malformedProviderEnvelope(entry.value),
+    }) as SearchProvider;
+    const result = runExploreOperation({
+      baseSnapshot: { reference: "fixture-base", state: "known" },
+      capturedFiles: Object.freeze([
+        captured(".atlas/notes.md", "# Note\n\ncanonical serialization"),
+      ]),
+      homeAtlas: { reference: "fixture", state: "known" },
+      provider,
+      query: "canonical serialization",
+      budgets,
+    });
+
+    assert.equal(
+      result.payload.results[0]?.result.id,
+      "raw-markdown/.atlas/notes.md",
+      entry.name,
+    );
+    assert.ok(
+      result.payload.degradation.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === "ATLAS_EXPLORE_PROVIDER_FALLBACK" &&
+          diagnostic.message.includes("must return candidates"),
+      ),
+      entry.name,
+    );
+  }
+});
+
+test("a legitimate empty Search Provider ranking does not trigger fallback", () => {
+  const result = runExploreOperation({
+    baseSnapshot: { reference: "fixture-base", state: "known" },
+    capturedFiles: completeAtlas(),
+    homeAtlas: { reference: "fixture", state: "known" },
+    provider: Object.freeze({ rank: () => Object.freeze([]) }),
+    query: "canonical serialization",
+    budgets,
+  });
+
+  assert.deepEqual(result.payload.results, []);
+  assert.equal(
+    result.payload.degradation.diagnostics.some(
+      (diagnostic) => diagnostic.code === "ATLAS_EXPLORE_PROVIDER_FALLBACK",
+    ),
+    false,
   );
 });
 

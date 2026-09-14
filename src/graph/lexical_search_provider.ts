@@ -81,7 +81,7 @@ function score(
   return total;
 }
 
-export const lexicalSearchProvider: SearchProvider = Object.freeze({
+export const lexicalSearchProvider = Object.freeze({
   rank(
     documents: readonly ExploreSearchDocument[],
     query: string,
@@ -120,4 +120,4 @@ export const lexicalSearchProvider: SearchProvider = Object.freeze({
         }),
     );
   },
-});
+}) satisfies SearchProvider;

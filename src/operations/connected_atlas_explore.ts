@@ -15,7 +15,6 @@ import { loadAndValidateAtlasInput } from "../lint/validate_atlas_input.ts";
 import {
   createReanchorRouteLinker,
   type ExploreBudgets,
-  type ExploreCandidate,
   type ExplorePayload,
   type ExploreReanchor,
   type ExploreResultItem,
@@ -25,6 +24,7 @@ import {
   type ExploreSourceContext,
   type SearchProvider,
 } from "../graph/explore_atlas.ts";
+import { validateSearchProviderRanking } from "../graph/search_provider.ts";
 
 export interface ResolvedTrackedAtlasSnapshot {
   readonly capturedFiles: readonly {
@@ -675,12 +675,11 @@ function rankDocuments(
   documents: readonly ExploreSearchDocument[],
   query: string,
   budgets: ExploreBudgets,
-): readonly ExploreCandidate[] {
-  try {
-    return provider.rank(documents, query, budgets);
-  } catch {
-    return Object.freeze([]);
-  }
+): ReturnType<typeof validateSearchProviderRanking> {
+  return validateSearchProviderRanking(
+    provider.rank(documents, query, budgets),
+    new Set(documents.map((document) => document.id)),
+  );
 }
 
 export function exploreConnectedAtlas(
@@ -704,18 +703,31 @@ export function exploreConnectedAtlas(
     resolved.portals,
   );
   const documents = graphDocuments(built.nodes);
-  const candidates = rankDocuments(provider, documents, query, budgets);
+  const ranking = rankDocuments(provider, documents, query, budgets);
   const discovered = discoverRoutes(root, adjacency, built.nodeByKey, query, budgets);
   const linkReanchors = createReanchorRouteLinker(discovered.reanchors);
+  const rankByObjectId = new Map(
+    ranking.ranked.map((candidate, index) => [candidate.objectId, index]),
+  );
+  const rankedNodes = [...built.nodeByKey.values()]
+    .map((node) => ({
+      node,
+      rank: rankByObjectId.get(node.canonicalNodeKey),
+    }))
+    .filter(
+      (
+        entry,
+      ): entry is {
+        readonly node: ResolvedNode;
+        readonly rank: number;
+      } => entry.rank !== undefined,
+    )
+    .toSorted((left, right) => left.rank - right.rank);
   const results: ExploreResultItem[] = [];
-  for (const candidate of candidates) {
-    const node = built.nodeByKey.get(candidate.objectId);
-    const route =
-      node === undefined
-        ? undefined
-        : discovered.routes.get(node.canonicalNodeKey)?.[0];
+  for (const { node } of rankedNodes) {
+    const route = discovered.routes.get(node.canonicalNodeKey)?.[0];
     /* c8 ignore next -- bogus provider candidates are deliberately skipped without surfacing. */
-    if (node === undefined || route === undefined) continue;
+    if (route === undefined) continue;
     results.push(
       Object.freeze({
         citedContext: citedContext(node, built.nodes, budgets.maxContextCharacters),
@@ -742,15 +754,17 @@ export function exploreConnectedAtlas(
       ? {}
       : { maintenanceFindings: resolved.maintenanceFindings }),
     degradation: Object.freeze({
-      diagnostics: resolved.diagnostics,
+      diagnostics: Object.freeze([...resolved.diagnostics, ...ranking.diagnostics]),
       level:
-        resolved.diagnostics.length === 0
+        resolved.diagnostics.length === 0 && ranking.diagnostics.length === 0
           ? ("valid-structured" as const)
           : ("partial-structure" as const),
       remediation:
-        resolved.diagnostics.length === 0
+        resolved.diagnostics.length === 0 && ranking.diagnostics.length === 0
           ? undefined
-          : "Repair the reported tracked-Atlas traversal Findings and run Explore again.",
+          : ranking.diagnostics.length > 0
+            ? "Inspect the Search Provider diagnostics or continue with built-in lexical Explore."
+            : "Repair the reported tracked-Atlas traversal Findings and run Explore again.",
     }),
     reanchors: discovered.reanchors,
     results: Object.freeze(results),
