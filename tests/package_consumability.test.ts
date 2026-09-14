@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import type {
+  AtlasQmdOptions,
+  AtlasQmdPreparation,
+} from "../src/extensions/atlas_qmd.ts";
 import type { InputContractResult } from "../src/interfaces/input_contract_command.ts";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
@@ -137,7 +141,9 @@ test("package root is importable and internal subpaths are private", async () =>
 
   assert.match(atlas.lintCommandUsage, /^usage: atlas lint/u);
   assert.equal(typeof atlas.runLintCommandOperation, "function");
-  const atlasQmd = await import("@jdylanmc/atlas/atlas-qmd");
+  const atlasQmd = (await import("@jdylanmc/atlas/atlas-qmd")) as {
+    readonly prepareAtlasQmd: (options: AtlasQmdOptions) => AtlasQmdPreparation;
+  };
   const unsupported = atlasQmd.prepareAtlasQmd({
     architecture: "arm64",
     atlasHostDirectory: "/fixture/atlas",
