@@ -127,6 +127,7 @@ interface InitializationCorpus {
 interface ExploreRankingCorpusCase {
   readonly atlasHostFixture?: "complete-atlas";
   readonly expectedBodyIncludes: string;
+  readonly expectedCatalogAnchorIds: readonly (string | null)[];
   readonly expectedCitationId: string;
   readonly expectedReanchorIds: readonly (string | null)[];
   readonly expectedRouteEdgeId: string;
@@ -667,6 +668,12 @@ function parseExploreRankingCorpus(value: unknown): ExploreRankingCorpus {
       const expectedReanchorIds = entry["expectedReanchorIds"];
       assert.ok(Array.isArray(expectedReanchorIds), `${path}.expectedReanchorIds`);
       assert.notEqual(expectedReanchorIds.length, 0);
+      const expectedCatalogAnchorIds = entry["expectedCatalogAnchorIds"];
+      assert.ok(
+        Array.isArray(expectedCatalogAnchorIds),
+        `${path}.expectedCatalogAnchorIds`,
+      );
+      assert.equal(expectedCatalogAnchorIds.length, expectedReanchorIds.length);
       return {
         ...(atlasHostFixture === undefined ? {} : { atlasHostFixture }),
         expectedBodyIncludes: assertString(
@@ -676,6 +683,12 @@ function parseExploreRankingCorpus(value: unknown): ExploreRankingCorpus {
         expectedCitationId: assertString(
           entry["expectedCitationId"],
           `${path}.expectedCitationId`,
+        ),
+        expectedCatalogAnchorIds: expectedCatalogAnchorIds.map(
+          (id: unknown, hop: number) =>
+            id === null
+              ? null
+              : assertString(id, `${path}.expectedCatalogAnchorIds[${String(hop)}]`),
         ),
         expectedReanchorIds: expectedReanchorIds.map((id: unknown, hop: number) =>
           id === null
@@ -2637,6 +2650,17 @@ for (const entry of exploreRankingCorpus.cases) {
     assert.equal(top.route[0]?.objectId, "anchor:root");
     assert.equal(top.route.at(-1)?.objectId, entry.expectedTopResultId);
     assert.equal(top.route.at(-1)?.edgeId, entry.expectedRouteEdgeId);
+    assert.deepEqual(
+      top.route.map((step) => {
+        if (step.catalogFallback === undefined) return null;
+        assert.equal(step.edgeId, undefined);
+        const anchor = result.payload.reanchors[step.reanchorIndex ?? -1]?.anchor;
+        assert.equal(anchor?.id, step.catalogFallback.anchorId);
+        assert.equal(anchor.path, ".atlas/index.md");
+        return step.catalogFallback.anchorId;
+      }),
+      entry.expectedCatalogAnchorIds,
+    );
     assert.deepEqual(
       top.route.map((step) => {
         if (step.reanchorIndex === undefined) return null;
