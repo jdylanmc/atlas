@@ -599,12 +599,15 @@ test("the local atlas-qmd runtime installs only into its approved owned root", (
   );
 
   assert.equal(installed.mode, "qmd-lexical");
-  assert.equal(
-    JSON.parse(
-      readFileSync(join(toolRuntimeRoot, "atlas-qmd-runtime.json"), "utf8"),
-    ).nodeExecutable,
-    process.execPath,
+  const receipt: unknown = JSON.parse(
+    readFileSync(join(toolRuntimeRoot, "atlas-qmd-runtime.json"), "utf8"),
   );
+  assert.ok(
+    receipt !== null &&
+      typeof receipt === "object" &&
+      "nodeExecutable" in receipt,
+  );
+  assert.equal(receipt.nodeExecutable, process.execPath);
 });
 
 test("the local atlas-qmd runtime removes a failed partial installation", () => {
