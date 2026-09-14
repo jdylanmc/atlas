@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
 import type { CapturedAtlasFile } from "../src/atlas/load_atlas_text.ts";
@@ -14,6 +16,7 @@ import {
   runAtlasGovernanceWorkflow,
   validateAtlasGovernanceRequest,
   type AtlasGovernanceChange,
+  type AtlasGovernanceChangeSet,
   type AtlasGovernanceEffectReceipt,
   type AtlasGovernanceRequest,
   type AtlasGovernanceRuntime,
@@ -29,6 +32,7 @@ import {
   notCompletedLintOperationResult,
   runLintOperation,
 } from "../src/operations/lint_operation.ts";
+import { writtenTreeMatchesChangeSet } from "../src/platform/local_atlas_governance.ts";
 
 const budgets = Object.freeze({ maxFileBytes: 4096, maxTotalBytes: 65536 });
 const governanceCorpus = JSON.parse(
@@ -37,7 +41,16 @@ const governanceCorpus = JSON.parse(
   readonly cases: readonly {
     readonly expectedCode: string;
     readonly gate: "governance";
-    readonly kind: "finding-merge" | "semantic" | "retirement" | "retirement-workspace";
+    readonly kind:
+      | "change-path-collision"
+      | "finding-merge"
+      | "semantic"
+      | "retirement"
+      | "retirement-workspace"
+      | "written-content-mismatch";
+    readonly expectation?: "accept" | "reject";
+    readonly contents?: readonly string[];
+    readonly paths?: readonly string[];
     readonly workspaceConflict?: {
       readonly kind: "file" | "symlink";
       readonly content: string;
@@ -668,6 +681,7 @@ function runtime(
   options: {
     readonly baseFiles?: readonly CapturedAtlasFile[];
     readonly commit?: string;
+    readonly commitTree?: string;
     readonly currentBaseSnapshotDigest?: string;
     readonly currentTargetHead?: string;
     readonly failCreate?: true;
@@ -676,6 +690,7 @@ function runtime(
     readonly referenceTime?: string;
     readonly workspaceExists?: boolean;
     readonly workspacePathValid?: boolean;
+    readonly writeVerified?: boolean;
   } = {},
 ): AtlasGovernanceRuntime & {
   readonly counts: {
@@ -694,7 +709,11 @@ function runtime(
   return {
     commitProposal: () => {
       committed += 1;
-      return { commit, receipt: commit };
+      return {
+        commit,
+        receipt: commit,
+        tree: options.commitTree ?? "written",
+      };
     },
     counts: {
       committed: () => committed,
@@ -736,7 +755,10 @@ function runtime(
       : { referenceTime: () => options.referenceTime as string }),
     writeChangeSet: () => {
       written += 1;
-      return { receipt: "written" };
+      return {
+        receipt: "written",
+        verifiedChangeSet: options.writeVerified ?? true,
+      };
     },
   };
 }
@@ -872,6 +894,192 @@ test("Governance rejects resumed Lint evidence for a different commit", () => {
     result.handoff.validationState.findings[0]?.code,
     "ATLAS_GOVERNANCE_LINT_STAMP_STALE",
   );
+  assert.equal(adapter.counts.linted(), 0);
+});
+
+test("Governance rejects Git-backed written bytes that differ from the canonical Change Set", () => {
+  const corpusCase = governanceCorpus.cases.find(
+    ({ kind }) => kind === "written-content-mismatch",
+  );
+  assert.ok(corpusCase);
+  const repository = mkdtempSync(resolve(tmpdir(), "atlas-governance-drift-"));
+  const git = (args: readonly string[]): string => {
+    const completed = spawnSync("git", ["-C", repository, ...args], {
+      encoding: "utf8",
+    });
+    assert.equal(completed.status, 0, completed.stderr);
+    return completed.stdout.trim();
+  };
+  try {
+    git(["init", "-b", "main"]);
+    mkdirSync(resolve(repository, ".atlas"), { recursive: true });
+    writeFileSync(resolve(repository, ".atlas", "index.md"), root.bytes);
+    writeFileSync(resolve(repository, ".atlas", "CHANGELOG.md"), changelog.bytes);
+    git(["add", ".atlas"]);
+    git([
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "-m",
+      "base",
+    ]);
+
+    const workflowState = state();
+    const maintenanceRequest = request();
+    const canonical = maintenanceRequest.changes?.[0];
+    assert.ok(canonical?.content);
+    const targetHead = git(["rev-parse", "HEAD"]);
+    let committed = 0;
+    let linted = 0;
+    let acceptedChangeSet: AtlasGovernanceChangeSet | undefined;
+    let writtenTree: string | undefined;
+    const commit = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const adapter: AtlasGovernanceRuntime = {
+      commitProposal: () => {
+        committed += 1;
+        assert.ok(writtenTree);
+        return {
+          commit,
+          receipt: commit,
+          tree: writtenTree,
+        };
+      },
+      createProposalWorktree: () => ({ receipt: "created" }),
+      currentBaseSnapshotDigest: () => workflowState.baseSnapshotDigest,
+      currentTargetHead: () => workflowState.targetHead,
+      existingAtlasFiles: () => [root, changelog],
+      lintProposal: () => {
+        linted += 1;
+        assert.ok(acceptedChangeSet);
+        return {
+          lint: runLintOperation(
+            applyChanges([root, changelog], acceptedChangeSet.changes),
+            budgets,
+          ),
+          receipt: commit,
+        };
+      },
+      writeChangeSet: (accepted) => {
+        acceptedChangeSet = accepted;
+        for (const declared of accepted.changes) {
+          const path = resolve(repository, declared.path);
+          if (declared.content === null) {
+            rmSync(path, { force: true });
+            git(["add", "--", declared.path]);
+            continue;
+          }
+          mkdirSync(resolve(path, ".."), { recursive: true });
+          const content =
+            declared.path === canonical.path
+              ? `${declared.content}\nDRIFT\n`
+              : declared.content;
+          writeFileSync(path, content, "utf8");
+          git(["add", "--", declared.path]);
+        }
+        writtenTree = git(["write-tree"]);
+        return {
+          receipt: writtenTree,
+          verifiedChangeSet: writtenTreeMatchesChangeSet(
+            repository,
+            targetHead,
+            writtenTree,
+            accepted,
+          ),
+        };
+      },
+    };
+
+    const result = runAtlasGovernanceWorkflow(
+      workflowState,
+      maintenanceRequest,
+      adapter,
+    );
+
+    assert.equal(result.completion, "not-completed");
+    assert.equal(
+      result.handoff.validationState.findings[0]?.code,
+      corpusCase.expectedCode,
+    );
+    assert.equal(committed, 0);
+    assert.equal(linted, 0);
+  } finally {
+    rmSync(repository, { force: true, recursive: true });
+  }
+});
+
+test("Governance tree verification rejects unexpected paths and retained removals", () => {
+  const repository = mkdtempSync(join(tmpdir(), "atlas-governance-tree-"));
+  const git = (args: readonly string[]): string =>
+    execFileSync("git", args, {
+      cwd: repository,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        GIT_CONFIG_NOSYSTEM: "1",
+      },
+    }).trim();
+  try {
+    git(["init", "-b", "main"]);
+    git(["config", "user.email", "atlas@example.invalid"]);
+    git(["config", "user.name", "Atlas Test"]);
+    writeFileSync(join(repository, "keep.md"), "keep\n");
+    writeFileSync(join(repository, "remove.md"), "remove\n");
+    git(["add", "."]);
+    git(["commit", "-m", "base"]);
+    const targetHead = git(["rev-parse", "HEAD"]);
+    const removal: AtlasGovernanceChangeSet = {
+      baseSnapshotDigest: "base",
+      changes: [{ content: null, path: "remove.md" }],
+      targetHead,
+    };
+
+    assert.equal(
+      writtenTreeMatchesChangeSet(repository, targetHead, targetHead, removal),
+      false,
+    );
+
+    writeFileSync(join(repository, "unexpected.md"), "unexpected\n");
+    git(["add", "unexpected.md"]);
+    const unexpectedTree = git(["write-tree"]);
+    assert.equal(
+      writtenTreeMatchesChangeSet(repository, targetHead, unexpectedTree, {
+        ...removal,
+        changes: [],
+      }),
+      false,
+    );
+
+    git(["reset", "--hard", targetHead]);
+    rmSync(join(repository, "remove.md"));
+    git(["add", "--all"]);
+    const removalTree = git(["write-tree"]);
+    assert.equal(
+      writtenTreeMatchesChangeSet(repository, targetHead, removalTree, removal),
+      true,
+    );
+  } finally {
+    rmSync(repository, { force: true, recursive: true });
+  }
+});
+
+test("Governance rejects a proposal commit that changes the verified written tree", () => {
+  const workflowState = state();
+  const maintenanceRequest = request();
+  const adapter = runtime(workflowState, maintenanceRequest, {
+    commitTree: "different-tree",
+  });
+
+  const result = runAtlasGovernanceWorkflow(workflowState, maintenanceRequest, adapter);
+
+  assert.equal(result.completion, "not-completed");
+  assert.equal(
+    result.handoff.validationState.findings[0]?.code,
+    "ATLAS_GOVERNANCE_COMMITTED_TREE_MISMATCH",
+  );
+  assert.equal(adapter.counts.committed(), 1);
   assert.equal(adapter.counts.linted(), 0);
 });
 
@@ -1305,6 +1513,47 @@ test("Governance refuses unsafe change paths through the one shared path rule", 
     );
   }
 });
+
+for (const entry of governanceCorpus.cases) {
+  if (entry.kind !== "change-path-collision") continue;
+  test(`adversarial Governance change paths: ${entry.name}`, () => {
+    assert.ok(entry.paths);
+    const maintenanceRequest = request({
+      changes: entry.paths.map((path, index) => ({
+        content:
+          entry.contents?.[index] ??
+          principleContent(`- \`truth:${String(index)}\` Accepted truth.\n`)
+            .replace(
+              "  id: principle:determinism",
+              `  id: principle:path-${String(index)}`,
+            )
+            .replace("# Determinism", `# Path ${String(index)}`),
+        path,
+      })),
+    });
+    const workflowState = state();
+    const adapter = runtime(workflowState, maintenanceRequest);
+
+    const result = runAtlasGovernanceWorkflow(
+      workflowState,
+      maintenanceRequest,
+      adapter,
+    );
+    const collisionFindings = result.handoff.validationState.findings.filter(
+      ({ code }) => code === "ATLAS_GOVERNANCE_CHANGE_PATH_COLLISION",
+    );
+
+    if (entry.expectation === "accept") {
+      assert.equal(collisionFindings.length, 0);
+      return;
+    }
+    assert.equal(result.completion, "not-completed");
+    assert.equal(collisionFindings.length, 1);
+    assert.equal(adapter.counts.created(), 0);
+    assert.equal(adapter.counts.written(), 0);
+    assert.equal(adapter.counts.committed(), 0);
+  });
+}
 
 test("Governance rejects Principle and Atlas Policy correspondence violations", () => {
   const workflowState = state();
@@ -2024,7 +2273,9 @@ test("the adversarial governance corpus maps to enforced gates", () => {
           entry.merge === undefined &&
           entry.assembly === undefined &&
           entry.retirement === undefined &&
-          entry.workspaceConflict === undefined,
+          entry.workspaceConflict === undefined &&
+          entry.kind !== "change-path-collision" &&
+          entry.kind !== "written-content-mismatch",
       )
       .map((entry) => [entry.gate, entry.kind, entry.expectedCode]),
     [

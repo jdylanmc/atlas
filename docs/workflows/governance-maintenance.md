@@ -50,11 +50,11 @@ bookkeeping. Do not attempt to supply a base snapshot digest, a target head, or
 the operation ID — there is no field for them, and Atlas SDK reserves the
 `.atlas/CHANGELOG.md` entry for itself.
 
-| Who | Supplies |
-|---|---|
-| Maintainer (human) | the truth or rule itself, the intent, and the detached Approval Attestation naming its approver and approval instant |
-| Agent | the authored `changes` — page content for creation/amendment or an explicit removal for retirement — and the drafted `changelog` rationale |
-| Atlas SDK | the base snapshot digest, the target head, the Atlas Changelog entry's stable operation ID, identity derivation, and validation |
+| Who                | Supplies                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Maintainer (human) | the truth or rule itself, the intent, and the detached Approval Attestation naming its approver and approval instant                       |
+| Agent              | the authored `changes` — page content for creation/amendment or an explicit removal for retirement — and the drafted `changelog` rationale |
+| Atlas SDK          | the base snapshot digest, the target head, the Atlas Changelog entry's stable operation ID, identity derivation, and validation            |
 
 Each authored change is `{ path, content }` against a canonical `.atlas/` path.
 String `content` creates or amends a live document. For `retire` or `delete`,
@@ -92,6 +92,26 @@ unrelated Atlas-owned `id` fields do not change that identity; missing or
 malformed targets never acquire an identity from their path or raw text.
 
 The command changes only its reviewable Atlas Proposal, not the target branch.
+For a successful mutation, the `write-change-set` effect receipt is the actual
+Git tree object produced after staging the canonical Atlas Change Set. Before
+commit, the trusted local adapter compares every declared write or removal with
+that tree and refuses unexpected changed paths or different blob bytes. The
+commit must preserve the same tree.
+
+Verify a returned receipt independently through the proposal ref rather than
+comparing two fields from the Operation Result:
+
+```sh
+git rev-parse '<proposal-branch>^{tree}'
+git show '<proposal-branch>:<changed-path>'
+```
+
+The first value must equal the `write-change-set` receipt, and the second must
+equal the reviewed Change Set content. This verification covers the selected
+trusted local Git adapter; it does not authenticate an arbitrary replacement
+runtime or turn the receipt into the separate Atlas-content identity described
+by #165.
+
 Review the deletion and provenance, then obtain the required human approval
 before merging through the Atlas Host Directory's Git governance. Use
 `git log -- <retired-path>` and `git show <earlier-commit>:<retired-path>` to read
