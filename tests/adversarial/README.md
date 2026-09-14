@@ -141,3 +141,13 @@ The optional governance change in `installed-consumer.json` exercises one
 malformed Principle through installed
 `atlas govern` after Initialization and Git adoption, requiring each distinct
 Finding exactly once and no proposal or target mutation.
+
+The `changelog` gate in `changelog.json` is registered here and executes through
+`tests/atlas_changelog.test.ts`. It preserves operation entries beneath one
+UTC date heading, keeps exact instants as metadata, and protects historical
+Markdown from being mistaken for headings. Cases marked `exerciseOperations`
+also run in `tests/governance_cli.test.ts`: actual Ingest and Governance CLI
+proposals are separately Linted, adopted through Git, and checked together on
+the target branch. Schema acceptance alone is not the integration proof.
+The delimiter-dense history case also uses the existing paired CPU-growth
+assertion at its unchanged threshold while checking exact preserved bytes.

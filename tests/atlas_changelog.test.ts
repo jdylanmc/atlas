@@ -1,11 +1,78 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+import { readChangelogCorpus } from "./changelog_corpus.ts";
+import { assertGrowthRatio } from "./growth.ts";
 import {
   containsLineBreak,
   isSingleAtlasChangelogEntry,
   renderAtlasChangelog,
   renderAtlasChangelogEntryBlock,
 } from "../src/domain/atlas_changelog.ts";
+
+for (const entry of readChangelogCorpus()) {
+  test(`adversarial Changelog corpus: ${entry.name}`, () => {
+    if (entry.growth !== undefined) {
+      const growth = entry.growth;
+      const render = (repetitions: number): void => {
+        const history = growth.unit.repeat(repetitions);
+        assert.equal(
+          renderAtlasChangelog(
+            entry.existingContent?.replace(growth.marker, history),
+            entry.date,
+            entry.operationId,
+            entry.prose,
+          ),
+          entry.expected.replace(growth.marker, history),
+        );
+      };
+      assertGrowthRatio({
+        name: entry.name,
+        small: () => {
+          render(growth.small);
+        },
+        large: () => {
+          render(growth.large);
+        },
+      });
+      return;
+    }
+    assert.equal(
+      renderAtlasChangelog(
+        entry.existingContent,
+        entry.date,
+        entry.operationId,
+        entry.prose,
+      ),
+      entry.expected,
+    );
+  });
+}
+
+test("SDK Atlas Changelog preserves all four original entries under unique date headings", () => {
+  const content = readFileSync(
+    new URL("../.atlas/CHANGELOG.md", import.meta.url),
+    "utf8",
+  );
+  const headings: readonly string[] = content.match(/^## .+$/gmu) ?? [];
+  assert.ok(headings.includes("## 2026-01-01"));
+  assert.ok(headings.includes("## 2026-08-24"));
+  assert.equal(new Set(headings).size, headings.length);
+  for (const heading of headings) assert.match(heading, /^## \d{4}-\d{2}-\d{2}$/u);
+  const original = [
+    "- atlas-initialization: Initialized minimal Home Atlas.",
+    "- governance-40862aed9719-a3dbf243: Established five founding Principles (unrepresentable invalid states, derivation over plausibility, validity is derived, deterministic core, adversarial-corpus resolution) under Maintainer approval.",
+    "- governance-4607a848c045-8be64a05: Established the Adversarial Corpus Gate Atlas Policy under Maintainer approval.",
+    "- ingest-95263495f14a-c03400f6: Ingested source:google-markdown-style-guide approved by Dylan McCurry at 2026-08-24T22:30:00Z into 5 Concept(s) with cited Source and Edges.",
+  ];
+  const prefixes = original.map((line) => line.slice(0, line.indexOf(": ") + 2));
+  assert.deepEqual(
+    content
+      .split("\n")
+      .filter((line) => prefixes.some((prefix) => line.startsWith(prefix))),
+    original,
+  );
+});
 
 test("containsLineBreak recognizes every line terminator and passes single-line text", () => {
   for (const character of [

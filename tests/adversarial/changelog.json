@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "reviewResolutionRule": "A review finding is resolved only after this corpus has an accept or reject case that exercises it.",
+  "cases": [
+    {
+      "name": "unmatched closing labels have subquadratic heading discovery",
+      "gate": "changelog",
+      "expectation": "accept",
+      "existingContent": "# Changelog\n\n## 2026-08-22\n\n- historic: {{history}}\n",
+      "date": "2026-08-22",
+      "operationId": "next",
+      "prose": "Next operation.",
+      "expected": "# Changelog\n\n## 2026-08-22\n\n- historic: {{history}}\n\n- next: Next operation.\n",
+      "growth": {
+        "marker": "{{history}}",
+        "unit": "x] ",
+        "small": 1024,
+        "large": 2048
+      }
+    },
+    {
+      "name": "inline syntax and reference definitions remain verbatim historical text",
+      "gate": "changelog",
+      "expectation": "accept",
+      "existingContent": "# Changelog\n\n## 2026-08-22\n\n- historic: **bold** _emphasis_ `code` [link][ref] ![image](image.png) <https://example.invalid> &amp; \\*literal\\*  \n  continuation\\\n  next line\n\n[ref]: https://example.invalid \"title\"\n",
+      "date": "2026-08-22",
+      "operationId": "next",
+      "prose": "Next operation.",
+      "expected": "# Changelog\n\n## 2026-08-22\n\n- historic: **bold** _emphasis_ `code` [link][ref] ![image](image.png) <https://example.invalid> &amp; \\*literal\\*  \n  continuation\\\n  next line\n\n[ref]: https://example.invalid \"title\"\n\n- next: Next operation.\n"
+    },
+    {
+      "name": "delimiter-dense historical prose has subquadratic heading discovery",
+      "gate": "changelog",
+      "expectation": "accept",
+      "existingContent": "# Changelog\n\n## 2026-08-22\n\n- historic: {{history}}\n",
+      "date": "2026-08-22",
+      "operationId": "next",
+      "prose": "Next operation.",
+      "expected": "# Changelog\n\n## 2026-08-22\n\n- historic: {{history}}\n\n- next: Next operation.\n",
+      "growth": {
+        "marker": "{{history}}",
+        "unit": "x* ",
+        "small": 1024,
+        "large": 2048
+      }
+    },
+    {
+      "name": "new operation entries do not inherit a historical change category",
+      "gate": "changelog",
+      "expectation": "accept",
+      "existingContent": "# Changelog\n\n## 2026-08-22\n\n- first: First.\n\n### Removed\n\n- old: Removed an old item.\n",
+      "date": "2026-08-22",
+      "operationId": "created",
+      "prose": "Created a Principle.",
+      "expected": "# Changelog\n\n## 2026-08-22\n\n- first: First.\n\n- created: Created a Principle.\n\n### Removed\n\n- old: Removed an old item.\n"
+    },
+    {
+      "name": "unterminated opaque Markdown is preserved rather than validated or repaired",
+      "gate": "changelog",
+      "expectation": "accept",
+      "existingContent": "```md\n",
+      "date": "2026-08-22",
+      "operationId": "actual",
+      "prose": "Actual history.",
+      "expected": "```md\n\n## 2026-08-22\n\n- actual: Actual history.\n"
+    },
+    {
+      "name": "a timestamped operation joins the existing date without losing its instant",
+      "gate": "changelog",
+      "expectation": "accept",
+      "existingContent": "# Changelog\n\n## 2026-08-22\n\n- first: First.\n",
+      "date": "2026-08-22T12:30:00Z",
+      "operationId": "second",
+      "prose": "Second.",
+      "exerciseOperations": true,
+      "expected": "# Changelog\n\n## 2026-08-22\n\n- first: First.\n\n- second: Second. (at: 2026-08-22T12:30:00Z)\n"
+    },
+    {
+      "name": "UTC rollover retains the supplied offset instant",
+      "gate": "changelog",
+      "expectation": "accept",
+      "date": "2026-08-23T00:30:00+02:00",
+      "operationId": "offset",
+      "prose": "Recorded.",
+      "expected": "# Changelog\n\n## 2026-08-22\n\n- offset: Recorded. (at: 2026-08-23T00:30:00+02:00)\n"
+    },
+    {
+      "name": "mixed nonadjacent day sections preserve every entry and historical instant",
+      "gate": "changelog",
+      "expectation": "accept",
+      "existingContent": "# Changelog\n\nCurated history.\n\n## 2026-08-22\n\n- first: First.\n\n## 2026-08-23\n\n- other: Other day.\n\n## 2026-08-22T11:00:00Z\n\n- historic: Historical entry.\n\n## 2026-08-22\n\n- duplicate: Another entry.\n",
+      "date": "2026-08-22",
+      "operationId": "last",
+      "prose": "Last.",
+      "expected": "# Changelog\n\nCurated history.\n\n## 2026-08-22\n\n- first: First.\n\nRecorded at: 2026-08-22T11:00:00Z\n\n- historic: Historical entry.\n\n- duplicate: Another entry.\n\n- last: Last.\n\n## 2026-08-23\n\n- other: Other day.\n"
+    },
+    {
+      "name": "opaque Markdown and indented code retain their original text",
+      "gate": "changelog",
+      "expectation": "accept",
+      "existingContent": "Preamble.\n\n# Changelog\n\n## 2026-08-21\n\n    ## 2026-08-22\n    - code: Not history.\n\n## Notes\n\n```md\n## 2026-08-22\n- example: Not history.\n```\n\n<!--\n## 2026-08-22\n-->\n\n> ## 2026-08-22\n> Quoted, not history.\n",
+      "date": "2026-08-22",
+      "operationId": "actual",
+      "prose": "Actual history.",
+      "expected": "Preamble.\n\n# Changelog\n\n## 2026-08-21\n\n    ## 2026-08-22\n    - code: Not history.\n\n## Notes\n\n```md\n## 2026-08-22\n- example: Not history.\n```\n\n<!--\n## 2026-08-22\n-->\n\n> ## 2026-08-22\n> Quoted, not history.\n\n## 2026-08-22\n\n- actual: Actual history.\n"
+    }
+  ]
+}

@@ -14,6 +14,9 @@ import fs, {
 import { syncBuiltinESMExports } from "node:module";
 import { dirname, resolve } from "node:path";
 import test, { after } from "node:test";
+import { readChangelogCorpus } from "./changelog_corpus.ts";
+import { parseIngestRequest } from "../src/interfaces/ingest_command.ts";
+import type { AtlasIngestResult } from "../src/operations/ingest_operation.ts";
 import {
   exitCodeForGovernOperationResult,
   governCommandExitCodes,
@@ -364,6 +367,119 @@ test("atlas govern amends a Principle into one Linted Atlas Proposal", () => {
     /truth:no-model/u,
   );
 });
+
+for (const entry of readChangelogCorpus().filter(
+  (candidate) => candidate.exerciseOperations === true,
+)) {
+  test(`adversarial Changelog operations: ${entry.name}`, () => {
+    const repository = resolve(WORKSPACE, "changelog-operations");
+    initAtlasRepository(repository);
+    const ingestPath = resolve(ROOT, "tests/fixtures/ingest/request-valid.json");
+    const parsed = parseIngestRequest(JSON.parse(readFileSync(ingestPath, "utf8")));
+    assert.equal(parsed.ok, true);
+    const ingestRequest = parsed.value;
+    const source = ingestRequest.candidateGraph.sources[0];
+    assert.ok(source);
+    mkdirSync(resolve(repository, "docs"), { recursive: true });
+    writeFileSync(resolve(repository, "docs/readme.md"), source.content, "utf8");
+    git(repository, ["add", "docs/readme.md"]);
+    const commit = spawnSync(
+      "git",
+      [
+        "-C",
+        repository,
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "commit",
+        "-m",
+        "Capture fixture source",
+      ],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GIT_AUTHOR_DATE: source.revisionTime,
+          GIT_COMMITTER_DATE: source.revisionTime,
+        },
+      },
+    );
+    assert.equal(commit.status, 0, commit.stderr);
+    const original = readFileSync(resolve(repository, ".atlas/CHANGELOG.md"), "utf8");
+    const before = git(repository, ["rev-parse", "main"]);
+    const ingestCommand = runAtlas([
+      "ingest",
+      "reconcile",
+      "--machine",
+      "--ingest-request",
+      ingestPath,
+      "--atlas-host-directory",
+      repository,
+    ]);
+    assert.equal(ingestCommand.status, 0, ingestCommand.stdout);
+    assert.equal(ingestCommand.stderr, "");
+    const ingested = JSON.parse(ingestCommand.stdout) as AtlasIngestResult;
+    assert.equal(ingested.disposition, "success");
+    assert.equal(ingested.payload.lint?.payload.state, "completed");
+    assert.equal(ingested.payload.lint.payload.lint.outcome, "valid");
+    assert.equal(git(repository, ["rev-parse", "main"]), before);
+    git(repository, [
+      "merge",
+      "--ff-only",
+      ingested.payload.workflowState.proposalBranch,
+    ]);
+
+    const approved = amendPrincipleRequest(repository);
+    const request = {
+      ...approved,
+      attestation: { ...approved.attestation, approvedAt: entry.date },
+    };
+    const requestPath = resolve(WORKSPACE, "changelog-governance-request.json");
+    writeFileSync(requestPath, JSON.stringify(request), "utf8");
+    const governCommand = runAtlas([
+      "govern",
+      "--machine",
+      "--request",
+      requestPath,
+      "--atlas-host-directory",
+      repository,
+    ]);
+    assert.equal(governCommand.status, 0, governCommand.stdout);
+    assert.equal(governCommand.stderr, "");
+    const governed = parseGovernResult(governCommand.stdout);
+    assert.equal(governed.disposition, "success");
+    assert.equal(governed.payload.lint?.payload.state, "completed");
+    assert.equal(governed.payload.lint.payload.lint.outcome, "valid");
+    git(repository, [
+      "merge",
+      "--ff-only",
+      governed.payload.workflowState.proposalBranch,
+    ]);
+
+    const content = readFileSync(resolve(repository, ".atlas/CHANGELOG.md"), "utf8");
+    const expectedHeading = entry.expected.match(/^## .+$/mu)?.[0];
+    assert.ok(expectedHeading);
+    assert.deepEqual(content.match(/^## 2026-08-22.*$/gmu), [expectedHeading]);
+    const dayContent = content.split(`${expectedHeading}\n`)[1]?.split(/\n## /u)[0];
+    assert.ok(dayContent);
+    for (const id of [
+      ingested.payload.workflowState.operationId,
+      governed.payload.workflowState.operationId,
+    ]) {
+      assert.equal(content.split(`- ${id}: `).length - 1, 1);
+      assert.equal(dayContent.split(`- ${id}: `).length - 1, 1);
+    }
+    for (const instant of [ingestRequest.scope.asOf, request.attestation.approvedAt]) {
+      assert.ok(content.includes(`(at: ${instant})`), content);
+    }
+    for (const line of original.split("\n").filter((line) => line.startsWith("- "))) {
+      assert.ok(content.includes(line), content);
+    }
+    const lint = runAtlas(["lint", "--machine", "--atlas-host-directory", repository]);
+    assert.equal(lint.status, 0, lint.stdout);
+  });
+}
 
 test("atlas govern creates a Principle into one Linted Atlas Proposal", () => {
   const repository = resolve(WORKSPACE, "create-principle");
