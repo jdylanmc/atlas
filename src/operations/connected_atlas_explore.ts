@@ -71,7 +71,7 @@ interface PortalBinding {
 }
 
 interface Route {
-  readonly edges: readonly string[];
+  readonly edges: readonly (string | undefined)[];
   readonly nodes: readonly string[];
 }
 
@@ -122,8 +122,15 @@ function canonicalNodeKey(
   return sha256Hex(JSON.stringify([snapshotKey(identity), objectId]));
 }
 
-function routeStep(node: ResolvedNode, edgeId: string | undefined): ExploreRouteStep {
+function routeStep(
+  node: ResolvedNode,
+  edgeId: string | undefined,
+  catalogFallback = false,
+): ExploreRouteStep {
   return Object.freeze({
+    ...(catalogFallback
+      ? { catalogFallback: Object.freeze({ anchorId: rootAnchorPageId }) }
+      : {}),
     edgeId,
     objectId: node.objectId,
     path: node.object.path,
@@ -611,10 +618,7 @@ function discoverRoutes(
         )
         .map((route) =>
           Object.freeze({
-            edges: Object.freeze([
-              ...route.edges,
-              step.edgeId ?? "root-anchor-catalog",
-            ]),
+            edges: Object.freeze([...route.edges, step.edgeId]),
             nodes: Object.freeze([...route.nodes, nextKey]),
           }),
         );
@@ -624,7 +628,11 @@ function discoverRoutes(
         if (left.edges.length !== right.edges.length)
           /* c8 ignore next -- equal-length route ordering is already asserted in legacy Explore and preserved here. */
           return left.edges.length - right.edges.length;
-        return compareCodePoints(left.edges.join("\u0000"), right.edges.join("\u0000"));
+        // Preserve route priority without presenting the ordering key as an Edge.
+        return compareCodePoints(
+          left.edges.map((id) => id ?? "root-anchor-catalog").join("\u0000"),
+          right.edges.map((id) => id ?? "root-anchor-catalog").join("\u0000"),
+        );
       });
       const deduped = merged.filter(
         (route, index) =>
@@ -738,10 +746,8 @@ export function exploreConnectedAtlas(
         route: linkReanchors(
           route.nodes.map((key, index) => {
             const stepNode = built.nodeByKey.get(key) as ResolvedNode;
-            return routeStep(
-              stepNode,
-              index === 0 ? undefined : route.edges[index - 1],
-            );
+            const edgeId = index === 0 ? undefined : route.edges[index - 1];
+            return routeStep(stepNode, edgeId, index > 0 && edgeId === undefined);
           }),
         ),
       }),

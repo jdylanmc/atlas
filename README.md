@@ -212,6 +212,20 @@ conflicting or partially written files for you.
 
 ### Explore checkpoint references
 
+A real graph hop carries the persisted relationship's `edgeId`. An inferred
+Root Anchor catalog hop instead omits `edgeId` and reports
+`catalogFallback: { "anchorId": "anchor:root" }`. This explicitly identifies
+inferred reachability, not an Edge or catalog entry read from committed
+Markdown. The earlier synthetic `root-anchor-catalog` Edge identifier is no
+longer returned. The entry step has neither an incoming Edge nor a fallback.
+
+In connected Explore, resolve the fallback's Root Anchor in the hop's
+`snapshot` context, not a different Atlas with the same local ID. Its
+`reanchorIndex` points to that Root Anchor's checkpoint. Catalog hops still
+consume the existing `maxRouteEdges` budget; reachable results, route priority,
+governance context and cited Sources remain unchanged. This representation
+does not implement Ingest revision merging or persist a Root Anchor catalog.
+
 Each post-Anchor route step has a `reanchorIndex`: a zero-based reference into
 the same result payload's `reanchors` array. It identifies the checkpoint
 governing the hop **into** that step. The entry step omits the field. A hop

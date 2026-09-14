@@ -19,6 +19,7 @@ interface InstalledConsumerCase {
     readonly rejectedObjectId: string;
   };
   readonly connectedExplore?: {
+    readonly expectedCatalogTargetId: string;
     readonly query: string;
     readonly expectedConceptId: string;
     readonly expectedSourceId: string;
