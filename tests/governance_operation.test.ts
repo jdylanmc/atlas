@@ -39,16 +39,22 @@ const governanceCorpus = JSON.parse(
   readFileSync(resolve(import.meta.dirname, "adversarial", "governance.json"), "utf8"),
 ) as {
   readonly cases: readonly {
-    readonly expectedCode: string;
+    readonly absentCode?: string;
+    readonly expectation?: "accept" | "reject";
+    readonly expectedCode?: string;
     readonly gate: "governance";
     readonly kind:
       | "change-path-collision"
       | "finding-merge"
+      | "proposal-concurrency"
       | "semantic"
       | "retirement"
       | "retirement-workspace"
       | "written-content-mismatch";
-    readonly expectation?: "accept" | "reject";
+    readonly concurrentProposals?: {
+      readonly first: Readonly<Record<string, string>>;
+      readonly second: Readonly<Record<string, string>>;
+    };
     readonly contents?: readonly string[];
     readonly paths?: readonly string[];
     readonly workspaceConflict?: {
@@ -2268,12 +2274,26 @@ test("the adversarial governance corpus maps to enforced gates", () => {
   assert.equal(governanceCorpus.schema, 1);
   assert.deepEqual(
     governanceCorpus.cases
+      .filter((entry) => entry.concurrentProposals !== undefined)
+      .map((entry) => [entry.gate, entry.kind, entry.expectation, entry.absentCode]),
+    [
+      [
+        "governance",
+        "proposal-concurrency",
+        "accept",
+        "ATLAS_GOVERNANCE_WORKSPACE_EXISTS",
+      ],
+    ],
+  );
+  assert.deepEqual(
+    governanceCorpus.cases
       .filter(
         (entry) =>
           entry.merge === undefined &&
           entry.assembly === undefined &&
           entry.retirement === undefined &&
           entry.workspaceConflict === undefined &&
+          entry.concurrentProposals === undefined &&
           entry.kind !== "change-path-collision" &&
           entry.kind !== "written-content-mismatch",
       )

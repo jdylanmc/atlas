@@ -121,3 +121,9 @@ An existing proposal is not overwritten by repeating the command. If a file
 or symlink unexpectedly occupies a retirement target in a newly created
 Operation Workspace, the command refuses and retains that workspace for human
 inspection instead of deleting competing work during cleanup.
+
+When another Atlas Proposal merges first, follow
+[Rebase concurrent Atlas Proposals](concurrent-proposals.md). Rebase and fully
+Lint the actual governance Proposal again; preserve every accepted knowledge
+change and each stamped Atlas Changelog operation entry during conflict
+resolution.

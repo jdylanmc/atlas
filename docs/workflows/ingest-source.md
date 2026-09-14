@@ -50,3 +50,9 @@ deterministic reconciliation into an Atlas Change Set and Atlas Proposal.
    appended Atlas Changelog entry, and a full Lint pass. Merge it through Git
    governance. Stale Knowledge is surfaced for optional re-Ingest but does not
    block the merge.
+
+If another Atlas Proposal merges before this one, follow
+[Rebase concurrent Atlas Proposals](concurrent-proposals.md). The earlier Lint
+result is stale: resolve ordinary Git conflicts, preserve both knowledge changes
+and both stamped Atlas Changelog entries, then fully Lint and review the rebased
+commit.

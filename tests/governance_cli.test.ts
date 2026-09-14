@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs, {
+  chmodSync,
   cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   readlinkSync,
   rmSync,
   symlinkSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
@@ -35,6 +38,10 @@ import {
 import { attestationPayloadDigest } from "../src/operations/operation_support.ts";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
 import { exerciseGovernanceRetirement } from "./governance_retirement_probe.ts";
+import {
+  readProposalWorkspaceCorpus,
+  type ProposalWorkspaceOwnershipConflictCase,
+} from "./proposal_workspace_corpus.ts";
 import {
   createLocalAtlasGovernanceState,
   notCompletedLocalGovernanceResult,
@@ -73,10 +80,52 @@ interface CommandResult {
   readonly stdout: string;
 }
 
+function runGit(
+  repository: string,
+  args: readonly string[],
+  environment: NodeJS.ProcessEnv = process.env,
+): CommandResult {
+  const result = spawnSync("git", ["-C", repository, ...args], {
+    encoding: "utf8",
+    env: environment,
+  });
+  assert.equal(result.error, undefined);
+  return { status: result.status, stderr: result.stderr, stdout: result.stdout };
+}
+
 function git(repository: string, args: readonly string[]): string {
-  const result = spawnSync("git", ["-C", repository, ...args], { encoding: "utf8" });
+  const result = runGit(repository, args);
   assert.equal(result.status, 0, result.stderr);
   return result.stdout.trim();
+}
+
+function gitWithFixtureIdentity(repository: string, args: readonly string[]): string {
+  return git(repository, [
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    ...args,
+  ]);
+}
+
+function addTrackedGitlink(repository: string): void {
+  const object = git(repository, ["rev-parse", "HEAD"]);
+  git(repository, [
+    "update-index",
+    "--add",
+    "--cacheinfo",
+    `160000,${object},vendor/module`,
+  ]);
+  git(repository, [
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    "commit",
+    "-m",
+    "Track uninitialized gitlink",
+  ]);
 }
 
 function runAtlas(arguments_: readonly string[]): CommandResult {
@@ -91,6 +140,12 @@ function runAtlas(arguments_: readonly string[]): CommandResult {
   });
   assert.equal(result.error, undefined);
   return { status: result.status, stderr: result.stderr, stdout: result.stdout };
+}
+
+function writtenText(data: Parameters<typeof fs.writeFileSync>[1]): string {
+  if (typeof data === "string") return data;
+  if (Buffer.isBuffer(data)) return data.toString("utf8");
+  return "";
 }
 
 function fixtureJson(name: string): string {
@@ -240,9 +295,25 @@ function policyRequest(
   return { ...fields, attestation: attestationFor(fields) };
 }
 
+interface PrincipleRequestIdentity {
+  readonly changelog: string;
+  readonly id: string;
+  readonly title: string;
+  readonly truth: string;
+  readonly truthId: string;
+}
+
 // A create request for a fresh Principle page, so the operation exercises the
 // create route rather than the amend route.
-function createPrincipleRequest(): AtlasGovernanceRequest {
+function createPrincipleRequest(
+  identity: PrincipleRequestIdentity = {
+    changelog: "Created No Model Principle.",
+    id: "no-model",
+    title: "No Model",
+    truth: "Trusted validation runs where a model cannot reach it.",
+    truthId: "no-model",
+  },
+): AtlasGovernanceRequest {
   const page = [
     "---",
     "sdk:",
@@ -251,10 +322,10 @@ function createPrincipleRequest(): AtlasGovernanceRequest {
     "  created-by:",
     "    kind: human",
     "    name: Fixture Maintainer",
-    "  id: principle:no-model",
+    `  id: principle:${identity.id}`,
     "  local-atlas-schema: 1.0.0",
     "  tags: []",
-    "  title: No Model",
+    `  title: ${identity.title}`,
     "  type: principle",
     '  updated-at: "2026-08-22T00:00:00Z"',
     "  updated-by:",
@@ -263,27 +334,67 @@ function createPrincipleRequest(): AtlasGovernanceRequest {
     "atlas: {}",
     "---",
     "",
-    "# No Model",
+    `# ${identity.title}`,
     "",
     "## Active truths",
     "",
-    "- `truth:no-model` Trusted validation runs where a model cannot reach it.",
+    `- \`truth:${identity.truthId}\` ${identity.truth}`,
     "",
     "## Amendments",
     "",
     "### 1 - 2026-08-22",
     "",
-    "Added `truth:no-model` under Maintainer approval.",
+    `Added \`truth:${identity.truthId}\` under Maintainer approval.`,
     "",
   ].join("\n");
   const fields = {
     "governance-request-schema": "1.0.0" as const,
     action: "create" as const,
-    changelog: "Created No Model Principle.",
-    changes: [{ content: page, path: ".atlas/principles/no-model.md" }],
+    changelog: identity.changelog,
+    changes: [{ content: page, path: `.atlas/principles/${identity.id}.md` }],
     subject: "principle" as const,
   };
   return { ...fields, attestation: attestationFor(fields) };
+}
+
+function concurrentProposalCases(): readonly {
+  readonly absentCode: string;
+  readonly first: PrincipleRequestIdentity;
+  readonly second: PrincipleRequestIdentity;
+}[] {
+  const corpus = JSON.parse(
+    readFileSync(new URL("./adversarial/governance.json", import.meta.url), "utf8"),
+  ) as {
+    readonly cases: readonly {
+      readonly absentCode?: string;
+      readonly concurrentProposals?: {
+        readonly first: PrincipleRequestIdentity;
+        readonly second: PrincipleRequestIdentity;
+      };
+      readonly expectation?: "accept";
+    }[];
+  };
+  const entries = corpus.cases.filter(
+    (
+      candidate,
+    ): candidate is {
+      readonly absentCode: string;
+      readonly concurrentProposals: {
+        readonly first: PrincipleRequestIdentity;
+        readonly second: PrincipleRequestIdentity;
+      };
+      readonly expectation: "accept";
+    } =>
+      candidate.concurrentProposals !== undefined &&
+      candidate.expectation === "accept" &&
+      candidate.absentCode !== undefined,
+  );
+  assert.notEqual(entries.length, 0);
+  return entries.map((entry) => ({
+    absentCode: entry.absentCode,
+    first: entry.concurrentProposals.first,
+    second: entry.concurrentProposals.second,
+  }));
 }
 
 // A legacy empty-truth retirement page is not a live Principle or a purge.
@@ -1086,15 +1197,15 @@ test("Local Atlas Governance tears down a failed proposal so a corrected retry a
     false,
   );
 
-  // The corrected retry targets the same deterministic branch and now succeeds
-  // instead of wedging on ATLAS_GOVERNANCE_WORKSPACE_EXISTS.
+  // The corrected intent receives its own deterministic branch and succeeds
+  // instead of wedging on the failed intent's discarded workspace.
   const corrected = runLocalAtlasGovernance(
     repository,
     amendPrincipleRequest(repository),
   );
   assert.equal(corrected.completion, "completed");
   assert.equal(corrected.disposition, "success");
-  assert.equal(corrected.payload.workflowState.proposalBranch, branch);
+  assert.notEqual(corrected.payload.workflowState.proposalBranch, branch);
   assert.equal(git(repository, ["rev-parse", "main"]), mainBefore);
 });
 
@@ -1124,6 +1235,346 @@ test("Local Atlas Governance preserves an existing Operation Workspace", () => {
     "ATLAS_GOVERNANCE_WORKSPACE_EXISTS",
   );
   assert.equal(readFileSync(sentinel, "utf8"), "SENTINEL: human review notes\n");
+});
+
+for (const [index, identities] of concurrentProposalCases().entries()) {
+  test(`Local Atlas Governance gives distinct same-base intents independent Proposal workspaces (${String(index + 1)})`, () => {
+    const repository = resolve(
+      WORKSPACE,
+      `distinct-proposal-identities-${String(index)}`,
+    );
+    const mainBefore = initAtlasRepository(repository);
+    const first = runLocalAtlasGovernance(
+      repository,
+      createPrincipleRequest(identities.first),
+    );
+    const second = runLocalAtlasGovernance(
+      repository,
+      createPrincipleRequest(identities.second),
+    );
+
+    assert.equal(first.completion, "completed");
+    assert.equal(second.completion, "completed");
+    assert.notEqual(
+      second.handoff.validationState.findings[0]?.code,
+      identities.absentCode,
+    );
+    assert.notEqual(
+      second.payload.workflowState.operationId,
+      first.payload.workflowState.operationId,
+    );
+    assert.notEqual(
+      second.payload.workflowState.proposalBranch,
+      first.payload.workflowState.proposalBranch,
+    );
+    assert.match(
+      git(repository, [
+        "show",
+        `${first.payload.workflowState.proposalBranch}:.atlas/principles/${identities.first.id}.md`,
+      ]),
+      new RegExp(`truth:${identities.first.truthId}`, "u"),
+    );
+    assert.match(
+      git(repository, [
+        "show",
+        `${second.payload.workflowState.proposalBranch}:.atlas/principles/${identities.second.id}.md`,
+      ]),
+      new RegExp(`truth:${identities.second.truthId}`, "u"),
+    );
+    assert.equal(git(repository, ["rev-parse", "main"]), mainBefore);
+  });
+}
+
+for (const entry of readProposalWorkspaceCorpus().cases.filter(
+  (candidate) => candidate.kind === "filter-free-completion",
+)) {
+  test(`Proposal workspace corpus: ${entry.name}`, () => {
+    const repository = resolve(WORKSPACE, entry.name);
+    initAtlasRepository(repository);
+    writeFileSync(resolve(repository, ".gitattributes"), "README.md filter=evil\n");
+    mkdirSync(resolve(repository, "tools"), { recursive: true });
+    writeFileSync(resolve(repository, "tools", "run.sh"), "#!/bin/sh\nexit 0\n");
+    chmodSync(resolve(repository, "tools", "run.sh"), 0o755);
+    symlinkSync("README.md", resolve(repository, "README.link"));
+    git(repository, ["add", ".gitattributes", "README.link", "tools/run.sh"]);
+    git(repository, [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "-m",
+      "Add filtered host files",
+    ]);
+    const filterMarker = resolve(repository, `FILTER-${entry.filterMode}`);
+    if (entry.filterMode === "smudge") {
+      git(repository, [
+        "config",
+        "filter.evil.smudge",
+        `sh -c 'touch "$1"; cat' sh ${filterMarker}`,
+      ]);
+    } else {
+      git(repository, [
+        "config",
+        "filter.evil.process",
+        `sh -c 'touch "$1"; exit 1' sh ${filterMarker}`,
+      ]);
+      git(repository, ["config", "filter.evil.required", "true"]);
+    }
+    const hookMarker = resolve(repository, "POST-CHECKOUT");
+    const hooks = resolve(repository, ".git", "hooks");
+    writeFileSync(
+      resolve(hooks, "post-checkout"),
+      `#!/bin/sh\ntouch "${hookMarker}"\n`,
+      { encoding: "utf8", mode: 0o755 },
+    );
+    const request = createPrincipleRequest();
+    const result = runLocalAtlasGovernance(repository, request);
+
+    assert.equal(result.completion, "completed");
+    const workspace = resolve(
+      repository,
+      ".atlas-operation-workspaces",
+      result.payload.workflowState.proposalBranch,
+    );
+    assert.equal(existsSync(filterMarker), false);
+    assert.equal(existsSync(hookMarker), false);
+    assert.equal(readFileSync(resolve(workspace, "README.md"), "utf8"), "# host\n");
+    assert.notEqual(statSync(resolve(workspace, "tools", "run.sh")).mode & 0o111, 0);
+    assert.equal(readlinkSync(resolve(workspace, "README.link")), "README.md");
+    const repeated = runLocalAtlasGovernance(repository, request);
+    assert.equal(repeated.completion, "not-completed");
+    assert.equal(
+      repeated.handoff.validationState.findings[0]?.code,
+      "ATLAS_GOVERNANCE_WORKSPACE_EXISTS",
+    );
+  });
+}
+
+for (const entry of readProposalWorkspaceCorpus().cases.filter(
+  (candidate): candidate is ProposalWorkspaceOwnershipConflictCase =>
+    candidate.kind === "ownership-conflict" && candidate.operation === "governance",
+)) {
+  test(`Proposal workspace corpus: ${entry.name}`, (context) => {
+    const repository = resolve(WORKSPACE, entry.name);
+    initAtlasRepository(repository);
+    if (entry.conflict.kind === "parent") {
+      mkdirSync(resolve(repository, entry.conflict.path), { recursive: true });
+      writeFileSync(
+        resolve(repository, entry.conflict.path, "tracked.md"),
+        "tracked nested host file\n",
+      );
+      git(repository, ["add", `${entry.conflict.path}/tracked.md`]);
+      git(repository, [
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "commit",
+        "-m",
+        "Add nested host file",
+      ]);
+    }
+    const targetHead = git(repository, ["rev-parse", "HEAD"]);
+    const request = createPrincipleRequest();
+    const state = createLocalAtlasGovernanceState(repository, request);
+    const workspace = resolve(
+      repository,
+      ".atlas-operation-workspaces",
+      state.proposalBranch,
+    );
+    const conflict = resolve(workspace, entry.conflict.path);
+    const originalWrite = fs.writeFileSync;
+    let injected = false;
+    const interception = context.mock.method(
+      fs,
+      "writeFileSync",
+      (
+        file: Parameters<typeof fs.writeFileSync>[0],
+        data: Parameters<typeof fs.writeFileSync>[1],
+        options?: Parameters<typeof fs.writeFileSync>[2],
+      ) => {
+        originalWrite(file, data, options);
+        if (
+          !injected &&
+          String(file).endsWith(".atlas-operation-state.json.next") &&
+          writtenText(data).includes('"effect":"write-change-set"')
+        ) {
+          injected = true;
+          mkdirSync(dirname(conflict), { recursive: true });
+          originalWrite(conflict, entry.conflict.content);
+        }
+      },
+    );
+    syncBuiltinESMExports();
+    let result: AtlasGovernanceResult;
+    try {
+      result = runLocalAtlasGovernance(repository, request);
+    } finally {
+      interception.mock.restore();
+      syncBuiltinESMExports();
+    }
+
+    assert.equal(injected, true);
+    assert.equal(result.completion, "not-completed");
+    assert.equal(result.handoff.validationState.findings[0]?.code, entry.expectedCode);
+    assert.equal(git(repository, ["rev-parse", "main"]), targetHead);
+    assert.notEqual(git(repository, ["branch", "--list", state.proposalBranch]), "");
+    assert.equal(existsSync(workspace), true);
+    assert.equal(readFileSync(conflict, "utf8"), entry.conflict.content);
+    assert.match(result.handoff.recommendedNextAction, /retained.*inspection/iu);
+  });
+}
+
+for (const entry of readProposalWorkspaceCorpus().cases.filter(
+  (candidate) =>
+    candidate.kind === "gitlink-rebase-completion" &&
+    candidate.operation === "governance",
+)) {
+  test(`Proposal workspace corpus: ${entry.name}`, () => {
+    const repository = resolve(WORKSPACE, entry.name);
+    initAtlasRepository(repository);
+    addTrackedGitlink(repository);
+    const result = runLocalAtlasGovernance(repository, createPrincipleRequest());
+    assert.equal(result.completion, "completed");
+    const workspace = resolve(
+      repository,
+      ".atlas-operation-workspaces",
+      result.payload.workflowState.proposalBranch,
+    );
+    const placeholder = resolve(workspace, "vendor", "module");
+    assert.deepEqual(readdirSync(placeholder), []);
+    assert.equal(git(workspace, ["status", "--porcelain", "--untracked-files=no"]), "");
+
+    writeFileSync(resolve(repository, "UNRELATED.md"), "# unrelated\n", "utf8");
+    git(repository, ["add", "UNRELATED.md"]);
+    git(repository, [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "-m",
+      "Advance unrelated host content",
+    ]);
+    const targetHead = git(repository, ["rev-parse", "main"]);
+    gitWithFixtureIdentity(workspace, ["rebase", "main"]);
+    assert.equal(git(workspace, ["rev-parse", "HEAD^"]), targetHead);
+    assert.equal(git(workspace, ["status", "--porcelain", "--untracked-files=no"]), "");
+    const lint = runAtlas(["lint", "--machine", "--atlas-host-directory", workspace]);
+    assert.equal(lint.status, 0, lint.stdout);
+    const lintResult = JSON.parse(lint.stdout) as { readonly completion: string };
+    assert.equal(lintResult.completion, "completed");
+  });
+}
+
+test("ordinary Git rebases and revalidates a concurrent Atlas Proposal after the first merges", () => {
+  const repository = resolve(WORKSPACE, "ordinary-git-concurrency");
+  const base = initAtlasRepository(repository);
+  const cases = concurrentProposalCases();
+  assert.equal(cases.length, 1, "the full rebase proof supports exactly one case");
+  const identities = cases[0];
+  assert.ok(identities);
+  const first = runLocalAtlasGovernance(
+    repository,
+    createPrincipleRequest(identities.first),
+  );
+  const second = runLocalAtlasGovernance(
+    repository,
+    createPrincipleRequest(identities.second),
+  );
+  assert.equal(first.completion, "completed");
+  assert.equal(second.completion, "completed");
+  assert.equal(first.payload.workflowState.targetHead, base);
+  assert.equal(second.payload.workflowState.targetHead, base);
+
+  git(repository, ["merge", "--ff-only", first.payload.workflowState.proposalBranch]);
+  const headAfterFirst = git(repository, ["rev-parse", "main"]);
+  assert.notEqual(headAfterFirst, base);
+
+  const secondWorkspace = resolve(
+    repository,
+    ".atlas-operation-workspaces",
+    second.payload.workflowState.proposalBranch,
+  );
+  const secondBeforeRebase = git(secondWorkspace, ["rev-parse", "HEAD"]);
+  const rebase = runGit(secondWorkspace, ["rebase", "main"]);
+  assert.notEqual(rebase.status, 0);
+  assert.equal(
+    git(secondWorkspace, ["diff", "--name-only", "--diff-filter=U"]),
+    ".atlas/CHANGELOG.md",
+    rebase.stderr,
+  );
+
+  const firstChangelog = readFileSync(
+    resolve(repository, ".atlas", "CHANGELOG.md"),
+    "utf8",
+  ).trimEnd();
+  writeFileSync(
+    resolve(secondWorkspace, ".atlas", "CHANGELOG.md"),
+    [
+      firstChangelog,
+      "",
+      "## 2026-08-22",
+      "",
+      `- ${second.payload.workflowState.operationId}: ${identities.second.changelog}`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  git(secondWorkspace, ["add", ".atlas/CHANGELOG.md"]);
+  const continued = runGit(
+    secondWorkspace,
+    [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "rebase",
+      "--continue",
+    ],
+    { ...process.env, GIT_EDITOR: "true" },
+  );
+  assert.equal(continued.status, 0, continued.stderr);
+
+  const rebasedHead = git(secondWorkspace, ["rev-parse", "HEAD"]);
+  assert.notEqual(rebasedHead, secondBeforeRebase);
+  assert.equal(git(secondWorkspace, ["rev-parse", "HEAD^"]), headAfterFirst);
+  const lint = runAtlas([
+    "lint",
+    "--machine",
+    "--atlas-host-directory",
+    secondWorkspace,
+  ]);
+  assert.equal(lint.status, 0, lint.stdout);
+  const lintResult = JSON.parse(lint.stdout) as {
+    readonly completion: string;
+    readonly payload: {
+      readonly lint?: { readonly outcome: string };
+      readonly state: string;
+    };
+  };
+  assert.equal(lintResult.completion, "completed");
+  assert.equal(lintResult.payload.state, "completed");
+  assert.equal(lintResult.payload.lint?.outcome, "valid");
+  assert.equal(git(secondWorkspace, ["rev-parse", "HEAD"]), rebasedHead);
+
+  git(repository, ["merge", "--ff-only", second.payload.workflowState.proposalBranch]);
+  assert.equal(git(repository, ["rev-parse", "main"]), rebasedHead);
+  assert.match(
+    readFileSync(resolve(repository, ".atlas", "principles", "no-model.md"), "utf8"),
+    /truth:no-model/u,
+  );
+  assert.match(
+    readFileSync(resolve(repository, ".atlas", "principles", "no-network.md"), "utf8"),
+    /truth:no-network/u,
+  );
+  const finalChangelog = readFileSync(
+    resolve(repository, ".atlas", "CHANGELOG.md"),
+    "utf8",
+  );
+  assert.ok(finalChangelog.includes(first.payload.workflowState.operationId));
+  assert.ok(finalChangelog.includes(second.payload.workflowState.operationId));
 });
 
 // A minimal amend request that never reaches Lint; used only to exercise the

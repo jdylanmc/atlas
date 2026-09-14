@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import {
+import fs, {
   cpSync,
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { parseMachineOperationResult } from "./machine_operation_result.ts";
@@ -29,6 +31,10 @@ import {
   createLocalAtlasIngestState,
   runLocalAtlasIngest,
 } from "../src/platform/local_atlas_ingest.ts";
+import {
+  readProposalWorkspaceCorpus,
+  type ProposalWorkspaceOwnershipConflictCase,
+} from "./proposal_workspace_corpus.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const COMMAND = resolve(ROOT, "scripts", "atlas.ts");
@@ -46,6 +52,35 @@ function git(repository: string, args: readonly string[]): string {
   });
   assert.equal(result.status, 0, result.stderr);
   return result.stdout.trim();
+}
+
+function gitWithFixtureIdentity(repository: string, args: readonly string[]): string {
+  return git(repository, [
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    ...args,
+  ]);
+}
+
+function addTrackedGitlink(repository: string): void {
+  const object = git(repository, ["rev-parse", "HEAD"]);
+  git(repository, [
+    "update-index",
+    "--add",
+    "--cacheinfo",
+    `160000,${object},vendor/module`,
+  ]);
+  git(repository, [
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    "commit",
+    "-m",
+    "Track uninitialized gitlink",
+  ]);
 }
 
 function gitWithDate(
@@ -80,6 +115,12 @@ function runAtlas(arguments_: readonly string[]): CommandResult {
     stderr: result.stderr,
     stdout: result.stdout,
   };
+}
+
+function writtenText(data: Parameters<typeof fs.writeFileSync>[1]): string {
+  if (typeof data === "string") return data;
+  if (Buffer.isBuffer(data)) return data.toString("utf8");
+  return "";
 }
 
 function fixtureJson(name: string): string {
@@ -552,6 +593,193 @@ test("Local Atlas Ingest preserves an existing Operation Workspace", () => {
   );
   assert.equal(readFileSync(sentinel, "utf8"), "SENTINEL: human review notes\n");
 });
+
+for (const entry of readProposalWorkspaceCorpus().cases.filter(
+  (candidate) =>
+    candidate.kind === "rebase-completion" && candidate.operation === "ingest",
+)) {
+  test(`Proposal workspace corpus: ${entry.name}`, () => {
+    const repository = resolve(WORKSPACE, entry.name);
+    initAtlasRepository(repository);
+    const result = runLocalAtlasIngest(repository, ingestRequest());
+    assert.equal(result.completion, "completed");
+    const workspace = resolve(
+      repository,
+      ".atlas-operation-workspaces",
+      result.payload.workflowState.proposalBranch,
+    );
+    assert.equal(git(workspace, ["status", "--porcelain", "--untracked-files=no"]), "");
+
+    writeFileSync(resolve(repository, "UNRELATED.md"), "# unrelated\n", "utf8");
+    git(repository, ["add", "UNRELATED.md"]);
+    git(repository, [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "-m",
+      "Advance unrelated host content",
+    ]);
+    const targetHead = git(repository, ["rev-parse", "main"]);
+    gitWithFixtureIdentity(workspace, ["rebase", "main"]);
+    assert.equal(git(workspace, ["rev-parse", "HEAD^"]), targetHead);
+    assert.equal(git(workspace, ["status", "--porcelain", "--untracked-files=no"]), "");
+    const lint = runAtlas(["lint", "--machine", "--atlas-host-directory", workspace]);
+    assert.equal(lint.status, 0, lint.stdout);
+    const lintResult = parseMachineOperationResult(lint.stdout);
+    assert.equal(lintResult.completion, "completed");
+    assert.equal(lintResult.disposition, "success");
+  });
+}
+
+for (const entry of readProposalWorkspaceCorpus().cases.filter(
+  (candidate): candidate is ProposalWorkspaceOwnershipConflictCase =>
+    candidate.kind === "ownership-conflict" && candidate.operation === "ingest",
+)) {
+  test(`Proposal workspace corpus: ${entry.name}`, (context) => {
+    const repository = resolve(WORKSPACE, entry.name);
+    const targetHead = initAtlasRepository(repository);
+    const request = ingestRequest();
+    const state = createLocalAtlasIngestState(repository, request);
+    const workspace = resolve(
+      repository,
+      ".atlas-operation-workspaces",
+      state.proposalBranch,
+    );
+    const conflict = resolve(workspace, entry.conflict.path);
+    const originalWrite = fs.writeFileSync;
+    let injected = false;
+    const interception = context.mock.method(
+      fs,
+      "writeFileSync",
+      (
+        file: Parameters<typeof fs.writeFileSync>[0],
+        data: Parameters<typeof fs.writeFileSync>[1],
+        options?: Parameters<typeof fs.writeFileSync>[2],
+      ) => {
+        originalWrite(file, data, options);
+        if (
+          !injected &&
+          String(file).endsWith(".atlas-operation-state.json.next") &&
+          writtenText(data).includes('"effect":"write-change-set"')
+        ) {
+          injected = true;
+          mkdirSync(dirname(conflict), { recursive: true });
+          originalWrite(conflict, entry.conflict.content);
+        }
+      },
+    );
+    syncBuiltinESMExports();
+    let result: ReturnType<typeof runLocalAtlasIngest>;
+    try {
+      result = runLocalAtlasIngest(repository, request);
+    } finally {
+      interception.mock.restore();
+      syncBuiltinESMExports();
+    }
+
+    assert.equal(injected, true);
+    assert.equal(result.completion, "not-completed");
+    assert.equal(result.handoff.validationState.findings[0]?.code, entry.expectedCode);
+    assert.equal(git(repository, ["rev-parse", "main"]), targetHead);
+    assert.notEqual(git(repository, ["branch", "--list", state.proposalBranch]), "");
+    assert.equal(existsSync(workspace), true);
+    assert.equal(readFileSync(conflict, "utf8"), entry.conflict.content);
+    assert.match(result.handoff.recommendedNextAction, /retained.*inspection/iu);
+  });
+}
+
+for (const entry of readProposalWorkspaceCorpus().cases.filter(
+  (candidate) =>
+    candidate.kind === "gitlink-rebase-completion" && candidate.operation === "ingest",
+)) {
+  test(`Proposal workspace corpus: ${entry.name}`, () => {
+    const repository = resolve(WORKSPACE, entry.name);
+    initAtlasRepository(repository);
+    addTrackedGitlink(repository);
+    const result = runLocalAtlasIngest(repository, ingestRequest());
+    assert.equal(result.completion, "completed");
+    const workspace = resolve(
+      repository,
+      ".atlas-operation-workspaces",
+      result.payload.workflowState.proposalBranch,
+    );
+    const placeholder = resolve(workspace, "vendor", "module");
+    assert.deepEqual(readdirSync(placeholder), []);
+    assert.equal(git(workspace, ["status", "--porcelain", "--untracked-files=no"]), "");
+
+    writeFileSync(resolve(repository, "UNRELATED.md"), "# unrelated\n", "utf8");
+    git(repository, ["add", "UNRELATED.md"]);
+    git(repository, [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "-m",
+      "Advance unrelated host content",
+    ]);
+    const targetHead = git(repository, ["rev-parse", "main"]);
+    gitWithFixtureIdentity(workspace, ["rebase", "main"]);
+    assert.equal(git(workspace, ["rev-parse", "HEAD^"]), targetHead);
+    assert.equal(git(workspace, ["status", "--porcelain", "--untracked-files=no"]), "");
+    const lint = runAtlas(["lint", "--machine", "--atlas-host-directory", workspace]);
+    assert.equal(lint.status, 0, lint.stdout);
+    const lintResult = parseMachineOperationResult(lint.stdout);
+    assert.equal(lintResult.completion, "completed");
+    assert.equal(lintResult.disposition, "success");
+  });
+}
+
+for (const entry of readProposalWorkspaceCorpus().cases.filter(
+  (candidate) => candidate.kind === "retry-after-owned-failure",
+)) {
+  test(`Proposal workspace corpus: ${entry.name}`, (context) => {
+    const repository = resolve(WORKSPACE, entry.name);
+    const targetHead = initAtlasRepository(repository);
+    const request = ingestRequest();
+    const state = createLocalAtlasIngestState(repository, request);
+    const workspace = resolve(
+      repository,
+      ".atlas-operation-workspaces",
+      state.proposalBranch,
+    );
+    const originalWrite = fs.writeFileSync;
+    let injected = false;
+    const interception = context.mock.method(
+      fs,
+      "writeFileSync",
+      (
+        file: Parameters<typeof fs.writeFileSync>[0],
+        data: Parameters<typeof fs.writeFileSync>[1],
+        options?: Parameters<typeof fs.writeFileSync>[2],
+      ) => {
+        if (!injected && String(file).endsWith(".atlas-operation-state.json.next")) {
+          injected = true;
+          throw new Error("fixture state persistence failure");
+        }
+        originalWrite(file, data, options);
+      },
+    );
+    syncBuiltinESMExports();
+    let failed: ReturnType<typeof runLocalAtlasIngest>;
+    try {
+      failed = runLocalAtlasIngest(repository, request);
+    } finally {
+      interception.mock.restore();
+      syncBuiltinESMExports();
+    }
+
+    assert.equal(injected, true);
+    assert.equal(failed.completion, "not-completed");
+    assert.equal(git(repository, ["branch", "--list", state.proposalBranch]), "");
+    assert.equal(existsSync(workspace), false);
+    const retried = runLocalAtlasIngest(repository, request);
+    assert.equal(retried.completion, "completed");
+    assert.equal(git(repository, ["rev-parse", "main"]), targetHead);
+  });
+}
 
 test("Ingest command helpers preserve machine JSON and all exit classes", () => {
   const invalidScope = parseIngestScope(null);
