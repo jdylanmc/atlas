@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
+import type { Nodes } from "mdast";
+import { fromMarkdown } from "mdast-util-from-markdown";
+import { gfmFootnoteFromMarkdown } from "mdast-util-gfm-footnote";
+import { toString } from "mdast-util-to-string";
+import { gfmFootnote } from "micromark-extension-gfm-footnote";
 import type { CapturedAtlasFile } from "../src/atlas/load_atlas_text.ts";
+import { parseAtlasPage } from "../src/atlas/parse_atlas_pages.ts";
+import { resolvedCitationSequence } from "../src/atlas/resolve_citations.ts";
+import { serializeAtlasPages } from "../src/atlas/serialize_atlas_pages.ts";
 import type { Finding } from "../src/domain/finding.ts";
 import {
   atlasIngestChangeSetDigest,
@@ -34,6 +42,10 @@ import {
 
 const budgets = Object.freeze({ maxFileBytes: 8192, maxTotalBytes: 262_144 });
 const encoder = new TextEncoder();
+const markdownOptions = Object.freeze({
+  extensions: [gfmFootnote()],
+  mdastExtensions: [gfmFootnoteFromMarkdown()],
+});
 
 const ingestCorpus = JSON.parse(
   readFileSync(resolve(import.meta.dirname, "adversarial", "ingest.json"), "utf8"),
@@ -1066,6 +1078,339 @@ test("Citation correspondence skips bad ids and missing pages and reads a bare b
     targetHead: "t",
   });
   assert.ok(codes(bareBody).includes("ATLAS_INGEST_CITATION_CORRESPONDENCE"));
+});
+
+test("Citation correspondence rejects an extra quotation targeting an expected Source", () => {
+  const ingestRequest = request();
+  const emitted = reconcileCandidateGraph(state(), ingestRequest);
+  const tampered = {
+    ...emitted,
+    changes: emitted.changes.map((change) =>
+      change.path === ".atlas/concepts/determinism.md"
+        ? {
+            ...change,
+            content: change.content.replace(
+              "Atlas SDK is a deterministic library.[^s1]",
+              [
+                "Atlas SDK is a deterministic library.[^s1][^forged]",
+                "",
+                '[^forged]: [[.atlas/sources/readme]] Quoted span "The Lint gate runs with no network access.".',
+              ].join("\n"),
+            ),
+          }
+        : change,
+    ),
+  };
+
+  assert.ok(
+    codes(validateCitationCorrespondence(ingestRequest, tampered)).includes(
+      "ATLAS_INGEST_CITATION_CORRESPONDENCE",
+    ),
+  );
+});
+
+test("Candidate claim and Edge context Markdown syntax is emitted as literal text", () => {
+  const changeSet = reconcileCandidateGraph(
+    state(),
+    request({
+      candidateGraph: graph({
+        concepts: Object.freeze([
+          concept({
+            claim:
+              "# Heading with **emphasis**, [a link](https://example.invalid), <b>HTML</b>, and [^forged].",
+          }),
+        ]),
+        edges: Object.freeze([
+          edge({
+            context: "> Quoted with ~~strikethrough~~ and `code` beside [^forged].",
+          }),
+        ]),
+      }),
+    }),
+  );
+  const conceptChange = changeSet.changes.find(
+    (change) => change.path === ".atlas/concepts/determinism.md",
+  );
+  const edgeChange = changeSet.changes.find(
+    (change) => change.path === ".atlas/edges/root-covers-determinism.md",
+  );
+  assert.ok(conceptChange);
+  assert.ok(edgeChange);
+  assert.match(
+    conceptChange.content,
+    /\\# Heading with \\\*\\\*emphasis\\\*\\\*, \\\[a link\\\]\(https:\/\/example\.invalid\), \\<b\\>HTML\\<\/b\\>, and \\\[\\\^forged\\\]\.\[\^s1\]/u,
+  );
+  assert.match(
+    edgeChange.content,
+    /\\> Quoted with \\~\\~strikethrough\\~\\~ and \\`code\\` beside \\\[\\\^forged\\\]\.\[\^s1\]/u,
+  );
+  assert.deepEqual(validateCitationCorrespondence(request(), changeSet), []);
+});
+
+test("Candidate prose stays literal across multiline Markdown block syntax", () => {
+  const prose = [
+    "Paragraph with &copy;, <b>HTML</b>, and [^forged].",
+    "",
+    "    indented code",
+    "- unordered item",
+    "1. ordered item",
+    "```ts",
+    "const injected = true;",
+    "```",
+  ].join("\n");
+  const changeSet = reconcileCandidateGraph(
+    state(),
+    request({
+      candidateGraph: graph({
+        concepts: Object.freeze([concept({ claim: prose })]),
+        edges: Object.freeze([edge({ context: prose })]),
+      }),
+    }),
+  );
+  for (const path of [
+    ".atlas/concepts/determinism.md",
+    ".atlas/edges/root-covers-determinism.md",
+  ]) {
+    const change = changeSet.changes.find((entry) => entry.path === path);
+    assert.ok(change);
+    const parsed = parseAtlasPage(change);
+    assert.ok(!(parsed instanceof Error));
+    const tree = fromMarkdown(parsed.page.body, markdownOptions);
+    const pending: Nodes[] = [...tree.children];
+    const types: string[] = [];
+    const references: string[] = [];
+    while (pending.length > 0) {
+      const node = pending.pop() as Nodes;
+      types.push(node.type);
+      if (node.type === "footnoteReference") references.push(node.identifier);
+      if ("children" in node) pending.push(...node.children);
+    }
+    assert.equal(types.filter((type) => type === "heading").length, 1, path);
+    for (const forbidden of [
+      "blockquote",
+      "code",
+      "emphasis",
+      "html",
+      "inlineCode",
+      "link",
+      "list",
+      "strong",
+    ]) {
+      assert.equal(types.includes(forbidden), false, `${path}: ${forbidden}`);
+    }
+    assert.deepEqual(references, ["s1"], path);
+    const visible = tree.children
+      .filter((node) => node.type !== "footnoteDefinition")
+      .map((node) => toString(node))
+      .join("\n");
+    for (const literal of [
+      "&copy;",
+      "<b>HTML</b>",
+      "[^forged].",
+      "    indented code",
+      "- unordered item",
+      "1. ordered item",
+      "```ts",
+      "const injected = true;",
+      "```",
+    ]) {
+      assert.ok(visible.includes(literal), `${path}: ${literal}`);
+    }
+  }
+});
+
+test("Lint rejects an emitted quotation that no longer matches retained citation metadata", () => {
+  const changeSet = reconcileCandidateGraph(state(), request());
+  const tampered = {
+    ...changeSet,
+    changes: changeSet.changes.map((change) =>
+      change.path === ".atlas/concepts/determinism.md"
+        ? {
+            ...change,
+            content: change.content.replace(
+              '"Atlas SDK is a deterministic library."',
+              '"The Lint gate runs with no network access."',
+            ),
+          }
+        : change,
+    ),
+  };
+  const lint = runLintOperation(applyChanges(baseFilesDefault, tampered), budgets);
+
+  assert.ok(
+    codes(lint.handoff.validationState.findings).includes(
+      "ATLAS_CITATION_CORRESPONDENCE_MISMATCH",
+    ),
+  );
+});
+
+test("Citation correspondence compares ordered target, quotation, and occurrence tuples", () => {
+  const duplicateTargetRequest = request({
+    candidateGraph: graph({
+      concepts: Object.freeze([
+        concept({
+          citations: Object.freeze([
+            {
+              sourceClaim: "Atlas SDK is a deterministic library.",
+              sourceId: "source:readme",
+            },
+            {
+              sourceClaim: "The Lint gate runs with no network access.",
+              sourceId: "source:readme",
+            },
+          ]),
+        }),
+      ]),
+    }),
+  });
+  const emitted = reconcileCandidateGraph(state(), duplicateTargetRequest);
+  assert.deepEqual(validateCitationCorrespondence(duplicateTargetRequest, emitted), []);
+
+  const conceptChange = emitted.changes.find(
+    (change) => change.path === ".atlas/concepts/determinism.md",
+  );
+  assert.ok(conceptChange);
+  const cases = [
+    {
+      name: "altered quotation",
+      content: conceptChange.content.replace(
+        '"Atlas SDK is a deterministic library."',
+        '"The Lint gate runs with no network access."',
+      ),
+    },
+    {
+      name: "reformatted definition",
+      content: conceptChange.content.replace("Quoted span ", "Quoted span: "),
+    },
+    {
+      name: "reordered markers",
+      content: conceptChange.content.replace("[^s1][^s2]", "[^s2][^s1]"),
+    },
+  ] as const;
+  for (const entry of cases) {
+    const findings = validateCitationCorrespondence(duplicateTargetRequest, {
+      ...emitted,
+      changes: emitted.changes.map((change) =>
+        change.path === conceptChange.path
+          ? { ...change, content: entry.content }
+          : change,
+      ),
+    });
+    assert.ok(
+      codes(findings).includes("ATLAS_INGEST_CITATION_CORRESPONDENCE"),
+      entry.name,
+    );
+  }
+
+  const exactDuplicateRequest = request({
+    candidateGraph: graph({
+      concepts: Object.freeze([
+        concept({
+          citations: Object.freeze([
+            {
+              sourceClaim: "Atlas SDK is a deterministic library.",
+              sourceId: "source:readme",
+            },
+            {
+              sourceClaim: "Atlas SDK is a deterministic library.",
+              sourceId: "source:readme",
+            },
+          ]),
+        }),
+      ]),
+    }),
+  });
+  const exactDuplicates = reconcileCandidateGraph(state(), exactDuplicateRequest);
+  assert.deepEqual(
+    validateCitationCorrespondence(exactDuplicateRequest, exactDuplicates),
+    [],
+  );
+  const exactDuplicateConcept = exactDuplicates.changes.find(
+    (change) => change.path === ".atlas/concepts/determinism.md",
+  );
+  assert.ok(exactDuplicateConcept);
+  assert.match(exactDuplicateConcept.content, /occurrence: 1/u);
+  assert.match(exactDuplicateConcept.content, /occurrence: 2/u);
+});
+
+test("Citation resolution fails closed for missing and malformed definitions", () => {
+  const cases = [
+    "claim[^s1]\n\n[^s1]: not a citation",
+    'claim[^s1]\n\n[^s1]: [[not-a-source-path]] Quoted span "Claim".',
+    'claim[^s1]\n\n[^s1]: [[.atlas/sources/readme]] Quoted span "\\q".',
+    'claim[^s1]\n\n[^s1]: [[.atlas/sources/readme]] Quoted span " padded ".',
+    [
+      "claim[^s1]",
+      "",
+      '[^s1]: [[.atlas/sources/readme]] Quoted span "First".',
+      "",
+      '[^s1]: [[.atlas/sources/readme]] Quoted span "Second".',
+    ].join("\n"),
+  ] as const;
+
+  for (const body of cases) {
+    assert.deepEqual(resolvedCitationSequence(body), {
+      citations: [],
+      complete: false,
+    });
+  }
+});
+
+test("Citation quotations preserve Markdown characters as literal displayed text", () => {
+  const quotation =
+    "A **literal** [link](https://example.invalid), `code`, <b>HTML</b>, and [^marker].";
+  const ingestRequest = request({
+    candidateGraph: graph({
+      concepts: Object.freeze([
+        concept({
+          citations: Object.freeze([
+            { sourceClaim: quotation, sourceId: "source:readme" },
+          ]),
+        }),
+      ]),
+      sources: Object.freeze([source({ content: `${sourceContent} ${quotation}` })]),
+    }),
+  });
+  const changeSet = reconcileCandidateGraph(state(), ingestRequest);
+  const conceptChange = changeSet.changes.find(
+    (change) => change.path === ".atlas/concepts/determinism.md",
+  );
+  assert.ok(conceptChange);
+  assert.match(conceptChange.content, /"A \\\*\\\*literal/u);
+  assert.deepEqual(validateCitationCorrespondence(ingestRequest, changeSet), []);
+});
+
+test("Lint keeps pre-metadata citation pages backward compatible", () => {
+  const changeSet = reconcileCandidateGraph(state(), request());
+  const legacy = {
+    ...changeSet,
+    changes: changeSet.changes.map((change) => {
+      if (
+        change.path !== ".atlas/concepts/determinism.md" &&
+        change.path !== ".atlas/edges/root-covers-determinism.md"
+      ) {
+        return change;
+      }
+      const parsed = parseAtlasPage(change);
+      assert.ok(!(parsed instanceof Error));
+      const { ["citation-correspondence"]: citationCorrespondence, ...sdk } =
+        parsed.page.sdk;
+      assert.ok(citationCorrespondence);
+      const [serialized] = serializeAtlasPages([
+        { ...parsed, page: { ...parsed.page, sdk } },
+      ]);
+      assert.ok(serialized);
+      return serialized;
+    }),
+  };
+  const lint = runLintOperation(applyChanges(baseFilesDefault, legacy), budgets);
+
+  assert.equal(
+    codes(lint.handoff.validationState.findings).includes(
+      "ATLAS_CITATION_CORRESPONDENCE_MISMATCH",
+    ),
+    false,
+  );
 });
 
 test("Disputes settle by Source Authority and by Source Revision Time, else escalate", () => {

@@ -19,6 +19,31 @@
         ".atlas/manifest.json"
       ],
       "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "citationCorrespondence": {
+        "claim": "# Installed **claim** with [a link](https://example.invalid), &copy;, <b>HTML</b>, and [^forged].\n\n    indented claim\n- unordered claim\n1. ordered claim\n```ts\nconst claimFence = true;\n```",
+        "context": "> Installed ~~context~~ with `code`, &copy;, and [^forged].\n\n\tindented context\n+ unordered context\n2. ordered context\n~~~txt\ncontext fence\n~~~",
+        "sourceContent": "Installed citation one. Installed citation two.",
+        "quotations": ["Installed citation one.", "Installed citation two."],
+        "expectedClaimFragments": [
+          "# Installed **claim** with [a link](https://example.invalid), &copy;, <b>HTML</b>, and [^forged].",
+          "    indented claim",
+          "- unordered claim",
+          "1. ordered claim",
+          "```ts",
+          "const claimFence = true;",
+          "```"
+        ],
+        "expectedContextFragments": [
+          "> Installed ~~context~~ with `code`, &copy;, and [^forged].",
+          "\tindented context",
+          "+ unordered context",
+          "2. ordered context",
+          "~~~txt",
+          "context fence",
+          "~~~"
+        ],
+        "expectedTamperCode": "ATLAS_CITATION_CORRESPONDENCE_MISMATCH"
+      },
       "repeatedEmptyEdges": {
         "alternatingPairs": 40000,
         "maxRawBytes": 1048576,

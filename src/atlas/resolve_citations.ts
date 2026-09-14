@@ -9,6 +9,48 @@ const markdownOptions = Object.freeze({
   mdastExtensions: [gfmFootnoteFromMarkdown()],
 });
 
+export interface ResolvedCitation {
+  readonly occurrence: number;
+  readonly quotation: string;
+  readonly target: string;
+}
+
+export interface ResolvedCitationSequence {
+  readonly citations: readonly ResolvedCitation[];
+  readonly complete: boolean;
+}
+
+export function citationSequence(
+  citations: readonly Omit<ResolvedCitation, "occurrence">[],
+): readonly ResolvedCitation[] {
+  const occurrences = new Map<string, number>();
+  return Object.freeze(
+    citations.map((citation) => {
+      const key = `${citation.target}\u0000${citation.quotation}`;
+      const occurrence = (occurrences.get(key) ?? 0) + 1;
+      occurrences.set(key, occurrence);
+      return Object.freeze({ ...citation, occurrence });
+    }),
+  );
+}
+
+export function citationSequencesEqual(
+  left: readonly ResolvedCitation[],
+  right: readonly ResolvedCitation[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((citation, index) => {
+      const expected = right[index] as ResolvedCitation;
+      return (
+        citation.target === expected.target &&
+        citation.quotation === expected.quotation &&
+        citation.occurrence === expected.occurrence
+      );
+    })
+  );
+}
+
 function collectCitationNodes(tree: Nodes): {
   readonly definitions: ReadonlyMap<string, readonly FootnoteDefinition[]>;
   readonly references: readonly FootnoteReference[];
@@ -25,7 +67,9 @@ function collectCitationNodes(tree: Nodes): {
       else matches.push(node);
     }
     if ("children" in node) {
-      for (const child of node.children) pending.push(child);
+      for (let index = node.children.length - 1; index >= 0; index -= 1) {
+        pending.push(node.children[index] as Nodes);
+      }
     }
   }
   return { definitions, references };
@@ -78,6 +122,49 @@ function citationTargets(text: string): readonly string[] {
     index = close + 2;
   }
   return targets;
+}
+
+function resolvedCitation(
+  definition: FootnoteDefinition,
+): Omit<ResolvedCitation, "occurrence"> | undefined {
+  const text = definition.children.map((child) => visibleCitationText(child)).join("");
+  const match = /^\[\[([^\]]+)\]\] Quoted span ("(?:[^"\\]|\\.)*")\.$/u.exec(text);
+  if (match === null) return undefined;
+  const target = citationTargetPath(match[1] as string);
+  if (target === undefined) return undefined;
+  try {
+    const quotation = JSON.parse(match[2] as string) as string;
+    if (quotation.trim() !== quotation) {
+      return undefined;
+    }
+    return Object.freeze({ quotation, target });
+  } catch {
+    return undefined;
+  }
+}
+
+export function resolvedCitationSequence(body: string): ResolvedCitationSequence {
+  const tree = fromMarkdown(body, markdownOptions);
+  const { definitions, references } = collectCitationNodes(tree);
+  const citations: Omit<ResolvedCitation, "occurrence">[] = [];
+  let complete = true;
+  for (const reference of references) {
+    const matches = definitions.get(reference.identifier);
+    if (matches === undefined || matches.length !== 1) {
+      complete = false;
+      continue;
+    }
+    const citation = resolvedCitation(matches[0] as FootnoteDefinition);
+    if (citation === undefined) {
+      complete = false;
+      continue;
+    }
+    citations.push(citation);
+  }
+  return Object.freeze({
+    citations: citationSequence(citations),
+    complete,
+  });
 }
 
 export function resolvedCitationSourcePaths(body: string): readonly string[] {

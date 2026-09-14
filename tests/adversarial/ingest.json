@@ -169,12 +169,50 @@
       "expectedCode": "ATLAS_INGEST_SOURCE_REVISION_TIME_INVALID"
     },
     {
-      "name": "H6-forged-body-footnote-fails-citation-correspondence",
+      "name": "H6-embedded-footnote-and-markdown-injection-render-literally",
       "gate": "ingest",
-      "kind": "workflow",
+      "kind": "emission",
       "mutation": "forged-body-citation",
+      "expectation": "accept"
+    },
+    {
+      "name": "H6-extra-same-source-quotation-fails-complete-correspondence",
+      "gate": "ingest",
+      "kind": "change-set",
+      "mutation": "extra-same-source-citation",
       "expectation": "reject",
       "expectedCode": "ATLAS_INGEST_CITATION_CORRESPONDENCE"
+    },
+    {
+      "name": "H6-altered-quotation-fails-complete-correspondence",
+      "gate": "ingest",
+      "kind": "change-set",
+      "mutation": "altered-citation-quotation",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_CITATION_CORRESPONDENCE"
+    },
+    {
+      "name": "H6-reformatted-definition-fails-complete-correspondence",
+      "gate": "ingest",
+      "kind": "change-set",
+      "mutation": "reformatted-citation-definition",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_CITATION_CORRESPONDENCE"
+    },
+    {
+      "name": "H6-reordered-markers-fail-complete-correspondence",
+      "gate": "ingest",
+      "kind": "change-set",
+      "mutation": "reordered-citation-markers",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_INGEST_CITATION_CORRESPONDENCE"
+    },
+    {
+      "name": "H6-duplicate-targets-retain-ordered-distinct-quotations",
+      "gate": "ingest",
+      "kind": "emission",
+      "mutation": "duplicate-citation-targets",
+      "expectation": "accept"
     },
     {
       "name": "H7-edge-semantic-newline-is-neutralized-by-the-serializer",

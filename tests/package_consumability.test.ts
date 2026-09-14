@@ -31,11 +31,17 @@ import { initializeCommandExitCodes } from "../src/interfaces/initialize_command
 import { lintCommandExitCodes } from "../src/interfaces/lint_command.ts";
 import { exploreCommandExitCodes } from "../src/interfaces/explore_command.ts";
 import { governCommandExitCodes } from "../src/interfaces/governance_command.ts";
+import { ingestCommandExitCodes } from "../src/interfaces/ingest_command.ts";
 import {
   governanceAttestationOperation,
   governanceAttestationPayload,
   type AtlasGovernanceResult,
 } from "../src/operations/governance_operation.ts";
+import {
+  ingestScopeAttestationOperation,
+  ingestScopeAttestationPayload,
+  type AtlasIngestResult,
+} from "../src/operations/ingest_operation.ts";
 import { attestationPayloadDigest } from "../src/operations/operation_support.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -1169,6 +1175,237 @@ for (const entry of readInstalledConsumerCorpus().cases) {
           "",
         );
         assert.equal(consumerGit(consumer, ["status", "--porcelain"]), "");
+      }
+      if (entry.citationCorrespondence !== undefined) {
+        const probe = entry.citationCorrespondence;
+        const sourcePath = join(consumer, "docs", "citation-source.md");
+        mkdirSync(join(consumer, "docs"), { recursive: true });
+        writeFileSync(sourcePath, probe.sourceContent);
+        consumerGit(consumer, ["add", "docs/citation-source.md"]);
+        consumerGit(consumer, ["commit", "-m", "test: add citation source"]);
+        const revisionTime = consumerGit(consumer, [
+          "log",
+          "-1",
+          "--format=%cI",
+          "--",
+          "docs/citation-source.md",
+        ]);
+        const scopeFields = {
+          "ingest-scope-schema": "1.0.0" as const,
+          asOf: revisionTime,
+          authority: "official" as const,
+          entryPoint: "docs",
+          excludedPaths: [],
+          freshnessWindowDays: 30,
+          includedPaths: ["docs"],
+          maxDepth: 2,
+          sourceId: "source:installed-citation",
+        };
+        const operation = ingestScopeAttestationOperation(scopeFields.sourceId);
+        const nonce = "installed-citation-correspondence";
+        const request = {
+          "ingest-request-schema": "1.0.0" as const,
+          candidateGraph: {
+            "candidate-graph-schema": "1.0.0" as const,
+            concepts: [
+              {
+                citations: probe.quotations.map((sourceClaim) => ({
+                  sourceClaim,
+                  sourceId: scopeFields.sourceId,
+                })),
+                claim: probe.claim,
+                id: "concept:installed-citation",
+                locator: "docs/citation-source.md",
+                title: "Installed Citation",
+              },
+            ],
+            disputes: [],
+            edges: [
+              {
+                citations: [
+                  {
+                    sourceClaim: probe.quotations[1] as string,
+                    sourceId: scopeFields.sourceId,
+                  },
+                ],
+                context: probe.context,
+                from: "anchor:root",
+                id: "edge:root-covers-installed-citation",
+                semantics: ["covers"],
+                title: "Root Covers Installed Citation",
+                to: "concept:installed-citation",
+              },
+            ],
+            sources: [
+              {
+                authority: "official" as const,
+                content: probe.sourceContent,
+                id: scopeFields.sourceId,
+                locator: "docs/citation-source.md",
+                refreshWindowDays: 30,
+                revisionTime,
+                title: "Installed Citation Source",
+              },
+            ],
+          },
+          scope: {
+            ...scopeFields,
+            attestation: {
+              "approval-attestation-schema": "1.0.0" as const,
+              approvedAt: revisionTime,
+              approver: "Fixture Maintainer",
+              nonce,
+              operation,
+              payloadDigest: attestationPayloadDigest(
+                operation,
+                nonce,
+                ingestScopeAttestationPayload(scopeFields),
+              ),
+            },
+          },
+        };
+        const requestPath = join(workspace, "citation-ingest-request.json");
+        writeFileSync(requestPath, JSON.stringify(request));
+        const ingested = runInstalled(consumer, guard, [
+          "ingest",
+          "reconcile",
+          "--machine",
+          "--ingest-request",
+          requestPath,
+          "--atlas-host-directory",
+          consumer,
+        ]);
+        assert.equal(ingested.status, ingestCommandExitCodes.success, ingested.stdout);
+        assert.equal(ingested.stderr, "");
+        const result = parseMachineOperationResult(
+          ingested.stdout,
+        ) as AtlasIngestResult;
+        assert.equal(result.completion, "completed");
+        const ingestBranch = result.payload.workflowState.proposalBranch;
+        const conceptPath = ".atlas/concepts/installed-citation.md";
+        const edgePath = ".atlas/edges/root-covers-installed-citation.md";
+        const conceptText = consumerGit(consumer, [
+          "show",
+          `${ingestBranch}:${conceptPath}`,
+        ]);
+        const edgeText = consumerGit(consumer, ["show", `${ingestBranch}:${edgePath}`]);
+        const semanticsPath = join(consumer, "citation-semantics.mjs");
+        writeFileSync(
+          semanticsPath,
+          [
+            'import assert from "node:assert/strict";',
+            'import { readFileSync } from "node:fs";',
+            'import { fromMarkdown } from "mdast-util-from-markdown";',
+            'import { gfmFootnoteFromMarkdown } from "mdast-util-gfm-footnote";',
+            'import { toString } from "mdast-util-to-string";',
+            'import { gfmFootnote } from "micromark-extension-gfm-footnote";',
+            'import { parse } from "yaml";',
+            "const input = JSON.parse(readFileSync(0, 'utf8'));",
+            "const options = { extensions: [gfmFootnote()], mdastExtensions: [gfmFootnoteFromMarkdown()] };",
+            "function pageParts(content) {",
+            "  const closing = content.indexOf('\\n---\\n', 4);",
+            "  assert.notEqual(closing, -1);",
+            "  return { metadata: parse(content.slice(4, closing)), body: content.slice(closing + 5) };",
+            "}",
+            "function inspect(content, expectedFragments, expectedReferences, expectedCitations) {",
+            "  const { metadata, body } = pageParts(content);",
+            "  const tree = fromMarkdown(body, options);",
+            "  const pending = [...tree.children].reverse();",
+            "  const types = [];",
+            "  const references = [];",
+            "  const definitions = new Map();",
+            "  while (pending.length > 0) {",
+            "    const node = pending.pop();",
+            "    types.push(node.type);",
+            "    if (node.type === 'footnoteReference') references.push(node.identifier);",
+            "    if (node.type === 'footnoteDefinition') {",
+            "      const matches = definitions.get(node.identifier) ?? [];",
+            "      matches.push(node);",
+            "      definitions.set(node.identifier, matches);",
+            "    }",
+            "    if ('children' in node) for (let index = node.children.length - 1; index >= 0; index -= 1) pending.push(node.children[index]);",
+            "  }",
+            "  assert.equal(types.filter((type) => type === 'heading').length, 1);",
+            "  for (const forbidden of ['blockquote', 'code', 'emphasis', 'html', 'inlineCode', 'link', 'list', 'strong']) assert.equal(types.includes(forbidden), false, forbidden);",
+            "  assert.deepEqual(references, expectedReferences);",
+            "  const visible = tree.children.filter((node) => node.type !== 'footnoteDefinition').map((node) => toString(node)).join('\\n');",
+            "  for (const fragment of expectedFragments) assert.ok(visible.includes(fragment), fragment);",
+            "  const counts = new Map();",
+            "  const citations = references.map((identifier) => {",
+            "    const matches = definitions.get(identifier);",
+            "    assert.equal(matches?.length, 1);",
+            "    const text = toString(matches[0]);",
+            '    const match = /^\\[\\[([^\\]]+)\\]\\] Quoted span ("(?:[^"\\\\]|\\\\.)*")\\.$/u.exec(text);',
+            "    assert.ok(match, text);",
+            "    const target = `${match[1]}.md`;",
+            "    const quotation = JSON.parse(match[2]);",
+            "    const key = `${target}\\u0000${quotation}`;",
+            "    const occurrence = (counts.get(key) ?? 0) + 1;",
+            "    counts.set(key, occurrence);",
+            "    return { occurrence, quotation, target };",
+            "  });",
+            "  assert.deepEqual(citations, expectedCitations);",
+            "  assert.deepEqual(metadata.sdk['citation-correspondence'], expectedCitations);",
+            "}",
+            "inspect(input.conceptText, input.claimFragments, ['s1', 's2'], input.conceptCitations);",
+            "inspect(input.edgeText, input.contextFragments, ['s1'], input.edgeCitations);",
+          ].join("\n"),
+        );
+        const semanticProof = spawnSync(process.execPath, [semanticsPath], {
+          cwd: consumer,
+          encoding: "utf8",
+          env: consumerEnvironment(guard),
+          input: JSON.stringify({
+            claimFragments: probe.expectedClaimFragments,
+            conceptCitations: probe.quotations.map((quotation) => ({
+              occurrence: 1,
+              quotation,
+              target: ".atlas/sources/installed-citation.md",
+            })),
+            conceptText,
+            contextFragments: probe.expectedContextFragments,
+            edgeCitations: [
+              {
+                occurrence: 1,
+                quotation: probe.quotations[1],
+                target: ".atlas/sources/installed-citation.md",
+              },
+            ],
+            edgeText,
+          }),
+          killSignal: "SIGKILL",
+          timeout: 30_000,
+        });
+        assert.equal(semanticProof.status, 0, semanticProof.stderr);
+        assert.equal(semanticProof.stderr, "");
+        const operationWorkspace = join(
+          consumer,
+          ".atlas-operation-workspaces",
+          ingestBranch,
+        );
+        const conceptFile = join(operationWorkspace, conceptPath);
+        writeFileSync(
+          conceptFile,
+          readFileSync(conceptFile, "utf8").replace(
+            JSON.stringify(probe.quotations[0]),
+            JSON.stringify(probe.quotations[1]),
+          ),
+        );
+        const rejected = runInstalled(consumer, guard, [
+          "lint",
+          "--machine",
+          "--atlas-host-directory",
+          operationWorkspace,
+        ]);
+        assert.equal(rejected.status, lintCommandExitCodes.atlasInvalid);
+        const rejectedLint = parseMachineOperationResult(
+          rejected.stdout,
+        ) as LintOperationResult;
+        assert.ok(
+          rejectedLint.handoff.validationState.findings.some(
+            ({ code }) => code === probe.expectedTamperCode,
+          ),
+        );
       }
     } finally {
       rmSync(workspace, { force: true, recursive: true });

@@ -291,6 +291,90 @@
       "repeat": 1000
     },
     {
+      "name": "ingest-citation-metadata-accepts-ordered-duplicate-targets",
+      "gate": "structural-validation",
+      "kind": "citation-correspondence",
+      "expectation": "accept",
+      "citations": [
+        {
+          "occurrence": 1,
+          "quotation": "Quote one.",
+          "target": ".atlas/sources/citation-source.md"
+        },
+        {
+          "occurrence": 1,
+          "quotation": "Quote two.",
+          "target": ".atlas/sources/citation-source.md"
+        }
+      ],
+      "body": "# Citation Correspondence\n\nClaim[^one][^two]\n\n[^one]: [[.atlas/sources/citation-source]] Quoted span \"Quote one.\".\n[^two]: [[.atlas/sources/citation-source]] Quoted span \"Quote two.\".\n"
+    },
+    {
+      "name": "ingest-citation-metadata-rejects-an-altered-quotation",
+      "gate": "structural-validation",
+      "kind": "citation-correspondence",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_CITATION_CORRESPONDENCE_MISMATCH",
+      "citations": [
+        {
+          "occurrence": 1,
+          "quotation": "Quote one.",
+          "target": ".atlas/sources/citation-source.md"
+        }
+      ],
+      "body": "# Citation Correspondence\n\nClaim[^one]\n\n[^one]: [[.atlas/sources/citation-source]] Quoted span \"Quote two.\".\n"
+    },
+    {
+      "name": "ingest-citation-metadata-rejects-an-extra-same-source-quotation",
+      "gate": "structural-validation",
+      "kind": "citation-correspondence",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_CITATION_CORRESPONDENCE_MISMATCH",
+      "citations": [
+        {
+          "occurrence": 1,
+          "quotation": "Quote one.",
+          "target": ".atlas/sources/citation-source.md"
+        }
+      ],
+      "body": "# Citation Correspondence\n\nClaim[^one][^two]\n\n[^one]: [[.atlas/sources/citation-source]] Quoted span \"Quote one.\".\n[^two]: [[.atlas/sources/citation-source]] Quoted span \"Quote two.\".\n"
+    },
+    {
+      "name": "ingest-citation-metadata-rejects-reordered-markers",
+      "gate": "structural-validation",
+      "kind": "citation-correspondence",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_CITATION_CORRESPONDENCE_MISMATCH",
+      "citations": [
+        {
+          "occurrence": 1,
+          "quotation": "Quote one.",
+          "target": ".atlas/sources/citation-source.md"
+        },
+        {
+          "occurrence": 1,
+          "quotation": "Quote two.",
+          "target": ".atlas/sources/citation-source.md"
+        }
+      ],
+      "body": "# Citation Correspondence\n\nClaim[^two][^one]\n\n[^one]: [[.atlas/sources/citation-source]] Quoted span \"Quote one.\".\n[^two]: [[.atlas/sources/citation-source]] Quoted span \"Quote two.\".\n"
+    },
+    {
+      "name": "ingest-citation-metadata-rejects-reformatted-definitions",
+      "gate": "structural-validation",
+      "kind": "citation-correspondence",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_CITATION_CORRESPONDENCE_MISMATCH",
+      "citations": [
+        {
+          "occurrence": 1,
+          "quotation": "Quote one.",
+          "target": ".atlas/sources/citation-source.md"
+        }
+      ],
+      "body": "# Citation Correspondence\n\nClaim[^one]\n\n[^one]: [[.atlas/sources/citation-source]] Quoted span: \"Quote one.\".\n"
+    },
+    {
       "name": "unrecognized-sdk-owned-field-parses-warns-and-round-trips-losslessly",
       "gate": "structural-validation",
       "kind": "sdk-unrecognized-field",

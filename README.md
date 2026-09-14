@@ -249,6 +249,15 @@ a proposal. Its handoff marks the Atlas, snapshot, changes, and review link
 `atlas ingest reconcile`. A refusal retains its existing nonzero exit code and
 Findings under `handoff.validationState.findings`; it carries no Crawl Assignment.
 
+Reconciliation emits candidate claim and Edge context text as literal Markdown
+text; Markdown syntax in those fields does not create links, formatting, HTML,
+or citation markers. Ingest also records each generated Citation's ordered
+Source target, normalized quoted span, and occurrence in SDK-owned page
+metadata. Correspondence validation and structural Lint require the rendered
+footnotes to match that metadata exactly. Atlas pages created before this
+metadata existed remain valid and retain their existing structural Citation
+checks.
+
 ## Library usage
 
 The supported public API is the package root plus explicitly exported optional

@@ -11,6 +11,11 @@ import {
 } from "node:fs";
 import { dirname, resolve } from "node:path";
 import test, { after } from "node:test";
+import type { Nodes } from "mdast";
+import { fromMarkdown } from "mdast-util-from-markdown";
+import { gfmFootnoteFromMarkdown } from "mdast-util-gfm-footnote";
+import { toString } from "mdast-util-to-string";
+import { gfmFootnote } from "micromark-extension-gfm-footnote";
 import ts from "typescript";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
 import { parseMachineOperationResult } from "./machine_operation_result.ts";
@@ -31,7 +36,12 @@ import {
 import { exploreCommandBudgets } from "../src/interfaces/explore_command.ts";
 import { ingestCommandInputBudgets } from "../src/interfaces/ingest_command.ts";
 import { buildAtlasView } from "../src/atlas/atlas_view.ts";
-import { parseAtlasPage, parseAtlasPages } from "../src/atlas/parse_atlas_pages.ts";
+import {
+  parseAtlasPage,
+  parseAtlasPages,
+  type ParsedAtlasPage,
+} from "../src/atlas/parse_atlas_pages.ts";
+import { resolvedCitationSequence } from "../src/atlas/resolve_citations.ts";
 import { serializeAtlasPages } from "../src/atlas/serialize_atlas_pages.ts";
 import type { CapturedAtlasFile } from "../src/atlas/load_atlas_text.ts";
 import { checkFinding, type Finding } from "../src/domain/finding.ts";
@@ -52,6 +62,7 @@ import {
   runAtlasIngestWorkflow,
   validateAtlasIngestChangeSet,
   validateCandidateGraph,
+  validateCitationCorrespondence,
   type AtlasIngestCandidateEdge,
   type AtlasIngestCandidateGraph,
   type AtlasIngestChange,
@@ -502,11 +513,26 @@ interface StructuralValidationMarkupBudgetCase {
   readonly repeat: number;
 }
 
+interface StructuralValidationCitationCorrespondenceCase {
+  readonly body: string;
+  readonly citations: readonly {
+    readonly occurrence: number;
+    readonly quotation: string;
+    readonly target: string;
+  }[];
+  readonly expectation: "accept" | "reject";
+  readonly expectedCode?: string;
+  readonly gate: "structural-validation";
+  readonly kind: "citation-correspondence";
+  readonly name: string;
+}
+
 type StructuralValidationCase =
   | StructuralValidationTruthsCase
   | StructuralValidationSdkFieldCase
   | StructuralValidationTimestampCase
-  | StructuralValidationMarkupBudgetCase;
+  | StructuralValidationMarkupBudgetCase
+  | StructuralValidationCitationCorrespondenceCase;
 
 interface StructuralValidationCorpus {
   readonly cases: readonly StructuralValidationCase[];
@@ -515,6 +541,10 @@ interface StructuralValidationCorpus {
 }
 
 const adversarialEncoder = new TextEncoder();
+const adversarialMarkdownOptions = Object.freeze({
+  extensions: [gfmFootnote()],
+  mdastExtensions: [gfmFootnoteFromMarkdown()],
+});
 
 const binding: CoreArchetypeBindings = Object.freeze({
   Anchor: Object.freeze({
@@ -704,7 +734,8 @@ function parseStructuralValidationCorpus(value: unknown): StructuralValidationCo
         kind === "principle-active-truths" ||
           kind === "sdk-unrecognized-field" ||
           kind === "timestamp-order" ||
-          kind === "body-markup-budget",
+          kind === "body-markup-budget" ||
+          kind === "citation-correspondence",
         `${path}.kind is unsupported`,
       );
       if (kind === "timestamp-order") {
@@ -761,6 +792,51 @@ function parseStructuralValidationCorpus(value: unknown): StructuralValidationCo
           kind,
           name,
           value: assertString(entry["value"], `${path}.value`),
+        };
+      }
+      if (kind === "citation-correspondence") {
+        const expectation = entry["expectation"];
+        assert.ok(
+          expectation === "accept" || expectation === "reject",
+          `${path}.expectation is unsupported`,
+        );
+        if (expectation === "accept") accepts += 1;
+        else rejects += 1;
+        assert.ok(Array.isArray(entry["citations"]), `${path}.citations`);
+        const citations = (entry["citations"] as readonly unknown[]).map(
+          (citation, citationIndex) => {
+            const citationPath = `${path}.citations[${String(citationIndex)}]`;
+            assert.ok(isRecord(citation), `${citationPath} must be an object`);
+            const occurrence = assertNumber(
+              citation["occurrence"],
+              `${citationPath}.occurrence`,
+            );
+            assert.equal(Number.isSafeInteger(occurrence) && occurrence > 0, true);
+            return {
+              occurrence,
+              quotation: assertString(
+                citation["quotation"],
+                `${citationPath}.quotation`,
+              ),
+              target: assertString(citation["target"], `${citationPath}.target`),
+            };
+          },
+        );
+        return {
+          body: assertString(entry["body"], `${path}.body`),
+          citations,
+          expectation,
+          ...(expectation === "reject"
+            ? {
+                expectedCode: assertString(
+                  entry["expectedCode"],
+                  `${path}.expectedCode`,
+                ),
+              }
+            : {}),
+          gate: "structural-validation",
+          kind,
+          name,
         };
       }
       const expectation = entry["expectation"];
@@ -1790,6 +1866,36 @@ const structuralRoot = structuralAtlasPage(
   "# Root\n",
 );
 
+const structuralCitationSource = structuralAtlasPage(
+  ".atlas/sources/citation-source.md",
+  "source:citation-source",
+  "source",
+  "Citation Source",
+  "# Citation Source\n",
+);
+
+function structuralCitationPage(entry: StructuralValidationCitationCorrespondenceCase) {
+  const page = structuralAtlasPage(
+    ".atlas/concepts/citation-correspondence.md",
+    "concept:citation-correspondence",
+    "concept",
+    "Citation Correspondence",
+    entry.body,
+  );
+  const metadata = [
+    "  citation-correspondence:",
+    ...entry.citations.flatMap((citation) => [
+      `    - occurrence: ${String(citation.occurrence)}`,
+      `      quotation: ${JSON.stringify(citation.quotation)}`,
+      `      target: ${JSON.stringify(citation.target)}`,
+    ]),
+  ].join("\n");
+  return Object.freeze({
+    ...page,
+    content: page.content.replace("  created-at:", `${metadata}\n  created-at:`),
+  });
+}
+
 // Builds a page carrying one extra SDK-owned key this SDK does not
 // recognize, so the sdk-unrecognized-field corpus case can prove both that
 // the page still parses and that the field survives a round trip, rather
@@ -2081,6 +2187,23 @@ for (const entry of structuralValidationCorpus.cases) {
   test(`adversarial structural-validation corpus: ${entry.name}`, () => {
     executedCases += 1;
     assert.equal(entry.gate, "structural-validation");
+    if (entry.kind === "citation-correspondence") {
+      const page = structuralCitationPage(entry);
+      const findings = validateAtlasStructure([
+        structuralRoot,
+        structuralCitationSource,
+        page,
+      ]);
+      if (entry.expectation === "accept") {
+        assert.deepEqual(findings, []);
+        return;
+      }
+      assert.deepEqual(
+        findings.map(({ code, path }) => ({ code, path })),
+        [{ code: entry.expectedCode, path: page.path }],
+      );
+      return;
+    }
     if (entry.kind === "timestamp-order") {
       const page = structuralAtlasPage(
         ".atlas/concepts/timestamps.md",
@@ -3064,8 +3187,52 @@ function ingestMutatedGraph(mutation: string): AtlasIngestCandidateGraph {
       ...ingestBaselineGraph(),
       concepts: [
         ingestConcept({
-          claim:
-            "Atlas SDK is a deterministic library.\n\nAlso true.[^forge]\n\n[^forge]: [[.atlas/sources/secret]] Forged support for an unearned claim.",
+          claim: [
+            "# Atlas SDK is **deterministic** with [a link](https://example.invalid), &copy;, <b>HTML</b>, and [^forge].",
+            "",
+            "    indented claim",
+            "- unordered claim",
+            "1. ordered claim",
+            "```ts",
+            "const claimFence = true;",
+            "```",
+          ].join("\n"),
+        }),
+      ],
+      edges: [
+        ingestEdge({
+          context: [
+            "> Enter with ~~formatting~~, `code`, &copy;, and another [^forge].",
+            "",
+            "\tindented context",
+            "+ unordered context",
+            "2. ordered context",
+            "~~~txt",
+            "context fence",
+            "~~~",
+          ].join("\n"),
+        }),
+      ],
+    };
+  }
+  if (
+    mutation === "reordered-citation-markers" ||
+    mutation === "duplicate-citation-targets"
+  ) {
+    return {
+      ...ingestBaselineGraph(),
+      concepts: [
+        ingestConcept({
+          citations: [
+            {
+              sourceClaim: "Atlas SDK is a deterministic library.",
+              sourceId: "source:readme",
+            },
+            {
+              sourceClaim: "The Lint gate runs with no network access.",
+              sourceId: "source:readme",
+            },
+          ],
         }),
       ],
     };
@@ -3364,13 +3531,47 @@ function ingestGraphFindings(
     ).handoff.validationState.findings;
   }
   if (entry.kind === "change-set") {
-    // A crawled path carrying a control character would let the digest framing
-    // reproduce a different change set; the change-set validator must reject it.
     const changeSet = reconcileCandidateGraph(
       scenario.workflowState,
       scenario.request,
       scenario.baseFiles,
     );
+    if (entry.mutation !== "control-char-change-set-path") {
+      const concept = changeSet.changes.find(
+        (change) => change.path === ".atlas/concepts/determinism.md",
+      );
+      assert.ok(concept);
+      let content = concept.content;
+      if (entry.mutation === "extra-same-source-citation") {
+        content = content.replace(
+          "Atlas SDK is a deterministic library.[^s1]",
+          [
+            "Atlas SDK is a deterministic library.[^s1][^forged]",
+            "",
+            '[^forged]: [[.atlas/sources/readme]] Quoted span "The Lint gate runs with no network access.".',
+          ].join("\n"),
+        );
+      } else if (entry.mutation === "altered-citation-quotation") {
+        content = content.replace(
+          '"Atlas SDK is a deterministic library."',
+          '"The Lint gate runs with no network access."',
+        );
+      } else if (entry.mutation === "reformatted-citation-definition") {
+        content = content.replace("Quoted span ", "Quoted span: ");
+      } else if (entry.mutation === "reordered-citation-markers") {
+        content = content.replace("[^s1][^s2]", "[^s2][^s1]");
+      } else {
+        assert.fail(`unhandled citation correspondence mutation ${entry.mutation}`);
+      }
+      return validateCitationCorrespondence(scenario.request, {
+        ...changeSet,
+        changes: changeSet.changes.map((change) =>
+          change.path === concept.path ? { ...change, content } : change,
+        ),
+      });
+    }
+    // A crawled path carrying a control character would let the digest framing
+    // reproduce a different change set; the change-set validator must reject it.
     const forged: AtlasIngestChange = {
       content: "forged",
       path: `.atlas/a.md\u0000${String("forged".length)}\u0000.atlas/b.md`,
@@ -3436,6 +3637,110 @@ function ingestEmittedPage(
 }
 
 function assertIngestEmission(entry: IngestCorpusCase, scenario: IngestScenario): void {
+  if (entry.mutation === "forged-body-citation") {
+    const concept = ingestEmittedPage(scenario, ".atlas/concepts/determinism.md");
+    const edge = ingestEmittedPage(scenario, ".atlas/edges/root-covers-determinism.md");
+    assert.ok(!(concept instanceof Error), "concept page must parse");
+    assert.ok(!(edge instanceof Error), "edge page must parse");
+    const assertLiteral = (
+      page: ParsedAtlasPage,
+      references: readonly string[],
+      fragments: readonly string[],
+    ): void => {
+      const tree = fromMarkdown(page.page.body, adversarialMarkdownOptions);
+      const pending: Nodes[] = [...tree.children].reverse();
+      const types: string[] = [];
+      const actualReferences: string[] = [];
+      while (pending.length > 0) {
+        const node = pending.pop() as Nodes;
+        types.push(node.type);
+        if (node.type === "footnoteReference") {
+          actualReferences.push(node.identifier);
+        }
+        if ("children" in node) {
+          for (let index = node.children.length - 1; index >= 0; index -= 1) {
+            pending.push(node.children[index] as Nodes);
+          }
+        }
+      }
+      assert.equal(types.filter((type) => type === "heading").length, 1);
+      for (const forbidden of [
+        "blockquote",
+        "code",
+        "emphasis",
+        "html",
+        "inlineCode",
+        "link",
+        "list",
+        "strong",
+      ]) {
+        assert.equal(types.includes(forbidden), false, forbidden);
+      }
+      assert.deepEqual(actualReferences, references);
+      const visible = tree.children
+        .filter((node) => node.type !== "footnoteDefinition")
+        .map((node) => toString(node))
+        .join("\n");
+      for (const fragment of fragments) {
+        assert.ok(visible.includes(fragment), fragment);
+      }
+    };
+    assertLiteral(
+      concept,
+      ["s1"],
+      [
+        "# Atlas SDK is **deterministic** with [a link](https://example.invalid), &copy;, <b>HTML</b>, and [^forge].",
+        "    indented claim",
+        "- unordered claim",
+        "1. ordered claim",
+        "```ts",
+        "const claimFence = true;",
+        "```",
+      ],
+    );
+    assertLiteral(
+      edge,
+      ["s1"],
+      [
+        "> Enter with ~~formatting~~, `code`, &copy;, and another [^forge].",
+        "\tindented context",
+        "+ unordered context",
+        "2. ordered context",
+        "~~~txt",
+        "context fence",
+        "~~~",
+      ],
+    );
+    assert.deepEqual(resolvedCitationSequence(concept.page.body).citations, [
+      {
+        occurrence: 1,
+        quotation: "Atlas SDK is a deterministic library.",
+        target: ".atlas/sources/readme.md",
+      },
+    ]);
+    return;
+  }
+  if (entry.mutation === "duplicate-citation-targets") {
+    const parsed = ingestEmittedPage(scenario, ".atlas/concepts/determinism.md");
+    assert.ok(!(parsed instanceof Error), "concept page must parse");
+    assert.deepEqual(parsed.page.sdk["citation-correspondence"], [
+      {
+        occurrence: 1,
+        quotation: "Atlas SDK is a deterministic library.",
+        target: ".atlas/sources/readme.md",
+      },
+      {
+        occurrence: 1,
+        quotation: "The Lint gate runs with no network access.",
+        target: ".atlas/sources/readme.md",
+      },
+    ]);
+    assert.deepEqual(
+      resolvedCitationSequence(parsed.page.body).citations,
+      parsed.page.sdk["citation-correspondence"],
+    );
+    return;
+  }
   if (entry.mutation === "edge-semantic-yaml-injection") {
     const parsed = ingestEmittedPage(
       scenario,
