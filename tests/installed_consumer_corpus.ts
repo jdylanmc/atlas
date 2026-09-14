@@ -32,6 +32,15 @@ interface InstalledConsumerCase {
       | "lock-persistence";
     readonly expectedCode: string;
   };
+  readonly citationCorrespondence?: {
+    readonly claim: string;
+    readonly context: string;
+    readonly expectedClaimFragments: readonly string[];
+    readonly expectedContextFragments: readonly string[];
+    readonly expectedTamperCode: string;
+    readonly quotations: readonly string[];
+    readonly sourceContent: string;
+  };
   readonly retirement?: GovernanceRetirementProbe;
   readonly repeatedEmptyEdges?: {
     readonly alternatingPairs: number;
@@ -135,6 +144,33 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
         ].includes(entry.cacheFailure.mode),
       );
       assert.match(entry.cacheFailure.expectedCode, /^ATLAS_[A-Z_]+$/u);
+    }
+    if (entry.citationCorrespondence !== undefined) {
+      for (const value of [
+        entry.citationCorrespondence.claim,
+        entry.citationCorrespondence.context,
+        entry.citationCorrespondence.expectedTamperCode,
+        entry.citationCorrespondence.sourceContent,
+      ]) {
+        assert.equal(typeof value, "string");
+        assert.ok(value.length > 0);
+      }
+      assert.match(entry.citationCorrespondence.expectedTamperCode, /^ATLAS_[A-Z_]+$/u);
+      assert.equal(entry.citationCorrespondence.quotations.length, 2);
+      for (const quotation of entry.citationCorrespondence.quotations) {
+        assert.equal(typeof quotation, "string");
+        assert.ok(quotation.length > 0);
+      }
+      for (const fragments of [
+        entry.citationCorrespondence.expectedClaimFragments,
+        entry.citationCorrespondence.expectedContextFragments,
+      ]) {
+        assert.ok(fragments.length > 0);
+        for (const fragment of fragments) {
+          assert.equal(typeof fragment, "string");
+          assert.ok(fragment.length > 0);
+        }
+      }
     }
     if (entry.retirement !== undefined) {
       assert.ok(["retire", "delete"].includes(entry.retirement.action));
