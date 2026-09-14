@@ -53,6 +53,16 @@ must invoke installed Initialization, adopt its proposal through Git, and pass
 installed Lint and Explore. Add cases to `installed-consumer.json` to extend
 this gate without duplicating the installation harness.
 
+The optional `trackingProbe` runs the actual installed `atlas ingest probe`
+before a Home Atlas exists, behind the armed network guard. It checks exact
+declaration/Edge paths and identities, repeated identical output, unchanged
+Git/Atlas/workspace state, and explicit refusal without drafts for blank
+metadata, approval/time errors and credential-bearing locators. The installed
+input-contract loop also checks its complete schema and all missing fields.
+CLI corpus cases retain argument, JSON-read and input-file boundaries. This
+proves the read-only preparation path, not remote verification, proposal
+creation, authenticated approval or tracking adoption.
+
 The `cacheFailure` probe imports the installed package root in the isolated
 consumer and fetches a real local Git repository with no Atlas tree. It requires
 an explicit first-contact refusal, no failed dependency in Atlas Lock, and

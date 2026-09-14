@@ -61,12 +61,15 @@ import {
   ingestCommandInputBudgets,
   ingestCommandUsage,
   ingestPlanCommandUsage,
+  ingestProbeCommandUsage,
   ingestReconcileCommandUsage,
   invalidInputIngestOperationResult,
   parseIngestRequest,
   oversizedInputIngestOperationResult,
   parseIngestScope,
+  parseIngestSourceProbe,
   planCrawlAssignment,
+  runIngestProbeCommandOperation,
   usageIngestOperationResult,
   validateRequestCorrespondence,
 } from "../src/interfaces/ingest_command.ts";
@@ -119,7 +122,14 @@ interface ParsedIngestReconcileCommand {
   readonly subcommand: "reconcile";
 }
 
-type ParsedIngestCommand = ParsedIngestPlanCommand | ParsedIngestReconcileCommand;
+interface ParsedIngestProbeCommand {
+  readonly sourceProbePath: string;
+  readonly machine: true;
+  readonly subcommand: "probe";
+}
+
+type ParsedIngestCommand =
+  ParsedIngestPlanCommand | ParsedIngestProbeCommand | ParsedIngestReconcileCommand;
 
 interface ParsedGovernCommand {
   readonly atlasHostDirectory: string;
@@ -558,43 +568,51 @@ function mainExplore(arguments_: readonly string[]): number {
 
 function parseIngestCommand(arguments_: readonly string[]): ParsedIngestCommand {
   const subcommand = arguments_[1];
-  if (subcommand === "plan") return parseIngestPlanCommand(arguments_);
+  if (subcommand === "plan" || subcommand === "probe") {
+    return parseIngestReadOnlyCommand(arguments_, subcommand);
+  }
   if (subcommand === "reconcile") return parseIngestReconcileCommand(arguments_);
   throw new UsageError(ingestCommandUsage);
 }
 
-function parseIngestPlanCommand(
+function parseIngestReadOnlyCommand(
   arguments_: readonly string[],
-): ParsedIngestPlanCommand {
+  subcommand: "plan" | "probe",
+): ParsedIngestPlanCommand | ParsedIngestProbeCommand {
+  const usage =
+    subcommand === "plan" ? ingestPlanCommandUsage : ingestProbeCommandUsage;
+  const inputFlag = subcommand === "plan" ? "--ingest-scope" : "--source-probe";
   let machine = false;
-  let ingestScopePath: string | undefined;
+  let inputPath: string | undefined;
   let machineSeen = false;
-  let ingestScopeSeen = false;
+  let inputSeen = false;
   for (let index = 2; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     if (argument === "--machine") {
-      if (machineSeen) throw new UsageError(ingestPlanCommandUsage);
+      if (machineSeen) throw new UsageError(usage);
       machine = true;
       machineSeen = true;
       continue;
     }
-    if (argument === "--ingest-scope") {
-      if (ingestScopeSeen) throw new UsageError(ingestPlanCommandUsage);
+    if (argument === inputFlag) {
+      if (inputSeen) throw new UsageError(usage);
       const value = arguments_[index + 1];
       if (value === undefined || value.startsWith("--")) {
-        throw new UsageError(ingestPlanCommandUsage);
+        throw new UsageError(usage);
       }
-      ingestScopePath = value;
-      ingestScopeSeen = true;
+      inputPath = value;
+      inputSeen = true;
       index += 1;
       continue;
     }
-    throw new UsageError(ingestPlanCommandUsage);
+    throw new UsageError(usage);
   }
-  if (!machine || ingestScopePath === undefined) {
-    throw new UsageError(ingestPlanCommandUsage);
+  if (!machine || inputPath === undefined) {
+    throw new UsageError(usage);
   }
-  return { ingestScopePath, machine: true, subcommand: "plan" };
+  return subcommand === "plan"
+    ? { ingestScopePath: inputPath, machine: true, subcommand }
+    : { sourceProbePath: inputPath, machine: true, subcommand };
 }
 
 function parseIngestReconcileCommand(
@@ -696,6 +714,38 @@ function mainIngestPlan(command: ParsedIngestPlanCommand): number {
   return exitCodeForIngestPlanOutcome(outcome);
 }
 
+function mainIngestProbe(command: ParsedIngestProbeCommand): number {
+  let input: unknown;
+  try {
+    input = readJsonFile(
+      command.sourceProbePath,
+      ingestCommandInputBudgets.maxFileBytes,
+    );
+  } catch (error: unknown) {
+    if (
+      !(error instanceof InputBudgetError) &&
+      !(error instanceof SyntaxError) &&
+      !(error instanceof Error && "code" in error && typeof error.code === "string")
+    ) {
+      throw error;
+    }
+    const result =
+      error instanceof InputBudgetError
+        ? oversizedInputIngestOperationResult(error.message)
+        : invalidInputIngestOperationResult(
+            "The source probe file could not be read as JSON.",
+          );
+    process.stdout.write(serializeCallerInputResult(result));
+    return exitCodeForIngestOperationResult(result);
+  }
+  const parsed = parseIngestSourceProbe(input);
+  const result = parsed.ok
+    ? runIngestProbeCommandOperation(parsed.value)
+    : parsed.result;
+  process.stdout.write(serializeCallerInputResult(result));
+  return exitCodeForIngestOperationResult(result);
+}
+
 function mainIngestReconcile(command: ParsedIngestReconcileCommand): number {
   let input: unknown;
   try {
@@ -740,9 +790,9 @@ function mainIngest(arguments_: readonly string[]): number {
     console.error(error.message);
     return ingestCommandExitCodes.usage;
   }
-  return command.subcommand === "plan"
-    ? mainIngestPlan(command)
-    : mainIngestReconcile(command);
+  if (command.subcommand === "plan") return mainIngestPlan(command);
+  if (command.subcommand === "probe") return mainIngestProbe(command);
+  return mainIngestReconcile(command);
 }
 
 function parseGovernCommand(arguments_: readonly string[]): ParsedGovernCommand {

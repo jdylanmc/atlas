@@ -23,6 +23,7 @@ import {
   serializeIngestMachineResult,
   usageIngestOperationResult,
   type AtlasIngestPlanResult,
+  type AtlasIngestProbeResult,
 } from "../src/interfaces/ingest_command.ts";
 import type { AtlasIngestRequest } from "../src/operations/ingest_operation.ts";
 import {
@@ -129,6 +130,74 @@ function initAtlasRepository(repository: string): string {
 function parseIngestResult(stdout: string): ReturnType<typeof runLocalAtlasIngest> {
   return parseMachineOperationResult(stdout) as ReturnType<typeof runLocalAtlasIngest>;
 }
+
+test("atlas ingest probe exposes deterministic tracking drafts without Git effects", () => {
+  const before = git(ROOT, ["status", "--porcelain"]);
+  const args = [
+    "ingest",
+    "probe",
+    "--machine",
+    "--source-probe",
+    fixtureJson("source-probe-valid.json"),
+  ];
+  const first = runAtlas(args);
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(first.stderr, "");
+  const second = runAtlas(args);
+  assert.equal(second.status, 0, second.stderr);
+  assert.equal(second.stdout, first.stdout);
+  const result = parseMachineOperationResult(first.stdout) as AtlasIngestProbeResult;
+  assert.equal(result.completion, "completed");
+  assert.equal(result.payload.probe.state, "tracked-atlas");
+  assert.equal(result.payload.probe.changes.length, 2);
+  assert.ok(
+    result.payload.probe.changes.some((change) =>
+      change.path.startsWith(".atlas/tracked-atlases/"),
+    ),
+  );
+  assert.ok(
+    result.payload.probe.changes.some((change) =>
+      change.path.startsWith(".atlas/edges/"),
+    ),
+  );
+  assert.match(result.handoff.recommendedNextAction, /not applied/u);
+  assert.equal(git(ROOT, ["status", "--porcelain"]), before);
+});
+
+test("atlas ingest probe rejects blank metadata as typed refusals", () => {
+  mkdirSync(WORKSPACE, { recursive: true });
+  const path = resolve(WORKSPACE, "blank-probe-title.json");
+  const request = JSON.parse(
+    readFileSync(fixtureJson("source-probe-valid.json"), "utf8"),
+  ) as Record<string, unknown>;
+  for (const field of ["title", "fromAnchorId", "defaultBranch"]) {
+    writeFileSync(path, JSON.stringify({ ...request, [field]: " " }));
+    const result = runAtlas(["ingest", "probe", "--machine", "--source-probe", path]);
+    assert.equal(result.stderr, "", "bad probe metadata must not crash serialization");
+    assert.equal(result.status, ingestCommandExitCodes.operationFailed, field);
+    const parsed = parseMachineOperationResult(result.stdout);
+    assert.equal(parsed.completion, "not-completed");
+    assert.equal(
+      parsed.handoff.validationState.findings[0]?.code,
+      "ATLAS_INGEST_PROBE_METADATA_INVALID",
+    );
+    assert.equal(parsed.handoff.validationState.findings[0].path, `probe.${field}`);
+  }
+});
+
+test("atlas ingest probe retains the JSON byte budget before decoding", () => {
+  mkdirSync(WORKSPACE, { recursive: true });
+  const path = resolve(WORKSPACE, "oversized-probe.json");
+  writeFileSync(path, " ".repeat(ingestCommandInputBudgets.maxFileBytes + 1));
+  const result = runAtlas(["ingest", "probe", "--machine", "--source-probe", path]);
+  assert.equal(result.status, ingestCommandExitCodes.usage);
+  assert.equal(result.stderr, "");
+  const parsed = parseMachineOperationResult(result.stdout);
+  assert.equal(
+    parsed.handoff.validationState.findings[0]?.code,
+    "ATLAS_INGEST_INPUT_TOO_LARGE",
+  );
+});
 
 test("atlas ingest plan reports all missing input fields in one Operation Result", () => {
   const scopePath = resolve(WORKSPACE, "missing-fields.json");

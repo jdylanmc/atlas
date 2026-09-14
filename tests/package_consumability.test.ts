@@ -29,6 +29,7 @@ import { exerciseGovernanceRetirement } from "./governance_retirement_probe.ts";
 import { parseMachineOperationResult } from "./machine_operation_result.ts";
 import { createSuiteArtifactOwner } from "./suite_artifact.ts";
 import type { AtlasInitializationResult } from "../src/operations/initialize_operation.ts";
+import type { AtlasIngestProbeResult } from "../src/interfaces/ingest_command.ts";
 import type { LintOperationResult } from "../src/operations/lint_operation.ts";
 import type { ExploreOperationResult } from "../src/operations/explore_operation.ts";
 import { initializeCommandExitCodes } from "../src/interfaces/initialize_command.ts";
@@ -615,6 +616,66 @@ for (const entry of readInstalledConsumerCorpus().cases) {
       const base = consumerGit(consumer, ["rev-parse", "HEAD"]);
       const beforePlan = consumerGit(consumer, ["status", "--porcelain"]);
       const branchesBeforePlan = consumerGit(consumer, ["branch", "--list"]);
+      if (entry.trackingProbe !== undefined) {
+        const probe = entry.trackingProbe;
+        const inputPath = join(workspace, "tracking-probe.json");
+        writeFileSync(inputPath, JSON.stringify(probe.request));
+        const args = ["ingest", "probe", "--machine", "--source-probe", inputPath];
+        const first = runInstalled(consumer, guard, args);
+        assert.equal(first.status, 0, first.stderr);
+        assert.equal(first.stderr, "");
+        const repeated = runInstalled(consumer, guard, args);
+        assert.equal(repeated.status, 0, repeated.stderr);
+        assert.equal(repeated.stdout, first.stdout);
+        const result = parseMachineOperationResult(
+          first.stdout,
+        ) as AtlasIngestProbeResult;
+        assert.equal(result.payload.probe.state, "tracked-atlas");
+        assert.deepEqual(
+          result.payload.probe.changes.map(({ path }) => path),
+          probe.expectedPaths,
+        );
+        const edge = result.payload.probe.changes[0];
+        const declaration = result.payload.probe.changes[1];
+        assert.ok(edge !== undefined && declaration !== undefined);
+        assert.ok(edge.content.includes(`from: ${probe.request.fromAnchorId}`));
+        assert.ok(edge.content.includes(`to: ${probe.expectedTrackedId}`));
+        assert.ok(declaration.content.includes(`id: ${probe.expectedTrackedId}`));
+        assert.ok(declaration.content.includes("type: tracked-atlas"));
+        assert.match(result.handoff.recommendedNextAction, /not applied/u);
+        assert.match(result.handoff.recommendedNextAction, /not authenticated/u);
+        assert.equal(result.handoff.baseSnapshot.state, "not-applicable");
+        assert.equal(result.handoff.reviewLink.state, "not-applicable");
+        for (const rejection of probe.rejections) {
+          writeFileSync(
+            inputPath,
+            JSON.stringify({ ...probe.request, ...rejection.overrides }),
+          );
+          const refused = runInstalled(consumer, guard, args);
+          assert.equal(
+            refused.status,
+            rejection.expectedExit,
+            `${rejection.name}: ${refused.stderr}`,
+          );
+          assert.equal(refused.stderr, "");
+          const result = parseMachineOperationResult(refused.stdout);
+          assert.equal(result.completion, "not-completed");
+          assert.equal(result.disposition, "failed");
+          assert.deepEqual(
+            result.handoff.validationState.findings.map(({ code }) => code),
+            rejection.expectedCodes,
+          );
+          assert.ok(typeof result.payload === "object" && result.payload !== null);
+          assert.equal(Object.hasOwn(result.payload, "probe"), false);
+          assert.equal(refused.stdout.includes("fixture-secret"), false);
+          assert.match(result.handoff.recommendedNextAction, /ingest-source-probe/u);
+        }
+        assert.equal(consumerGit(consumer, ["rev-parse", "HEAD"]), base);
+        assert.equal(consumerGit(consumer, ["branch", "--list"]), branchesBeforePlan);
+        assert.equal(consumerGit(consumer, ["status", "--porcelain"]), beforePlan);
+        assert.equal(existsSync(join(consumer, ".atlas")), false);
+        assert.equal(existsSync(join(consumer, ".atlas-operation-workspaces")), false);
+      }
       if (entry.repeatedEmptyEdges !== undefined) {
         const probe = entry.repeatedEmptyEdges;
         const empty = JSON.stringify({

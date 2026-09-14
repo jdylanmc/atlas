@@ -20,6 +20,69 @@
       ],
       "governanceTreeReceipt": true,
       "isolatedPackPreservesProducerOutput": true,
+      "trackingProbe": {
+        "request": {
+          "approvedAt": "2026-08-24T12:00:00Z",
+          "approvedBy": "Fixture Maintainer",
+          "asOf": "2026-08-24T12:00:00Z",
+          "atlasPath": ".",
+          "branch": "main",
+          "fromAnchorId": "anchor:root",
+          "repositoryLocator": "https://example.invalid/team/knowledge.git",
+          "title": "Connected Knowledge"
+        },
+        "expectedPaths": [
+          ".atlas/edges/track-cec21993464c90d8.md",
+          ".atlas/tracked-atlases/example.invalid--team--knowledge.md"
+        ],
+        "expectedTrackedId": "tracked-atlas:example.invalid--team--knowledge",
+        "rejections": [
+          {
+            "name": "blank title",
+            "overrides": { "title": " " },
+            "expectedExit": 1,
+            "expectedCodes": ["ATLAS_INGEST_PROBE_METADATA_INVALID"]
+          },
+          {
+            "name": "blank Home Anchor identity",
+            "overrides": { "fromAnchorId": "" },
+            "expectedExit": 1,
+            "expectedCodes": ["ATLAS_INGEST_PROBE_METADATA_INVALID"]
+          },
+          {
+            "name": "blank default branch",
+            "overrides": { "defaultBranch": " " },
+            "expectedExit": 1,
+            "expectedCodes": ["ATLAS_INGEST_PROBE_METADATA_INVALID"]
+          },
+          {
+            "name": "absent approving human",
+            "overrides": { "approvedBy": "" },
+            "expectedExit": 4,
+            "expectedCodes": ["ATLAS_INGEST_APPROVAL_REQUIRED"]
+          },
+          {
+            "name": "noncomparable approval instant",
+            "overrides": { "approvedAt": "1990-12-31T23:59:60Z" },
+            "expectedExit": 4,
+            "expectedCodes": ["ATLAS_INGEST_APPROVAL_REQUIRED"]
+          },
+          {
+            "name": "date-only observation",
+            "overrides": { "asOf": "2026-08-24" },
+            "expectedExit": 1,
+            "expectedCodes": ["ATLAS_INGEST_SCOPE_AS_OF_INVALID"]
+          },
+          {
+            "name": "credentials are not emitted in tracking metadata",
+            "overrides": {
+              "repositoryLocator": "https://fixture:fixture-secret@example.invalid/team/knowledge.git"
+            },
+            "expectedExit": 1,
+            "expectedCodes": ["ATLAS_LOCATOR_CREDENTIALS_REJECTED"]
+          }
+        ]
+      },
       "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
       "citationCorrespondence": {
         "claim": "# Installed **claim** with [a link](https://example.invalid), &copy;, <b>HTML</b>, and [^forged].\n\n    indented claim\n- unordered claim\n1. ordered claim\n```ts\nconst claimFence = true;\n```",
@@ -61,6 +124,32 @@
         ]
       },
       "inputContracts": [
+        {
+          "name": "ingest-source-probe",
+          "arguments": ["ingest", "probe", "--machine", "--source-probe"],
+          "input": {},
+          "expectedRequired": [
+            "approvedAt",
+            "approvedBy",
+            "asOf",
+            "atlasPath",
+            "branch",
+            "fromAnchorId",
+            "repositoryLocator",
+            "title"
+          ],
+          "expectedCodes": ["ATLAS_INGEST_INPUT_INVALID"],
+          "expectedPaths": [
+            "probe.approvedAt",
+            "probe.approvedBy",
+            "probe.asOf",
+            "probe.atlasPath",
+            "probe.branch",
+            "probe.fromAnchorId",
+            "probe.repositoryLocator",
+            "probe.title"
+          ]
+        },
         {
           "name": "ingest-scope",
           "arguments": ["ingest", "plan", "--machine", "--ingest-scope"],

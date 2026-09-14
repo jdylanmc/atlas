@@ -3,6 +3,84 @@
   "reviewResolutionRule": "A review finding is resolved only after this corpus has a reject or accept case that exercises it.",
   "cases": [
     {
+      "name": "tracking probe requires machine and an explicit input document",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["ingest", "probe"],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_INGEST_USAGE"
+    },
+    {
+      "name": "tracking probe refuses a repeated machine flag",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["ingest", "probe", "--machine", "--machine"],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_INGEST_USAGE"
+    },
+    {
+      "name": "tracking probe refuses a missing input flag value",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["ingest", "probe", "--machine", "--source-probe", "--machine"],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_INGEST_USAGE"
+    },
+    {
+      "name": "tracking probe refuses repeated input paths",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "ingest",
+        "probe",
+        "--machine",
+        "--source-probe",
+        "one.json",
+        "--source-probe",
+        "two.json"
+      ],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_INGEST_USAGE"
+    },
+    {
+      "name": "tracking probe cannot select or mutate a Home Atlas",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["ingest", "probe", "--machine", "--atlas-host-directory", "."],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_INGEST_USAGE"
+    },
+    {
+      "name": "tracking probe reports missing JSON input as a typed refusal",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "ingest",
+        "probe",
+        "--machine",
+        "--source-probe",
+        "tests/fixtures/ingest/nonexistent-probe-input.json"
+      ],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_INGEST_INPUT_INVALID"
+    },
+    {
+      "name": "tracking probe reports non-JSON input without a stack trace",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["ingest", "probe", "--machine", "--source-probe", "README.md"],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_INGEST_INPUT_INVALID"
+    },
+    {
+      "name": "tracking probe refuses a directory instead of an input file",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["ingest", "probe", "--machine", "--source-probe", "."],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_INGEST_INPUT_TOO_LARGE"
+    },
+    {
       "name": "accept input contract discovery with the positional name before machine",
       "gate": "atlas-cli",
       "kind": "command",

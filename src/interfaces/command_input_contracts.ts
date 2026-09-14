@@ -8,6 +8,7 @@ import type {
   AtlasIngestDispute,
   AtlasIngestRequest,
   AtlasIngestScope,
+  AtlasIngestSourceProbeRequest,
   SourceAuthority,
 } from "../operations/ingest_operation.ts";
 import type { AtlasApprovalAttestation } from "../operations/operation_support.ts";
@@ -95,6 +96,18 @@ export const ingestScopeInput = objectInput<AtlasIngestScope>({
   includedPaths: arrayInput(textInput()),
   maxDepth: numberInput(),
   sourceId: textInput(),
+});
+
+export const ingestSourceProbeInput = objectInput<AtlasIngestSourceProbeRequest>({
+  approvedAt: textInput(),
+  approvedBy: textInput(),
+  asOf: textInput(),
+  atlasPath: textInput(),
+  branch: textInput(),
+  defaultBranch: optionalInput(textInput()),
+  fromAnchorId: textInput(),
+  repositoryLocator: textInput(),
+  title: textInput(),
 });
 
 const citationInput = objectInput<AtlasIngestCandidateCitation>({

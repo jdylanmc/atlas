@@ -1423,12 +1423,33 @@ function probeAsOfFindings(request: AtlasIngestSourceProbeRequest): Finding[] {
   ];
 }
 
+function probeMetadataFindings(request: AtlasIngestSourceProbeRequest): Finding[] {
+  return (
+    [
+      ["title", request.title],
+      ["fromAnchorId", request.fromAnchorId],
+      ["defaultBranch", request.defaultBranch],
+    ] as const
+  ).flatMap(([field, value]) =>
+    value === undefined || value.trim() !== ""
+      ? []
+      : [
+          finding(
+            "ATLAS_INGEST_PROBE_METADATA_INVALID",
+            `Tracked-Atlas probe ${field} must be non-blank.`,
+            `probe.${field}`,
+          ),
+        ],
+  );
+}
+
 export function probeAtlasIngestSource(
   request: AtlasIngestSourceProbeRequest,
 ): AtlasIngestSourceProbeOutcome {
   const scopeFindings = [
     ...probeApprovalFindings(request),
     ...probeAsOfFindings(request),
+    ...probeMetadataFindings(request),
   ];
   if (scopeFindings.length > 0) {
     return Object.freeze({

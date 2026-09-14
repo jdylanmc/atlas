@@ -8,6 +8,7 @@ Today the package has these reachable command-line workflows:
 - `atlas initialize --machine [--atlas-host-directory PATH] [--resume-proposal-branch NAME]` creates or resumes an Atlas Initialization proposal in a Git-backed host directory.
 - `atlas explore --machine QUERY [--atlas-host-directory PATH]` reads a Home Atlas and reachable connected Atlases and returns routed Explore results as JSON.
 - `atlas ingest plan|reconcile --machine ...` hands out a Crawl Assignment for an approved Ingest Scope, then reconciles a returned Candidate Graph into one proposal.
+- `atlas ingest probe --machine --source-probe PATH` prepares tracking drafts for an Atlas source without contacting it or changing a Home Atlas.
 - `atlas govern --machine --request PATH [--atlas-host-directory PATH]` maintains a Principle or Atlas Policy through one reviewable Atlas Proposal. The request carries explicit Maintainer approval and any semantic Policy verdict as validated input; the command never supplies approval itself, so an agent may propose but never establish governance autonomously.
 - `atlas input-contract --machine NAME` describes a caller-authored JSON input without reading or changing an Atlas.
 
@@ -80,6 +81,7 @@ Retrieve each complete, nested input shape from the installed CLI:
 ```sh
 atlas input-contract --machine ingest-scope
 atlas input-contract --machine ingest-request
+atlas input-contract --machine ingest-source-probe
 atlas input-contract --machine governance-request
 ```
 
@@ -131,6 +133,46 @@ or approving Maintainer, rationale, and change reference. Semantic replacement
 invalidates the old truth and records a linked successor with a new ID.
 The CLI reference includes the exact Markdown forms. Its examples are
 illustrative templates, never human approval records.
+
+### Preparing a tracked-Atlas declaration
+
+`atlas ingest probe --machine --source-probe /path/to/probe.json` is the
+read-only CLI adapter for `probeAtlasIngestSource`. Its input is discoverable
+through `atlas input-contract --machine ingest-source-probe`:
+
+```json
+{
+  "approvedAt": "2026-08-24T12:00:00Z",
+  "approvedBy": "Fixture Maintainer",
+  "asOf": "2026-08-24T12:00:00Z",
+  "atlasPath": ".",
+  "branch": "main",
+  "fromAnchorId": "anchor:root",
+  "repositoryLocator": "https://example.invalid/team/knowledge.git",
+  "title": "Connected Knowledge"
+}
+```
+
+This is illustrative fixture input, not an approval record to copy. Supply
+the actual human direction and comparable timestamps. `defaultBranch` is
+optional and defaults to `branch`; `atlasPath` names the Atlas Host Directory
+within that repository (`"."` for its root), not its `.atlas/` subdirectory.
+Approval fields are caller assertions, not authenticated authorization.
+
+Success returns two deterministic `payload.probe.changes` records, each with
+`path` and `content`: a TrackedAtlas declaration and a cross-Atlas Edge from the
+requested Home Anchor. Output remains one versioned Operation Result.
+The probe does not fetch or verify the remote, inspect the Home Anchor,
+select a host directory, create an Atlas Proposal, apply files, or run full
+Lint. Its successful validation concerns supplied pointer metadata only.
+The handoff leaves adoption pending: verify both endpoints, reconcile the
+drafts against the committed Home Atlas, run full Lint and review an ordinary
+Git proposal before adoption. It is not the complete tracking lifecycle.
+
+Malformed JSON, shape errors, missing/repeated arguments and the existing
+1 MiB input cap retain usage exit 64. Missing or invalid approval fields
+retain exit 4; other invalid pointer metadata returns exit 1 with Findings.
+Credential-bearing locators are refused without echoing credentials.
 
 ### Initialization report artifacts
 
