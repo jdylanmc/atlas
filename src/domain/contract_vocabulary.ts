@@ -218,7 +218,8 @@ export const unboundGlossaryTerms = Object.freeze([
     term: "Check SDK",
   }),
   Object.freeze({
-    reason: "Not yet implemented.",
+    reason:
+      "Implemented by the optional atlas-qmd extension; no single public core-domain identifier names its extension-owned runtime installation contract.",
     term: "Tool Runtime",
   }),
   Object.freeze({
@@ -243,7 +244,8 @@ export const unboundGlossaryTerms = Object.freeze([
     term: "Expand",
   }),
   Object.freeze({
-    reason: "Not yet implemented (QMD/search acceleration feature).",
+    reason:
+      "Implemented by the optional atlas-qmd extension; no single public core-domain identifier names its extension-owned generated index.",
     term: "Explore Index",
   }),
   Object.freeze({

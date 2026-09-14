@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "reviewResolutionRule": "A review finding is resolved only after this corpus has a public Explore case that exercises it.",
+  "cases": [
+    {
+      "name": "null ranking",
+      "gate": "search-provider-envelope",
+      "expectation": "fallback",
+      "value": "null"
+    },
+    {
+      "name": "undefined ranking",
+      "gate": "search-provider-envelope",
+      "expectation": "fallback",
+      "value": "undefined"
+    },
+    {
+      "name": "missing candidates",
+      "gate": "search-provider-envelope",
+      "expectation": "fallback",
+      "value": "missing-candidates"
+    },
+    {
+      "name": "non-array candidates",
+      "gate": "search-provider-envelope",
+      "expectation": "fallback",
+      "value": "non-array-candidates"
+    }
+  ]
+}

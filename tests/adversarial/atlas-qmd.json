@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "reviewResolutionRule": "A review finding is resolved only after this corpus has a local atlas-qmd runtime case that exercises it.",
+  "cases": [
+    {
+      "name": "matching manifest with corrupt database",
+      "gate": "atlas-qmd",
+      "expectation": "repair",
+      "kind": "database-corruption"
+    },
+    {
+      "name": "null document map",
+      "gate": "atlas-qmd",
+      "expectation": "repair",
+      "kind": "document-map",
+      "value": "null"
+    },
+    {
+      "name": "empty document map",
+      "gate": "atlas-qmd",
+      "expectation": "repair",
+      "kind": "document-map",
+      "value": "empty"
+    },
+    {
+      "name": "array document map",
+      "gate": "atlas-qmd",
+      "expectation": "repair",
+      "kind": "document-map",
+      "value": "array"
+    },
+    {
+      "name": "incomplete document map",
+      "gate": "atlas-qmd",
+      "expectation": "repair",
+      "kind": "document-map",
+      "value": "incomplete"
+    },
+    {
+      "name": "mismatched document map",
+      "gate": "atlas-qmd",
+      "expectation": "repair",
+      "kind": "document-map",
+      "value": "mismatched"
+    },
+    {
+      "name": "relative Tool Runtime root",
+      "gate": "atlas-qmd",
+      "expectation": "stable-absolute-destination",
+      "kind": "relative-runtime-root"
+    }
+  ]
+}

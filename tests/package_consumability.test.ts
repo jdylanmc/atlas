@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import type {
+  AtlasQmdOptions,
+  AtlasQmdPreparation,
+} from "../src/extensions/atlas_qmd.ts";
 import type { InputContractResult } from "../src/interfaces/input_contract_command.ts";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
@@ -167,6 +171,10 @@ test("package metadata declares the supported consumption contract", () => {
       types: "./dist/src/index.d.ts",
       default: "./dist/src/index.js",
     },
+    "./atlas-qmd": {
+      types: "./dist/src/extensions/atlas_qmd.d.ts",
+      default: "./dist/src/extensions/atlas_qmd.js",
+    },
     "./package.json": "./package.json",
   });
 });
@@ -189,6 +197,17 @@ test("package root is importable and internal subpaths are private", async () =>
 
   assert.match(atlas.lintCommandUsage, /^usage: atlas lint/u);
   assert.equal(typeof atlas.runLintCommandOperation, "function");
+  const atlasQmd = (await import("@jdylanmc/atlas/atlas-qmd")) as {
+    readonly prepareAtlasQmd: (options: AtlasQmdOptions) => AtlasQmdPreparation;
+  };
+  const unsupported = atlasQmd.prepareAtlasQmd({
+    architecture: "arm64",
+    atlasHostDirectory: "/fixture/atlas",
+    atlasVersion: "fixture-snapshot",
+    platform: "win32",
+  });
+  assert.equal(unsupported.capability.state, "unsupported");
+  assert.equal(unsupported.mode, "lexical-fallback");
   const internalSpecifier = "@jdylanmc/atlas/src/operations/lint_operation.ts";
   await assert.rejects(import(internalSpecifier), {
     code: "ERR_PACKAGE_PATH_NOT_EXPORTED",
@@ -569,6 +588,10 @@ for (const entry of readInstalledConsumerCorpus().cases) {
             "for (const name of Object.keys(dependencies)) assert.ok(realpathSync(require.resolve(name)).startsWith(`${modules}${sep}`), name);",
             'await assert.rejects(import("eslint"), { code: "ERR_MODULE_NOT_FOUND" });',
             'await assert.rejects(import("@jdylanmc/atlas/src/operations/lint_operation.ts"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });',
+            'const { prepareAtlasQmd } = await import("@jdylanmc/atlas/atlas-qmd");',
+            'const optional = prepareAtlasQmd({ architecture: "arm64", atlasHostDirectory: ".", atlasVersion: "fixture", platform: "win32" });',
+            'assert.equal(optional.capability.state, "unsupported");',
+            'assert.equal(optional.mode, "lexical-fallback");',
             'const { validateVocabularyAgreement } = await import(new URL("./dist/src/lint/validate_vocabulary_agreement.js", import.meta.resolve("@jdylanmc/atlas/package.json")));',
             'const findings = validateVocabularyAgreement({}, [], [{ term: "Anchor", reason: "installed-package probe" }],',
             '{ path: "CONTEXT.md", content: "**Anchor**:\\n_Avoid_: Bonfire\\n" },',
@@ -1050,6 +1073,62 @@ for (const entry of readInstalledConsumerCorpus().cases) {
       const [firstResult] = exploreResult.payload.results;
       assert.ok(firstResult !== undefined);
       assert.equal(firstResult.route[0]?.objectId, entry.expectedRootAnchorId);
+      if (entry.providerInvocation !== undefined) {
+        const providerProbe = join(consumer, "provider-consumer.mjs");
+        writeFileSync(
+          providerProbe,
+          [
+            'import assert from "node:assert/strict";',
+            'import { readdirSync, readFileSync } from "node:fs";',
+            'import { join, relative } from "node:path";',
+            'import { runExploreOperation } from "@jdylanmc/atlas";',
+            "const encoder = new TextEncoder();",
+            "function files(directory) {",
+            "  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {",
+            "    const path = join(directory, entry.name);",
+            "    return entry.isDirectory() ? files(path) : [path];",
+            "  });",
+            "}",
+            'const capturedFiles = files(".atlas").map((path) => ({',
+            '  bytes: encoder.encode(readFileSync(path, "utf8")),',
+            '  path: relative(".", path).split("\\\\").join("/"),',
+            "}));",
+            "let providerCalls = 0;",
+            "const provider = Object.freeze({",
+            "  rank(documents) {",
+            "    providerCalls += 1;",
+            `    assert.ok(documents.some(({ id }) => id === ${JSON.stringify(entry.providerInvocation.expectedResultId)}));`,
+            "    return Object.freeze([",
+            `      Object.freeze({ objectId: ${JSON.stringify(entry.providerInvocation.rejectedObjectId)}, score: 100 }),`,
+            `      Object.freeze({ objectId: ${JSON.stringify(entry.providerInvocation.expectedResultId)}, score: 1 }),`,
+            "    ]);",
+            "  },",
+            "});",
+            "const result = runExploreOperation({",
+            '  baseSnapshot: { reference: "installed-provider-base", state: "known" },',
+            "  capturedFiles,",
+            '  homeAtlas: { reference: "installed-provider-home", state: "known" },',
+            "  provider,",
+            `  query: ${JSON.stringify(entry.query)},`,
+            "});",
+            `assert.equal(providerCalls, ${String(entry.providerInvocation.expectedProviderCalls)});`,
+            `assert.equal(result.payload.results[0]?.result.id, ${JSON.stringify(entry.providerInvocation.expectedResultId)});`,
+            `assert.equal(result.payload.results.some(({ result }) => result.id === ${JSON.stringify(entry.providerInvocation.rejectedObjectId)}), false);`,
+            `assert.equal(result.payload.results[0]?.route[0]?.objectId, ${JSON.stringify(entry.expectedRootAnchorId)});`,
+          ].join("\n"),
+          "utf8",
+        );
+        const providerInvocation = spawnSync(process.execPath, [providerProbe], {
+          cwd: consumer,
+          encoding: "utf8",
+          env: consumerEnvironment(guard),
+          killSignal: "SIGKILL",
+          timeout: 30_000,
+        });
+        assert.equal(providerInvocation.status, 0, providerInvocation.stderr);
+        assert.equal(providerInvocation.stderr, "");
+        rmSync(providerProbe);
+      }
       if (entry.cacheFailure !== undefined) {
         if (
           [
