@@ -13,6 +13,8 @@
         ".atlas/index.md",
         ".atlas/manifest.json"
       ],
+      "governanceTreeReceipt": true,
+      "isolatedPackPreservesProducerOutput": true,
       "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
       "citationCorrespondence": {
         "claim": "# Installed **claim** with [a link](https://example.invalid), &copy;, <b>HTML</b>, and [^forged].\n\n    indented claim\n- unordered claim\n1. ordered claim\n```ts\nconst claimFence = true;\n```",
