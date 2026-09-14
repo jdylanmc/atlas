@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "reviewResolutionRule": "A review finding is resolved only after this corpus verifies the current public representation classification.",
+  "cases": [
+    {
+      "name": "Tool Runtime is represented by the optional extension",
+      "gate": "vocabulary-representation",
+      "expectation": "unbound-optional-extension",
+      "term": "Tool Runtime",
+      "reason": "Implemented by the optional atlas-qmd extension; no single public core-domain identifier names its extension-owned runtime installation contract."
+    },
+    {
+      "name": "Explore Index is represented by the optional extension",
+      "gate": "vocabulary-representation",
+      "expectation": "unbound-optional-extension",
+      "term": "Explore Index",
+      "reason": "Implemented by the optional atlas-qmd extension; no single public core-domain identifier names its extension-owned generated index."
+    }
+  ]
+}

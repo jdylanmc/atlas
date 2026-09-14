@@ -82,6 +82,9 @@ import {
   validateVocabularyAgreement,
   type VocabularyTextFile,
 } from "../src/lint/validate_vocabulary_agreement.ts";
+import { readSearchProviderEnvelopeCorpus } from "./search_provider_envelope_corpus.ts";
+import { readAtlasQmdCorpus } from "./atlas_qmd_corpus.ts";
+import { readVocabularyRepresentationCorpus } from "./vocabulary_representation_corpus.ts";
 
 interface CorpusCase {
   readonly codes?: readonly string[];
@@ -1690,6 +1693,18 @@ test("the adversarial installed-consumer corpus is structurally valid", () => {
 
 test("the adversarial Changelog corpus is structurally valid", () => {
   readChangelogCorpus();
+});
+
+test("the adversarial Search Provider envelope corpus is structurally valid", () => {
+  readSearchProviderEnvelopeCorpus();
+});
+
+test("the adversarial atlas-qmd corpus is structurally valid", () => {
+  readAtlasQmdCorpus();
+});
+
+test("the adversarial vocabulary representation corpus is structurally valid", () => {
+  readVocabularyRepresentationCorpus();
 });
 
 test("adversarial governance request types require approval only for mutations", () => {

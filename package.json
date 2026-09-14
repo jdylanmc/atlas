@@ -59,6 +59,10 @@
       "types": "./dist/src/index.d.ts",
       "default": "./dist/src/index.js"
     },
+    "./atlas-qmd": {
+      "types": "./dist/src/extensions/atlas_qmd.d.ts",
+      "default": "./dist/src/extensions/atlas_qmd.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

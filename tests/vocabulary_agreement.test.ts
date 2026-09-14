@@ -20,6 +20,7 @@ import type {
   ContractVocabularyBinding,
   UnboundGlossaryTerm,
 } from "../src/domain/contract_vocabulary.ts";
+import { unboundGlossaryTerms } from "../src/domain/contract_vocabulary.ts";
 import { checkFinding, type Finding } from "../src/domain/finding.ts";
 import {
   parseGlossary,
@@ -34,6 +35,7 @@ import {
   validateRepository,
 } from "../scripts/vocabulary_agreement.ts";
 import { assertGrowthRatio, assertWallClockUnder } from "./growth.ts";
+import { readVocabularyRepresentationCorpus } from "./vocabulary_representation_corpus.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const SCRIPT = resolve(ROOT, "scripts", "vocabulary_agreement.ts");
@@ -147,6 +149,16 @@ function inDirectory<T>(directory: string, run: () => T): T {
 // that directory in every contract source, forever.
 test("the reserved page directories are exactly the ones Atlas SDK claims", () => {
   assert.deepEqual([...reservedPageDirectories].toSorted(), ["atlas-cache", "types"]);
+});
+
+test("optional extension vocabulary states its implemented representation accurately", () => {
+  for (const entry of readVocabularyRepresentationCorpus().cases) {
+    assert.equal(
+      unboundGlossaryTerms.find(({ term }) => term === entry.term)?.reason,
+      entry.reason,
+      entry.name,
+    );
+  }
 });
 
 test("Atlas SDK contracts and the glossary bind one vocabulary", () => {

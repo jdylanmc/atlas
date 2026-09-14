@@ -5,6 +5,19 @@ import { resolvedCitationSourcePaths } from "../atlas/resolve_citations.ts";
 import { rootAnchorPageId } from "../domain/core_archetype.ts";
 import { extractAtlasPrincipleActiveTruths } from "../domain/atlas_principle.ts";
 import type { Finding } from "../domain/finding.ts";
+import {
+  validateSearchProviderRanking,
+  type ExploreSearchDocument,
+  type SearchProvider,
+} from "./search_provider.ts";
+
+export type {
+  ExploreCandidate,
+  ExploreSearchDocument,
+  SearchProvider,
+  SearchProviderDiagnostic,
+  SearchProviderRanking,
+} from "./search_provider.ts";
 
 const attribution = Object.freeze({
   checkId: "sdk-core.explore",
@@ -20,28 +33,6 @@ export interface ExploreBudgets extends AtlasTextBudgets {
   readonly maxResults: number;
   readonly maxRouteEdges: number;
   readonly maxTerms: number;
-}
-
-export interface ExploreCandidate {
-  readonly objectId: string;
-  readonly score: number;
-}
-
-export interface ExploreSearchDocument {
-  readonly body: string;
-  readonly id: string;
-  readonly path: string;
-  readonly tags: readonly string[];
-  readonly title: string;
-  readonly type: string;
-}
-
-export interface SearchProvider {
-  readonly rank: (
-    documents: readonly ExploreSearchDocument[],
-    query: string,
-    budgets: Pick<ExploreBudgets, "maxQueryCharacters" | "maxTerms">,
-  ) => readonly ExploreCandidate[];
 }
 
 export interface ExploreSnapshotContext {
@@ -601,40 +592,6 @@ function compareItems(
   };
 }
 
-function rankedCandidates(
-  ranked: readonly ExploreCandidate[],
-  view: TraversalIndex,
-): {
-  readonly diagnostics: readonly Finding[];
-  readonly ranked: readonly ExploreCandidate[];
-} {
-  const diagnostics: Finding[] = [];
-  const valid: ExploreCandidate[] = [];
-  const seen = new Set<string>();
-  for (const candidate of ranked) {
-    if (
-      typeof candidate.objectId !== "string" ||
-      !Number.isFinite(candidate.score) ||
-      candidate.score <= 0 ||
-      !view.objects.has(candidate.objectId) ||
-      seen.has(candidate.objectId)
-    ) {
-      diagnostics.push(
-        diagnostic(
-          "ATLAS_EXPLORE_PROVIDER_CANDIDATE_INVALID",
-          "Search Provider returned a candidate Explore could not use.",
-          ".atlas",
-          "warning",
-        ),
-      );
-      continue;
-    }
-    seen.add(candidate.objectId);
-    valid.push(candidate);
-  }
-  return { diagnostics: Object.freeze(diagnostics), ranked: Object.freeze(valid) };
-}
-
 export function exploreAtlas(
   atlasView: AtlasView,
   query: string,
@@ -674,7 +631,10 @@ export function exploreAtlas(
   }
   if (view.level === "raw-markdown") {
     const documents = documentsOf(view);
-    const candidates = rankedCandidates(provider.rank(documents, query, budgets), view);
+    const candidates = validateSearchProviderRanking(
+      provider.rank(documents, query, budgets),
+      new Set(view.objects.keys()),
+    );
     const results = candidates.ranked.slice(0, budgets.maxResults).map((candidate) => {
       const result = view.objects.get(candidate.objectId) as AtlasObject;
       return Object.freeze({
@@ -699,7 +659,10 @@ export function exploreAtlas(
   }
 
   const documents = documentsOf(view);
-  const candidates = rankedCandidates(provider.rank(documents, query, budgets), view);
+  const candidates = validateSearchProviderRanking(
+    provider.rank(documents, query, budgets),
+    new Set(view.objects.keys()),
+  );
   const ranked = candidates.ranked;
   const candidateScores = new Map(
     ranked.map((candidate) => [candidate.objectId, candidate.score]),
