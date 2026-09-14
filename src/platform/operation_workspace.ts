@@ -208,8 +208,8 @@ function materializeEntry(
 
 /**
  * Completes a newly owned Operation Workspace from committed Git object bytes.
- * It deliberately avoids checkout/read conversion, so tracked attributes,
- * repository-local filter drivers, and checkout hooks cannot execute.
+ * tests/governance_cli.test.ts pins that direct object reads do not invoke
+ * tracked filters or checkout hooks.
  */
 export function completeOperationWorkspace(
   workspace: string,
