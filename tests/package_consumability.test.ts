@@ -15,12 +15,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 import { pathToFileURL } from "node:url";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
 import { exerciseInitializationArtifactConflicts } from "./initialization_artifact_probes.ts";
 import { exerciseGovernanceRetirement } from "./governance_retirement_probe.ts";
 import { parseMachineOperationResult } from "./machine_operation_result.ts";
+import { createSuiteArtifactOwner } from "./suite_artifact.ts";
 import type { AtlasInitializationResult } from "../src/operations/initialize_operation.ts";
 import type { LintOperationResult } from "../src/operations/lint_operation.ts";
 import type { ExploreOperationResult } from "../src/operations/explore_operation.ts";
@@ -194,10 +195,10 @@ test("prepack rebuild removes ignored dist files before packaging", () => {
 // runtime import that only a development dependency satisfies fails here rather
 // than on an adopter's first command.
 //
-// It lives in this file rather than its own so that it cannot run concurrently
-// with the packing tests above. Every `npm pack` here rebuilds `dist/` through
-// `prepack`, whose first act is to delete it; two such tests in separate files
-// race, and the loser installs a truncated tarball.
+// It lives in this file rather than its own so that its suite-owned `npm pack`
+// cannot run concurrently with the packing tests above. `prepack` first deletes
+// `dist/`; packing from separate files could race and produce a truncated
+// tarball.
 
 interface InstalledCommandResult {
   readonly status: number | null;
@@ -219,6 +220,9 @@ function packArtifact(destination: string): string {
   assert.ok(tarball !== undefined, "npm pack produced no tarball");
   return join(destination, tarball);
 }
+
+const installedConsumerArtifact = createSuiteArtifactOwner(packArtifact);
+after(() => installedConsumerArtifact.dispose());
 
 /**
  * A consumer with its own directory, its own Git history, and Atlas SDK
@@ -302,7 +306,7 @@ function createConsumer(workspace: string): string {
     "npm",
     [
       "install",
-      packArtifact(join(workspace, "artifact")),
+      installedConsumerArtifact.artifact(),
       "--omit=dev",
       "--ignore-scripts",
       "--offline",
