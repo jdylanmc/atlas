@@ -1081,6 +1081,10 @@ test("Search Provider validation rejects a ranking without candidates", () => {
       ),
     /must return candidates/u,
   );
+  assert.throws(
+    () => validateSearchProviderRanking(null, new Set(["concept:target"])),
+    /must return candidates/u,
+  );
 });
 
 test("Search Provider validation replaces malformed diagnostics within its bound", () => {
@@ -1100,9 +1104,7 @@ test("Search Provider validation replaces malformed diagnostics within its bound
     new Set(["concept:target"]),
   );
 
-  assert.deepEqual(validation.ranked, [
-    { objectId: "concept:target", score: 1 },
-  ]);
+  assert.deepEqual(validation.ranked, [{ objectId: "concept:target", score: 1 }]);
   assert.equal(validation.diagnostics.length, 32);
   assert.equal(
     validation.diagnostics.every(
@@ -1116,12 +1118,43 @@ test("Search Provider validation replaces malformed diagnostics within its bound
   );
 });
 
+test("Search Provider validation preserves inconclusive diagnostics", () => {
+  const validation = validateSearchProviderRanking(
+    {
+      candidates: [{ objectId: "concept:target", score: 1 }],
+      diagnostics: [
+        {
+          code: "ATLAS_INDEXING_EXTENSION_INCONCLUSIVE",
+          message: "The optional index could not establish a confident ranking.",
+          severity: "inconclusive",
+        },
+      ],
+    },
+    new Set(["concept:target"]),
+  );
+
+  assert.deepEqual(
+    validation.diagnostics.map(({ code, message, severity }) => ({
+      code,
+      message,
+      severity,
+    })),
+    [
+      {
+        code: "ATLAS_INDEXING_EXTENSION_INCONCLUSIVE",
+        message: "The optional index could not establish a confident ranking.",
+        severity: "inconclusive",
+      },
+    ],
+  );
+});
+
 test("Search Provider validation bounds candidate intake to Atlas identity", () => {
   const validation = validateSearchProviderRanking(
     [
       { objectId: "concept:a", score: 2 },
       { objectId: "concept:b", score: 1 },
-      { objectId: "concept:a", score: 3 },
+      "not-a-candidate",
       { objectId: "concept:outside", score: 100 },
     ],
     new Set(["concept:a", "concept:b"]),

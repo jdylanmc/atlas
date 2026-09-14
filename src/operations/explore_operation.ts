@@ -103,7 +103,7 @@ function budgetsOf(request: ExploreOperationRequest): ExploreBudgets {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return String(error).replace(/^[A-Za-z]*Error: /u, "");
 }
 
 function providerWithLexicalFallback(provider: SearchProvider): SearchProvider {

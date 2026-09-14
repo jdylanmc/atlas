@@ -178,6 +178,10 @@ function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function errorMessage(error: unknown): string {
+  return String(error).replace(/^[A-Za-z]*Error: /u, "");
+}
+
 function defaultCacheDirectory(): string {
   return process.env["XDG_CACHE_HOME"] ?? join(homedir(), ".cache");
 }
@@ -307,9 +311,7 @@ function qmdProvider(
           diagnostics: Object.freeze([
             Object.freeze({
               code: "ATLAS_QMD_RUNTIME_FALLBACK",
-              message: `atlas-qmd failed; built-in lexical ranking was used: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
+              message: `atlas-qmd failed; built-in lexical ranking was used: ${errorMessage(error)}`,
               severity: "warning" as const,
             }),
           ]),
@@ -497,9 +499,7 @@ export function createLocalAtlasQmdRuntime(
       return Object.freeze({ state: "ready" as const });
     } catch (error) {
       return Object.freeze({
-        reason: `The owned atlas-qmd Tool Runtime metadata is unreadable: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        reason: `The owned atlas-qmd Tool Runtime metadata is unreadable: ${errorMessage(error)}`,
         state: "corrupt" as const,
       });
     }
@@ -532,7 +532,7 @@ export function createLocalAtlasQmdRuntime(
     const receipt: RuntimeReceipt = Object.freeze({
       architecture: context.architecture,
       nodeExecutable: process.execPath,
-      nodeMajor: Number.parseInt(process.versions.node.split(".")[0] ?? "", 10),
+      nodeMajor: Number.parseInt(process.versions.node, 10),
       packageName,
       packageVersion,
       platform: context.platform,
@@ -544,7 +544,7 @@ export function createLocalAtlasQmdRuntime(
   function qmd(
     context: AtlasQmdRuntimeContext,
     cwd: string,
-    arguments_: readonly string[],
+    arguments_: readonly [string, ...string[]],
   ): CommandResult {
     const paths = runtimePaths(context.toolRuntimeRoot);
     const receipt = readJson(paths.receipt);
@@ -559,7 +559,7 @@ export function createLocalAtlasQmdRuntime(
         XDG_CACHE_HOME: join(context.toolRuntimeRoot, "cache"),
       },
     });
-    if (result.status !== 0) throw commandFailure(`qmd ${arguments_[0] ?? ""}`, result);
+    if (result.status !== 0) throw commandFailure(`qmd ${arguments_[0]}`, result);
     return result;
   }
 
@@ -726,9 +726,7 @@ export function prepareAtlasQmd(
         mode: "lexical-fallback" as const,
         provider: fallbackProvider(
           "ATLAS_QMD_INSTALLATION_FAILED",
-          `atlas-qmd installation failed; built-in lexical Explore remains available: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `atlas-qmd installation failed; built-in lexical Explore remains available: ${errorMessage(error)}`,
         ),
       });
     }

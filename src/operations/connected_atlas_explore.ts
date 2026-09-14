@@ -701,15 +701,28 @@ export function exploreConnectedAtlas(
   const ranking = rankDocuments(provider, documents, query, budgets);
   const discovered = discoverRoutes(root, adjacency, built.nodeByKey, query, budgets);
   const linkReanchors = createReanchorRouteLinker(discovered.reanchors);
+  const rankByObjectId = new Map(
+    ranking.ranked.map((candidate, index) => [candidate.objectId, index]),
+  );
+  const rankedNodes = [...built.nodeByKey.values()]
+    .map((node) => ({
+      node,
+      rank: rankByObjectId.get(node.canonicalNodeKey),
+    }))
+    .filter(
+      (
+        entry,
+      ): entry is {
+        readonly node: ResolvedNode;
+        readonly rank: number;
+      } => entry.rank !== undefined,
+    )
+    .toSorted((left, right) => left.rank - right.rank);
   const results: ExploreResultItem[] = [];
-  for (const candidate of ranking.ranked) {
-    const node = built.nodeByKey.get(candidate.objectId);
-    const route =
-      node === undefined
-        ? undefined
-        : discovered.routes.get(node.canonicalNodeKey)?.[0];
+  for (const { node } of rankedNodes) {
+    const route = discovered.routes.get(node.canonicalNodeKey)?.[0];
     /* c8 ignore next -- bogus provider candidates are deliberately skipped without surfacing. */
-    if (node === undefined || route === undefined) continue;
+    if (route === undefined) continue;
     results.push(
       Object.freeze({
         citedContext: citedContext(node, built.nodes, budgets.maxContextCharacters),
