@@ -467,12 +467,76 @@ test("atlas govern amends a Principle into one Linted Atlas Proposal", () => {
   assert.equal(result.payload.lint.payload.state, "completed");
   assert.equal(result.payload.lint.payload.lint.outcome, "valid");
   assert.equal(git(repository, ["rev-parse", "main"]), mainBefore);
+  const writeReceipt = result.payload.workflowState.effectReceipts.find(
+    ({ effect }) => effect === "write-change-set",
+  );
+  assert.ok(writeReceipt);
+  assert.equal(
+    writeReceipt.receipt,
+    git(repository, [
+      "rev-parse",
+      `${result.payload.workflowState.proposalBranch}^{tree}`,
+    ]),
+  );
+  assert.notEqual(writeReceipt.receipt, git(repository, ["rev-parse", "main^{tree}"]));
   assert.match(
     git(repository, [
       "show",
       `${result.payload.workflowState.proposalBranch}:.atlas/principles/determinism.md`,
     ]),
     /truth:no-model/u,
+  );
+});
+
+test("Local Governance receipts distinguish resulting trees on the same base", () => {
+  const repository = resolve(WORKSPACE, "distinct-resulting-trees");
+  const mainBefore = initAtlasRepository(repository);
+
+  const principle = runLocalAtlasGovernance(repository, createPrincipleRequest());
+  const policy = runLocalAtlasGovernance(
+    repository,
+    policyRequest(repository, "pass", "agree"),
+  );
+
+  assert.equal(principle.completion, "completed");
+  assert.equal(policy.completion, "completed");
+  assert.equal(git(repository, ["rev-parse", "main"]), mainBefore);
+  const principleReceipt = principle.payload.workflowState.effectReceipts.find(
+    ({ effect }) => effect === "write-change-set",
+  )?.receipt;
+  const policyReceipt = policy.payload.workflowState.effectReceipts.find(
+    ({ effect }) => effect === "write-change-set",
+  )?.receipt;
+  assert.ok(principleReceipt);
+  assert.ok(policyReceipt);
+  assert.equal(
+    principleReceipt,
+    git(repository, [
+      "rev-parse",
+      `${principle.payload.workflowState.proposalBranch}^{tree}`,
+    ]),
+  );
+  assert.equal(
+    policyReceipt,
+    git(repository, [
+      "rev-parse",
+      `${policy.payload.workflowState.proposalBranch}^{tree}`,
+    ]),
+  );
+  assert.notEqual(principleReceipt, policyReceipt);
+  assert.equal(
+    git(repository, [
+      "show",
+      `${principle.payload.workflowState.proposalBranch}:README.md`,
+    ]),
+    "# host",
+  );
+  assert.equal(
+    git(repository, [
+      "show",
+      `${policy.payload.workflowState.proposalBranch}:README.md`,
+    ]),
+    "# host",
   );
 });
 

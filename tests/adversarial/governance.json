@@ -26,6 +26,71 @@
       }
     },
     {
+      "name": "exact-authored-path-duplicates-are-refused",
+      "gate": "governance",
+      "kind": "change-path-collision",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_GOVERNANCE_CHANGE_PATH_COLLISION",
+      "contents": ["first authored bytes", "second authored bytes"],
+      "paths": [".atlas/principles/path-one.md", ".atlas/principles/path-one.md"]
+    },
+    {
+      "name": "reversed-exact-authored-path-duplicates-are-refused",
+      "gate": "governance",
+      "kind": "change-path-collision",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_GOVERNANCE_CHANGE_PATH_COLLISION",
+      "contents": ["second authored bytes", "first authored bytes"],
+      "paths": [".atlas/principles/path-one.md", ".atlas/principles/path-one.md"]
+    },
+    {
+      "name": "case-folded-authored-path-aliases-are-refused",
+      "gate": "governance",
+      "kind": "change-path-collision",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_GOVERNANCE_CHANGE_PATH_COLLISION",
+      "paths": [".atlas/principles/path-case.md", ".atlas/PRINCIPLES/PATH-CASE.md"]
+    },
+    {
+      "name": "unicode-normalized-authored-path-aliases-are-refused",
+      "gate": "governance",
+      "kind": "change-path-collision",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_GOVERNANCE_CHANGE_PATH_COLLISION",
+      "paths": [".atlas/principles/café.md", ".atlas/principles/café.md"]
+    },
+    {
+      "name": "trailing-dot-authored-path-aliases-are-refused",
+      "gate": "governance",
+      "kind": "change-path-collision",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_GOVERNANCE_CHANGE_PATH_COLLISION",
+      "paths": [".atlas/principles/path-dot.md", ".atlas/principles/path-dot.md."]
+    },
+    {
+      "name": "trailing-space-authored-path-aliases-are-refused",
+      "gate": "governance",
+      "kind": "change-path-collision",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_GOVERNANCE_CHANGE_PATH_COLLISION",
+      "paths": [".atlas/principles/path-space.md", ".atlas/principles/path-space.md "]
+    },
+    {
+      "name": "distinct-authored-paths-remain-accepted",
+      "gate": "governance",
+      "kind": "change-path-collision",
+      "expectation": "accept",
+      "expectedCode": "ATLAS_GOVERNANCE_CHANGE_PATH_COLLISION",
+      "paths": [".atlas/principles/path-left.md", ".atlas/principles/path-right.md"]
+    },
+    {
+      "name": "written-content-drift-is-refused-before-commit",
+      "gate": "governance",
+      "kind": "written-content-mismatch",
+      "expectation": "reject",
+      "expectedCode": "ATLAS_GOVERNANCE_WRITTEN_CHANGE_SET_MISMATCH"
+    },
+    {
       "name": "founding-cannot-purge-an-earlier-governance-fragment",
       "gate": "governance",
       "kind": "retirement",
@@ -219,7 +284,10 @@
       "kind": "semantic",
       "expectedCode": "ATLAS_GOVERNANCE_CHANGE_SET_PATH_INVALID",
       "assembly": "request",
-      "expectedCodes": ["ATLAS_GOVERNANCE_CHANGE_SET_PATH_INVALID"]
+      "expectedCodes": [
+        "ATLAS_GOVERNANCE_CHANGE_PATH_COLLISION",
+        "ATLAS_GOVERNANCE_CHANGE_SET_PATH_INVALID"
+      ]
     },
     {
       "name": "repeated-fragment-observations-coalesce",
@@ -228,6 +296,7 @@
       "expectedCode": "ATLAS_GOVERNANCE_PRINCIPLE_IDENTITY_CHANGED",
       "assembly": "fragment",
       "expectedCodes": [
+        "ATLAS_GOVERNANCE_CHANGE_PATH_COLLISION",
         "ATLAS_GOVERNANCE_PRINCIPLE_AMENDMENT_REQUIRED",
         "ATLAS_GOVERNANCE_PRINCIPLE_IDENTITY_CHANGED"
       ]
@@ -239,6 +308,7 @@
       "expectedCode": "ATLAS_GOVERNANCE_PRINCIPLE_IDENTITY_CHANGED",
       "assembly": "workflow",
       "expectedCodes": [
+        "ATLAS_GOVERNANCE_CHANGE_PATH_COLLISION",
         "ATLAS_GOVERNANCE_PRINCIPLE_AMENDMENT_REQUIRED",
         "ATLAS_GOVERNANCE_PRINCIPLE_IDENTITY_CHANGED"
       ]
