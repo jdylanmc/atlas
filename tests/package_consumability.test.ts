@@ -1132,13 +1132,15 @@ for (const entry of readInstalledConsumerCorpus().cases) {
       if (entry.cacheFailure !== undefined) {
         if (
           [
+            "freshness-window",
+            "refresh-workflow",
             "invalid-lock-on-update",
             "first-metadata-cleanup",
             "first-metadata-cleanup-discarded",
             "lock-persistence",
           ].includes(entry.cacheFailure.mode)
         ) {
-          const tracking = probeAtlasIngestSource({
+          const trackingRequest = {
             approvedAt: "2026-08-25T00:00:00Z",
             approvedBy: "Fixture Maintainer",
             asOf: "2026-08-25T00:00:00Z",
@@ -1147,11 +1149,29 @@ for (const entry of readInstalledConsumerCorpus().cases) {
             fromAnchorId: "anchor:root",
             repositoryLocator: "https://github.com/fixture/without-atlas.git",
             title: "Tracked Home Atlas",
-          });
-          assert.equal(tracking.state, "tracked-atlas");
-          for (const change of tracking.changes) {
-            mkdirSync(dirname(join(consumer, change.path)), { recursive: true });
-            writeFileSync(join(consumer, change.path), change.content);
+          };
+          const requests = [
+            trackingRequest,
+            ...(entry.cacheFailure.mode === "refresh-workflow"
+              ? [{ ...trackingRequest, defaultBranch: "trunk" }]
+              : []),
+          ];
+          for (const request of requests) {
+            const tracking = probeAtlasIngestSource(request);
+            assert.equal(tracking.state, "tracked-atlas");
+            for (const change of tracking.changes) {
+              mkdirSync(dirname(join(consumer, change.path)), { recursive: true });
+              const content =
+                ["freshness-window", "refresh-workflow"].includes(
+                  entry.cacheFailure.mode,
+                ) && change.path.includes("/tracked-atlases/")
+                  ? change.content.replace(
+                      "\natlas:\n",
+                      "\natlas:\n  refresh-window-days: 1\n",
+                    )
+                  : change.content;
+              writeFileSync(join(consumer, change.path), content);
+            }
           }
           consumerGit(consumer, ["add", ".atlas"]);
           consumerGit(consumer, [
@@ -1194,10 +1214,10 @@ for (const entry of readInstalledConsumerCorpus().cases) {
             [
               'import assert from "node:assert/strict";',
               'import fs, { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";',
-              'import { syncBuiltinESMExports } from "node:module";',
+              'import { createRequire, syncBuiltinESMExports } from "node:module";',
               'import { execFileSync, spawnSync } from "node:child_process";',
               'import { dirname, join, sep } from "node:path";',
-              'import { atlasCacheKey, atlasLocatorFromParts, createAtlasLock, deriveAtlasSlug, resolveAtlasCache, runExploreOperation } from "@jdylanmc/atlas";',
+              'import { atlasCacheKey, atlasLocatorFromParts, createAtlasLock, deriveAtlasSlug, resolveAtlasCache, runExploreOperation, runLocalAtlasRefresh } from "@jdylanmc/atlas";',
               `const input = ${JSON.stringify({ home: consumer, remote, mode: entry.cacheFailure.mode })};`,
               'const locator = atlasLocatorFromParts({ host: "github.com", owner: "fixture", repository: "without-atlas", branch: "main", atlasPath: "." });',
               "const slug = deriveAtlasSlug(locator);",
@@ -1237,6 +1257,72 @@ for (const entry of readInstalledConsumerCorpus().cases) {
               'assert.equal(result.state, "unreachable");',
               'const dependencies = existsSync(lockPath) ? JSON.parse(readFileSync(lockPath, "utf8")).dependencies : [];',
               "console.log(JSON.stringify({ state: result.state, code: result.findings[0]?.code, dependencies }));",
+              '} else if (input.mode === "refresh-workflow") {',
+              "now = new Date().toISOString();",
+              "const first = resolveAtlasCache(request, options);",
+              'assert.equal(first.state, "resolved");',
+              'const packageFile = createRequire(import.meta.url).resolve("@jdylanmc/atlas/package.json");',
+              'const binary = join(dirname(packageFile), JSON.parse(readFileSync(packageFile, "utf8")).bin.atlas);',
+              "const cli = (selection) => {",
+              'const child = spawnSync(process.execPath, [binary, "refresh", "--machine", ...selection, "--atlas-host-directory", input.home], { cwd: input.home, encoding: "utf8", timeout: 30000 });',
+              'assert.equal(child.error, undefined); assert.equal(child.status, 0, child.stderr); assert.equal(child.stderr, "");',
+              "return JSON.parse(child.stdout); };",
+              'const remoteGit = (args) => execFileSync("git", ["-C", input.remote, ...args], { encoding: "utf8", timeout: 30000 }).trim();',
+              'const cacheGit = (args) => execFileSync("git", [`--git-dir=${join(first.snapshot.cacheDirectory, "repository.git")}`, ...args], { encoding: "utf8", timeout: 30000 }).trim();',
+              'cacheGit(["config", `url.${input.remote}.insteadOf`, "https://github.com/fixture/without-atlas.git"]);',
+              'const advance = (label) => { writeFileSync(join(input.remote, "README.md"), label); remoteGit(["add", "README.md"]); remoteGit(["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", label]); return remoteGit(["rev-parse", "HEAD"]); };',
+              'const oneHead = advance("Single-target refresh");',
+              'const one = cli(["--atlas-slug", slug.value]);',
+              'assert.equal(one.operation.kind, "atlas-refresh"); assert.equal(one.payload.entries.length, 1); assert.equal(one.payload.entries[0].snapshot, oneHead);',
+              'const allHead = advance("All-declaration refresh");',
+              'const all = cli(["--all"]);',
+              'assert.equal(all.payload.entries.length, 2); assert.ok(all.payload.entries.every((entry) => entry.snapshot === allHead && entry.state === "refreshed"));',
+              'assert.equal(all.handoff.proposedChanges.state, "not-applicable");',
+              'const aliases = runLocalAtlasRefresh(input.home, { kind: "all" }, { ...options, resolveRemote: () => { if (++contacts === 2) advance("Forbidden second fetch"); return input.remote; } });',
+              "assert.equal(contacts, 1); assert.equal(aliases.payload.entries.length, 2); assert.ok(aliases.payload.entries.every((entry) => entry.snapshot === allHead));",
+              'const metadataPath = join(first.snapshot.cacheDirectory, "metadata.json");',
+              "const metadataBytes = readFileSync(metadataPath); const lockBytes = readFileSync(lockPath);",
+              'remoteGit(["branch", "-m", "retained/refs/heads/main"]);',
+              'const missing = cli(["--all"]);',
+              'assert.deepEqual(missing.payload.findings.map(({ code }) => code), ["ATLAS_CROSS_ATLAS_CACHED_OFFLINE", "ATLAS_CROSS_ATLAS_BRANCH_MISSING"]);',
+              'assert.ok(missing.payload.entries.every((entry) => entry.snapshot === allHead && entry.state === "cached-offline"));',
+              "renameSync(input.remote, `${input.remote}-offline`);",
+              'const offline = cli(["--all"]);',
+              'assert.deepEqual(offline.payload.findings.map(({ code }) => code), ["ATLAS_CROSS_ATLAS_CACHED_OFFLINE"]);',
+              "assert.deepEqual(readFileSync(metadataPath), metadataBytes); assert.deepEqual(readFileSync(lockPath), lockBytes);",
+              "rmSync(first.snapshot.cacheDirectory, { recursive: true });",
+              'const unavailable = runLocalAtlasRefresh(input.home, { kind: "all" }, options);',
+              'assert.equal(unavailable.disposition, "failed"); assert.equal(unavailable.handoff.unresolvedHumanDecisions.state, "pending"); assert.ok(unavailable.payload.entries.every((entry) => entry.state === "unreachable"));',
+              "console.log(JSON.stringify({ state: first.state, code: missing.payload.findings[1].code, offlineCode: offline.payload.findings[0].code }));",
+              '} else if (input.mode === "freshness-window") {',
+              "const freshnessRequest = { ...request, trackedAtlas: { ...trackedAtlas, refreshWindowDays: 1 } };",
+              "const freshnessOptions = { ...options, resolveRemote: () => { contacts++; return input.remote; } };",
+              "const first = resolveAtlasCache(freshnessRequest, freshnessOptions);",
+              'assert.equal(first.state, "resolved"); assert.equal(contacts, 1);',
+              'const metadataPath = join(first.snapshot.cacheDirectory, "metadata.json");',
+              "const metadataBytes = readFileSync(metadataPath); const lockBytes = readFileSync(lockPath);",
+              "renameSync(input.remote, `${input.remote}-offline`);",
+              'now = "2026-08-30T12:00:00Z";',
+              "verifyExplore(explore(freshnessOptions), first.snapshot.snapshot, true, []);",
+              'assert.equal(contacts, 1, "Installed Explore must honor the committed declaration window");',
+              "assert.deepEqual(readFileSync(metadataPath), metadataBytes); assert.deepEqual(readFileSync(lockPath), lockBytes);",
+              "const forced = resolveAtlasCache({ ...freshnessRequest, forceRefresh: true }, freshnessOptions);",
+              'assert.equal(forced.state, "resolved"); assert.equal(contacts, 2);',
+              "assert.equal(forced.snapshot.snapshot, first.snapshot.snapshot);",
+              "verifyExplore(explore(freshnessOptions), first.snapshot.snapshot, true, []);",
+              "assert.equal(contacts, 2);",
+              'now = "2026-08-31T00:00:00Z";',
+              "const expired = explore(freshnessOptions);",
+              "verifyExplore(expired, first.snapshot.snapshot, false, []);",
+              "assert.equal(contacts, 3);",
+              "assert.deepEqual(readFileSync(metadataPath), metadataBytes); assert.deepEqual(readFileSync(lockPath), lockBytes);",
+              'const futureRecord = JSON.stringify({ ...JSON.parse(metadataBytes.toString()), fetchedAt: "2099-01-01T00:00:00Z" });',
+              "writeFileSync(metadataPath, futureRecord);",
+              'verifyExplore(explore(freshnessOptions), first.snapshot.snapshot, false, ["ATLAS_CROSS_ATLAS_FRESHNESS_UNAVAILABLE"]);',
+              "assert.equal(contacts, 4);",
+              'assert.equal(readFileSync(metadataPath, "utf8"), futureRecord); assert.deepEqual(readFileSync(lockPath), lockBytes);',
+              "writeFileSync(metadataPath, metadataBytes);",
+              "console.log(JSON.stringify({ state: forced.state, code: forced.snapshot.findings[0]?.code, offlineCode: expired.payload.degradation.diagnostics[0]?.code }));",
               '} else if (input.mode === "first-metadata-cleanup" || input.mode === "first-metadata-cleanup-discarded") {',
               "const first = resolveAtlasCache(request, options);",
               'assert.equal(first.state, "resolved");',
@@ -1447,7 +1533,9 @@ for (const entry of readInstalledConsumerCorpus().cases) {
               }
             : {
                 code: entry.cacheFailure.expectedCode,
-                offlineCode: entry.cacheFailure.expectedCode,
+                offlineCode:
+                  entry.cacheFailure.expectedOfflineCode ??
+                  entry.cacheFailure.expectedCode,
                 state: "resolved",
               },
         );

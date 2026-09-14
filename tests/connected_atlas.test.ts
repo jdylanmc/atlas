@@ -30,11 +30,15 @@ import { hasConnectedAtlasEdges } from "../src/operations/connected_atlas_explor
 import { captureAtlasTree } from "../src/platform/atlas_tree_capture.ts";
 import { localAtlasCacheResolver } from "../src/platform/local_atlas_explore.ts";
 import {
+  runTrustedGit,
+  runTrustedGitBootstrap,
+  runTrustedGitForWrite,
+} from "../src/platform/trusted_git.ts";
+import {
   malformedProviderEnvelope,
   readSearchProviderEnvelopeCorpus,
 } from "./search_provider_envelope_corpus.ts";
 import type { SearchProvider } from "../src/graph/search_provider.ts";
-import { runTrustedGit, runTrustedGitForWrite } from "../src/platform/trusted_git.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const WORKSPACE = resolve(ROOT, ".test-workspaces", "connected-atlas");
@@ -511,6 +515,446 @@ test("Atlas cache resolves first contact, records Atlas Lock, and degrades to ca
   assert.equal(offline.state, "resolved");
   assert.equal(offline.snapshot.findings[0]?.code, "ATLAS_CROSS_ATLAS_CACHED_OFFLINE");
   assert.equal(offline.snapshot.findings[0].severity, "warning");
+});
+
+test("Fresh tracked Atlas entry avoids remote contact and preserves its fetch record", () => {
+  const home = resolve(WORKSPACE, "home-cache-freshness");
+  initRepository(home);
+  const homeCommit = commitAll(home, "home");
+  const remote = createBareRemote("tracked-freshness", [
+    page(
+      ".atlas/index.md",
+      "anchor:root",
+      "anchor",
+      "Fresh Home",
+      "atlas: {}",
+      "# Fresh Home",
+    ),
+  ]);
+  const declaration = trackedAtlasDeclaration("github.com", "owner", "freshness");
+  const parsed = parseTrackedAtlas({
+    id: declaration.declarationId,
+    page: {
+      atlas: {
+        branch: "main",
+        locator: "https://github.com/owner/freshness.git",
+        path: ".",
+        "refresh-window-days": 1,
+      },
+    },
+    path: ".atlas/tracked-atlases/freshness.md",
+    title: "Fresh Home",
+    type: "tracked-atlas",
+  });
+  assert.equal(parsed.state, "tracked");
+  const request = {
+    homeAtlasDirectory: home,
+    introducedByAnchorId: "anchor:root",
+    introducedByEdgeId: "edge:track",
+    trackedAtlas: parsed.trackedAtlas,
+  };
+  let now = "2026-09-01T00:00:00Z";
+  let fetches = 0;
+  const options = {
+    bootstrap: (repository: string, args: readonly string[]) => {
+      if (args[0] === "fetch") fetches++;
+      return runTrustedGitBootstrap(repository, args);
+    },
+    now: () => now,
+    resolveRemote: () => remote,
+  };
+  const first = resolveAtlasCache(request, options);
+  assert.equal(first.state, "resolved");
+  assert.equal(fetches, 1);
+  const lockFile = resolve(home, ".atlas", "atlas-cache", "atlas-lock.json");
+  const metadataFile = join(first.snapshot.cacheDirectory, "metadata.json");
+  const previousLock = readFileSync(lockFile);
+  const previousMetadata = readFileSync(metadataFile);
+  rmSync(remote, { recursive: true, force: true });
+  now = "2026-09-01T12:00:00Z";
+
+  const fresh = resolveAtlasCache(request, options);
+  assert.equal(fresh.state, "resolved");
+  assert.equal(fetches, 1, "A fresh entry must not attempt remote contact.");
+  assert.deepEqual(fresh.snapshot.findings, []);
+  assert.equal(fresh.snapshot.snapshot, first.snapshot.snapshot);
+  assert.deepEqual(fresh.snapshot.capturedFiles, first.snapshot.capturedFiles);
+  assert.deepEqual(readFileSync(lockFile), previousLock);
+  assert.deepEqual(readFileSync(metadataFile), previousMetadata);
+  rmSync(lockFile);
+  const recovered = resolveAtlasCache(request, options);
+  assert.equal(recovered.state, "resolved");
+  assert.equal(fetches, 1);
+  assert.deepEqual(readFileSync(lockFile), previousLock);
+  assert.deepEqual(readFileSync(metadataFile), previousMetadata);
+  assert.equal(git(home, ["rev-parse", "HEAD"]), homeCommit);
+  assert.equal(git(home, ["status", "--porcelain"]), "");
+});
+
+test("Explicit Atlas refresh bypasses a fresh entry and preserves fallback evidence", () => {
+  const home = resolve(WORKSPACE, "home-cache-explicit-refresh");
+  initRepository(home);
+  const homeCommit = commitAll(home, "home");
+  const initialPage = page(
+    ".atlas/index.md",
+    "anchor:root",
+    "anchor",
+    "Explicit Home",
+    "atlas: {}",
+    "# Initial knowledge",
+  );
+  const remote = createBareRemote("tracked-explicit-refresh", [initialPage]);
+  const request = {
+    homeAtlasDirectory: home,
+    introducedByAnchorId: "anchor:root",
+    introducedByEdgeId: "edge:track",
+    trackedAtlas: {
+      ...trackedAtlasDeclaration("github.com", "owner", "explicit-refresh"),
+      refreshWindowDays: 1,
+    },
+  };
+  let now = "2026-09-01T00:00:00Z";
+  let fetches = 0;
+  const options = {
+    bootstrap: (repository: string, args: readonly string[]) => {
+      if (args[0] === "fetch") fetches++;
+      return runTrustedGitBootstrap(repository, args);
+    },
+    now: () => now,
+    resolveRemote: () => remote,
+  };
+  const first = resolveAtlasCache(request, options);
+  assert.equal(first.state, "resolved");
+  const source = resolve(WORKSPACE, "tracked-explicit-refresh-source");
+  writeFileSync(
+    join(source, initialPage.path),
+    initialPage.text.replace("# Initial knowledge", "# Refreshed knowledge"),
+  );
+  const nextCommit = commitAll(source, "Advance the tracked Atlas");
+  git(source, ["push", remote, "main"]);
+  now = "2026-09-01T00:01:00Z";
+
+  const refreshed = resolveAtlasCache({ ...request, forceRefresh: true }, options);
+  assert.equal(refreshed.state, "resolved");
+  assert.equal(refreshed.snapshot.snapshot, nextCommit);
+  assert.notEqual(refreshed.snapshot.snapshot, first.snapshot.snapshot);
+  assert.deepEqual(refreshed.snapshot.findings, []);
+  assert.equal(fetches, 2);
+  const lockFile = resolve(home, ".atlas", "atlas-cache", "atlas-lock.json");
+  const metadataFile = join(first.snapshot.cacheDirectory, "metadata.json");
+  const previousLock = readFileSync(lockFile);
+  const previousMetadata = readFileSync(metadataFile);
+  assert.match(previousMetadata.toString(), /2026-09-01T00:01:00Z/u);
+  rmSync(remote, { recursive: true, force: true });
+  now = "2026-09-01T00:02:00Z";
+
+  const offline = resolveAtlasCache({ ...request, forceRefresh: true }, options);
+  assert.equal(offline.state, "resolved");
+  assert.equal(offline.snapshot.snapshot, nextCommit);
+  assert.equal(offline.snapshot.findings[0]?.code, "ATLAS_CROSS_ATLAS_CACHED_OFFLINE");
+  assert.equal(fetches, 3);
+  assert.deepEqual(readFileSync(lockFile), previousLock);
+  assert.deepEqual(readFileSync(metadataFile), previousMetadata);
+
+  const fresh = resolveAtlasCache(request, options);
+  assert.equal(fresh.state, "resolved");
+  assert.equal(fresh.snapshot.snapshot, nextCommit);
+  assert.deepEqual(fresh.snapshot.findings, []);
+  assert.equal(fetches, 3);
+  assert.equal(git(home, ["rev-parse", "HEAD"]), homeCommit);
+  assert.equal(git(home, ["status", "--porcelain"]), "");
+});
+
+test("Tracked Atlas refresh windows reject invalid declarations and numeric requests", () => {
+  const tracked = trackedAtlasDeclaration("github.com", "owner", "window-validation");
+  const object = {
+    id: tracked.declarationId,
+    page: {
+      atlas: {
+        branch: "main",
+        locator: "https://github.com/owner/window-validation.git",
+        path: ".",
+      },
+    },
+    path: ".atlas/tracked-atlases/window-validation.md",
+    title: "Window validation",
+    type: "tracked-atlas",
+  };
+  for (const value of [null, true, "1", [], {}, -1, NaN, Infinity, -Infinity]) {
+    const result = parseTrackedAtlas({
+      ...object,
+      page: { atlas: { ...object.page.atlas, "refresh-window-days": value } },
+    });
+    assert.equal(result.state, "invalid");
+    assert.equal(result.findings[0]?.code, "ATLAS_CROSS_ATLAS_REFRESH_WINDOW_INVALID");
+    assert.equal(result.findings[0].severity, "error");
+    assert.equal(result.findings[0].path, object.path);
+  }
+  for (const value of [undefined, 0, 0.25, Number.MAX_VALUE]) {
+    const result = parseTrackedAtlas({
+      ...object,
+      page: { atlas: { ...object.page.atlas, "refresh-window-days": value } },
+    });
+    assert.equal(result.state, "tracked");
+    assert.equal(result.trackedAtlas.refreshWindowDays, value);
+    assert.equal(
+      Object.hasOwn(result.trackedAtlas, "refreshWindowDays"),
+      value !== undefined,
+    );
+  }
+  const home = resolve(WORKSPACE, "invalid-window-no-effects");
+  rmSync(home, { recursive: true, force: true });
+  for (const value of [-1, NaN, Infinity, -Infinity]) {
+    const result = resolveAtlasCache({
+      homeAtlasDirectory: home,
+      introducedByAnchorId: "anchor:root",
+      introducedByEdgeId: "edge:track",
+      trackedAtlas: { ...tracked, refreshWindowDays: value },
+    });
+    assert.equal(result.state, "unreachable");
+    assert.equal(result.findings[0]?.code, "ATLAS_CROSS_ATLAS_REFRESH_WINDOW_INVALID");
+    assert.equal(result.findings[0].severity, "error");
+    assert.equal(existsSync(home), false);
+  }
+});
+
+test("A fractional freshness window expires at its boundary and replaces rewritten history", () => {
+  const home = resolve(WORKSPACE, "home-cache-expiry");
+  initRepository(home);
+  const homeCommit = commitAll(home, "home");
+  const initial = page(
+    ".atlas/index.md",
+    "anchor:root",
+    "anchor",
+    "History",
+    "atlas: {}",
+    "# Original history",
+  );
+  const remote = createBareRemote("tracked-expiry", [initial]);
+  const source = resolve(WORKSPACE, "tracked-expiry-source");
+  const request = {
+    homeAtlasDirectory: home,
+    introducedByAnchorId: "anchor:root",
+    introducedByEdgeId: "edge:track",
+    trackedAtlas: {
+      ...trackedAtlasDeclaration("github.com", "owner", "expiry"),
+      refreshWindowDays: 0.25,
+    },
+  };
+  let now = "2026-09-01T00:00:00Z";
+  const options = { now: () => now, resolveRemote: () => remote };
+  const first = resolveAtlasCache(request, options);
+  assert.equal(first.state, "resolved");
+  git(source, ["checkout", "--orphan", "rewritten"]);
+  writeFileSync(
+    join(source, initial.path),
+    initial.text.replace("# Original history", "# Replacement history"),
+  );
+  const rewritten = commitAll(source, "Replace history");
+  git(source, ["push", "--force", remote, "rewritten:main"]);
+  assert.equal(git(source, ["rev-list", "--parents", "-n", "1", rewritten]), rewritten);
+  now = "2026-09-01T05:59:59.999Z";
+  const fresh = resolveAtlasCache(request, options);
+  assert.equal(fresh.state, "resolved");
+  assert.equal(fresh.snapshot.snapshot, first.snapshot.snapshot);
+  now = "2026-09-01T06:00:00Z";
+  const expired = resolveAtlasCache(request, options);
+  assert.equal(expired.state, "resolved");
+  assert.equal(expired.snapshot.snapshot, rewritten);
+  assert.deepEqual(expired.snapshot.findings, []);
+  assert.match(
+    new TextDecoder().decode(expired.snapshot.capturedFiles[0]?.bytes),
+    /Replacement history/u,
+  );
+  const metadata = readFileSync(
+    join(expired.snapshot.cacheDirectory, "metadata.json"),
+    "utf8",
+  );
+  assert.match(metadata, /2026-09-01T06:00:00Z/u);
+  assert.equal(git(home, ["rev-parse", "HEAD"]), homeCommit);
+  assert.equal(git(home, ["status", "--porcelain"]), "");
+});
+
+test("Freshness reports missing or unusable generated references before repairing them", async (t) => {
+  for (const mode of ["missing-reference", "uncapturable-snapshot"]) {
+    await t.test(mode, () => {
+      const home = resolve(WORKSPACE, `home-freshness-${mode}`);
+      initRepository(home);
+      commitAll(home, "home");
+      const remote = createBareRemote(`freshness-${mode}`, [
+        page(
+          ".atlas/index.md",
+          "anchor:root",
+          "anchor",
+          "Repair",
+          "atlas: {}",
+          "# Repair",
+        ),
+      ]);
+      const source = resolve(WORKSPACE, `freshness-${mode}-source`);
+      const request = {
+        homeAtlasDirectory: home,
+        introducedByAnchorId: "anchor:root",
+        introducedByEdgeId: "edge:track",
+        trackedAtlas: {
+          ...trackedAtlasDeclaration("github.com", "owner", mode),
+          refreshWindowDays: 1,
+        },
+      };
+      let now = "2026-09-01T00:00:00Z";
+      const options = { now: () => now, resolveRemote: () => remote };
+      const first = resolveAtlasCache(request, options);
+      assert.equal(first.state, "resolved");
+      const repository = join(first.snapshot.cacheDirectory, "repository.git");
+      const cacheGit = (args: readonly string[]) =>
+        git(repository, ["--git-dir=.", ...args]);
+      if (mode === "missing-reference") {
+        cacheGit(["update-ref", "-d", "refs/heads/main"]);
+      } else {
+        git(source, ["rm", "-r", ".atlas"]);
+        const uncapturable = commitAll(
+          source,
+          "Produce an unusable generated snapshot",
+        );
+        git(source, ["push", remote, "main"]);
+        cacheGit(["fetch", remote, "+refs/heads/main:refs/heads/main"]);
+        const metadataPath = join(first.snapshot.cacheDirectory, "metadata.json");
+        const metadata: unknown = JSON.parse(readFileSync(metadataPath, "utf8"));
+        assert.ok(
+          typeof metadata === "object" && metadata !== null && !Array.isArray(metadata),
+        );
+        writeFileSync(
+          metadataPath,
+          JSON.stringify({ ...metadata, snapshot: uncapturable }),
+        );
+        git(source, ["push", "--force", remote, `${first.snapshot.snapshot}:main`]);
+      }
+      now = "2026-09-01T01:00:00Z";
+      const repaired = resolveAtlasCache(request, options);
+      assert.equal(repaired.state, "resolved");
+      assert.equal(repaired.snapshot.snapshot, first.snapshot.snapshot);
+      assert.deepEqual(repaired.snapshot.findings, []);
+      assert.deepEqual(
+        repaired.maintenanceFindings?.map(({ code }) => code),
+        ["ATLAS_CROSS_ATLAS_FRESHNESS_UNAVAILABLE"],
+      );
+      assert.equal(cacheGit(["rev-parse", "refs/heads/main"]), first.snapshot.snapshot);
+    });
+  }
+});
+
+test("Freshness diagnoses untrustworthy records without swallowing unexpected faults", (context) => {
+  const home = resolve(WORKSPACE, "home-cache-freshness-records");
+  initRepository(home);
+  commitAll(home, "home");
+  const remote = createBareRemote("tracked-freshness-records", [
+    page(
+      ".atlas/index.md",
+      "anchor:root",
+      "anchor",
+      "Records",
+      "atlas: {}",
+      "# Records",
+    ),
+  ]);
+  const request = {
+    homeAtlasDirectory: home,
+    introducedByAnchorId: "anchor:root",
+    introducedByEdgeId: "edge:track",
+    trackedAtlas: {
+      ...trackedAtlasDeclaration("github.com", "owner", "records"),
+      refreshWindowDays: 1,
+    },
+  };
+  let now = "2026-09-01T00:00:00Z";
+  const options = { now: () => now, resolveRemote: () => remote };
+  const first = resolveAtlasCache(request, options);
+  assert.equal(first.state, "resolved");
+  const metadataPath = join(first.snapshot.cacheDirectory, "metadata.json");
+  const metadataBytes = readFileSync(metadataPath);
+  const metadata: unknown = JSON.parse(metadataBytes.toString());
+  assert.ok(
+    typeof metadata === "object" && metadata !== null && !Array.isArray(metadata),
+  );
+  const lockPath = resolve(home, ".atlas", "atlas-cache", "atlas-lock.json");
+  const lockBytes = readFileSync(lockPath);
+  rmSync(remote, { recursive: true, force: true });
+  const variants = [
+    { name: "missing", content: undefined, now: "2026-09-01T01:00:00Z" },
+    { name: "invalid-json", content: "{", now: "2026-09-01T01:00:00Z" },
+    {
+      name: "snapshot-mismatch",
+      content: JSON.stringify({ ...metadata, snapshot: "different" }),
+      now: "2026-09-01T01:00:00Z",
+    },
+    {
+      name: "date-only",
+      content: JSON.stringify({ ...metadata, fetchedAt: "2026-09-01" }),
+      now: "2026-09-01T01:00:00Z",
+    },
+    {
+      name: "leap-second",
+      content: JSON.stringify({ ...metadata, fetchedAt: "1990-12-31T23:59:60Z" }),
+      now: "2026-09-01T01:00:00Z",
+    },
+    { name: "future", content: metadataBytes.toString(), now: "2026-08-31T23:59:59Z" },
+    { name: "invalid-clock", content: metadataBytes.toString(), now: "not-an-instant" },
+  ];
+  for (const variant of variants) {
+    now = variant.now;
+    if (variant.content === undefined) rmSync(metadataPath);
+    else writeFileSync(metadataPath, variant.content);
+    const result = resolveAtlasCache(request, options);
+    assert.equal(result.state, "resolved", variant.name);
+    assert.equal(result.snapshot.snapshot, first.snapshot.snapshot);
+    assert.equal(result.snapshot.findings[0]?.code, "ATLAS_CROSS_ATLAS_CACHED_OFFLINE");
+    assert.deepEqual(
+      result.maintenanceFindings?.map(({ code }) => code),
+      ["ATLAS_CROSS_ATLAS_FRESHNESS_UNAVAILABLE"],
+      variant.name,
+    );
+    assert.deepEqual(readFileSync(lockPath), lockBytes);
+    if (variant.content === undefined) assert.equal(existsSync(metadataPath), false);
+    else assert.equal(readFileSync(metadataPath, "utf8"), variant.content);
+  }
+  writeFileSync(metadataPath, metadataBytes);
+  now = "2026-09-01T01:00:00Z";
+  const zeroWindow = resolveAtlasCache(
+    {
+      ...request,
+      trackedAtlas: { ...request.trackedAtlas, refreshWindowDays: 0 },
+    },
+    options,
+  );
+  assert.equal(zeroWindow.state, "resolved");
+  assert.equal(
+    zeroWindow.snapshot.findings[0]?.code,
+    "ATLAS_CROSS_ATLAS_CACHED_OFFLINE",
+  );
+  assert.equal(zeroWindow.maintenanceFindings, undefined);
+  assert.deepEqual(readFileSync(metadataPath), metadataBytes);
+  const unexpected = new Error("Fixture unexpected metadata read fault");
+  const originalRead = fs.readFileSync;
+  const read = context.mock.method(
+    fs,
+    "readFileSync",
+    (...args: Parameters<typeof fs.readFileSync>) => {
+      if (String(args[0]) === metadataPath) throw unexpected;
+      return originalRead(...args);
+    },
+  );
+  syncBuiltinESMExports();
+  try {
+    assert.throws(
+      () => resolveAtlasCache(request, options),
+      (error: unknown) => error === unexpected,
+    );
+  } finally {
+    read.mock.restore();
+    syncBuiltinESMExports();
+  }
+  assert.deepEqual(readFileSync(metadataPath), metadataBytes);
+  assert.deepEqual(readFileSync(lockPath), lockBytes);
 });
 
 test("Atlas cache retains its last usable snapshot after an uncapturable remote update", () => {

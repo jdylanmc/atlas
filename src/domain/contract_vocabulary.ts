@@ -42,6 +42,10 @@ export const contractVocabularyBindings = Object.freeze([
     term: "Atlas Snapshot",
   }),
   Object.freeze({
+    exportedIdentifiers: Object.freeze(["AtlasRefreshResult"]),
+    term: "Atlas Refresh",
+  }),
+  Object.freeze({
     exportedIdentifiers: Object.freeze(["AtlasInitializationResult"]),
     term: "Atlas Initialization",
   }),
@@ -226,10 +230,6 @@ export const unboundGlossaryTerms = Object.freeze([
     reason:
       "Realized as frontmatter schema-version fields, not a dedicated exported type.",
     term: "Atlas Schema",
-  }),
-  Object.freeze({
-    reason: "Not yet implemented (connected Atlas feature).",
-    term: "Atlas Refresh",
   }),
   Object.freeze({
     reason: "Not yet implemented (connected Atlas feature).",
