@@ -222,6 +222,40 @@ test("single-Atlas Explore serializes the checkpoint-linked fixture deterministi
   assert.equal(`${JSON.stringify(result, null, 2)}\n`, singleAtlasResultFixture);
 });
 
+test("Explore identifies catalog fallback without inventing an Edge", () => {
+  const result = exploreCaptured(completeAtlas(), "canonical bytes");
+  const top = result.results[0];
+  assert.ok(top);
+  assert.deepEqual(
+    top.route.map(({ objectId }) => objectId),
+    ["anchor:root", "anchor:lint", "concept:canonical-serialization"],
+  );
+  assert.equal(top.route[1]?.edgeId, undefined);
+  assert.deepEqual(top.route[1]?.catalogFallback, { anchorId: "anchor:root" });
+  assert.equal(top.route[0]?.catalogFallback, undefined);
+  assert.equal(top.route[2]?.catalogFallback, undefined);
+  assert.equal(top.route[2]?.edgeId, "edge:lint-covers-canonical-serialization");
+  assert.equal(top.route[1].reanchorIndex, 0);
+  for (const maxRouteEdges of [0, 1, 2]) {
+    const limited = exploreCaptured(
+      completeAtlas(),
+      "canonical bytes",
+      lexicalSearchProvider,
+      {
+        ...budgets,
+        maxRouteEdges,
+      },
+    );
+    assert.equal(
+      limited.results.some(
+        ({ result }) => result.id === "concept:canonical-serialization",
+      ),
+      maxRouteEdges === 2,
+    );
+    assert.ok(limited.results.every(({ route }) => route.length <= maxRouteEdges + 1));
+  }
+});
+
 test("Explore returns shortest Anchor-to-result route with cited context", () => {
   const result = runExploreOperation({
     baseSnapshot: {

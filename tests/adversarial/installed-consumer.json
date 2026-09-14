@@ -1338,6 +1338,7 @@
       ],
       "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
       "connectedExplore": {
+        "expectedCatalogTargetId": "anchor:lint",
         "query": "canonical serialization",
         "expectedConceptId": "concept:canonical-serialization",
         "expectedSourceId": "source:atlas-sdk-lint",
@@ -1358,6 +1359,7 @@
       ],
       "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
       "connectedExplore": {
+        "expectedCatalogTargetId": "anchor:lint",
         "query": "canonical serialization",
         "expectedConceptId": "concept:canonical-serialization",
         "expectedSourceId": "source:atlas-sdk-lint",
