@@ -22,6 +22,7 @@ import {
   exploreLexicalTokens,
   lexicalSearchProvider,
 } from "../src/graph/lexical_search_provider.ts";
+import { validateSearchProviderRanking } from "../src/graph/search_provider.ts";
 import { loadAndValidateAtlasInput } from "../src/lint/validate_atlas_input.ts";
 import {
   runExploreOperation,
@@ -1066,6 +1067,76 @@ test("Search Provider diagnostics remain visible without granting candidate auth
     result.degradation.diagnostics.some(
       (diagnostic) => diagnostic.code === "ATLAS_EXPLORE_PROVIDER_CANDIDATE_INVALID",
     ),
+  );
+});
+
+test("Search Provider validation rejects a ranking without candidates", () => {
+  assert.throws(
+    () =>
+      validateSearchProviderRanking(
+        {
+          diagnostics: [],
+        },
+        new Set(["concept:target"]),
+      ),
+    /must return candidates/u,
+  );
+});
+
+test("Search Provider validation replaces malformed diagnostics within its bound", () => {
+  const validation = validateSearchProviderRanking(
+    {
+      candidates: [{ objectId: "concept:target", score: 1 }],
+      diagnostics: Array.from({ length: 40 }, (_, index) =>
+        index % 2 === 0
+          ? null
+          : {
+              code: "not-an-atlas-code",
+              message: "",
+              severity: "error",
+            },
+      ),
+    },
+    new Set(["concept:target"]),
+  );
+
+  assert.deepEqual(validation.ranked, [
+    { objectId: "concept:target", score: 1 },
+  ]);
+  assert.equal(validation.diagnostics.length, 32);
+  assert.equal(
+    validation.diagnostics.every(
+      (finding) =>
+        finding.code === "ATLAS_EXPLORE_PROVIDER_DIAGNOSTIC_INVALID" &&
+        finding.message ===
+          "Search Provider returned a diagnostic Explore could not use." &&
+        finding.severity === "warning",
+    ),
+    true,
+  );
+});
+
+test("Search Provider validation bounds candidate intake to Atlas identity", () => {
+  const validation = validateSearchProviderRanking(
+    [
+      { objectId: "concept:a", score: 2 },
+      { objectId: "concept:b", score: 1 },
+      { objectId: "concept:a", score: 3 },
+      { objectId: "concept:outside", score: 100 },
+    ],
+    new Set(["concept:a", "concept:b"]),
+  );
+
+  assert.deepEqual(validation.ranked, [
+    { objectId: "concept:a", score: 2 },
+    { objectId: "concept:b", score: 1 },
+  ]);
+  assert.deepEqual(
+    validation.diagnostics.map((finding) => finding.message),
+    [
+      "Search Provider returned a candidate Explore could not use.",
+      "Search Provider returned more candidates than Explore could use.",
+    ],
   );
 });
 
