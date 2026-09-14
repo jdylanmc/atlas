@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   readlinkSync,
   rmSync,
   symlinkSync,
@@ -15,6 +16,7 @@ import { resolve } from "node:path";
 import test, { after } from "node:test";
 import {
   completeOperationWorkspace,
+  OperationWorkspaceOwnershipConflict,
   type OperationWorkspaceGit,
 } from "../src/platform/operation_workspace.ts";
 
@@ -130,10 +132,7 @@ test("Operation Workspace completion preserves committed bytes, modes, links, de
     lstatSync(resolve(root, "remove.txt"), { throwIfNoEntry: false }),
     undefined,
   );
-  assert.equal(
-    lstatSync(resolve(root, "vendor"), { throwIfNoEntry: false }),
-    undefined,
-  );
+  assert.deepEqual(readdirSync(resolve(root, "vendor", "module")), []);
 });
 
 test("Operation Workspace completion refuses malformed and unsupported trees", () => {
@@ -240,19 +239,19 @@ test("Operation Workspace completion refuses unowned path changes", () => {
       base: treeEntry("100644", "blob", "base", "removed"),
       committed: "",
       path: "removed",
-      expected: /removed tracked path contains unowned changes/u,
+      expectedKind: "removed-path",
     },
     {
       base: "",
       committed: treeEntry("100644", "blob", "next", "added"),
       path: "added",
-      expected: /committed path contains unowned changes/u,
+      expectedKind: "committed-path",
     },
     {
       base: treeEntry("100644", "blob", "base", "changed"),
       committed: treeEntry("100644", "blob", "next", "changed"),
       path: "changed",
-      expected: /committed path contains unowned changes/u,
+      expectedKind: "committed-path",
     },
   ] as const;
   for (const scenario of scenarios) {
@@ -272,7 +271,10 @@ test("Operation Workspace completion refuses unowned path changes", () => {
             trees: { base: scenario.base, committed: scenario.committed },
           }),
         ),
-      scenario.expected,
+      (error) =>
+        error instanceof OperationWorkspaceOwnershipConflict &&
+        error.kind === scenario.expectedKind &&
+        error.path === scenario.path,
     );
     assert.equal(readFileSync(resolve(root, scenario.path), "utf8"), "unowned\n");
   }
@@ -298,8 +300,50 @@ test("Operation Workspace completion refuses non-directory parents", () => {
             },
           }),
         ),
-      /parent is not an owned directory/u,
+      (error) =>
+        error instanceof OperationWorkspaceOwnershipConflict &&
+        error.kind === "parent" &&
+        error.path === "blocked/file",
     );
+  }
+});
+
+test("Operation Workspace completion refuses competing gitlink paths", () => {
+  for (const location of ["committed", "removed"] as const) {
+    for (const kind of ["file", "directory"] as const) {
+      const root = workspace();
+      const path = resolve(root, "vendor", "module");
+      mkdirSync(resolve(root, "vendor"), { recursive: true });
+      if (kind === "file") writeFileSync(path, "competing\n");
+      else {
+        mkdirSync(path);
+        writeFileSync(resolve(path, "README.md"), "competing\n");
+      }
+      const gitlink = treeEntry("160000", "commit", "submodule", "vendor/module");
+      assert.throws(
+        () =>
+          completeOperationWorkspace(
+            root,
+            "base",
+            "committed",
+            gitAdapter({
+              trees: {
+                base: location === "removed" ? gitlink : "",
+                committed: location === "committed" ? gitlink : "",
+              },
+            }),
+          ),
+        (error) =>
+          error instanceof OperationWorkspaceOwnershipConflict &&
+          error.kind === "gitlink" &&
+          error.path === "vendor/module",
+      );
+      if (kind === "file") {
+        assert.equal(readFileSync(path, "utf8"), "competing\n");
+      } else {
+        assert.equal(readFileSync(resolve(path, "README.md"), "utf8"), "competing\n");
+      }
+    }
   }
 });
 
@@ -341,7 +385,10 @@ test("Operation Workspace completion distinguishes mismatched path types and lin
             },
           }),
         ),
-      /committed path contains unowned changes/u,
+      (error) =>
+        error instanceof OperationWorkspaceOwnershipConflict &&
+        error.kind === "committed-path" &&
+        error.path === "entry",
     );
   }
 });

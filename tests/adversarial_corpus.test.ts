@@ -1609,7 +1609,11 @@ for (const entry of proposalWorkspaceCorpus.cases) {
   test(`adversarial Proposal workspace corpus: ${entry.name}`, () => {
     executedCases += 1;
     assert.equal(entry.gate, "proposal-workspace");
-    assert.equal(entry.expectation, "accept");
+    assert.equal(
+      entry.expectation,
+      entry.kind === "ownership-conflict" ? "reject" : "accept",
+    );
+    assert.match(entry.finding, /^(?:BALERION|BOLAS)-87-R[12]-\d{2}$/u);
   });
 }
 

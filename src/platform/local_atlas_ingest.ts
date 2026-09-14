@@ -22,7 +22,12 @@ import {
   type AtlasIngestWorkflowState,
 } from "../operations/ingest_operation.ts";
 import { captureLocalAtlasSnapshot } from "./local_atlas_snapshot.ts";
-import { completeOperationWorkspace } from "./operation_workspace.ts";
+import {
+  completeOperationWorkspace,
+  discardOwnedOperationWorkspace,
+  isOperationWorkspaceOwnershipConflict,
+  type OperationWorkspaceOwnershipConflict,
+} from "./operation_workspace.ts";
 import {
   runTrustedGit,
   runTrustedGitForWrite,
@@ -307,7 +312,11 @@ export function runLocalAtlasIngest(
   }
 
   const workspace = workspacePath(root, workflowState.proposalBranch);
-  return runAtlasIngestWorkflow(workflowState, request, {
+  const progress: {
+    completionConflict?: OperationWorkspaceOwnershipConflict;
+    created: boolean;
+  } = { created: false };
+  const result = runAtlasIngestWorkflow(workflowState, request, {
     capturedSources: () =>
       capturedSourceRevisions(
         root,
@@ -334,7 +343,14 @@ export function runLocalAtlasIngest(
         `refs/heads/${workflowState.proposalBranch}`,
         commit,
       ]);
-      completeOperationWorkspace(workspace, parent, commit);
+      try {
+        completeOperationWorkspace(workspace, parent, commit);
+      } catch (error) {
+        if (isOperationWorkspaceOwnershipConflict(error)) {
+          progress.completionConflict = error;
+        }
+        throw error;
+      }
       return { commit, receipt: commit };
     },
     createProposalWorktree: () => {
@@ -348,6 +364,7 @@ export function runLocalAtlasIngest(
         workspace,
         workflowState.targetBranch,
       ]);
+      progress.created = true;
       const gitDirectory = git(workspace, ["rev-parse", "--git-dir"]);
       const gitDirectoryPath = resolve(workspace, gitDirectory);
       mkdirSync(join(gitDirectoryPath, "info"), { recursive: true });
@@ -398,4 +415,19 @@ export function runLocalAtlasIngest(
       };
     },
   });
+  if (progress.completionConflict !== undefined) {
+    return Object.freeze({
+      ...result,
+      handoff: Object.freeze({
+        ...result.handoff,
+        recommendedNextAction:
+          `Operation Workspace ${workspace} was retained for inspection after an ownership conflict at ` +
+          `${progress.completionConflict.path}. Resolve or preserve the competing path before retrying.`,
+      }),
+    });
+  }
+  if (progress.created && result.completion !== "completed") {
+    discardOwnedOperationWorkspace(root, workspace, workflowState.proposalBranch);
+  }
+  return result;
 }

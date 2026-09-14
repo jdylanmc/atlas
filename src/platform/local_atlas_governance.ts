@@ -7,7 +7,6 @@ import {
   readFileSync,
   realpathSync,
   renameSync,
-  rmSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -24,7 +23,12 @@ import {
 import { canonicalJson } from "../operations/operation_support.ts";
 import { runLintOperation } from "../operations/lint_operation.ts";
 import { captureLocalAtlasSnapshot } from "./local_atlas_snapshot.ts";
-import { completeOperationWorkspace } from "./operation_workspace.ts";
+import {
+  completeOperationWorkspace,
+  discardOwnedOperationWorkspace,
+  isOperationWorkspaceOwnershipConflict,
+  type OperationWorkspaceOwnershipConflict,
+} from "./operation_workspace.ts";
 import {
   runTrustedGit,
   runTrustedGitForWrite,
@@ -172,24 +176,6 @@ function excludeOperationWorkspaces(repository: string): void {
   appendFileSync(excludePath, `\n${entry}\n`, "utf8");
 }
 
-// Best-effort teardown of the branch and Operation Workspace a failed attempt
-// created. The proposal label is deterministic in (target HEAD, authored
-// intent), so without this an ordinary authoring mistake — content that fails
-// Lint — would leave the worktree and branch behind and wedge every retry at the
-// same HEAD behind ATLAS_GOVERNANCE_WORKSPACE_EXISTS. Failures here are swallowed
-// on purpose: the worst case is the pre-existing orphan, and surfacing a
-// teardown error would mask the real Operation Result the caller must see.
-function discardProposalWorktree(
-  repository: string,
-  workspace: string,
-  proposalBranch: string,
-): void {
-  runTrustedGitForWrite(repository, ["worktree", "remove", "--force", workspace]);
-  runTrustedGitForWrite(repository, ["worktree", "prune"]);
-  runTrustedGitForWrite(repository, ["branch", "-D", proposalBranch]);
-  rmSync(workspace, { force: true, recursive: true });
-}
-
 export function createLocalAtlasGovernanceState(
   repository: string,
   request: AtlasGovernanceRequest,
@@ -292,7 +278,11 @@ export function runLocalAtlasGovernance(
   }
 
   const workspace = workspacePath(root, workflowState.proposalBranch);
-  const progress: { created: boolean; retirementConflict?: string } = {
+  const progress: {
+    completionConflict?: OperationWorkspaceOwnershipConflict;
+    created: boolean;
+    retirementConflict?: string;
+  } = {
     created: false,
   };
   const result = runAtlasGovernanceWorkflow(workflowState, request, {
@@ -316,11 +306,17 @@ export function runLocalAtlasGovernance(
         `refs/heads/${workflowState.proposalBranch}`,
         commit,
       ]);
-      completeOperationWorkspace(workspace, parent, commit);
+      try {
+        completeOperationWorkspace(workspace, parent, commit);
+      } catch (error) {
+        if (isOperationWorkspaceOwnershipConflict(error)) {
+          progress.completionConflict = error;
+        }
+        throw error;
+      }
       return { commit, receipt: commit };
     },
     createProposalWorktree: () => {
-      progress.created = true;
       mkdirSync(dirname(workspace), { recursive: true });
       gitWrite(root, [
         "worktree",
@@ -331,6 +327,7 @@ export function runLocalAtlasGovernance(
         workspace,
         workflowState.targetBranch,
       ]);
+      progress.created = true;
       const gitDirectory = git(workspace, ["rev-parse", "--git-dir"]);
       const gitDirectoryPath = resolve(workspace, gitDirectory);
       mkdirSync(join(gitDirectoryPath, "info"), { recursive: true });
@@ -410,12 +407,23 @@ export function runLocalAtlasGovernance(
       }),
     });
   }
+  if (progress.completionConflict !== undefined) {
+    return Object.freeze({
+      ...result,
+      handoff: Object.freeze({
+        ...result.handoff,
+        recommendedNextAction:
+          `Operation Workspace ${workspace} was retained for inspection after an ownership conflict at ` +
+          `${progress.completionConflict.path}. Resolve or preserve the competing path before retrying.`,
+      }),
+    });
+  }
   // A worktree this invocation created but could not carry to a completed
   // proposal is torn down so a corrected retry at the same target HEAD is not
   // wedged. A completed proposal is kept for review; a pre-existing workspace
   // (created === false) is left untouched.
   if (progress.created && result.completion !== "completed") {
-    discardProposalWorktree(root, workspace, workflowState.proposalBranch);
+    discardOwnedOperationWorkspace(root, workspace, workflowState.proposalBranch);
   }
   return result;
 }

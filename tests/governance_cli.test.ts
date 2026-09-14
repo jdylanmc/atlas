@@ -7,6 +7,7 @@ import fs, {
   lstatSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   readlinkSync,
   rmSync,
   symlinkSync,
@@ -37,7 +38,10 @@ import {
 import { attestationPayloadDigest } from "../src/operations/operation_support.ts";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
 import { exerciseGovernanceRetirement } from "./governance_retirement_probe.ts";
-import { readProposalWorkspaceCorpus } from "./proposal_workspace_corpus.ts";
+import {
+  readProposalWorkspaceCorpus,
+  type ProposalWorkspaceOwnershipConflictCase,
+} from "./proposal_workspace_corpus.ts";
 import {
   createLocalAtlasGovernanceState,
   notCompletedLocalGovernanceResult,
@@ -95,6 +99,35 @@ function git(repository: string, args: readonly string[]): string {
   return result.stdout.trim();
 }
 
+function gitWithFixtureIdentity(repository: string, args: readonly string[]): string {
+  return git(repository, [
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    ...args,
+  ]);
+}
+
+function addTrackedGitlink(repository: string): void {
+  const object = git(repository, ["rev-parse", "HEAD"]);
+  git(repository, [
+    "update-index",
+    "--add",
+    "--cacheinfo",
+    `160000,${object},vendor/module`,
+  ]);
+  git(repository, [
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    "commit",
+    "-m",
+    "Track uninitialized gitlink",
+  ]);
+}
+
 function runAtlas(arguments_: readonly string[]): CommandResult {
   const result = spawnSync(process.execPath, [COMMAND, ...arguments_], {
     cwd: ROOT,
@@ -107,6 +140,12 @@ function runAtlas(arguments_: readonly string[]): CommandResult {
   });
   assert.equal(result.error, undefined);
   return { status: result.status, stderr: result.stderr, stdout: result.stdout };
+}
+
+function writtenText(data: Parameters<typeof fs.writeFileSync>[1]): string {
+  if (typeof data === "string") return data;
+  if (Buffer.isBuffer(data)) return data.toString("utf8");
+  return "";
 }
 
 function fixtureJson(name: string): string {
@@ -1245,6 +1284,123 @@ for (const entry of readProposalWorkspaceCorpus().cases.filter(
       repeated.handoff.validationState.findings[0]?.code,
       "ATLAS_GOVERNANCE_WORKSPACE_EXISTS",
     );
+  });
+}
+
+for (const entry of readProposalWorkspaceCorpus().cases.filter(
+  (candidate): candidate is ProposalWorkspaceOwnershipConflictCase =>
+    candidate.kind === "ownership-conflict" && candidate.operation === "governance",
+)) {
+  test(`Proposal workspace corpus: ${entry.name}`, (context) => {
+    const repository = resolve(WORKSPACE, entry.name);
+    initAtlasRepository(repository);
+    if (entry.conflict.kind === "parent") {
+      mkdirSync(resolve(repository, entry.conflict.path), { recursive: true });
+      writeFileSync(
+        resolve(repository, entry.conflict.path, "tracked.md"),
+        "tracked nested host file\n",
+      );
+      git(repository, ["add", `${entry.conflict.path}/tracked.md`]);
+      git(repository, [
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "commit",
+        "-m",
+        "Add nested host file",
+      ]);
+    }
+    const targetHead = git(repository, ["rev-parse", "HEAD"]);
+    const request = createPrincipleRequest();
+    const state = createLocalAtlasGovernanceState(repository, request);
+    const workspace = resolve(
+      repository,
+      ".atlas-operation-workspaces",
+      state.proposalBranch,
+    );
+    const conflict = resolve(workspace, entry.conflict.path);
+    const originalWrite = fs.writeFileSync;
+    let injected = false;
+    const interception = context.mock.method(
+      fs,
+      "writeFileSync",
+      (
+        file: Parameters<typeof fs.writeFileSync>[0],
+        data: Parameters<typeof fs.writeFileSync>[1],
+        options?: Parameters<typeof fs.writeFileSync>[2],
+      ) => {
+        originalWrite(file, data, options);
+        if (
+          !injected &&
+          String(file).endsWith(".atlas-operation-state.json.next") &&
+          writtenText(data).includes('"effect":"write-change-set"')
+        ) {
+          injected = true;
+          mkdirSync(dirname(conflict), { recursive: true });
+          originalWrite(conflict, entry.conflict.content);
+        }
+      },
+    );
+    syncBuiltinESMExports();
+    let result: AtlasGovernanceResult;
+    try {
+      result = runLocalAtlasGovernance(repository, request);
+    } finally {
+      interception.mock.restore();
+      syncBuiltinESMExports();
+    }
+
+    assert.equal(injected, true);
+    assert.equal(result.completion, "not-completed");
+    assert.equal(result.handoff.validationState.findings[0]?.code, entry.expectedCode);
+    assert.equal(git(repository, ["rev-parse", "main"]), targetHead);
+    assert.notEqual(git(repository, ["branch", "--list", state.proposalBranch]), "");
+    assert.equal(existsSync(workspace), true);
+    assert.equal(readFileSync(conflict, "utf8"), entry.conflict.content);
+    assert.match(result.handoff.recommendedNextAction, /retained.*inspection/iu);
+  });
+}
+
+for (const entry of readProposalWorkspaceCorpus().cases.filter(
+  (candidate) =>
+    candidate.kind === "gitlink-rebase-completion" &&
+    candidate.operation === "governance",
+)) {
+  test(`Proposal workspace corpus: ${entry.name}`, () => {
+    const repository = resolve(WORKSPACE, entry.name);
+    initAtlasRepository(repository);
+    addTrackedGitlink(repository);
+    const result = runLocalAtlasGovernance(repository, createPrincipleRequest());
+    assert.equal(result.completion, "completed");
+    const workspace = resolve(
+      repository,
+      ".atlas-operation-workspaces",
+      result.payload.workflowState.proposalBranch,
+    );
+    const placeholder = resolve(workspace, "vendor", "module");
+    assert.deepEqual(readdirSync(placeholder), []);
+    assert.equal(git(workspace, ["status", "--porcelain", "--untracked-files=no"]), "");
+
+    writeFileSync(resolve(repository, "UNRELATED.md"), "# unrelated\n", "utf8");
+    git(repository, ["add", "UNRELATED.md"]);
+    git(repository, [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "-m",
+      "Advance unrelated host content",
+    ]);
+    const targetHead = git(repository, ["rev-parse", "main"]);
+    gitWithFixtureIdentity(workspace, ["rebase", "main"]);
+    assert.equal(git(workspace, ["rev-parse", "HEAD^"]), targetHead);
+    assert.equal(git(workspace, ["status", "--porcelain", "--untracked-files=no"]), "");
+    const lint = runAtlas(["lint", "--machine", "--atlas-host-directory", workspace]);
+    assert.equal(lint.status, 0, lint.stdout);
+    const lintResult = JSON.parse(lint.stdout) as { readonly completion: string };
+    assert.equal(lintResult.completion, "completed");
   });
 }
 

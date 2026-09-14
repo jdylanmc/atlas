@@ -12,6 +12,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import {
   runTrustedGit,
   runTrustedGitBytesCommand,
+  runTrustedGitForWrite,
   type TrustedGitBytesResult,
 } from "./trusted_git.ts";
 
@@ -32,8 +33,37 @@ const defaultOperationWorkspaceGit: OperationWorkspaceGit = Object.freeze({
   runBytesCommand: runTrustedGitBytesCommand,
 });
 
+export type OperationWorkspaceOwnershipConflictKind =
+  "committed-path" | "gitlink" | "parent" | "removed-path";
+
+export class OperationWorkspaceOwnershipConflict extends Error {
+  readonly code = "ATLAS_OPERATION_WORKSPACE_OWNERSHIP_CONFLICT";
+  readonly kind: OperationWorkspaceOwnershipConflictKind;
+  readonly path: string;
+
+  constructor(kind: OperationWorkspaceOwnershipConflictKind, path: string) {
+    super(`Operation Workspace ownership conflict at ${path} (${kind}).`);
+    this.name = "OperationWorkspaceOwnershipConflict";
+    this.kind = kind;
+    this.path = path;
+  }
+}
+
+export function isOperationWorkspaceOwnershipConflict(
+  value: unknown,
+): value is OperationWorkspaceOwnershipConflict {
+  return value instanceof OperationWorkspaceOwnershipConflict;
+}
+
 function failed(message: string): never {
   throw new Error(`Operation Workspace completion failed: ${message}`);
+}
+
+function ownershipConflict(
+  kind: OperationWorkspaceOwnershipConflictKind,
+  path: string,
+): never {
+  throw new OperationWorkspaceOwnershipConflict(kind, path);
 }
 
 function treeEntries(
@@ -122,7 +152,7 @@ function ensureParentDirectories(workspace: string, path: string): void {
       continue;
     }
     if (!stat.isDirectory()) {
-      failed(`a workspace parent is not an owned directory: ${path}`);
+      ownershipConflict("parent", path);
     }
   }
 }
@@ -159,14 +189,28 @@ function removeBaseOnlyPaths(
     (left, right) => right.path.length - left.path.length,
   )) {
     if (committedPaths.has(entry.path)) continue;
-    if (entry.mode === "160000") continue;
     const path = workspacePath(workspace, entry.path);
+    if (entry.mode === "160000") {
+      if (lstatSync(path, { throwIfNoEntry: false }) !== undefined) {
+        ownershipConflict("gitlink", entry.path);
+      }
+      continue;
+    }
     if (lstatSync(path, { throwIfNoEntry: false }) === undefined) continue;
     if (!pathMatchesEntry(repository, workspace, entry, cache, git)) {
-      failed(`a removed tracked path contains unowned changes: ${entry.path}`);
+      ownershipConflict("removed-path", entry.path);
     }
     rmSync(path, { force: true, recursive: true });
   }
+}
+
+function materializeGitlink(workspace: string, entry: WorkspaceTreeEntry): void {
+  const path = workspacePath(workspace, entry.path);
+  ensureParentDirectories(workspace, entry.path);
+  if (lstatSync(path, { throwIfNoEntry: false }) !== undefined) {
+    ownershipConflict("gitlink", entry.path);
+  }
+  mkdirSync(path);
 }
 
 function materializeEntry(
@@ -177,7 +221,10 @@ function materializeEntry(
   cache: Map<string, Uint8Array>,
   git: OperationWorkspaceGit,
 ): void {
-  if (entry.mode === "160000") return;
+  if (entry.mode === "160000") {
+    materializeGitlink(workspace, entry);
+    return;
+  }
   const path = workspacePath(workspace, entry.path);
   ensureParentDirectories(workspace, entry.path);
   if (pathMatchesEntry(repository, workspace, entry, cache, git)) {
@@ -188,10 +235,10 @@ function materializeEntry(
   const existing = lstatSync(path, { throwIfNoEntry: false });
   if (existing !== undefined) {
     if (baseEntry === undefined) {
-      failed(`a committed path contains unowned changes: ${entry.path}`);
+      ownershipConflict("committed-path", entry.path);
     }
     if (!pathMatchesEntry(repository, workspace, baseEntry, cache, git)) {
-      failed(`a committed path contains unowned changes: ${entry.path}`);
+      ownershipConflict("committed-path", entry.path);
     }
     rmSync(path, { force: true, recursive: true });
   }
@@ -233,4 +280,15 @@ export function completeOperationWorkspace(
       git,
     );
   }
+}
+
+export function discardOwnedOperationWorkspace(
+  repository: string,
+  workspace: string,
+  proposalBranch: string,
+): void {
+  runTrustedGitForWrite(repository, ["worktree", "remove", "--force", workspace]);
+  runTrustedGitForWrite(repository, ["worktree", "prune"]);
+  runTrustedGitForWrite(repository, ["branch", "-D", proposalBranch]);
+  rmSync(workspace, { force: true, recursive: true });
 }
