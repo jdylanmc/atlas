@@ -28,6 +28,7 @@ interface InstalledConsumerCase {
       | "unrecorded-publication"
       | "invalid-lock-on-update"
       | "first-metadata-cleanup"
+      | "first-metadata-cleanup-discarded"
       | "lock-persistence";
     readonly expectedCode: string;
   };
@@ -129,6 +130,7 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
           "unrecorded-publication",
           "invalid-lock-on-update",
           "first-metadata-cleanup",
+          "first-metadata-cleanup-discarded",
           "lock-persistence",
         ].includes(entry.cacheFailure.mode),
       );

@@ -8,7 +8,7 @@ import fs, {
   writeFileSync,
 } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
-import { join, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import test from "node:test";
 import {
   atlasCacheKey,
@@ -1934,6 +1934,7 @@ test("Atlas cache recovers only missing Lock entries from matching published met
   type Dependency = ReturnType<typeof createAtlasLock>["dependencies"][number];
   const scenarios: readonly {
     readonly name: string;
+    readonly lock?: (entry: Dependency, other: Dependency) => unknown;
     readonly lockText?: string;
     readonly metadataText?: string;
     readonly metadata?: (entry: Dependency) => unknown;
@@ -1978,6 +1979,77 @@ test("Atlas cache recovers only missing Lock entries from matching published met
     { name: "invalid-lock-list", lockText: '{"dependencies":null}' },
     { name: "invalid-lock-entry", lockText: '{"dependencies":[null]}' },
     { name: "invalid-lock-key", lockText: '{"dependencies":[{"cacheKey":0}]}' },
+    {
+      name: "incomplete-matching-key",
+      lock: (entry) => ({ dependencies: [{ cacheKey: entry.cacheKey }] }),
+    },
+    {
+      name: "online-incomplete-unrelated",
+      lock: (_entry, other) => ({ dependencies: [{ cacheKey: other.cacheKey }] }),
+      online: true,
+    },
+    ...(
+      [
+        "cacheKey",
+        "fetchedAt",
+        "introducedByAnchorId",
+        "introducedByEdgeId",
+        "locator",
+        "slug",
+        "snapshot",
+      ] as const
+    ).flatMap((field) => [
+      {
+        name: `missing-lock-${field}`,
+        lock: (entry: Dependency) => ({
+          dependencies: [
+            Object.fromEntries(Object.entries(entry).filter(([key]) => key !== field)),
+          ],
+        }),
+      },
+      {
+        name: `wrong-lock-${field}`,
+        lock: (entry: Dependency) => ({
+          dependencies: [{ ...entry, [field]: 0 }],
+        }),
+      },
+    ]),
+    ...(
+      [
+        "atlasPath",
+        "branch",
+        "canonicalRepository",
+        "host",
+        "owner",
+        "repository",
+      ] as const
+    ).flatMap((field) => [
+      {
+        name: `missing-lock-locator-${field}`,
+        lock: (entry: Dependency) => ({
+          dependencies: [
+            {
+              ...entry,
+              locator: Object.fromEntries(
+                Object.entries(entry.locator).filter(([key]) => key !== field),
+              ),
+            },
+          ],
+        }),
+      },
+      {
+        name: `wrong-lock-locator-${field}`,
+        lock: (entry: Dependency) => ({
+          dependencies: [{ ...entry, locator: { ...entry.locator, [field]: 0 } }],
+        }),
+      },
+    ]),
+    {
+      name: "wrong-lock-slug-shape",
+      lock: (entry) => ({
+        dependencies: [{ ...entry, slug: { value: 0 } }],
+      }),
+    },
     { name: "online-invalid-list", lockText: '{"dependencies":null}', online: true },
     { name: "online-invalid-entry", lockText: '{"dependencies":[null]}', online: true },
     { name: "online-truncated-lock", lockText: '{"dependencies":[', online: true },
@@ -2017,7 +2089,12 @@ test("Atlas cache recovers only missing Lock entries from matching published met
     };
     const lockFile = join(home, ".atlas", "atlas-cache", "atlas-lock.json");
     const lockText =
-      scenario.lockText ?? JSON.stringify({ dependencies: [otherDependency] });
+      scenario.lockText ??
+      JSON.stringify(
+        scenario.lock?.(metadata, otherDependency) ?? {
+          dependencies: [otherDependency],
+        },
+      );
     writeFileSync(lockFile, lockText);
     if (scenario.metadata !== undefined) {
       writeFileSync(metadataFile, JSON.stringify(scenario.metadata(metadata)));
@@ -2087,6 +2164,7 @@ for (const fault of [
   "online-metadata-partial",
   "first-metadata-partial",
   "first-metadata-cleanup",
+  "first-metadata-cleanup-discarded",
   "first-invalid-lock",
 ] as const) {
   test(`Explore preserves Lock dependencies through ${fault}`, (context) => {
@@ -2185,7 +2263,7 @@ for (const fault of [
         ownedFiles.set(fd, path);
         if (
           path.startsWith(lockFile) ||
-          (fault === "first-metadata-cleanup" &&
+          (fault.startsWith("first-metadata-cleanup") &&
             path.includes("metadata.json.pending-"))
         )
           artifacts.add(path);
@@ -2216,7 +2294,8 @@ for (const fault of [
           ["partial-write", "cleanup-failure"].includes(fault) &&
           file?.startsWith(lockFile) === true;
         const partialMetadata =
-          (fault.endsWith("metadata-partial") || fault === "first-metadata-cleanup") &&
+          (fault.endsWith("metadata-partial") ||
+            fault.startsWith("first-metadata-cleanup")) &&
           file?.includes("metadata.json") === true &&
           !injected;
         if (partialLock || partialMetadata) {
@@ -2231,6 +2310,14 @@ for (const fault of [
       fs,
       "renameSync",
       (...args: Parameters<typeof fs.renameSync>) => {
+        if (
+          fault === "first-metadata-cleanup-discarded" &&
+          String(args[0]).includes(`${sep}.pending-`) &&
+          String(args[1]) === first.snapshot.cacheDirectory
+        ) {
+          injected = true;
+          throw new Error("Fixture cache publication failure");
+        }
         if (fault === "replacement" && String(args[1]) === lockFile) {
           injected = true;
           assert.deepEqual(
@@ -2247,7 +2334,7 @@ for (const fault of [
       "rmSync",
       (...args: Parameters<typeof fs.rmSync>) => {
         if (
-          ["cleanup-failure", "first-metadata-cleanup"].includes(fault) &&
+          (fault === "cleanup-failure" || fault.startsWith("first-metadata-cleanup")) &&
           artifacts.has(String(args[0]))
         )
           throw new Error("Fixture record cleanup failure");
@@ -2298,25 +2385,45 @@ for (const fault of [
     }
     assert.equal(result.completion, "completed");
     assert.equal(result.disposition, "success");
-    assert.equal(result.handoff.unresolvedHumanDecisions.state, "none");
+    assert.equal(
+      result.handoff.unresolvedHumanDecisions.state,
+      fault === "first-metadata-cleanup-discarded" ? "pending" : "none",
+    );
     assert.deepEqual(
       result.payload.degradation.diagnostics.map(({ code }) => code),
-      online ? [] : ["ATLAS_CROSS_ATLAS_CACHED_OFFLINE"],
+      fault === "first-metadata-cleanup-discarded"
+        ? ["ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE"]
+        : online
+          ? []
+          : ["ATLAS_CROSS_ATLAS_CACHED_OFFLINE"],
     );
     assert.equal(
       result.handoff.degradationState.state,
-      online ? "not-degraded" : "degraded",
+      fault === "first-metadata-cleanup-discarded"
+        ? "degraded"
+        : online
+          ? "not-degraded"
+          : "degraded",
     );
-    if (online) {
+    if (online && fault !== "first-metadata-cleanup-discarded") {
       assert.equal(result.payload.degradation.level, "valid-structured");
       assert.equal(result.handoff.validationState.state, "passed");
     }
     const trackedContext = result.payload.results.find(
       ({ result: item }) => item.snapshot?.role === "tracked",
     );
-    assert.ok(trackedContext !== undefined);
-    assert.equal(trackedContext.result.snapshot?.snapshot, expectedSnapshot);
-    assert.match(trackedContext.result.body, /# Home/u);
+    if (fault === "first-metadata-cleanup-discarded") {
+      assert.equal(trackedContext, undefined);
+      assert.ok(
+        result.payload.results.some(
+          ({ result: item }) => item.snapshot?.role === "home",
+        ),
+      );
+    } else {
+      assert.ok(trackedContext !== undefined);
+      assert.equal(trackedContext.result.snapshot?.snapshot, expectedSnapshot);
+      assert.match(trackedContext.result.body, /# Home/u);
+    }
     if (
       !fault.startsWith("first-") &&
       !["online-invalid-lock", "online-moving-invalid-lock"].includes(fault)
@@ -2331,9 +2438,15 @@ for (const fault of [
       assert.equal(result.payload.maintenanceFindings, undefined);
     } else {
       if (!invalidLock) assert.equal(injected, true);
-      if (
+      if (fault === "first-metadata-cleanup-discarded") {
+        assert.equal(
+          readFileSync(lockFile, "utf8"),
+          originalLock,
+          "Discarded first contact must not record an unpublished dependency",
+        );
+      } else if (
         fault === "first-metadata-partial" ||
-        fault === "first-metadata-cleanup" ||
+        fault.startsWith("first-metadata-cleanup") ||
         fault === "online-metadata-partial"
       ) {
         const recovered = JSON.parse(readFileSync(lockFile, "utf8")) as ReturnType<
@@ -2361,7 +2474,7 @@ for (const fault of [
       assert.deepEqual(
         result.payload.maintenanceFindings?.map(({ code }) => code),
         [
-          ...(["cleanup-failure", "first-metadata-cleanup"].includes(fault)
+          ...(fault === "cleanup-failure" || fault.startsWith("first-metadata-cleanup")
             ? ["ATLAS_CROSS_ATLAS_CACHE_CLEANUP_FAILED"]
             : []),
           fault.includes("metadata")
@@ -2410,16 +2523,26 @@ for (const fault of [
       );
     }
     for (const path of artifacts) {
-      if (fault === "first-metadata-cleanup") {
+      if (fault.startsWith("first-metadata-cleanup")) {
         if (!path.includes(`${sep}.pending-`)) continue;
         const cleanup = result.payload.maintenanceFindings?.find(
           ({ code }) => code === "ATLAS_CROSS_ATLAS_CACHE_CLEANUP_FAILED",
         );
         assert.ok(cleanup !== undefined);
-        assert.equal(existsSync(path), false, "Published staging path must be absent");
-        assert.ok(cleanup.path.startsWith(first.snapshot.cacheDirectory));
-        assert.equal(readFileSync(cleanup.path, "utf8"), '{"dependencies":[');
-        rmSync(cleanup.path);
+        assert.equal(existsSync(path), false, "Staging sibling must be absent");
+        assert.equal(
+          existsSync(dirname(path)),
+          false,
+          "Staging directory must be absent",
+        );
+        if (fault === "first-metadata-cleanup") {
+          assert.ok(cleanup.path.startsWith(first.snapshot.cacheDirectory));
+          assert.equal(readFileSync(cleanup.path, "utf8"), '{"dependencies":[');
+          rmSync(cleanup.path);
+        } else {
+          assert.notEqual(cleanup.path, path);
+          assert.doesNotMatch(cleanup.message, /Inspect the retained file/u);
+        }
       } else if (fault === "creation-conflict" || fault === "cleanup-failure") {
         assert.equal(
           readFileSync(path, "utf8"),

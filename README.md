@@ -42,9 +42,11 @@ independently of Home Atlas Lock validity, so removing a malformed Lock can
 recover the dependency offline from the original fetch time and introducers.
 Unreadable or mismatched metadata and persistence failures produce
 record-specific maintenance Findings without discarding usable knowledge.
-Cleanup removes only invocation-owned unpublished files; a cleanup failure
-identifies the retained file. These are sequential record-write guarantees,
-not a multi-record transaction or a concurrent/crash-durability guarantee.
+Cleanup removes only invocation-owned unpublished files. A cleanup failure
+identifies the retained file when it remains; if later staging cleanup removes
+it, the maintenance Finding records that discard instead. These are sequential
+record-write guarantees, not a multi-record transaction or a concurrent/crash-
+durability guarantee.
 
 ## Install
 

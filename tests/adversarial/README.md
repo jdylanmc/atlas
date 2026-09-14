@@ -84,7 +84,12 @@ Home and tracked context with maintenance Findings, not knowledge degradation.
 It also advances the remote while the Lock is malformed
 (`BOLAS-216-R3-01`): cache metadata must follow the adopted Snapshot
 independently, and deleting the malformed Lock must allow offline recovery with
-the recorded fetch time and introducer identities.
+the recorded fetch time and introducer identities. Complete dependency-shape
+variants (`BOLAS-216-R4-01`) include a matching-key incomplete offline entry,
+an unrelated incomplete online entry, every missing or wrong-typed required
+field, and malformed nested Locator/Slug records. Invalid Lock bytes remain
+unchanged and visible rather than suppressing missing-only recovery or being
+copied into a successful write.
 The persistence case (`BALERION-216-R2-01`) starts with an unrelated dependency
 and the current dependency missing. It injects failures at Node's filesystem
 boundary: a redundant read, an actual prefix write followed by failure, failed
@@ -99,7 +104,10 @@ The first-contact cleanup case (`SMAUG-216-R3-01`) prefix-writes cache metadata,
 fails its owned-sibling cleanup, and then permits directory publication. The
 returned cleanup Finding must identify the retained sibling at its published
 location, preserve the exact prefix bytes, and leave the obsolete staging path
-absent while Explore returns usable maintenance-only context.
+absent while Explore returns usable maintenance-only context. Its failed
+publication variant (`SMAUG-216-R4-01`) then successfully discards staging and
+requires both staging and sibling absence, usable Home context, first-contact
+refusal, and no stale instruction to inspect a retained file.
 
 The `connectedExplore` probe adds cited fixture knowledge and a tracked Atlas
 to the initialized consumer. A fresh external Node process imports only the

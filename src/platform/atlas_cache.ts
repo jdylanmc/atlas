@@ -13,11 +13,13 @@ import { dirname, join, relative, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
 import { createAtlasCache } from "../domain/atlas_cache.ts";
+import { parseAtlasLocator, type AtlasLocator } from "../domain/atlas_locator.ts";
 import {
   createAtlasLock,
   type AtlasLock,
   type AtlasLockDependency,
 } from "../domain/atlas_lock.ts";
+import type { AtlasSlug } from "../domain/atlas_slug.ts";
 import type { Finding } from "../domain/finding.ts";
 import type { TrackedAtlas } from "../domain/tracked_atlas.ts";
 import {
@@ -278,16 +280,10 @@ function readAtlasLock(homeAtlasDirectory: string): AtlasLock {
     if (isRecord(error) && error["code"] === "ENOENT") return createAtlasLock([]);
     throw error;
   }
-  if (
-    !isRecord(lock) ||
-    !Array.isArray(lock["dependencies"]) ||
-    !lock["dependencies"].every(
-      (entry: unknown) => isRecord(entry) && nonBlank(entry["cacheKey"]),
-    )
-  ) {
+  if (!isAtlasLock(lock)) {
     throw new Error("Atlas Lock has an invalid dependency list.");
   }
-  return lock as unknown as AtlasLock;
+  return lock;
 }
 
 function writeAtlasLock(
@@ -311,6 +307,50 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 
 function nonBlank(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function isAtlasLocator(value: unknown): value is AtlasLocator {
+  if (
+    !isRecord(value) ||
+    !nonBlank(value["atlasPath"]) ||
+    !nonBlank(value["branch"]) ||
+    !nonBlank(value["canonicalRepository"]) ||
+    !nonBlank(value["host"]) ||
+    !nonBlank(value["repository"])
+  ) {
+    return false;
+  }
+  const parsed = parseAtlasLocator({
+    atlasPath: value["atlasPath"],
+    branch: value["branch"],
+    repositoryLocator: `https://${value["canonicalRepository"]}.git`,
+  });
+  return parsed.state === "parsed" && matchesRecord(value, { ...parsed.locator });
+}
+
+function isAtlasSlug(value: unknown): value is AtlasSlug {
+  return isRecord(value) && nonBlank(value["value"]);
+}
+
+function isAtlasLockDependency(value: unknown): value is AtlasLockDependency {
+  return (
+    isRecord(value) &&
+    nonBlank(value["cacheKey"]) &&
+    nonBlank(value["fetchedAt"]) &&
+    nonBlank(value["introducedByAnchorId"]) &&
+    nonBlank(value["introducedByEdgeId"]) &&
+    isAtlasLocator(value["locator"]) &&
+    isAtlasSlug(value["slug"]) &&
+    nonBlank(value["snapshot"])
+  );
+}
+
+function isAtlasLock(value: unknown): value is AtlasLock {
+  return (
+    isRecord(value) &&
+    Array.isArray(value["dependencies"]) &&
+    value["dependencies"].every(isAtlasLockDependency)
+  );
 }
 
 function matchesRecord(
@@ -380,13 +420,25 @@ function maintenanceResult(findings: Finding[]): {
 function publishAtlasCacheDirectoryWithStatus(
   finalDirectory: string,
   pendingDirectory: string,
-): { readonly directory: string; readonly relocated: boolean } {
+): {
+  readonly directory: string;
+  readonly discarded: boolean;
+  readonly relocated: boolean;
+} {
   try {
     renameSync(pendingDirectory, finalDirectory);
-    return Object.freeze({ directory: finalDirectory, relocated: true });
+    return Object.freeze({
+      directory: finalDirectory,
+      discarded: false,
+      relocated: true,
+    });
   } catch {
     rmSync(pendingDirectory, { force: true, recursive: true });
-    return Object.freeze({ directory: finalDirectory, relocated: false });
+    return Object.freeze({
+      directory: finalDirectory,
+      discarded: true,
+      relocated: false,
+    });
   }
 }
 
@@ -398,18 +450,28 @@ export function publishAtlasCacheDirectory(
     .directory;
 }
 
-function relocatePublishedMaintenanceFindingPaths(
+function reconcilePublishedMaintenanceFindings(
   findings: Finding[],
   pendingDirectory: string,
   finalDirectory: string,
+  publication: { readonly discarded: boolean; readonly relocated: boolean },
 ): void {
   for (const [index, item] of findings.entries()) {
     if (item.code !== "ATLAS_CROSS_ATLAS_CACHE_CLEANUP_FAILED") continue;
     const relativePath = relative(pendingDirectory, item.path);
-    findings[index] = Object.freeze({
-      ...item,
-      path: join(finalDirectory, relativePath),
-    });
+    if (publication.relocated) {
+      findings[index] = Object.freeze({
+        ...item,
+        path: join(finalDirectory, relativePath),
+      });
+    } else if (publication.discarded) {
+      findings[index] = Object.freeze({
+        ...item,
+        message:
+          "Cross-Atlas traversal could not remove its unpublished cache record directly, but its staging directory was later discarded.",
+        path: ".atlas/atlas-cache",
+      });
+    }
   }
 }
 
@@ -524,22 +586,23 @@ export function resolveAtlasCache(
       slug: request.trackedAtlas.slug,
       snapshot: revision,
     });
+    const metadataFindings: Finding[] = [];
     try {
-      writeMetadata(pendingDirectory, dependency, maintenanceFindings);
+      writeMetadata(pendingDirectory, dependency, metadataFindings);
     } catch {
-      maintenanceFindings.push(cacheMetadataWriteFinding(request));
+      metadataFindings.push(cacheMetadataWriteFinding(request));
     }
     const publication = publishAtlasCacheDirectoryWithStatus(
       finalDirectory,
       pendingDirectory,
     );
-    if (publication.relocated) {
-      relocatePublishedMaintenanceFindingPaths(
-        maintenanceFindings,
-        pendingDirectory,
-        finalDirectory,
-      );
-    }
+    reconcilePublishedMaintenanceFindings(
+      metadataFindings,
+      pendingDirectory,
+      finalDirectory,
+      publication,
+    );
+    maintenanceFindings.push(...metadataFindings);
   }
 
   const captureReference = (repository: string, reference: string) => {
