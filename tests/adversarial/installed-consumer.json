@@ -1179,6 +1179,183 @@
           ]
         }
       }
+    },
+    {
+      "name": "installed cache refuses an uncapturable first contact without publishing it in Atlas Lock",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "cacheFailure": {
+        "mode": "missing-atlas",
+        "expectedCode": "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE"
+      }
+    },
+    {
+      "name": "installed cache preserves its last usable snapshot through an invalid remote update and offline retry",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "cacheFailure": {
+        "mode": "uncapturable-update",
+        "expectedCode": "ATLAS_CROSS_ATLAS_CACHED_OFFLINE"
+      }
+    },
+    {
+      "name": "installed cache retains successful first contact when later remote contact is unavailable",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "cacheFailure": {
+        "mode": "interrupted-first-contact",
+        "expectedCode": "ATLAS_CROSS_ATLAS_CACHED_OFFLINE"
+      }
+    },
+    {
+      "name": "installed connected Explore retains cited Home and cached results when real Git transport is offline",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "connectedExplore": {
+        "query": "canonical serialization",
+        "expectedConceptId": "concept:canonical-serialization",
+        "expectedSourceId": "source:atlas-sdk-lint",
+        "expectedSourceText": "Atlas SDK documentation describing the deterministic Lint path.",
+        "expectedTrackedSlug": "github.com--fixture--connected-explore"
+      }
+    },
+    {
+      "name": "installed connected Explore reports cache housekeeping without degrading current knowledge",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "connectedExplore": {
+        "query": "canonical serialization",
+        "expectedConceptId": "concept:canonical-serialization",
+        "expectedSourceId": "source:atlas-sdk-lint",
+        "expectedSourceText": "Atlas SDK documentation describing the deterministic Lint path.",
+        "expectedTrackedSlug": "github.com--fixture--connected-explore",
+        "cleanupFailureCode": "ATLAS_CROSS_ATLAS_CACHE_CLEANUP_FAILED"
+      }
+    },
+    {
+      "name": "installed cache records a published offline snapshot without inventing a new fetch time",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "cacheFailure": {
+        "mode": "unrecorded-publication",
+        "expectedCode": "ATLAS_CROSS_ATLAS_CACHED_OFFLINE"
+      }
+    },
+    {
+      "name": "installed online cache advances metadata despite a malformed Lock and recovers offline (BOLAS-216-R2-01, BOLAS-216-R3-01)",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "cacheFailure": {
+        "mode": "invalid-lock-on-update",
+        "expectedCode": "ATLAS_CROSS_ATLAS_LOCK_REPAIR_FAILED"
+      }
+    },
+    {
+      "name": "installed first-contact cleanup reports the retained published metadata sibling (SMAUG-216-R3-01)",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "cacheFailure": {
+        "mode": "first-metadata-cleanup",
+        "expectedCode": "ATLAS_CROSS_ATLAS_CACHE_CLEANUP_FAILED"
+      }
+    },
+    {
+      "name": "installed failed first-contact publication reports discarded staging accurately (SMAUG-216-R4-01)",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "cacheFailure": {
+        "mode": "first-metadata-cleanup-discarded",
+        "expectedCode": "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE"
+      }
+    },
+    {
+      "name": "installed Lock recovery preserves dependencies through persistence faults (BALERION-216-R2-01)",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "cacheFailure": {
+        "mode": "lock-persistence",
+        "expectedCode": "ATLAS_CROSS_ATLAS_LOCK_REPAIR_FAILED"
+      }
     }
   ]
 }
