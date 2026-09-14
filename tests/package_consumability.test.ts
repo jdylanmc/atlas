@@ -985,6 +985,62 @@ for (const entry of readInstalledConsumerCorpus().cases) {
       const [firstResult] = exploreResult.payload.results;
       assert.ok(firstResult !== undefined);
       assert.equal(firstResult.route[0]?.objectId, entry.expectedRootAnchorId);
+      if (entry.providerInvocation !== undefined) {
+        const providerProbe = join(consumer, "provider-consumer.mjs");
+        writeFileSync(
+          providerProbe,
+          [
+            'import assert from "node:assert/strict";',
+            'import { readdirSync, readFileSync } from "node:fs";',
+            'import { join, relative } from "node:path";',
+            'import { runExploreOperation } from "@jdylanmc/atlas";',
+            "const encoder = new TextEncoder();",
+            "function files(directory) {",
+            "  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {",
+            "    const path = join(directory, entry.name);",
+            "    return entry.isDirectory() ? files(path) : [path];",
+            "  });",
+            "}",
+            'const capturedFiles = files(".atlas").map((path) => ({',
+            '  bytes: encoder.encode(readFileSync(path, "utf8")),',
+            '  path: relative(".", path).split("\\\\").join("/"),',
+            "}));",
+            "let providerCalls = 0;",
+            "const provider = Object.freeze({",
+            "  rank(documents) {",
+            "    providerCalls += 1;",
+            `    assert.ok(documents.some(({ id }) => id === ${JSON.stringify(entry.providerInvocation.expectedResultId)}));`,
+            "    return Object.freeze([",
+            `      Object.freeze({ objectId: ${JSON.stringify(entry.providerInvocation.rejectedObjectId)}, score: 100 }),`,
+            `      Object.freeze({ objectId: ${JSON.stringify(entry.providerInvocation.expectedResultId)}, score: 1 }),`,
+            "    ]);",
+            "  },",
+            "});",
+            "const result = runExploreOperation({",
+            '  baseSnapshot: { reference: "installed-provider-base", state: "known" },',
+            "  capturedFiles,",
+            '  homeAtlas: { reference: "installed-provider-home", state: "known" },',
+            "  provider,",
+            `  query: ${JSON.stringify(entry.query)},`,
+            "});",
+            `assert.equal(providerCalls, ${String(entry.providerInvocation.expectedProviderCalls)});`,
+            `assert.equal(result.payload.results[0]?.result.id, ${JSON.stringify(entry.providerInvocation.expectedResultId)});`,
+            `assert.equal(result.payload.results.some(({ result }) => result.id === ${JSON.stringify(entry.providerInvocation.rejectedObjectId)}), false);`,
+            `assert.equal(result.payload.results[0]?.route[0]?.objectId, ${JSON.stringify(entry.expectedRootAnchorId)});`,
+          ].join("\n"),
+          "utf8",
+        );
+        const providerInvocation = spawnSync(process.execPath, [providerProbe], {
+          cwd: consumer,
+          encoding: "utf8",
+          env: consumerEnvironment(guard),
+          killSignal: "SIGKILL",
+          timeout: 30_000,
+        });
+        assert.equal(providerInvocation.status, 0, providerInvocation.stderr);
+        assert.equal(providerInvocation.stderr, "");
+        rmSync(providerProbe);
+      }
       if (entry.retirement !== undefined) {
         exerciseGovernanceRetirement(consumer, entry.retirement, (arguments_) =>
           runInstalled(consumer, guard, arguments_),

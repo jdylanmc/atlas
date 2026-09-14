@@ -11,6 +11,7 @@ import type {
   SearchProviderDiagnostic,
   SearchProviderRanking,
 } from "../graph/search_provider.ts";
+import { validateSearchProviderRanking } from "../graph/search_provider.ts";
 import {
   exploreConnectedAtlas,
   type AtlasCacheResolver,
@@ -115,7 +116,12 @@ function providerWithLexicalFallback(provider: SearchProvider): SearchProvider {
       budgets: Pick<ExploreBudgets, "maxQueryCharacters" | "maxTerms">,
     ): SearchProviderRanking | readonly ExploreCandidate[] {
       try {
-        return provider.rank(documents, query, budgets);
+        const ranking = provider.rank(documents, query, budgets);
+        validateSearchProviderRanking(
+          ranking,
+          new Set(documents.map((document) => document.id)),
+        );
+        return ranking;
       } catch (error) {
         const fallbackDiagnostic: SearchProviderDiagnostic = Object.freeze({
           code: "ATLAS_EXPLORE_PROVIDER_FALLBACK",

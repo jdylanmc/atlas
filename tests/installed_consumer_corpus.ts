@@ -12,6 +12,11 @@ interface InstalledConsumerCase {
   readonly expectedRootAnchorId: string;
   readonly expectedAtlasPaths: readonly string[];
   readonly unmergedLintCode: string;
+  readonly providerInvocation?: {
+    readonly expectedProviderCalls: number;
+    readonly expectedResultId: string;
+    readonly rejectedObjectId: string;
+  };
   readonly retirement?: GovernanceRetirementProbe;
   readonly repeatedEmptyEdges?: {
     readonly alternatingPairs: number;
@@ -91,6 +96,15 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
     for (const path of entry.expectedAtlasPaths) {
       assert.equal(typeof path, "string");
       assert.match(path, /^\.atlas\//u);
+    }
+    if (entry.providerInvocation !== undefined) {
+      assert.equal(
+        Number.isSafeInteger(entry.providerInvocation.expectedProviderCalls),
+        true,
+      );
+      assert.ok(entry.providerInvocation.expectedProviderCalls > 0);
+      assert.match(entry.providerInvocation.expectedResultId, /^[a-z-]+:/u);
+      assert.match(entry.providerInvocation.rejectedObjectId, /^[a-z-]+:/u);
     }
     if (entry.retirement !== undefined) {
       assert.ok(["retire", "delete"].includes(entry.retirement.action));

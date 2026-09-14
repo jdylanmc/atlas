@@ -11,6 +11,7 @@ import {
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { chdir, cwd } from "node:process";
 import {
   atlasQmdRelease,
   createLocalAtlasQmdRuntime,
@@ -24,6 +25,7 @@ import type {
   SearchProviderDiagnostic,
   SearchProviderRanking,
 } from "../src/graph/explore_atlas.ts";
+import { readAtlasQmdCorpus } from "./atlas_qmd_corpus.ts";
 
 const budgets: Pick<ExploreBudgets, "maxQueryCharacters" | "maxTerms"> = Object.freeze({
   maxQueryCharacters: 256,
@@ -115,9 +117,12 @@ function writeOwnedFakeQmdRuntime(
   writeFileSync(
     bin,
     [
-      'import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";',
-      'import { join } from "node:path";',
+      'import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";',
+      'import { dirname, join, resolve } from "node:path";',
+      'import { fileURLToPath } from "node:url";',
       "const [command] = process.argv.slice(2);",
+      'const runtimeRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");',
+      'appendFileSync(join(runtimeRoot, "commands.log"), `${process.argv.slice(2).join(" ")}\\n`);',
       'mkdirSync(".qmd", { recursive: true });',
       'appendFileSync(join(".qmd", "commands.log"), `${process.argv.slice(2).join(" ")}\\n`);',
       `if (command === "--version") process.stdout.write(${JSON.stringify(versionOutput)});`,
@@ -130,7 +135,12 @@ function writeOwnedFakeQmdRuntime(
       '  writeFileSync(join(".qmd", "index.sqlite"), "fixture");',
       "}",
       'if (command === "search" || command === "query") {',
+      '  if (readFileSync(join(".qmd", "index.sqlite"), "utf8") === "corrupt") {',
+      '    process.stderr.write("SQLITE_CORRUPT: database disk image is malformed\\n");',
+      "    process.exitCode = 10;",
+      "  } else {",
       `  process.stdout.write(${JSON.stringify(searchOutput)});`,
+      "  }",
       "}",
     ].join("\n"),
     "utf8",
@@ -153,6 +163,18 @@ function writeOwnedFakeQmdRuntime(
     "atlas-qmd-tool-runtime-owned\n",
     "utf8",
   );
+}
+
+function indexDirectory(indexRoot: string, atlasVersion: string): string {
+  const hostKey = createHash("sha256")
+    .update(resolve("/fixture/atlas"))
+    .digest("hex")
+    .slice(0, 24);
+  const versionKey = createHash("sha256")
+    .update(atlasVersion)
+    .digest("hex")
+    .slice(0, 24);
+  return join(indexRoot, hostKey, versionKey);
 }
 
 function runtimeContext(
@@ -538,6 +560,135 @@ test("the local atlas-qmd runtime builds and repairs an exact-version disposable
   );
 });
 
+test("the local atlas-qmd runtime repairs one corrupt owned database and recovers ranking", () => {
+  const entry = readAtlasQmdCorpus().cases.find(
+    (candidate) => candidate.kind === "database-corruption",
+  );
+  assert.ok(entry);
+  const toolRuntimeRoot = join(workspace, "corrupt-database-runtime");
+  const indexRoot = join(workspace, "corrupt-database-index");
+  writeOwnedFakeQmdRuntime(toolRuntimeRoot);
+  const prepared = prepareAtlasQmd(
+    {
+      atlasHostDirectory: "/fixture/atlas",
+      atlasVersion: "commit-corrupt-database",
+      toolRuntimeRoot,
+    },
+    createLocalAtlasQmdRuntime({ indexRoot }),
+  );
+  assert.deepEqual(
+    candidatesOf(prepared.provider.rank(documents, "canonical", budgets)),
+    [{ objectId: "concept:canonical", score: 0.91 }],
+  );
+
+  const directory = indexDirectory(indexRoot, "commit-corrupt-database");
+  writeFileSync(join(directory, ".qmd", "index.sqlite"), "corrupt", "utf8");
+  const unrelated = join(indexRoot, "unrelated.txt");
+  writeFileSync(unrelated, "preserve", "utf8");
+
+  assert.deepEqual(
+    candidatesOf(prepared.provider.rank(documents, "canonical", budgets)),
+    [{ objectId: "concept:canonical", score: 0.91 }],
+  );
+  assert.equal(readFileSync(unrelated, "utf8"), "preserve");
+  assert.equal(
+    (
+      readFileSync(join(toolRuntimeRoot, "commands.log"), "utf8").match(/^init$/gmu) ??
+      []
+    ).length,
+    2,
+  );
+});
+
+test("the local atlas-qmd runtime rebuilds malformed persisted document maps", () => {
+  const cases = readAtlasQmdCorpus().cases.filter(
+    (entry) => entry.kind === "document-map",
+  );
+  const indexedDocuments = Object.freeze([
+    ...documents,
+    Object.freeze({
+      body: "secondary indexed material",
+      id: "concept:secondary",
+      path: ".atlas/concepts/secondary.md",
+      tags: Object.freeze(["secondary"]),
+      title: "Secondary",
+      type: "concept",
+    }),
+  ]);
+  const expected = [
+    { objectId: "concept:canonical", score: 0.91 },
+    { objectId: "concept:secondary", score: 0.8 },
+  ];
+
+  for (const entry of cases) {
+    const toolRuntimeRoot = join(workspace, `map-runtime-${entry.value}`);
+    const indexRoot = join(workspace, `map-index-${entry.value}`);
+    writeOwnedFakeQmdRuntime(
+      toolRuntimeRoot,
+      JSON.stringify([
+        { file: "documents/000000.md", score: 0.91 },
+        { file: "documents/000001.md", score: 0.8 },
+      ]),
+    );
+    const atlasVersion = `commit-map-${entry.value}`;
+    const prepared = prepareAtlasQmd(
+      {
+        atlasHostDirectory: "/fixture/atlas",
+        atlasVersion,
+        toolRuntimeRoot,
+      },
+      createLocalAtlasQmdRuntime({ indexRoot }),
+    );
+    assert.deepEqual(
+      candidatesOf(
+        prepared.provider.rank(indexedDocuments, "indexed material", budgets),
+      ),
+      expected,
+      entry.name,
+    );
+
+    const directory = indexDirectory(indexRoot, atlasVersion);
+    const manifestPath = join(directory, "atlas-qmd-index.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    manifest["documents"] =
+      entry.value === "null"
+        ? null
+        : entry.value === "empty"
+          ? {}
+          : entry.value === "array"
+            ? []
+            : entry.value === "incomplete"
+              ? { "000000.md": "concept:canonical" }
+              : {
+                  "000000.md": "concept:secondary",
+                  "000001.md": "concept:canonical",
+                };
+    writeFileSync(manifestPath, `${JSON.stringify(manifest)}\n`, "utf8");
+
+    assert.deepEqual(
+      candidatesOf(
+        prepared.provider.rank(indexedDocuments, "indexed material", budgets),
+      ),
+      expected,
+      entry.name,
+    );
+    const repaired = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      readonly documents: Readonly<Record<string, string>>;
+    };
+    assert.deepEqual(
+      repaired.documents,
+      {
+        "000000.md": "concept:canonical",
+        "000001.md": "concept:secondary",
+      },
+      entry.name,
+    );
+  }
+});
+
 test("the local atlas-qmd runtime rebuilds every incompatible index identity", () => {
   const toolRuntimeRoot = join(workspace, "index-identity-runtime");
   const indexRoot = join(workspace, "index-identity");
@@ -732,6 +883,13 @@ test("atlas-qmd visibly falls back when a QMD command exits nonzero", () => {
     diagnosticsOf(prepared.provider.rank(documents, "canonical", budgets))[0]
       ?.message ?? "",
     /qmd search exited 9: fixture search failure/u,
+  );
+  assert.equal(
+    (
+      readFileSync(join(toolRuntimeRoot, "commands.log"), "utf8").match(/^init$/gmu) ??
+      []
+    ).length,
+    1,
   );
 });
 
@@ -991,4 +1149,61 @@ test("atlas-qmd requires an exact Atlas identity before touching a runtime", () 
       }),
     /Atlas Host Directory/u,
   );
+});
+
+test("relative Tool Runtime approval remains bound to one absolute destination", () => {
+  const entry = readAtlasQmdCorpus().cases.find(
+    (candidate) => candidate.kind === "relative-runtime-root",
+  );
+  assert.ok(entry);
+  const firstDirectory = join(workspace, "cwd-a");
+  const secondDirectory = join(workspace, "cwd-b");
+  mkdirSync(firstDirectory, { recursive: true });
+  mkdirSync(secondDirectory, { recursive: true });
+  const installedLocations: string[] = [];
+  const recordingRuntime: AtlasQmdRuntime = {
+    inspectToolRuntime: () => ({ state: "missing" }),
+    installToolRuntime: (proposal) => {
+      installedLocations.push(resolve(proposal.location));
+    },
+    rank: () => Object.freeze([]),
+  };
+  const originalCwd = cwd();
+  try {
+    chdir(firstDirectory);
+    const first = prepareAtlasQmd(
+      {
+        atlasHostDirectory: "/fixture/atlas",
+        atlasVersion: "commit-relative-root",
+        toolRuntimeRoot: "runtime",
+      },
+      recordingRuntime,
+    );
+    assert.ok(first.installationProposal);
+    assert.equal(first.installationProposal.location, join(firstDirectory, "runtime"));
+
+    chdir(secondDirectory);
+    const moved = prepareAtlasQmd(
+      {
+        atlasHostDirectory: "/fixture/atlas",
+        atlasVersion: "commit-relative-root",
+        installationApproval: {
+          approvedAt: "2026-09-14T00:00:00Z",
+          approvedBy: "Fixture Maintainer",
+          proposalDigest: first.installationProposal.digest,
+        },
+        toolRuntimeRoot: "runtime",
+      },
+      recordingRuntime,
+    );
+    assert.ok(moved.installationProposal);
+    assert.equal(moved.installationProposal.location, join(secondDirectory, "runtime"));
+    assert.notEqual(
+      moved.installationProposal.digest,
+      first.installationProposal.digest,
+    );
+    assert.deepEqual(installedLocations, []);
+  } finally {
+    chdir(originalCwd);
+  }
 });

@@ -31,6 +31,10 @@ import {
 import { runLintOperation } from "../src/operations/lint_operation.ts";
 import { captureLocalAtlasSnapshot } from "../src/platform/local_atlas_snapshot.ts";
 import { assertGrowthRatio } from "./growth.ts";
+import {
+  malformedProviderEnvelope,
+  readSearchProviderEnvelopeCorpus,
+} from "./search_provider_envelope_corpus.ts";
 
 declare global {
   var __atlasExploreExecuted: boolean | undefined;
@@ -1198,6 +1202,88 @@ test("a failing Search Provider falls back visibly to built-in lexical Explore",
         diagnostic.severity === "warning" &&
         diagnostic.message.includes("optional provider unavailable"),
     ),
+  );
+});
+
+test("malformed Search Provider envelopes visibly recover for structured Explore", () => {
+  for (const entry of readSearchProviderEnvelopeCorpus().cases) {
+    const provider = Object.freeze({
+      rank: () => malformedProviderEnvelope(entry.value),
+    }) as SearchProvider;
+    const result = runExploreOperation({
+      baseSnapshot: { reference: "fixture-base", state: "known" },
+      capturedFiles: completeAtlas(),
+      homeAtlas: { reference: "fixture", state: "known" },
+      provider,
+      query: "canonical serialization",
+      budgets,
+    });
+
+    assert.equal(result.disposition, "success", entry.name);
+    assert.equal(
+      result.payload.results[0]?.result.id,
+      "concept:canonical-serialization",
+      entry.name,
+    );
+    assert.ok(
+      result.payload.degradation.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === "ATLAS_EXPLORE_PROVIDER_FALLBACK" &&
+          diagnostic.message.includes("must return candidates"),
+      ),
+      entry.name,
+    );
+  }
+});
+
+test("malformed Search Provider envelopes visibly recover for raw Markdown Explore", () => {
+  for (const entry of readSearchProviderEnvelopeCorpus().cases) {
+    const provider = Object.freeze({
+      rank: () => malformedProviderEnvelope(entry.value),
+    }) as SearchProvider;
+    const result = runExploreOperation({
+      baseSnapshot: { reference: "fixture-base", state: "known" },
+      capturedFiles: Object.freeze([
+        captured(".atlas/notes.md", "# Note\n\ncanonical serialization"),
+      ]),
+      homeAtlas: { reference: "fixture", state: "known" },
+      provider,
+      query: "canonical serialization",
+      budgets,
+    });
+
+    assert.equal(
+      result.payload.results[0]?.result.id,
+      "raw-markdown/.atlas/notes.md",
+      entry.name,
+    );
+    assert.ok(
+      result.payload.degradation.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === "ATLAS_EXPLORE_PROVIDER_FALLBACK" &&
+          diagnostic.message.includes("must return candidates"),
+      ),
+      entry.name,
+    );
+  }
+});
+
+test("a legitimate empty Search Provider ranking does not trigger fallback", () => {
+  const result = runExploreOperation({
+    baseSnapshot: { reference: "fixture-base", state: "known" },
+    capturedFiles: completeAtlas(),
+    homeAtlas: { reference: "fixture", state: "known" },
+    provider: Object.freeze({ rank: () => Object.freeze([]) }),
+    query: "canonical serialization",
+    budgets,
+  });
+
+  assert.deepEqual(result.payload.results, []);
+  assert.equal(
+    result.payload.degradation.diagnostics.some(
+      (diagnostic) => diagnostic.code === "ATLAS_EXPLORE_PROVIDER_FALLBACK",
+    ),
+    false,
   );
 });
 

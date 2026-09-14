@@ -429,6 +429,33 @@ function documentDigest(documents: readonly ExploreSearchDocument[]): string {
   );
 }
 
+function documentMapping(
+  documents: readonly ExploreSearchDocument[],
+): Readonly<Record<string, string>> {
+  return Object.freeze(
+    Object.fromEntries(
+      documents.map((document, index) => [
+        `${String(index).padStart(6, "0")}.md`,
+        document.id,
+      ]),
+    ),
+  );
+}
+
+function documentMappingMatches(
+  value: unknown,
+  expected: Readonly<Record<string, string>>,
+): value is Readonly<Record<string, string>> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as Readonly<Record<string, unknown>>;
+  const expectedEntries = Object.entries(expected);
+  const candidateKeys = Object.keys(candidate);
+  return (
+    candidateKeys.length === expectedEntries.length &&
+    expectedEntries.every(([filename, objectId]) => candidate[filename] === objectId)
+  );
+}
+
 function commandFailure(command: string, result: CommandResult): Error {
   const detail = result.stderr.trim() || result.stdout.trim() || "no diagnostic output";
   return new Error(`${command} exited ${String(result.status)}: ${detail}`);
@@ -563,7 +590,10 @@ export function createLocalAtlasQmdRuntime(
     return result;
   }
 
-  function ensureIndex(request: AtlasQmdRankRequest): {
+  function ensureIndex(
+    request: AtlasQmdRankRequest,
+    forceRebuild = false,
+  ): {
     readonly directory: string;
     readonly manifest: IndexManifest;
   } {
@@ -573,21 +603,24 @@ export function createLocalAtlasQmdRuntime(
     const manifestPath = join(directory, "atlas-qmd-index.json");
     const ownershipPath = join(directory, ".atlas-qmd-owned");
     const desiredDigest = documentDigest(request.documents);
-    try {
-      const existing = readJson(manifestPath) as Partial<IndexManifest>;
-      if (
-        existing.schema === "1.0.0" &&
-        existing.packageVersion === packageVersion &&
-        existing.atlasHostDirectory === resolve(request.atlasHostDirectory) &&
-        existing.atlasVersion === request.atlasVersion &&
-        existing.documentDigest === desiredDigest &&
-        existing.documents !== undefined &&
-        existsSync(join(directory, ".qmd", "index.sqlite"))
-      ) {
-        return { directory, manifest: existing as IndexManifest };
+    const desiredMapping = documentMapping(request.documents);
+    if (!forceRebuild) {
+      try {
+        const existing = readJson(manifestPath) as Partial<IndexManifest>;
+        if (
+          existing.schema === "1.0.0" &&
+          existing.packageVersion === packageVersion &&
+          existing.atlasHostDirectory === resolve(request.atlasHostDirectory) &&
+          existing.atlasVersion === request.atlasVersion &&
+          existing.documentDigest === desiredDigest &&
+          documentMappingMatches(existing.documents, desiredMapping) &&
+          existsSync(join(directory, ".qmd", "index.sqlite"))
+        ) {
+          return { directory, manifest: existing as IndexManifest };
+        }
+      } catch {
+        // Missing or corrupt owned index state is rebuilt below.
       }
-    } catch {
-      // Missing or corrupt owned index state is rebuilt below.
     }
 
     assertSafeOwnedDirectory(directory, ownershipPath, indexOwnershipMarker);
@@ -595,10 +628,8 @@ export function createLocalAtlasQmdRuntime(
     const documentsDirectory = join(directory, "documents");
     mkdirSync(documentsDirectory, { recursive: true });
     writeFileSync(ownershipPath, `${indexOwnershipMarker}\n`, "utf8");
-    const mapping: Record<string, string> = {};
     request.documents.forEach((document, index) => {
       const filename = `${String(index).padStart(6, "0")}.md`;
-      mapping[filename] = document.id;
       writeFileSync(
         join(documentsDirectory, filename),
         documentProjection(document),
@@ -620,7 +651,7 @@ export function createLocalAtlasQmdRuntime(
       atlasHostDirectory: resolve(request.atlasHostDirectory),
       atlasVersion: request.atlasVersion,
       documentDigest: desiredDigest,
-      documents: Object.freeze(mapping),
+      documents: desiredMapping,
       packageVersion,
       schema: "1.0.0",
     });
@@ -628,8 +659,10 @@ export function createLocalAtlasQmdRuntime(
     return { directory, manifest };
   }
 
-  function rank(request: AtlasQmdRankRequest): readonly ExploreCandidate[] {
-    const indexed = ensureIndex(request);
+  function rankIndexed(
+    request: AtlasQmdRankRequest,
+    indexed: ReturnType<typeof ensureIndex>,
+  ): readonly ExploreCandidate[] {
     if (request.mode === "semantic") {
       qmd(request, indexed.directory, ["pull"]);
       qmd(request, indexed.directory, ["embed", "-c", "atlas"]);
@@ -659,6 +692,28 @@ export function createLocalAtlasQmdRuntime(
       candidates.push(Object.freeze({ objectId, score: candidate.score }));
     }
     return Object.freeze(candidates);
+  }
+
+  function isOwnedIndexCorruption(error: unknown): boolean {
+    const message = errorMessage(error).toLowerCase();
+    return [
+      "database disk image is malformed",
+      "file is not a database",
+      "malformed database schema",
+      "no such table",
+      "sqlite_corrupt",
+      "sqlite_notadb",
+    ].some((signature) => message.includes(signature));
+  }
+
+  function rank(request: AtlasQmdRankRequest): readonly ExploreCandidate[] {
+    const indexed = ensureIndex(request);
+    try {
+      return rankIndexed(request, indexed);
+    } catch (error) {
+      if (!isOwnedIndexCorruption(error)) throw error;
+      return rankIndexed(request, ensureIndex(request, true));
+    }
   }
 
   return Object.freeze({ inspectToolRuntime, installToolRuntime, rank });
@@ -691,8 +746,9 @@ export function prepareAtlasQmd(
     atlasHostDirectory: resolve(options.atlasHostDirectory),
     atlasVersion: options.atlasVersion,
     platform,
-    toolRuntimeRoot:
+    toolRuntimeRoot: resolve(
       options.toolRuntimeRoot ?? defaultToolRuntimeRoot(platform, architecture),
+    ),
   });
   const selectedRuntime = runtime ?? createLocalAtlasQmdRuntime();
   const inspection = selectedRuntime.inspectToolRuntime(context);
