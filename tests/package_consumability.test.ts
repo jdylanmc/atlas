@@ -1053,6 +1053,7 @@ for (const entry of readInstalledConsumerCorpus().cases) {
       if (entry.cacheFailure !== undefined) {
         if (
           [
+            "freshness-window",
             "invalid-lock-on-update",
             "first-metadata-cleanup",
             "first-metadata-cleanup-discarded",
@@ -1072,7 +1073,15 @@ for (const entry of readInstalledConsumerCorpus().cases) {
           assert.equal(tracking.state, "tracked-atlas");
           for (const change of tracking.changes) {
             mkdirSync(dirname(join(consumer, change.path)), { recursive: true });
-            writeFileSync(join(consumer, change.path), change.content);
+            const content =
+              entry.cacheFailure.mode === "freshness-window" &&
+              change.path.includes("/tracked-atlases/")
+                ? change.content.replace(
+                    "\natlas:\n",
+                    "\natlas:\n  refresh-window-days: 1\n",
+                  )
+                : change.content;
+            writeFileSync(join(consumer, change.path), content);
           }
           consumerGit(consumer, ["add", ".atlas"]);
           consumerGit(consumer, [
@@ -1158,6 +1167,35 @@ for (const entry of readInstalledConsumerCorpus().cases) {
               'assert.equal(result.state, "unreachable");',
               'const dependencies = existsSync(lockPath) ? JSON.parse(readFileSync(lockPath, "utf8")).dependencies : [];',
               "console.log(JSON.stringify({ state: result.state, code: result.findings[0]?.code, dependencies }));",
+              '} else if (input.mode === "freshness-window") {',
+              "const freshnessRequest = { ...request, trackedAtlas: { ...trackedAtlas, refreshWindowDays: 1 } };",
+              "const freshnessOptions = { ...options, resolveRemote: () => { contacts++; return input.remote; } };",
+              "const first = resolveAtlasCache(freshnessRequest, freshnessOptions);",
+              'assert.equal(first.state, "resolved"); assert.equal(contacts, 1);',
+              'const metadataPath = join(first.snapshot.cacheDirectory, "metadata.json");',
+              "const metadataBytes = readFileSync(metadataPath); const lockBytes = readFileSync(lockPath);",
+              "renameSync(input.remote, `${input.remote}-offline`);",
+              'now = "2026-08-30T12:00:00Z";',
+              "verifyExplore(explore(freshnessOptions), first.snapshot.snapshot, true, []);",
+              'assert.equal(contacts, 1, "Installed Explore must honor the committed declaration window");',
+              "assert.deepEqual(readFileSync(metadataPath), metadataBytes); assert.deepEqual(readFileSync(lockPath), lockBytes);",
+              "const forced = resolveAtlasCache({ ...freshnessRequest, forceRefresh: true }, freshnessOptions);",
+              'assert.equal(forced.state, "resolved"); assert.equal(contacts, 2);',
+              "assert.equal(forced.snapshot.snapshot, first.snapshot.snapshot);",
+              "verifyExplore(explore(freshnessOptions), first.snapshot.snapshot, true, []);",
+              "assert.equal(contacts, 2);",
+              'now = "2026-08-31T00:00:00Z";',
+              "const expired = explore(freshnessOptions);",
+              "verifyExplore(expired, first.snapshot.snapshot, false, []);",
+              "assert.equal(contacts, 3);",
+              "assert.deepEqual(readFileSync(metadataPath), metadataBytes); assert.deepEqual(readFileSync(lockPath), lockBytes);",
+              'const futureRecord = JSON.stringify({ ...JSON.parse(metadataBytes.toString()), fetchedAt: "2099-01-01T00:00:00Z" });',
+              "writeFileSync(metadataPath, futureRecord);",
+              'verifyExplore(explore(freshnessOptions), first.snapshot.snapshot, false, ["ATLAS_CROSS_ATLAS_FRESHNESS_UNAVAILABLE"]);',
+              "assert.equal(contacts, 4);",
+              'assert.equal(readFileSync(metadataPath, "utf8"), futureRecord); assert.deepEqual(readFileSync(lockPath), lockBytes);',
+              "writeFileSync(metadataPath, metadataBytes);",
+              "console.log(JSON.stringify({ state: forced.state, code: forced.snapshot.findings[0]?.code, offlineCode: expired.payload.degradation.diagnostics[0]?.code }));",
               '} else if (input.mode === "first-metadata-cleanup" || input.mode === "first-metadata-cleanup-discarded") {',
               "const first = resolveAtlasCache(request, options);",
               'assert.equal(first.state, "resolved");',

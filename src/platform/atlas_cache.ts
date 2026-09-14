@@ -20,8 +20,9 @@ import {
   type AtlasLockDependency,
 } from "../domain/atlas_lock.ts";
 import type { AtlasSlug } from "../domain/atlas_slug.ts";
+import { dateTimeMilliseconds } from "../domain/atlas_page.ts";
 import type { Finding } from "../domain/finding.ts";
-import type { TrackedAtlas } from "../domain/tracked_atlas.ts";
+import { isAtlasRefreshWindow, type TrackedAtlas } from "../domain/tracked_atlas.ts";
 import {
   captureAtlasTree,
   type AtlasTreeCaptureBudgets,
@@ -34,6 +35,7 @@ import {
 } from "./trusted_git.ts";
 
 export interface AtlasCacheResolveRequest {
+  readonly forceRefresh?: boolean;
   readonly homeAtlasDirectory: string;
   readonly introducedByAnchorId: string;
   readonly introducedByEdgeId: string;
@@ -85,6 +87,7 @@ const lockPath = [".atlas", "atlas-cache", "atlas-lock.json"] as const;
  * (`warning`) since traversal still returns a usable, if stale, result.
  */
 function findingSeverity(code: string): Finding["severity"] {
+  if (code === "ATLAS_CROSS_ATLAS_REFRESH_WINDOW_INVALID") return "error";
   return code === "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE"
     ? "inconclusive"
     : "warning";
@@ -363,6 +366,79 @@ function matchesRecord(
   );
 }
 
+function readRecordedDependency(
+  request: AtlasCacheResolveRequest,
+  directory: string,
+  cacheKey: string,
+  snapshot: string,
+): AtlasLockDependency | undefined {
+  let metadata: unknown;
+  try {
+    metadata = JSON.parse(readFileSync(metadataPath(directory), "utf8"));
+  } catch (error) {
+    if (
+      error instanceof SyntaxError ||
+      (error instanceof Error && "code" in error && typeof error.code === "string")
+    ) {
+      return undefined;
+    }
+    throw error;
+  }
+  if (
+    !isRecord(metadata) ||
+    metadata["cacheKey"] !== cacheKey ||
+    metadata["snapshot"] !== snapshot ||
+    !matchesRecord(metadata["locator"], { ...request.trackedAtlas.locator }) ||
+    !matchesRecord(metadata["slug"], { ...request.trackedAtlas.slug }) ||
+    !nonBlank(metadata["fetchedAt"]) ||
+    !nonBlank(metadata["introducedByAnchorId"]) ||
+    !nonBlank(metadata["introducedByEdgeId"])
+  ) {
+    return undefined;
+  }
+  return Object.freeze({
+    cacheKey,
+    fetchedAt: metadata["fetchedAt"],
+    introducedByAnchorId: metadata["introducedByAnchorId"],
+    introducedByEdgeId: metadata["introducedByEdgeId"],
+    locator: request.trackedAtlas.locator,
+    slug: request.trackedAtlas.slug,
+    snapshot,
+  });
+}
+
+function freshCacheReference(
+  request: AtlasCacheResolveRequest,
+  directory: string,
+  cacheKey: string,
+  reference: string,
+  readGit: typeof runTrustedGit,
+  now: () => string,
+  maintenanceFindings: Finding[],
+): string | undefined {
+  const window = request.trackedAtlas.refreshWindowDays;
+  if (request.forceRefresh === true || window === undefined || window === 0)
+    return undefined;
+  const snapshot = readRevision(bareRepositoryDirectory(directory), reference, readGit);
+  const dependency =
+    snapshot === undefined
+      ? undefined
+      : readRecordedDependency(request, directory, cacheKey, snapshot);
+  const fetchedAt =
+    dependency === undefined ? undefined : dateTimeMilliseconds(dependency.fetchedAt);
+  const observedAt = dateTimeMilliseconds(now());
+  if (fetchedAt === undefined || observedAt === undefined || fetchedAt > observedAt) {
+    maintenanceFindings.push(
+      finding(
+        "ATLAS_CROSS_ATLAS_FRESHNESS_UNAVAILABLE",
+        "Cache freshness could not be established from its matching fetch record and the current clock; attempting refresh instead.",
+      ),
+    );
+    return undefined;
+  }
+  return (observedAt - fetchedAt) / 86_400_000 < window ? snapshot : undefined;
+}
+
 function restoreMissingLock(
   request: AtlasCacheResolveRequest,
   directory: string,
@@ -375,33 +451,11 @@ function restoreMissingLock(
     if (lock.dependencies.some((entry) => entry.cacheKey === cacheKey))
       return undefined;
 
-    const metadata: unknown = JSON.parse(readFileSync(metadataPath(directory), "utf8"));
-    if (
-      !isRecord(metadata) ||
-      metadata["cacheKey"] !== cacheKey ||
-      metadata["snapshot"] !== snapshot ||
-      !matchesRecord(metadata["locator"], { ...request.trackedAtlas.locator }) ||
-      !matchesRecord(metadata["slug"], { ...request.trackedAtlas.slug }) ||
-      !nonBlank(metadata["fetchedAt"]) ||
-      !nonBlank(metadata["introducedByAnchorId"]) ||
-      !nonBlank(metadata["introducedByEdgeId"])
-    ) {
+    const dependency = readRecordedDependency(request, directory, cacheKey, snapshot);
+    if (dependency === undefined) {
       throw new Error("Cache metadata does not identify the captured dependency.");
     }
-    writeAtlasLock(
-      request.homeAtlasDirectory,
-      lock,
-      {
-        cacheKey,
-        fetchedAt: metadata["fetchedAt"],
-        introducedByAnchorId: metadata["introducedByAnchorId"],
-        introducedByEdgeId: metadata["introducedByEdgeId"],
-        locator: request.trackedAtlas.locator,
-        slug: request.trackedAtlas.slug,
-        snapshot,
-      },
-      maintenanceFindings,
-    );
+    writeAtlasLock(request.homeAtlasDirectory, lock, dependency, maintenanceFindings);
     return undefined;
   } catch {
     return finding(
@@ -479,6 +533,20 @@ export function resolveAtlasCache(
   request: AtlasCacheResolveRequest,
   options: AtlasCacheResolverOptions = Object.freeze({}),
 ): AtlasCacheResolveResult {
+  if (
+    request.trackedAtlas.refreshWindowDays !== undefined &&
+    !isAtlasRefreshWindow(request.trackedAtlas.refreshWindowDays)
+  ) {
+    return Object.freeze({
+      findings: Object.freeze([
+        finding(
+          "ATLAS_CROSS_ATLAS_REFRESH_WINDOW_INVALID",
+          "TrackedAtlas refreshWindowDays must be a finite non-negative number.",
+        ),
+      ]),
+      state: "unreachable" as const,
+    });
+  }
   const readGit = options.readGit ?? runTrustedGit;
   const writeGit = options.writeGit ?? runTrustedGitForWrite;
   const bootstrap = options.bootstrap ?? runTrustedGitBootstrap;
@@ -630,10 +698,35 @@ export function resolveAtlasCache(
       : { reason: captured.reason, state: "failed" as const };
   };
   const findings: Finding[] = [];
+  const freshReference = hadCache
+    ? freshCacheReference(
+        request,
+        finalDirectory,
+        cache.cacheKey,
+        activeReference,
+        readGit,
+        now,
+        maintenanceFindings,
+      )
+    : undefined;
+  const freshCapture =
+    freshReference === undefined
+      ? undefined
+      : captureReference(finalRepository, freshReference);
+  const usesFreshSnapshot = freshCapture?.state === "captured";
+  if (freshCapture?.state === "failed") {
+    maintenanceFindings.push(
+      finding(
+        "ATLAS_CROSS_ATLAS_FRESHNESS_UNAVAILABLE",
+        "The fetch record names an unusable cached Snapshot; attempting refresh instead.",
+      ),
+    );
+  }
   const fetchReference = hadCache
     ? `refs/atlas-cache-pending/${randomUUID()}`
     : activeReference;
   const remoteReached =
+    usesFreshSnapshot ||
     !hadCache ||
     fetchBranch(
       finalRepository,
@@ -643,14 +736,16 @@ export function resolveAtlasCache(
       writeGit,
       fetchReference,
     );
-  let captured = remoteReached
-    ? captureReference(finalRepository, fetchReference)
-    : {
-        reason:
-          "Cross-Atlas traversal is using a cached tracked Atlas because the remote is currently unreachable.",
-        state: "failed" as const,
-      };
-  if (hadCache && captured.state === "captured") {
+  let captured = usesFreshSnapshot
+    ? freshCapture
+    : remoteReached
+      ? captureReference(finalRepository, fetchReference)
+      : {
+          reason:
+            "Cross-Atlas traversal is using a cached tracked Atlas because the remote is currently unreachable.",
+          state: "failed" as const,
+        };
+  if (hadCache && !usesFreshSnapshot && captured.state === "captured") {
     const published = writeGit(finalRepository, [
       "update-ref",
       activeReference,
@@ -664,7 +759,7 @@ export function resolveAtlasCache(
       };
     }
   }
-  const usesCachedSnapshot = captured.state === "failed";
+  const usesCachedSnapshot = usesFreshSnapshot || captured.state === "failed";
   if (captured.state === "failed") {
     findings.push(
       finding(
@@ -678,6 +773,7 @@ export function resolveAtlasCache(
   }
   if (
     hadCache &&
+    !usesFreshSnapshot &&
     !gitSucceeded(writeGit(finalRepository, ["update-ref", "-d", fetchReference]))
   ) {
     maintenanceFindings.push(

@@ -23,6 +23,7 @@ interface InstalledConsumerCase {
   readonly cacheFailure?: {
     readonly mode:
       | "missing-atlas"
+      | "freshness-window"
       | "uncapturable-update"
       | "interrupted-first-contact"
       | "unrecorded-publication"
@@ -139,6 +140,7 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
       assert.ok(
         [
           "missing-atlas",
+          "freshness-window",
           "uncapturable-update",
           "interrupted-first-contact",
           "unrecorded-publication",

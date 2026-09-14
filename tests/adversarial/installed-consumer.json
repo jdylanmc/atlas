@@ -1198,6 +1198,23 @@
       }
     },
     {
+      "name": "installed Explore honors declaration freshness and explicit refresh preserves offline evidence",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "cacheFailure": {
+        "mode": "freshness-window",
+        "expectedCode": "ATLAS_CROSS_ATLAS_CACHED_OFFLINE"
+      }
+    },
+    {
       "name": "installed cache preserves its last usable snapshot through an invalid remote update and offline retry",
       "gate": "installed-consumer",
       "expectation": "accept",

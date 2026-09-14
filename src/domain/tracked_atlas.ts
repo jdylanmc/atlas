@@ -10,6 +10,7 @@ export interface TrackedAtlas {
   readonly declarationId: string;
   readonly defaultBranch: string;
   readonly locator: AtlasLocator;
+  readonly refreshWindowDays?: number;
   readonly slug: AtlasSlug;
   readonly title: string;
 }
@@ -43,6 +44,10 @@ interface TrackedAtlasObjectLike {
   readonly path: string;
   readonly title: string;
   readonly type: string;
+}
+
+export function isAtlasRefreshWindow(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 function locatorRecord(
@@ -110,12 +115,26 @@ export function parseTrackedAtlas(
       state: "invalid" as const,
     });
   }
+  const refreshWindowDays = object.page.atlas["refresh-window-days"];
+  if (refreshWindowDays !== undefined && !isAtlasRefreshWindow(refreshWindowDays)) {
+    return Object.freeze({
+      findings: Object.freeze([
+        finding(
+          "ATLAS_CROSS_ATLAS_REFRESH_WINDOW_INVALID",
+          "TrackedAtlas refresh-window-days must be a finite non-negative number.",
+          object.path,
+        ),
+      ]),
+      state: "invalid" as const,
+    });
+  }
   return Object.freeze({
     state: "tracked" as const,
     trackedAtlas: Object.freeze({
       declarationId: object.id,
       defaultBranch,
       locator: parsedLocator.locator,
+      ...(refreshWindowDays === undefined ? {} : { refreshWindowDays }),
       slug,
       title: object.title,
     }),

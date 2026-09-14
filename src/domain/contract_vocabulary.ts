@@ -227,7 +227,8 @@ export const unboundGlossaryTerms = Object.freeze([
     term: "Atlas Schema",
   }),
   Object.freeze({
-    reason: "Not yet implemented (connected Atlas feature).",
+    reason:
+      "Automatic freshness and per-entry forced resolution exist; the explicit refresh workflow and one/all selector remain unfinished.",
     term: "Atlas Refresh",
   }),
   Object.freeze({

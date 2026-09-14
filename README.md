@@ -24,6 +24,21 @@ Snapshot and its recorded fetch time. A failed first capture is not published
 as a resolved dependency in Atlas Lock. Connected resolution has no per-host
 approval list or aggregate network-quota gate.
 
+TrackedAtlas declarations may set `atlas.refresh-window-days` to a finite,
+non-negative number; fractions are supported. A matching usable cache remains
+fresh while its age is strictly less than that many days. Fresh entry makes no
+remote contact, emits no offline warning, and preserves the last successful
+fetch record. Omitted or zero windows retain refresh-on-entry behavior. Invalid
+windows are rejected; missing, mismatched, non-comparable or future-dated cache
+records cannot establish freshness and produce a maintenance Finding before
+refresh is attempted.
+
+The package-root `resolveAtlasCache` request accepts `forceRefresh: true` to
+bypass one entry's window. A failed forced refresh preserves the cached
+Snapshot and successful fetch time rather than making the entry newly fresh.
+The standalone refresh workflow and its one/all selector, Expand, Atlas
+Pruning, and Atlas Untracking remain unfinished; no new CLI command is claimed.
+
 Cache housekeeping warnings appear separately in `payload.maintenanceFindings`
 when needed. They do not mark a current, usable Snapshot as degraded or make its
 validation fail; remote unavailability and Snapshot problems still appear in
