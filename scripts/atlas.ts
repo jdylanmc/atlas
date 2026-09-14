@@ -83,6 +83,12 @@ import {
 import { runLocalAtlasIngest } from "../src/platform/local_atlas_ingest.ts";
 import { runLocalAtlasGovernance } from "../src/platform/local_atlas_governance.ts";
 import { runLocalAtlasExplore } from "../src/platform/local_atlas_explore.ts";
+import { runLocalAtlasRefresh } from "../src/platform/local_atlas_refresh.ts";
+import {
+  atlasRefreshCommandUsage,
+  exitCodeForAtlasRefresh,
+  parseAtlasRefreshCommand,
+} from "../src/interfaces/atlas_refresh_command.ts";
 import {
   inputContractCommandUsage,
   runInputContractCommand,
@@ -826,6 +832,17 @@ function mainGovern(arguments_: readonly string[]): number {
 
 type AtlasCommandHandler = (arguments_: readonly string[]) => number;
 
+function mainRefresh(arguments_: readonly string[]): number {
+  const parsed = parseAtlasRefreshCommand(arguments_);
+  const result =
+    parsed.state === "invalid"
+      ? parsed.result
+      : runLocalAtlasRefresh(parsed.atlasHostDirectory, parsed.selection);
+  process.stdout.write(`${JSON.stringify(result)}\n`);
+  if (parsed.state === "invalid") console.error(atlasRefreshCommandUsage);
+  return exitCodeForAtlasRefresh(result);
+}
+
 function mainInputContract(arguments_: readonly string[]): number {
   const result = runInputContractCommand(arguments_);
   process.stdout.write(`${JSON.stringify(result)}\n`);
@@ -841,6 +858,7 @@ const atlasCommandDispatch = Object.freeze({
   ingest: mainIngest,
   govern: mainGovern,
   "input-contract": mainInputContract,
+  refresh: mainRefresh,
 } satisfies Readonly<Record<string, AtlasCommandHandler>>);
 
 export const atlasCommandNames = commandNamesForDispatch(atlasCommandDispatch);

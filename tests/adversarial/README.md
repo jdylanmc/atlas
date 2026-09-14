@@ -69,6 +69,13 @@ bytes remain unchanged throughout those offline stages. A deliberately
 future-dated fetch record must then produce a freshness maintenance Finding,
 attempt contact rather than appear fresh, and retain its bytes on failure.
 
+The refresh-workflow case exercises the installed declared `atlas` executable
+with single/all selectors and two declarations aliasing one Locator. Installed
+API controls move the remote on a hypothetical second contact to prove one
+Snapshot per Locator. Branch removal, a misleading suffix-matching reference,
+remote unavailability, and lost cache state retain distinct Findings and
+first-contact decisions while Home knowledge remains unchanged.
+
 Its update case first captures a real Atlas, then commits removal of the remote
 Atlas tree. The failed update and a subsequent offline retry must retain the
 same captured bytes and commit, preserve metadata and Atlas Lock bytes, and

@@ -194,18 +194,40 @@ function fetchBranch(
   bootstrap: TrustedGitBootstrapAdapter,
   writeGit: typeof runTrustedGitForWrite,
   reference = `refs/heads/${branch}`,
-): boolean {
+): "fetched" | "branch-missing" | "failed" {
   writeGit(repository, ["remote", "remove", "origin"]);
   if (!gitSucceeded(writeGit(repository, ["remote", "add", "origin", remote]))) {
-    return false;
+    return "failed";
   }
-  return gitSucceeded(
-    bootstrap(repository, [
-      "fetch",
-      "--no-tags",
-      "origin",
-      `+refs/heads/${branch}:${reference}`,
-    ]),
+  if (
+    gitSucceeded(
+      bootstrap(repository, [
+        "fetch",
+        "--no-tags",
+        "origin",
+        `+refs/heads/${branch}:${reference}`,
+      ]),
+    )
+  )
+    return "fetched";
+  const advertised = bootstrap(repository, [
+    "ls-remote",
+    "--refs",
+    "origin",
+    `refs/heads/${branch}`,
+  ]);
+  if (!gitSucceeded(advertised)) return "failed";
+  return advertised.stdout
+    .split(/\r?\n/u)
+    .some((line) => line.endsWith(`\trefs/heads/${branch}`))
+    ? "failed"
+    : "branch-missing";
+}
+
+function missingBranchFinding(): Finding {
+  return finding(
+    "ATLAS_CROSS_ATLAS_BRANCH_MISSING",
+    "The tracked repository did not advertise the declared branch. Choose an existing branch or repair the declaration.",
   );
 }
 
@@ -595,22 +617,24 @@ export function resolveAtlasCache(
         state: "unreachable" as const,
       });
     }
-    if (
-      !fetchBranch(
-        pendingRepository,
-        resolveRemote(request.trackedAtlas),
-        request.trackedAtlas.locator.branch,
-        bootstrap,
-        writeGit,
-      )
-    ) {
+    const firstFetch = fetchBranch(
+      pendingRepository,
+      resolveRemote(request.trackedAtlas),
+      request.trackedAtlas.locator.branch,
+      bootstrap,
+      writeGit,
+    );
+    if (firstFetch !== "fetched") {
       rmSync(pendingDirectory, { force: true, recursive: true });
       return Object.freeze({
         findings: Object.freeze([
           finding(
             "ATLAS_CROSS_ATLAS_FIRST_CONTACT_UNREACHABLE",
-            "Cross-Atlas first contact could not reach the tracked Atlas.",
+            firstFetch === "branch-missing"
+              ? "Cross-Atlas first contact could not resolve the declared branch."
+              : "Cross-Atlas first contact could not reach the tracked Atlas.",
           ),
+          ...(firstFetch === "branch-missing" ? [missingBranchFinding()] : []),
         ]),
         state: "unreachable" as const,
       });
@@ -725,24 +749,27 @@ export function resolveAtlasCache(
   const fetchReference = hadCache
     ? `refs/atlas-cache-pending/${randomUUID()}`
     : activeReference;
-  const remoteReached =
-    usesFreshSnapshot ||
-    !hadCache ||
-    fetchBranch(
-      finalRepository,
-      resolveRemote(request.trackedAtlas),
-      request.trackedAtlas.locator.branch,
-      bootstrap,
-      writeGit,
-      fetchReference,
-    );
+  const fetchState =
+    usesFreshSnapshot || !hadCache
+      ? "fetched"
+      : fetchBranch(
+          finalRepository,
+          resolveRemote(request.trackedAtlas),
+          request.trackedAtlas.locator.branch,
+          bootstrap,
+          writeGit,
+          fetchReference,
+        );
+  const remoteReached = fetchState === "fetched";
   let captured = usesFreshSnapshot
     ? freshCapture
     : remoteReached
       ? captureReference(finalRepository, fetchReference)
       : {
           reason:
-            "Cross-Atlas traversal is using a cached tracked Atlas because the remote is currently unreachable.",
+            fetchState === "branch-missing"
+              ? "The tracked repository did not advertise the declared branch; traversal is using its cached Snapshot."
+              : "Cross-Atlas traversal is using a cached tracked Atlas because the remote is currently unreachable.",
           state: "failed" as const,
         };
   if (hadCache && !usesFreshSnapshot && captured.state === "captured") {
@@ -771,6 +798,7 @@ export function resolveAtlasCache(
     );
     if (hadCache) captured = captureReference(finalRepository, activeReference);
   }
+  if (fetchState === "branch-missing") findings.push(missingBranchFinding());
   if (
     hadCache &&
     !usesFreshSnapshot &&

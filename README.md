@@ -7,6 +7,7 @@ Today the package has these reachable command-line workflows:
 - `atlas lint --machine [--atlas-host-directory PATH]` validates a Home Atlas and prints an Operation Result as JSON.
 - `atlas initialize --machine [--atlas-host-directory PATH] [--resume-proposal-branch NAME]` creates or resumes an Atlas Initialization proposal in a Git-backed host directory.
 - `atlas explore --machine QUERY [--atlas-host-directory PATH]` reads a Home Atlas and reachable connected Atlases and returns routed Explore results as JSON.
+- `atlas refresh --machine (--all | --atlas-slug SLUG) [--atlas-host-directory PATH]` explicitly refreshes committed tracked-Atlas declarations without changing knowledge.
 - `atlas ingest plan|reconcile --machine ...` hands out a Crawl Assignment for an approved Ingest Scope, then reconciles a returned Candidate Graph into one proposal.
 - `atlas govern --machine --request PATH [--atlas-host-directory PATH]` maintains a Principle or Atlas Policy through one reviewable Atlas Proposal. The request carries explicit Maintainer approval and any semantic Policy verdict as validated input; the command never supplies approval itself, so an agent may propose but never establish governance autonomously.
 - `atlas input-contract --machine NAME` describes a caller-authored JSON input without reading or changing an Atlas.
@@ -36,8 +37,14 @@ refresh is attempted.
 The package-root `resolveAtlasCache` request accepts `forceRefresh: true` to
 bypass one entry's window. A failed forced refresh preserves the cached
 Snapshot and successful fetch time rather than making the entry newly fresh.
-The standalone refresh workflow and its one/all selector, Expand, Atlas
-Pruning, and Atlas Untracking remain unfinished; no new CLI command is claimed.
+The [Atlas Refresh workflow](docs/workflows/refresh-atlas.md) exposes one/all
+selection through the installed CLI and the package-root
+`runLocalAtlasRefresh` and `runAtlasRefreshOperation` interfaces. It reads one
+committed Home Snapshot, ignores uncommitted declaration edits, and refreshes
+each distinct Atlas Locator once even when declarations alias it. It reports
+an unadvertised branch separately from an unreachable repository, preserving
+cached fallback and last-successful fetch evidence. Expand, Atlas Pruning,
+and Atlas Untracking remain unfinished.
 
 Cache housekeeping warnings appear separately in `payload.maintenanceFindings`
 when needed. They do not mark a current, usable Snapshot as degraded or make its

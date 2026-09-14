@@ -13,7 +13,10 @@ import {
   type OperationReference,
 } from "../operations/operation_result.ts";
 import { resolveAtlasCache } from "./atlas_cache.ts";
-import { captureAtlasTree } from "./atlas_tree_capture.ts";
+import {
+  captureAtlasTree,
+  type AtlasTreeCaptureBudgets,
+} from "./atlas_tree_capture.ts";
 
 // The shared Atlas tree capture primitive retains Explore's bounded batch Git
 // object reads ("cat-file" in --batch-check and ["cat-file", "--batch"]),
@@ -238,7 +241,7 @@ function git(
 
 export function captureLocalAtlasExploreSnapshot(
   atlasHostDirectory: string,
-  budgets: LocalAtlasExploreBudgets,
+  budgets: AtlasTreeCaptureBudgets,
   options: LocalAtlasExploreCaptureOptions = Object.freeze({}),
 ): LocalExploreCaptureResult {
   const readStat = options.readStat ?? lstatSync;
@@ -265,7 +268,8 @@ export function captureLocalAtlasExploreSnapshot(
   const root = findGitRoot(host, readStat);
   if (root === undefined) {
     return Object.freeze({
-      reason: "Explore requires the Atlas Host Directory to be inside a Git worktree.",
+      reason:
+        "Atlas Snapshot capture requires the Atlas Host Directory to be inside a Git worktree.",
       state: "unreadable" as const,
     });
   }

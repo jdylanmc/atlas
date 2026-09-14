@@ -3,6 +3,30 @@
   "reviewResolutionRule": "A review finding is resolved only after this corpus has a reject or accept case that exercises it.",
   "cases": [
     {
+      "name": "reject Atlas Refresh without an explicit selector",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["refresh", "--machine"],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_REFRESH_USAGE"
+    },
+    {
+      "name": "reject simultaneous one and all Atlas Refresh selectors",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["refresh", "--machine", "--all", "--atlas-slug", "ambiguous"],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_REFRESH_USAGE"
+    },
+    {
+      "name": "keep Atlas Refresh effects behind the runtime port",
+      "gate": "atlas-cli",
+      "kind": "source-contract",
+      "path": "src/operations/atlas_refresh_operation.ts",
+      "requiredText": "request.runtime.refresh",
+      "forbiddenText": "node:"
+    },
+    {
       "name": "accept input contract discovery with the positional name before machine",
       "gate": "atlas-cli",
       "kind": "command",

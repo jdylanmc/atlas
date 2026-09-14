@@ -182,6 +182,15 @@ export type {
   ResolvedTrackedAtlasSnapshot,
 } from "./operations/connected_atlas_explore.ts";
 export { resolveAtlasCache } from "./platform/atlas_cache.ts";
+export { runAtlasRefreshOperation } from "./operations/atlas_refresh_operation.ts";
+export type {
+  AtlasRefreshEntry,
+  AtlasRefreshPayload,
+  AtlasRefreshRequest,
+  AtlasRefreshResult,
+  AtlasRefreshSelection,
+} from "./operations/atlas_refresh_operation.ts";
+export { runLocalAtlasRefresh } from "./platform/local_atlas_refresh.ts";
 export {
   atlasIngestChangeSetDigest,
   isSafeGitBranchName as isSafeIngestProposalBranchName,

@@ -29,6 +29,7 @@ interface InstalledConsumerCase {
     readonly mode:
       | "missing-atlas"
       | "freshness-window"
+      | "refresh-workflow"
       | "uncapturable-update"
       | "interrupted-first-contact"
       | "unrecorded-publication"
@@ -37,6 +38,7 @@ interface InstalledConsumerCase {
       | "first-metadata-cleanup-discarded"
       | "lock-persistence";
     readonly expectedCode: string;
+    readonly expectedOfflineCode?: string;
   };
   readonly citationCorrespondence?: {
     readonly claim: string;
@@ -155,6 +157,7 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
         [
           "missing-atlas",
           "freshness-window",
+          "refresh-workflow",
           "uncapturable-update",
           "interrupted-first-contact",
           "unrecorded-publication",
@@ -165,6 +168,9 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
         ].includes(entry.cacheFailure.mode),
       );
       assert.match(entry.cacheFailure.expectedCode, /^ATLAS_[A-Z_]+$/u);
+      if (entry.cacheFailure.expectedOfflineCode !== undefined) {
+        assert.match(entry.cacheFailure.expectedOfflineCode, /^ATLAS_[A-Z_]+$/u);
+      }
     }
     if (entry.citationCorrespondence !== undefined) {
       for (const value of [
