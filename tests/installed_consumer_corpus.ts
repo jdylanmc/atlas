@@ -12,6 +12,26 @@ interface InstalledConsumerCase {
   readonly expectedRootAnchorId: string;
   readonly expectedAtlasPaths: readonly string[];
   readonly unmergedLintCode: string;
+  readonly connectedExplore?: {
+    readonly query: string;
+    readonly expectedConceptId: string;
+    readonly expectedSourceId: string;
+    readonly expectedSourceText: string;
+    readonly expectedTrackedSlug: string;
+    readonly cleanupFailureCode?: string;
+  };
+  readonly cacheFailure?: {
+    readonly mode:
+      | "missing-atlas"
+      | "uncapturable-update"
+      | "interrupted-first-contact"
+      | "unrecorded-publication"
+      | "invalid-lock-on-update"
+      | "first-metadata-cleanup"
+      | "first-metadata-cleanup-discarded"
+      | "lock-persistence";
+    readonly expectedCode: string;
+  };
   readonly citationCorrespondence?: {
     readonly claim: string;
     readonly context: string;
@@ -106,6 +126,57 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
       assert.equal(typeof path, "string");
       assert.match(path, /^\.atlas\//u);
     }
+    if (entry.connectedExplore !== undefined) {
+      for (const value of Object.values(entry.connectedExplore)) {
+        assert.equal(typeof value, "string");
+        assert.ok(value.length > 0);
+      }
+      if (entry.connectedExplore.cleanupFailureCode !== undefined) {
+        assert.match(entry.connectedExplore.cleanupFailureCode, /^ATLAS_[A-Z_]+$/u);
+      }
+    }
+    if (entry.cacheFailure !== undefined) {
+      assert.ok(
+        [
+          "missing-atlas",
+          "uncapturable-update",
+          "interrupted-first-contact",
+          "unrecorded-publication",
+          "invalid-lock-on-update",
+          "first-metadata-cleanup",
+          "first-metadata-cleanup-discarded",
+          "lock-persistence",
+        ].includes(entry.cacheFailure.mode),
+      );
+      assert.match(entry.cacheFailure.expectedCode, /^ATLAS_[A-Z_]+$/u);
+    }
+    if (entry.citationCorrespondence !== undefined) {
+      for (const value of [
+        entry.citationCorrespondence.claim,
+        entry.citationCorrespondence.context,
+        entry.citationCorrespondence.expectedTamperCode,
+        entry.citationCorrespondence.sourceContent,
+      ]) {
+        assert.equal(typeof value, "string");
+        assert.ok(value.length > 0);
+      }
+      assert.match(entry.citationCorrespondence.expectedTamperCode, /^ATLAS_[A-Z_]+$/u);
+      assert.equal(entry.citationCorrespondence.quotations.length, 2);
+      for (const quotation of entry.citationCorrespondence.quotations) {
+        assert.equal(typeof quotation, "string");
+        assert.ok(quotation.length > 0);
+      }
+      for (const fragments of [
+        entry.citationCorrespondence.expectedClaimFragments,
+        entry.citationCorrespondence.expectedContextFragments,
+      ]) {
+        assert.ok(fragments.length > 0);
+        for (const fragment of fragments) {
+          assert.equal(typeof fragment, "string");
+          assert.ok(fragment.length > 0);
+        }
+      }
+    }
     if (entry.retirement !== undefined) {
       assert.ok(["retire", "delete"].includes(entry.retirement.action));
       assert.ok(["principle", "atlas-policy"].includes(entry.retirement.subject));
@@ -131,36 +202,6 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
         for (const finding of entry.retirement.dependency.expectedFindings) {
           assert.match(finding.path, /^\.atlas\//u);
           assert.ok(Number.isInteger(finding.count) && finding.count > 0);
-        }
-        if (entry.citationCorrespondence !== undefined) {
-          for (const value of [
-            entry.citationCorrespondence.claim,
-            entry.citationCorrespondence.context,
-            entry.citationCorrespondence.expectedTamperCode,
-            entry.citationCorrespondence.sourceContent,
-          ]) {
-            assert.equal(typeof value, "string");
-            assert.ok(value.length > 0);
-          }
-          assert.match(
-            entry.citationCorrespondence.expectedTamperCode,
-            /^ATLAS_[A-Z_]+$/u,
-          );
-          assert.equal(entry.citationCorrespondence.quotations.length, 2);
-          for (const quotation of entry.citationCorrespondence.quotations) {
-            assert.equal(typeof quotation, "string");
-            assert.ok(quotation.length > 0);
-          }
-          for (const fragments of [
-            entry.citationCorrespondence.expectedClaimFragments,
-            entry.citationCorrespondence.expectedContextFragments,
-          ]) {
-            assert.ok(fragments.length > 0);
-            for (const fragment of fragments) {
-              assert.equal(typeof fragment, "string");
-              assert.ok(fragment.length > 0);
-            }
-          }
         }
       }
       if (entry.retirement.semanticVerdicts !== undefined) {
