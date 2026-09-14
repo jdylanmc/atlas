@@ -3,6 +3,61 @@
   "reviewResolutionRule": "A review finding is resolved only after this corpus has a reject or accept case that exercises it.",
   "cases": [
     {
+      "name": "reject missing Lint observation time before capture",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["lint", "--machine", "--as-of"],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_LINT_USAGE"
+    },
+    {
+      "name": "reject date-only Lint observation time",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["lint", "--machine", "--as-of", "2026-01-01"],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_LINT_USAGE"
+    },
+    {
+      "name": "reject noncomparable leap-second Lint observation time",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": ["lint", "--machine", "--as-of", "2016-12-31T23:59:60Z"],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_LINT_USAGE"
+    },
+    {
+      "name": "reject repeated Lint observation time",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "lint",
+        "--machine",
+        "--as-of",
+        "2026-01-01T00:00:00Z",
+        "--as-of",
+        "2026-01-02T00:00:00Z"
+      ],
+      "expectedExit": 64,
+      "expectedCode": "ATLAS_LINT_USAGE"
+    },
+    {
+      "name": "report missing persisted freshness evidence without invalidating legacy Source knowledge",
+      "gate": "atlas-cli",
+      "kind": "command",
+      "arguments": [
+        "lint",
+        "--as-of",
+        "2026-01-01T00:00:00Z",
+        "--machine",
+        "--atlas-host-directory",
+        "{atlasHostDirectory}"
+      ],
+      "fixtureAtlasHostRepository": true,
+      "expectedExit": 0,
+      "expectedCode": "ATLAS_SOURCE_FRESHNESS_UNAVAILABLE"
+    },
+    {
       "name": "accept input contract discovery with the positional name before machine",
       "gate": "atlas-cli",
       "kind": "command",

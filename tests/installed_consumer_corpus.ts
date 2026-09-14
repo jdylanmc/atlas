@@ -38,6 +38,14 @@ interface InstalledConsumerCase {
     readonly expectedCode: string;
   };
   readonly citationCorrespondence?: {
+    readonly freshness?: {
+      readonly requestWindowDays: number;
+      readonly cases: readonly {
+        readonly elapsedMilliseconds: number;
+        readonly expectedCode: string | null;
+        readonly expectedSeverity: "warning" | "inconclusive" | null;
+      }[];
+    };
     readonly claim: string;
     readonly context: string;
     readonly expectedClaimFragments: readonly string[];
@@ -165,6 +173,18 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
       assert.match(entry.cacheFailure.expectedCode, /^ATLAS_[A-Z_]+$/u);
     }
     if (entry.citationCorrespondence !== undefined) {
+      const freshness = entry.citationCorrespondence.freshness;
+      if (freshness !== undefined) {
+        assert.ok(Number.isFinite(freshness.requestWindowDays));
+        assert.ok(freshness.requestWindowDays >= 0 && freshness.requestWindowDays < 30);
+        assert.ok(freshness.cases.length > 0);
+        for (const probe of freshness.cases) {
+          assert.ok(Number.isSafeInteger(probe.elapsedMilliseconds));
+          if (probe.expectedCode !== null)
+            assert.match(probe.expectedCode, /^ATLAS_SOURCE_[A-Z_]+$/u);
+          assert.ok([null, "warning", "inconclusive"].includes(probe.expectedSeverity));
+        }
+      }
       for (const value of [
         entry.citationCorrespondence.claim,
         entry.citationCorrespondence.context,

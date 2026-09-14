@@ -2076,7 +2076,7 @@ for (const entry of readInstalledConsumerCorpus().cases) {
           authority: "official" as const,
           entryPoint: "docs",
           excludedPaths: [],
-          freshnessWindowDays: 30,
+          freshnessWindowDays: probe.freshness?.requestWindowDays ?? 30,
           includedPaths: ["docs"],
           maxDepth: 2,
           sourceId: "source:installed-citation",
@@ -2263,6 +2263,59 @@ for (const entry of readInstalledConsumerCorpus().cases) {
           ".atlas-operation-workspaces",
           ingestBranch,
         );
+        if (probe.freshness !== undefined) {
+          const source = join(
+            operationWorkspace,
+            ".atlas/sources/installed-citation.md",
+          );
+          const original = readFileSync(source);
+          const refs = consumerGit(consumer, ["show-ref"]);
+          const status = consumerGit(operationWorkspace, ["status", "--porcelain"]);
+          for (const sample of probe.freshness.cases) {
+            const asOf = new Date(
+              Date.parse(revisionTime) + sample.elapsedMilliseconds,
+            ).toISOString();
+            const args = [
+              "lint",
+              "--machine",
+              "--atlas-host-directory",
+              operationWorkspace,
+              "--as-of",
+              asOf,
+            ];
+            const lint = runInstalled(consumer, guard, args);
+            assert.equal(lint.status, 0, lint.stdout);
+            assert.equal(lint.stderr, "");
+            const checked = parseMachineOperationResult(
+              lint.stdout,
+            ) as LintOperationResult;
+            assert.equal(checked.disposition, "success");
+            assert.equal(checked.payload.state, "completed");
+            assert.equal(checked.payload.lint.outcome, "valid");
+            assert.equal(checked.payload.lint.asOf, asOf);
+            assert.deepEqual(
+              checked.handoff.validationState.findings.map(
+                ({ code, path, severity }) => ({ code, path, severity }),
+              ),
+              sample.expectedCode === null
+                ? []
+                : [
+                    {
+                      code: sample.expectedCode,
+                      path: ".atlas/sources/installed-citation.md",
+                      severity: sample.expectedSeverity,
+                    },
+                  ],
+            );
+            assert.equal(runInstalled(consumer, guard, args).stdout, lint.stdout);
+            assert.deepEqual(readFileSync(source), original);
+          }
+          assert.equal(consumerGit(consumer, ["show-ref"]), refs);
+          assert.equal(
+            consumerGit(operationWorkspace, ["status", "--porcelain"]),
+            status,
+          );
+        }
         const conceptFile = join(operationWorkspace, conceptPath);
         writeFileSync(
           conceptFile,

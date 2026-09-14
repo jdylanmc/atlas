@@ -53,6 +53,14 @@ must invoke installed Initialization, adopt its proposal through Git, and pass
 installed Lint and Explore. Add cases to `installed-consumer.json` to extend
 this gate without duplicating the installation harness.
 
+The installed citation-correspondence case also checks explicit-time Source
+freshness after real Ingest. Its request uses a one-day scope window while the
+persisted Source uses 30 days: Lint remains fresh after two days and at the
+30-day boundary, warns one millisecond later, and reports a future revision as
+inconclusive. Repeated results, Source bytes and Git state must remain unchanged.
+CLI corpus cases reject missing, repeated and noncomparable observation times
+and retain valid legacy Source knowledge with visible skipped freshness.
+
 The `cacheFailure` probe imports the installed package root in the isolated
 consumer and fetches a real local Git repository with no Atlas tree. It requires
 an explicit first-contact refusal, no failed dependency in Atlas Lock, and

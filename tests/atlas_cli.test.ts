@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  cpSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
 import {
@@ -84,6 +91,34 @@ function assertNotCompletedHasNoAtlasVerdict(result: LintOperationResult): void 
   assert.equal("lint" in result.payload, false);
   assert.notEqual(result.operation.subject, "captured-home-atlas");
 }
+
+test("atlas lint accepts explicit observation time and preserves the captured Source", () => {
+  const host = resolve(WORKSPACE, "freshness");
+  rmSync(host, { recursive: true, force: true });
+  cpSync(resolve(ROOT, "tests/fixtures/complete-atlas"), host, { recursive: true });
+  const source = resolve(host, ".atlas/sources/atlas-sdk-lint.md");
+  const content = readFileSync(source, "utf8").replace(
+    "  authority: official",
+    '  authority: official\n  revision-time: "2026-01-01T00:00:00Z"\n  refresh-window-days: 1',
+  );
+  writeFileSync(source, content);
+  const asOf = "2026-01-03T00:00:00Z";
+  const args = ["lint", "--machine", "--atlas-host-directory", host, "--as-of", asOf];
+  const command = runAtlas(args);
+  assert.equal(command.status, 0, command.stderr);
+  assert.equal(command.stderr, "");
+  const result = parseResult(command.stdout);
+  assert.equal(result.disposition, "success");
+  assert.equal(result.payload.state, "completed");
+  assert.equal(result.payload.lint.outcome, "valid");
+  assert.equal(result.payload.lint.asOf, asOf);
+  assert.deepEqual(
+    result.handoff.validationState.findings.map((finding) => finding.code),
+    ["ATLAS_SOURCE_STALE"],
+  );
+  assert.deepEqual(runAtlas(args).stdout, command.stdout);
+  assert.equal(readFileSync(source, "utf8"), content);
+});
 
 test("bare atlas invocation returns typed usage naming every dispatchable command", () => {
   const command = runAtlas([]);

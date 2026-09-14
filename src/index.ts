@@ -144,6 +144,7 @@ export type {
   SuccessfulProposalLint,
 } from "./operations/initialize_operation.ts";
 export { runLintOperation } from "./operations/lint_operation.ts";
+export type { AtlasLintOptions } from "./lint/lint_atlas.ts";
 export { renderAtlasReadinessReportMarkdown } from "./operations/initialize_readiness_report.ts";
 export type {
   CompletedLintOperationPayload,

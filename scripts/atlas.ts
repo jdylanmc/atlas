@@ -33,6 +33,7 @@ import {
 } from "../src/interfaces/initialize_command.ts";
 import {
   exitCodeForLintOperationResult,
+  isValidLintObservationTime,
   lintCommandCaptureBudgets,
   lintCommandExitCodes,
   lintCommandUsage,
@@ -91,6 +92,7 @@ import {
 
 interface ParsedLintCommand {
   readonly atlasHostDirectory: string;
+  readonly asOf?: string;
   readonly machine: true;
 }
 
@@ -351,8 +353,8 @@ export function captureAtlasHostDirectory(
   return files;
 }
 
-function resultForCaptureBudgetError(error: CaptureBudgetError): number {
-  const result = runLintCommandOperation(error.capturedFiles);
+function resultForCaptureBudgetError(error: CaptureBudgetError, asOf?: string): number {
+  const result = runLintCommandOperation(error.capturedFiles, asOf);
   process.stdout.write(serializeLintMachineResult(result));
   return exitCodeForLintOperationResult(result);
 }
@@ -360,6 +362,7 @@ function resultForCaptureBudgetError(error: CaptureBudgetError): number {
 function parseLintCommand(arguments_: readonly string[]): ParsedLintCommand {
   let machine = false;
   let atlasHostDirectory = ".";
+  let asOf: string | undefined;
   let machineSeen = false;
   let atlasHostDirectorySeen = false;
   for (let index = 1; index < arguments_.length; index += 1) {
@@ -381,13 +384,26 @@ function parseLintCommand(arguments_: readonly string[]): ParsedLintCommand {
       index += 1;
       continue;
     }
+    if (argument === "--as-of") {
+      const value = arguments_[index + 1];
+      if (
+        asOf !== undefined ||
+        value === undefined ||
+        !isValidLintObservationTime(value)
+      ) {
+        throw new UsageError(lintCommandUsage);
+      }
+      asOf = value;
+      index += 1;
+      continue;
+    }
     throw new UsageError(lintCommandUsage);
   }
 
   if (!machine) {
     throw new UsageError(lintCommandUsage);
   }
-  return { atlasHostDirectory, machine: true };
+  return { atlasHostDirectory, machine: true, ...(asOf === undefined ? {} : { asOf }) };
 }
 
 function parseInitializeCommand(
@@ -454,11 +470,13 @@ function mainLint(arguments_: readonly string[]): number {
   try {
     const result = runLintCommandOperation(
       captureAtlasHostDirectory(command.atlasHostDirectory, lintCommandCaptureBudgets),
+      command.asOf,
     );
     process.stdout.write(serializeLintMachineResult(result));
     return exitCodeForLintOperationResult(result);
   } catch (error: unknown) {
-    if (error instanceof CaptureBudgetError) return resultForCaptureBudgetError(error);
+    if (error instanceof CaptureBudgetError)
+      return resultForCaptureBudgetError(error, command.asOf);
     if (error instanceof MissingAtlasError) {
       const result = missingAtlasLintOperationResult(error.message);
       process.stdout.write(serializeLintMachineResult(result));
