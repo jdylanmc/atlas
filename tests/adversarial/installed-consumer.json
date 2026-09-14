@@ -13,6 +13,7 @@
         ".atlas/index.md",
         ".atlas/manifest.json"
       ],
+      "governanceTreeReceipt": true,
       "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
       "repeatedEmptyEdges": {
         "alternatingPairs": 40000,

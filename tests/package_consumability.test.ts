@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import type { InputContractResult } from "../src/interfaces/input_contract_command.ts";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -10,10 +11,11 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
@@ -82,20 +84,64 @@ function walkFiles(directory: string): readonly string[] {
   return paths.toSorted();
 }
 
-function packDryRun(): PackDryRun {
-  const output = execFileSync(
-    "npm",
-    ["pack", "--dry-run", "--json", "--silent", "--ignore-scripts=false"],
-    {
-      cwd: ROOT,
-      encoding: "utf8",
-      killSignal: "SIGKILL",
-      timeout: 180_000,
-    },
-  );
-  const [pack] = JSON.parse(output) as readonly PackDryRun[];
-  assert.ok(pack);
-  return pack;
+function withPackSource<T>(run: (source: string) => T): T {
+  const workspace = mkdtempSync(join(tmpdir(), "atlas-pack-source-"));
+  const source = join(workspace, "source");
+  try {
+    const excluded = new Set([
+      ".git",
+      ".test-workspaces",
+      "coverage",
+      "dist",
+      "node_modules",
+    ]);
+    cpSync(ROOT, source, {
+      filter: (path) => {
+        const pathFromRoot = relative(ROOT, path);
+        return (
+          pathFromRoot === "" ||
+          !excluded.has(pathFromRoot.split(sep)[0] ?? pathFromRoot)
+        );
+      },
+      recursive: true,
+    });
+    symlinkSync(join(ROOT, "node_modules"), join(source, "node_modules"), "dir");
+    return run(source);
+  } finally {
+    rmSync(workspace, { force: true, recursive: true });
+  }
+}
+
+function packDryRun(injectedRelativePath?: string): {
+  readonly injectedPathExists: boolean;
+  readonly pack: PackDryRun;
+} {
+  return withPackSource((source) => {
+    const injectedPath =
+      injectedRelativePath === undefined
+        ? undefined
+        : join(source, injectedRelativePath);
+    if (injectedPath !== undefined) {
+      mkdirSync(resolve(injectedPath, ".."), { recursive: true });
+      writeFileSync(injectedPath, 'console.error("unreviewed");\n');
+    }
+    const output = execFileSync(
+      "npm",
+      ["pack", "--dry-run", "--json", "--silent", "--ignore-scripts=false"],
+      {
+        cwd: source,
+        encoding: "utf8",
+        killSignal: "SIGKILL",
+        timeout: 180_000,
+      },
+    );
+    const [pack] = JSON.parse(output) as readonly PackDryRun[];
+    assert.ok(pack);
+    return {
+      injectedPathExists: injectedPath === undefined ? false : existsSync(injectedPath),
+      pack,
+    };
+  });
 }
 
 test("package metadata declares the supported consumption contract", () => {
@@ -141,7 +187,7 @@ test("package root is importable and internal subpaths are private", async () =>
 
 test("npm artifact contains only the runtime allowlist", () => {
   assert.equal(statSync(join(ROOT, "dist", "scripts", "atlas.js")).isFile(), true);
-  const pack = packDryRun();
+  const { pack } = packDryRun();
   assert.equal(pack.version, "0.1.0");
 
   const actual = pack.files.map((file) => file.path).toSorted();
@@ -172,14 +218,10 @@ test("npm artifact contains only the runtime allowlist", () => {
 });
 
 test("prepack rebuild removes ignored dist files before packaging", () => {
-  const injectedPath = join(ROOT, "dist", "proof-unreviewed.js");
-  writeFileSync(injectedPath, 'console.error("unreviewed");\n');
-  assert.equal(existsSync(injectedPath), true);
-
-  const pack = packDryRun();
+  const { injectedPathExists, pack } = packDryRun("dist/proof-unreviewed.js");
   const actual = pack.files.map((file) => file.path).toSorted();
 
-  assert.equal(existsSync(injectedPath), false);
+  assert.equal(injectedPathExists, false);
   assert.equal(actual.includes("dist/proof-unreviewed.js"), false);
 });
 
@@ -207,10 +249,12 @@ function packArtifact(destination: string): string {
   // `--ignore-scripts=false` runs `prepack`, so the artifact under test is built
   // by the same path `package:publish` uses rather than from whatever `dist/`
   // happened to contain when this suite started.
-  execFileSync(
-    "npm",
-    ["pack", "--ignore-scripts=false", "--pack-destination", destination, "--silent"],
-    { cwd: ROOT, killSignal: "SIGKILL", stdio: "ignore", timeout: 180_000 },
+  withPackSource((source) =>
+    execFileSync(
+      "npm",
+      ["pack", "--ignore-scripts=false", "--pack-destination", destination, "--silent"],
+      { cwd: source, killSignal: "SIGKILL", stdio: "ignore", timeout: 180_000 },
+    ),
   );
   const [tarball] = readdirSync(destination).filter((name) => name.endsWith(".tgz"));
   assert.ok(tarball !== undefined, "npm pack produced no tarball");
@@ -324,6 +368,10 @@ function createConsumer(workspace: string): string {
 }
 
 function consumerGit(consumer: string, arguments_: readonly string[]): string {
+  return consumerGitRaw(consumer, arguments_).trim();
+}
+
+function consumerGitRaw(consumer: string, arguments_: readonly string[]): string {
   // Atlas Snapshot capture reads committed bytes. Global and system Git configuration
   // are neutralized: an operator with `commit.gpgsign` would otherwise send this
   // into a `pinentry` prompt that blocks forever, and a synchronous test body
@@ -334,7 +382,7 @@ function consumerGit(consumer: string, arguments_: readonly string[]): string {
     env: consumerEnvironment(),
     killSignal: "SIGKILL" as const,
     timeout: 30_000,
-  }).trim();
+  });
 }
 
 function consumerEnvironment(guard?: string): NodeJS.ProcessEnv {
@@ -1021,13 +1069,189 @@ for (const entry of readInstalledConsumerCorpus().cases) {
         assert.equal(result.completion, "completed");
         assert.equal(result.disposition, "success");
         const proposedBranch = result.payload.workflowState.proposalBranch;
-        const proposedPage = consumerGit(consumer, [
+        const proposedPage = consumerGitRaw(consumer, [
           "show",
           `${proposedBranch}:${principleExample.path}`,
         ]);
         assert.match(proposedPage, /id: principle:quality/u);
         assert.match(proposedPage, /## Amendments/u);
-        assert.equal(consumerGit(consumer, ["rev-parse", "HEAD"]), proposal);
+        if (entry.governanceTreeReceipt === true) {
+          const writeReceipt = result.payload.workflowState.effectReceipts.find(
+            ({ effect }) => effect === "write-change-set",
+          );
+          assert.ok(writeReceipt);
+          assert.equal(
+            writeReceipt.receipt,
+            consumerGit(consumer, ["rev-parse", `${proposedBranch}^{tree}`]),
+          );
+          assert.equal(proposedPage, fields.changes[0]?.content);
+          assert.equal(
+            consumerGitRaw(consumer, ["show", `${proposedBranch}:package.json`]),
+            consumerGitRaw(consumer, ["show", "HEAD:package.json"]),
+          );
+
+          const aliasFields = {
+            ...fields,
+            changes: [
+              {
+                path: ".atlas/principles/installed-alias.md",
+                content: principleExample.content.replace(
+                  "id: principle:quality",
+                  "id: principle:installed-alias",
+                ),
+              },
+              {
+                path: ".atlas/PRINCIPLES/installed-alias.md",
+                content: principleExample.content.replace(
+                  "id: principle:quality",
+                  "id: principle:installed-alias",
+                ),
+              },
+            ],
+          };
+          const aliasOperation = governanceAttestationOperation(aliasFields);
+          const aliasNonce = "installed-governance-path-alias";
+          const aliasRequestPath = join(workspace, "governance-path-alias.json");
+          writeFileSync(
+            aliasRequestPath,
+            JSON.stringify({
+              ...aliasFields,
+              attestation: {
+                "approval-attestation-schema": "1.0.0",
+                approvedAt: "2026-08-22T00:00:00Z",
+                approver: "Fixture Maintainer",
+                nonce: aliasNonce,
+                operation: aliasOperation,
+                payloadDigest: attestationPayloadDigest(
+                  aliasOperation,
+                  aliasNonce,
+                  governanceAttestationPayload(aliasFields),
+                ),
+              },
+            }),
+          );
+          const aliasResult = runInstalled(consumer, guard, [
+            "govern",
+            "--machine",
+            "--request",
+            aliasRequestPath,
+            "--atlas-host-directory",
+            consumer,
+          ]);
+          assert.equal(
+            aliasResult.status,
+            governCommandExitCodes.operationFailed,
+            aliasResult.stdout,
+          );
+          assert.deepEqual(
+            (
+              parseMachineOperationResult(aliasResult.stdout) as AtlasGovernanceResult
+            ).handoff.validationState.findings.map(({ code }) => code),
+            ["ATLAS_GOVERNANCE_CHANGE_PATH_COLLISION"],
+          );
+
+          const driftGuard = join(workspace, "git-drift-guard.mjs");
+          writeFileSync(
+            driftGuard,
+            [
+              'import childProcess from "node:child_process";',
+              'import { readFileSync } from "node:fs";',
+              'import { join } from "node:path";',
+              'import { syncBuiltinESMExports } from "node:module";',
+              "const originalSpawnSync = childProcess.spawnSync;",
+              'const target = ".atlas/principles/quality-filtered.md";',
+              "childProcess.spawnSync = function driftOneObjectWrite(command, arguments_, options) {",
+              '  const hashIndex = arguments_?.indexOf("hash-object") ?? -1;',
+              '  if (hashIndex >= 0 && arguments_?.includes("--no-filters") && arguments_.at(-1) === target) {',
+              '    const repository = arguments_[arguments_.indexOf("-C") + 1];',
+              '    const content = readFileSync(join(repository, target), "utf8").replaceAll("Fixture", "Drifted");',
+              '    const driftArguments = [...arguments_.slice(0, hashIndex), "hash-object", "-w", "--stdin"];',
+              "    return originalSpawnSync(command, driftArguments, { ...options, input: content });",
+              "  }",
+              "  return originalSpawnSync(command, arguments_, options);",
+              "};",
+              "syncBuiltinESMExports();",
+            ].join("\n"),
+          );
+          writeFileSync(
+            join(consumer, "host-note.txt"),
+            "Host content must survive Governance proposals.\n",
+          );
+          consumerGit(consumer, ["add", "host-note.txt"]);
+          consumerGit(consumer, ["commit", "-m", "test: advance host content"]);
+          const driftTargetHead = consumerGit(consumer, ["rev-parse", "HEAD"]);
+          const commitCount = consumerGit(consumer, ["rev-list", "--all", "--count"]);
+          const driftFields = {
+            ...fields,
+            changes: [
+              {
+                path: ".atlas/principles/quality-filtered.md",
+                content: (fields.changes[0]?.content ?? "").replace(
+                  "id: principle:quality",
+                  "id: principle:quality-filtered",
+                ),
+              },
+            ],
+          };
+          const driftOperation = governanceAttestationOperation(driftFields);
+          const driftNonce = "installed-governance-written-drift";
+          const driftRequestPath = join(workspace, "governance-written-drift.json");
+          writeFileSync(
+            driftRequestPath,
+            JSON.stringify({
+              ...driftFields,
+              attestation: {
+                "approval-attestation-schema": "1.0.0",
+                approvedAt: "2026-08-22T00:00:00Z",
+                approver: "Fixture Maintainer",
+                nonce: driftNonce,
+                operation: driftOperation,
+                payloadDigest: attestationPayloadDigest(
+                  driftOperation,
+                  driftNonce,
+                  governanceAttestationPayload(driftFields),
+                ),
+              },
+            }),
+          );
+          const driftResult = runInstalled(
+            consumer,
+            guard,
+            [
+              "govern",
+              "--machine",
+              "--request",
+              driftRequestPath,
+              "--atlas-host-directory",
+              consumer,
+            ],
+            [`--import=${pathToFileURL(driftGuard).href}`],
+          );
+          assert.equal(
+            driftResult.status,
+            governCommandExitCodes.operationFailed,
+            driftResult.stdout,
+          );
+          const driftGovernance = parseMachineOperationResult(
+            driftResult.stdout,
+          ) as AtlasGovernanceResult;
+          assert.deepEqual(
+            driftGovernance.handoff.validationState.findings.map(({ code }) => code),
+            ["ATLAS_GOVERNANCE_WRITTEN_CHANGE_SET_MISMATCH"],
+          );
+          assert.equal(
+            driftGovernance.payload.workflowState.effectReceipts.some(
+              ({ effect }) =>
+                effect === "commit-proposal" || effect === "lint-proposal",
+            ),
+            false,
+          );
+          assert.equal(consumerGit(consumer, ["rev-parse", "HEAD"]), driftTargetHead);
+          assert.equal(
+            consumerGit(consumer, ["rev-list", "--all", "--count"]),
+            commitCount,
+          );
+        }
         assert.equal(consumerGit(consumer, ["status", "--porcelain"]), "");
       }
       if (entry.governance !== undefined) {

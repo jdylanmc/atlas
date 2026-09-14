@@ -54,6 +54,7 @@ interface InstalledConsumerCase {
     readonly change: { readonly path: string; readonly content: string };
     readonly expectedCodes: readonly string[];
   };
+  readonly governanceTreeReceipt?: boolean;
 }
 
 interface InstalledConsumerCorpus {
@@ -158,6 +159,9 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
           ].includes(probe.kind),
         );
       }
+    }
+    if (entry.governanceTreeReceipt !== undefined) {
+      assert.equal(entry.governanceTreeReceipt, true);
     }
     if (entry.ingestPlan !== undefined) {
       assert.equal(Array.isArray(entry.ingestPlan), true);
