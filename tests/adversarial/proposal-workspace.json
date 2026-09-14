@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "reviewResolutionRule": "A review finding is resolved only after tests/adversarial has a case exercising the Proposal workspace boundary.",
+  "cases": [
+    {
+      "name": "governance-completes-host-tree-without-smudge-or-hook-execution",
+      "gate": "proposal-workspace",
+      "kind": "filter-free-completion",
+      "operation": "governance",
+      "expectation": "accept",
+      "filterMode": "smudge"
+    },
+    {
+      "name": "governance-completes-host-tree-without-process-or-hook-execution",
+      "gate": "proposal-workspace",
+      "kind": "filter-free-completion",
+      "operation": "governance",
+      "expectation": "accept",
+      "filterMode": "process"
+    },
+    {
+      "name": "ingest-completes-a-clean-worktree-that-rebases-over-an-unrelated-base-advance",
+      "gate": "proposal-workspace",
+      "kind": "rebase-completion",
+      "operation": "ingest",
+      "expectation": "accept"
+    }
+  ]
+}

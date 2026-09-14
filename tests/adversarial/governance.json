@@ -6,7 +6,8 @@
       "name": "distinct-same-base-governance-intents-use-independent-proposals",
       "gate": "governance",
       "kind": "proposal-concurrency",
-      "expectedCode": "ATLAS_GOVERNANCE_WORKSPACE_EXISTS",
+      "expectation": "accept",
+      "absentCode": "ATLAS_GOVERNANCE_WORKSPACE_EXISTS",
       "concurrentProposals": {
         "first": {
           "changelog": "Created No Model Principle.",

@@ -22,6 +22,7 @@ import {
   type AtlasIngestWorkflowState,
 } from "../operations/ingest_operation.ts";
 import { captureLocalAtlasSnapshot } from "./local_atlas_snapshot.ts";
+import { completeOperationWorkspace } from "./operation_workspace.ts";
 import {
   runTrustedGit,
   runTrustedGitForWrite,
@@ -333,6 +334,7 @@ export function runLocalAtlasIngest(
         `refs/heads/${workflowState.proposalBranch}`,
         commit,
       ]);
+      completeOperationWorkspace(workspace, parent, commit);
       return { commit, receipt: commit };
     },
     createProposalWorktree: () => {

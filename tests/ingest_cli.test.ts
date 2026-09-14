@@ -29,6 +29,7 @@ import {
   createLocalAtlasIngestState,
   runLocalAtlasIngest,
 } from "../src/platform/local_atlas_ingest.ts";
+import { readProposalWorkspaceCorpus } from "./proposal_workspace_corpus.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const COMMAND = resolve(ROOT, "scripts", "atlas.ts");
@@ -552,6 +553,44 @@ test("Local Atlas Ingest preserves an existing Operation Workspace", () => {
   );
   assert.equal(readFileSync(sentinel, "utf8"), "SENTINEL: human review notes\n");
 });
+
+for (const entry of readProposalWorkspaceCorpus().cases.filter(
+  (candidate) => candidate.kind === "rebase-completion",
+)) {
+  test(`Proposal workspace corpus: ${entry.name}`, () => {
+    const repository = resolve(WORKSPACE, entry.name);
+    initAtlasRepository(repository);
+    const result = runLocalAtlasIngest(repository, ingestRequest());
+    assert.equal(result.completion, "completed");
+    const workspace = resolve(
+      repository,
+      ".atlas-operation-workspaces",
+      result.payload.workflowState.proposalBranch,
+    );
+    assert.equal(git(workspace, ["status", "--porcelain", "--untracked-files=no"]), "");
+
+    writeFileSync(resolve(repository, "UNRELATED.md"), "# unrelated\n", "utf8");
+    git(repository, ["add", "UNRELATED.md"]);
+    git(repository, [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "-m",
+      "Advance unrelated host content",
+    ]);
+    const targetHead = git(repository, ["rev-parse", "main"]);
+    git(workspace, ["rebase", "main"]);
+    assert.equal(git(workspace, ["rev-parse", "HEAD^"]), targetHead);
+    assert.equal(git(workspace, ["status", "--porcelain", "--untracked-files=no"]), "");
+    const lint = runAtlas(["lint", "--machine", "--atlas-host-directory", workspace]);
+    assert.equal(lint.status, 0, lint.stdout);
+    const lintResult = parseMachineOperationResult(lint.stdout);
+    assert.equal(lintResult.completion, "completed");
+    assert.equal(lintResult.disposition, "success");
+  });
+}
 
 test("Ingest command helpers preserve machine JSON and all exit classes", () => {
   const invalidScope = parseIngestScope(null);

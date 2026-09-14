@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { dirname, resolve } from "node:path";
 import test, { after } from "node:test";
+import { readProposalWorkspaceCorpus } from "./proposal_workspace_corpus.ts";
 import ts from "typescript";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
 import { parseMachineOperationResult } from "./machine_operation_result.ts";
@@ -170,6 +171,7 @@ const initializationCorpus = parseInitializationCorpus(
     readFileSync(resolve(ROOT, "tests", "adversarial", "initialization.json"), "utf8"),
   ),
 );
+const proposalWorkspaceCorpus = readProposalWorkspaceCorpus();
 const cacophonyRoasterCorpus = parseCacophonyRoasterCorpus(
   JSON.parse(
     readFileSync(
@@ -1588,10 +1590,28 @@ after(() => {
       lintStampCorpus.cases.length +
       structuralValidationCorpus.cases.length +
       ingestCorpus.cases.length +
+      proposalWorkspaceCorpus.cases.length +
       initializationCorpus.cases.length +
       cacophonyRoasterCorpus.cases.length,
   );
 });
+
+test("the adversarial Proposal workspace corpus is structurally valid", () => {
+  assert.match(proposalWorkspaceCorpus.reviewResolutionRule, /review finding/u);
+  assert.equal(proposalWorkspaceCorpus.schema, 1);
+  assert.equal(
+    new Set(proposalWorkspaceCorpus.cases.map((entry) => entry.name)).size,
+    proposalWorkspaceCorpus.cases.length,
+  );
+});
+
+for (const entry of proposalWorkspaceCorpus.cases) {
+  test(`adversarial Proposal workspace corpus: ${entry.name}`, () => {
+    executedCases += 1;
+    assert.equal(entry.gate, "proposal-workspace");
+    assert.equal(entry.expectation, "accept");
+  });
+}
 
 test("the adversarial vocabulary corpus is structurally valid", () => {
   assert.match(corpus.reviewResolutionRule, /review finding/u);

@@ -35,7 +35,9 @@ const governanceCorpus = JSON.parse(
   readFileSync(resolve(import.meta.dirname, "adversarial", "governance.json"), "utf8"),
 ) as {
   readonly cases: readonly {
-    readonly expectedCode: string;
+    readonly absentCode?: string;
+    readonly expectation?: "accept";
+    readonly expectedCode?: string;
     readonly gate: "governance";
     readonly kind:
       | "finding-merge"
@@ -2026,6 +2028,19 @@ for (const entry of governanceCorpus.cases) {
 test("the adversarial governance corpus maps to enforced gates", () => {
   assert.match(governanceCorpus.reviewResolutionRule, /review finding/u);
   assert.equal(governanceCorpus.schema, 1);
+  assert.deepEqual(
+    governanceCorpus.cases
+      .filter((entry) => entry.concurrentProposals !== undefined)
+      .map((entry) => [entry.gate, entry.kind, entry.expectation, entry.absentCode]),
+    [
+      [
+        "governance",
+        "proposal-concurrency",
+        "accept",
+        "ATLAS_GOVERNANCE_WORKSPACE_EXISTS",
+      ],
+    ],
+  );
   assert.deepEqual(
     governanceCorpus.cases
       .filter(

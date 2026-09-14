@@ -24,6 +24,7 @@ import {
 import { canonicalJson } from "../operations/operation_support.ts";
 import { runLintOperation } from "../operations/lint_operation.ts";
 import { captureLocalAtlasSnapshot } from "./local_atlas_snapshot.ts";
+import { completeOperationWorkspace } from "./operation_workspace.ts";
 import {
   runTrustedGit,
   runTrustedGitForWrite,
@@ -315,7 +316,7 @@ export function runLocalAtlasGovernance(
         `refs/heads/${workflowState.proposalBranch}`,
         commit,
       ]);
-      gitWrite(workspace, ["checkout", "--", "."]);
+      completeOperationWorkspace(workspace, parent, commit);
       return { commit, receipt: commit };
     },
     createProposalWorktree: () => {
