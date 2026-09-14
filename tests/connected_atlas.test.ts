@@ -34,6 +34,11 @@ import {
   runTrustedGitBootstrap,
   runTrustedGitForWrite,
 } from "../src/platform/trusted_git.ts";
+import {
+  malformedProviderEnvelope,
+  readSearchProviderEnvelopeCorpus,
+} from "./search_provider_envelope_corpus.ts";
+import type { SearchProvider } from "../src/graph/search_provider.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const WORKSPACE = resolve(ROOT, ".test-workspaces", "connected-atlas");
@@ -2136,6 +2141,92 @@ test("Explore reports unreachable tracked Atlases and provider failures as degra
   });
   assert.equal(result.payload.degradation.level, "partial-structure");
   assert.deepEqual(result.payload.results, []);
+});
+
+test("connected Explore visibly recovers from malformed Search Provider envelopes", () => {
+  const tracked = trackedAtlasDeclaration("github.com", "owner", "provider-envelope");
+  const trackedSlug = tracked.slug.value;
+  const homeFiles = [
+    captured(
+      page(
+        ".atlas/index.md",
+        "anchor:root",
+        "anchor",
+        "Home",
+        "atlas: {}",
+        "# Home\n\ncanonical serialization",
+      ),
+    ),
+    captured(
+      page(
+        `.atlas/tracked-atlases/${trackedSlug}.md`,
+        `tracked-atlas:${trackedSlug}`,
+        "tracked-atlas",
+        "Remote Atlas",
+        `atlas:\n  branch: main\n  default-branch: main\n  locator: https://github.com/owner/provider-envelope.git\n  path: .`,
+        "# Remote Atlas\n\nTrackedAtlas declaration.",
+      ),
+    ),
+    captured(
+      page(
+        ".atlas/edges/root-track-provider-envelope.md",
+        "edge:root-track-provider-envelope",
+        "edge",
+        "Root Tracks Remote",
+        `atlas:\n  from: anchor:root\n  semantics: [tracks-atlas]\n  to: tracked-atlas:${trackedSlug}`,
+        "# Root Tracks Remote\n\nCross-Atlas route.",
+      ),
+    ),
+  ];
+  const trackedFiles = [
+    captured(
+      page(
+        ".atlas/index.md",
+        "anchor:root",
+        "anchor",
+        "Remote Root",
+        "atlas: {}",
+        "# Remote Root\n\ncanonical serialization",
+      ),
+    ),
+  ];
+
+  for (const entry of readSearchProviderEnvelopeCorpus().cases) {
+    const provider = Object.freeze({
+      rank: () => malformedProviderEnvelope(entry.value),
+    }) as SearchProvider;
+    const result = runExploreOperation({
+      atlasCacheResolver: Object.freeze({
+        resolve: () =>
+          Object.freeze({
+            snapshot: Object.freeze({
+              capturedFiles: Object.freeze(trackedFiles),
+              findings: Object.freeze([]),
+              snapshot: "tracked-sha",
+              trackedAtlas: tracked,
+            }),
+            state: "resolved" as const,
+          }),
+      }),
+      baseSnapshot: { reference: "home-sha", state: "known" },
+      budgets,
+      capturedFiles: Object.freeze(homeFiles),
+      homeAtlas: { reference: "local-home-atlas", state: "known" },
+      provider,
+      query: "canonical serialization",
+    });
+
+    assert.equal(result.disposition, "success", entry.name);
+    assert.ok(result.payload.results.length > 0, entry.name);
+    assert.ok(
+      result.payload.degradation.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === "ATLAS_EXPLORE_PROVIDER_FALLBACK" &&
+          diagnostic.message.includes("must return candidates"),
+      ),
+      entry.name,
+    );
+  }
 });
 
 test("Explore surfaces a pending human decision for an inconclusive first-contact-unreachable Finding", () => {

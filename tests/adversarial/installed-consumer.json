@@ -8,6 +8,11 @@
       "expectation": "accept",
       "query": "Home Atlas",
       "expectedRootAnchorId": "anchor:root",
+      "providerInvocation": {
+        "expectedProviderCalls": 1,
+        "expectedResultId": "anchor:root",
+        "rejectedObjectId": "concept:outside-provider-authority"
+      },
       "expectedAtlasPaths": [
         ".atlas/CHANGELOG.md",
         ".atlas/index.md",

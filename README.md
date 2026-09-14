@@ -200,6 +200,69 @@ Connected traversal keeps Atlas and snapshot context on checkpoint records,
 so identically named Anchors from different snapshots remain distinct.
 Checkpoint contents, route selection and cited context are unchanged.
 
+### Search Provider extensions
+
+`SearchProvider` is a supported package-root type. An independent provider
+receives deterministic `ExploreSearchDocument` projections and returns only
+candidate object IDs and positive scores:
+
+```ts
+import type { SearchProvider } from "@jdylanmc/atlas";
+
+const provider: SearchProvider = {
+  rank(documents, query) {
+    return documents
+      .filter((document) => document.body.includes(query))
+      .map((document) => ({ objectId: document.id, score: 1 }));
+  },
+};
+```
+
+Providers may return `SearchProviderRanking` with warning or inconclusive
+diagnostics. Atlas SDK validates every candidate, computes routes, performs
+Re-anchoring, resolves cited context, and keeps the operation's Atlas Snapshots
+fixed. A provider exception is reported as
+`ATLAS_EXPLORE_PROVIDER_FALLBACK`, and Explore retries ranking with the built-in
+lexical provider.
+
+### Optional atlas-qmd extension
+
+`atlas-qmd` is an optional subpath; importing the package root does not load,
+install, or execute QMD:
+
+```ts
+import { prepareAtlasQmd } from "@jdylanmc/atlas/atlas-qmd";
+```
+
+The adapter pins `@tobilu/qmd@2.8.3`. The published QMD package payload is
+914,522 unpacked bytes, excluding its transitive native dependencies. The
+supported targets are `darwin-arm64`, `darwin-x64`, `linux-arm64`,
+`linux-x64`, and `win32-x64`, matching the release's published native
+`sqlite-vec` packages. QMD requires Node.js 22 or newer; its documentation also
+requires Homebrew SQLite on macOS. Other targets return
+`ATLAS_QMD_UNSUPPORTED` and continue with built-in lexical Explore.
+
+Call `prepareAtlasQmd` with the exact resolved Atlas version and Atlas Host
+Directory. If the machine-scoped Tool Runtime is missing, corrupt, or
+incompatible, the result contains an `installationProposal` naming the pinned
+package, location, known package payload size, additional dependency-size
+caveat, and exact npm action. No installation occurs until the caller returns
+an approval bound to that proposal's digest. The approval fields bind the
+decision to one proposal; they do not authenticate the named human.
+
+The adapter stores generated projections in a cache keyed by Atlas Host
+Directory and exact Atlas version. QMD indexes only those projections. Corrupt
+or mismatched owned index state is replaced without modifying `.atlas/` or
+unrelated cache entries. The Tool Runtime receipt pins the Node executable that
+installed QMD, allowing compatible reuse when the active Node manager changes.
+
+QMD keyword search requires no model. Requesting semantic mode produces a
+separate `modelProposal` for the three documented GGUF models, approximately
+2.04 GB total, under the Tool Runtime's cache. Until that separately bound
+approval is supplied, the adapter continues with QMD lexical search. Any QMD
+runtime failure remains visible as `ATLAS_QMD_RUNTIME_FALLBACK` and preserves
+built-in lexical Explore.
+
 ### Changelog capacity warning
 
 Lint reports `ATLAS_CHANGELOG_NEAR_CAPACITY` when `.atlas/CHANGELOG.md` reaches
@@ -247,13 +310,16 @@ checks.
 
 ## Library usage
 
-The supported public API is the package root:
+The supported public API is the package root plus explicitly exported optional
+subpaths:
 
 ```js
 import { lintCommandUsage, runLintCommandOperation } from "@jdylanmc/atlas";
+import { prepareAtlasQmd } from "@jdylanmc/atlas/atlas-qmd";
 ```
 
-Internal source paths are not exported. Treat anything outside the package root as private implementation detail unless a future release adds it to the `exports` map.
+Internal source paths are not exported. Treat anything absent from the
+`exports` map as private implementation detail.
 
 `renderAtlasReadinessReportMarkdown(report)` renders an existing
 `AtlasReadinessReport` without filesystem effects. It preserves the supplied
