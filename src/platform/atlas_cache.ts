@@ -9,7 +9,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
 import { createAtlasCache } from "../domain/atlas_cache.ts";
@@ -97,6 +97,20 @@ function finding(code: string, message: string, path = ".atlas/atlas-cache"): Fi
     path,
     severity: findingSeverity(code),
   });
+}
+
+function cacheMetadataWriteFinding(request: AtlasCacheResolveRequest): Finding {
+  return finding(
+    "ATLAS_CROSS_ATLAS_CACHE_METADATA_WRITE_FAILED",
+    `The captured Snapshot remains usable, but its cache metadata for ${request.trackedAtlas.slug.value} could not be recorded.`,
+  );
+}
+
+function atlasLockWriteFinding(request: AtlasCacheResolveRequest): Finding {
+  return finding(
+    "ATLAS_CROSS_ATLAS_LOCK_REPAIR_FAILED",
+    `The captured Snapshot remains usable, but its Atlas Lock dependency for ${request.trackedAtlas.slug.value} could not be recorded. Inspect the generated Lock.`,
+  );
 }
 
 function cacheRoot(homeAtlasDirectory: string): string {
@@ -363,16 +377,39 @@ function maintenanceResult(findings: Finding[]): {
   return findings.length === 0 ? {} : { maintenanceFindings: Object.freeze(findings) };
 }
 
+function publishAtlasCacheDirectoryWithStatus(
+  finalDirectory: string,
+  pendingDirectory: string,
+): { readonly directory: string; readonly relocated: boolean } {
+  try {
+    renameSync(pendingDirectory, finalDirectory);
+    return Object.freeze({ directory: finalDirectory, relocated: true });
+  } catch {
+    rmSync(pendingDirectory, { force: true, recursive: true });
+    return Object.freeze({ directory: finalDirectory, relocated: false });
+  }
+}
+
 export function publishAtlasCacheDirectory(
   finalDirectory: string,
   pendingDirectory: string,
 ): string {
-  try {
-    renameSync(pendingDirectory, finalDirectory);
-    return finalDirectory;
-  } catch {
-    rmSync(pendingDirectory, { force: true, recursive: true });
-    return finalDirectory;
+  return publishAtlasCacheDirectoryWithStatus(finalDirectory, pendingDirectory)
+    .directory;
+}
+
+function relocatePublishedMaintenanceFindingPaths(
+  findings: Finding[],
+  pendingDirectory: string,
+  finalDirectory: string,
+): void {
+  for (const [index, item] of findings.entries()) {
+    if (item.code !== "ATLAS_CROSS_ATLAS_CACHE_CLEANUP_FAILED") continue;
+    const relativePath = relative(pendingDirectory, item.path);
+    findings[index] = Object.freeze({
+      ...item,
+      path: join(finalDirectory, relativePath),
+    });
   }
 }
 
@@ -490,14 +527,19 @@ export function resolveAtlasCache(
     try {
       writeMetadata(pendingDirectory, dependency, maintenanceFindings);
     } catch {
-      maintenanceFindings.push(
-        finding(
-          "ATLAS_CROSS_ATLAS_LOCK_REPAIR_FAILED",
-          `The captured Snapshot remains usable, but its cache metadata for ${request.trackedAtlas.slug.value} could not be recorded.`,
-        ),
+      maintenanceFindings.push(cacheMetadataWriteFinding(request));
+    }
+    const publication = publishAtlasCacheDirectoryWithStatus(
+      finalDirectory,
+      pendingDirectory,
+    );
+    if (publication.relocated) {
+      relocatePublishedMaintenanceFindingPaths(
+        maintenanceFindings,
+        pendingDirectory,
+        finalDirectory,
       );
     }
-    publishAtlasCacheDirectory(finalDirectory, pendingDirectory);
   }
 
   const captureReference = (repository: string, reference: string) => {
@@ -614,16 +656,15 @@ export function resolveAtlasCache(
       snapshot: captured.revision,
     });
     try {
-      const lock = readAtlasLock(request.homeAtlasDirectory);
       writeMetadata(finalDirectory, dependency, maintenanceFindings);
+    } catch {
+      maintenanceFindings.push(cacheMetadataWriteFinding(request));
+    }
+    try {
+      const lock = readAtlasLock(request.homeAtlasDirectory);
       writeAtlasLock(request.homeAtlasDirectory, lock, dependency, maintenanceFindings);
     } catch {
-      maintenanceFindings.push(
-        finding(
-          "ATLAS_CROSS_ATLAS_LOCK_REPAIR_FAILED",
-          `The captured Snapshot remains usable, but its Atlas Lock dependency or cache metadata for ${request.trackedAtlas.slug.value} could not be recorded. Inspect the generated Lock and cache metadata.`,
-        ),
-      );
+      maintenanceFindings.push(atlasLockWriteFinding(request));
     }
   } else {
     const repair = restoreMissingLock(

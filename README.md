@@ -37,8 +37,11 @@ boundary: malformed or unreadable records are preserved and reported, never
 treated as an empty dependency list. Recovery keeps the validated prior list
 without rereading it. Cache records are fully written to exclusively created
 sibling files before replacement, so a failed write or replacement leaves the
-original record intact. Unreadable or mismatched metadata and persistence
-failures produce maintenance Findings without discarding usable knowledge.
+original record intact. Cache-entry metadata records an adopted Snapshot
+independently of Home Atlas Lock validity, so removing a malformed Lock can
+recover the dependency offline from the original fetch time and introducers.
+Unreadable or mismatched metadata and persistence failures produce
+record-specific maintenance Findings without discarding usable knowledge.
 Cleanup removes only invocation-owned unpublished files; a cleanup failure
 identifies the retained file. These are sequential record-write guarantees,
 not a multi-record transaction or a concurrent/crash-durability guarantee.

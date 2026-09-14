@@ -81,6 +81,10 @@ The malformed-Lock case (`BOLAS-216-R2-01`) runs both online first contact and
 updates through the installed Explore Operation. Invalid objects, lists,
 entries, keys and truncated JSON must retain their bytes and return usable
 Home and tracked context with maintenance Findings, not knowledge degradation.
+It also advances the remote while the Lock is malformed
+(`BOLAS-216-R3-01`): cache metadata must follow the adopted Snapshot
+independently, and deleting the malformed Lock must allow offline recovery with
+the recorded fetch time and introducer identities.
 The persistence case (`BALERION-216-R2-01`) starts with an unrelated dependency
 and the current dependency missing. It injects failures at Node's filesystem
 boundary: a redundant read, an actual prefix write followed by failure, failed
@@ -90,6 +94,12 @@ persistence failure; successful recovery preserves both dependencies and the
 original fetch time. Only invocation-owned files may be removed. Source
 Operation controls additionally cover close failures, unreadable Locks, and
 first-contact/update metadata persistence errors.
+
+The first-contact cleanup case (`SMAUG-216-R3-01`) prefix-writes cache metadata,
+fails its owned-sibling cleanup, and then permits directory publication. The
+returned cleanup Finding must identify the retained sibling at its published
+location, preserve the exact prefix bytes, and leave the obsolete staging path
+absent while Explore returns usable maintenance-only context.
 
 The `connectedExplore` probe adds cited fixture knowledge and a tracked Atlas
 to the initialized consumer. A fresh external Node process imports only the

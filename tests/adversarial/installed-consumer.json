@@ -1263,7 +1263,7 @@
       }
     },
     {
-      "name": "installed online cache preserves malformed Lock records and returns usable knowledge (BOLAS-216-R2-01)",
+      "name": "installed online cache advances metadata despite a malformed Lock and recovers offline (BOLAS-216-R2-01, BOLAS-216-R3-01)",
       "gate": "installed-consumer",
       "expectation": "accept",
       "query": "Home Atlas",
@@ -1277,6 +1277,23 @@
       "cacheFailure": {
         "mode": "invalid-lock-on-update",
         "expectedCode": "ATLAS_CROSS_ATLAS_LOCK_REPAIR_FAILED"
+      }
+    },
+    {
+      "name": "installed first-contact cleanup reports the retained published metadata sibling (SMAUG-216-R3-01)",
+      "gate": "installed-consumer",
+      "expectation": "accept",
+      "query": "Home Atlas",
+      "expectedRootAnchorId": "anchor:root",
+      "expectedAtlasPaths": [
+        ".atlas/CHANGELOG.md",
+        ".atlas/index.md",
+        ".atlas/manifest.json"
+      ],
+      "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "cacheFailure": {
+        "mode": "first-metadata-cleanup",
+        "expectedCode": "ATLAS_CROSS_ATLAS_CACHE_CLEANUP_FAILED"
       }
     },
     {

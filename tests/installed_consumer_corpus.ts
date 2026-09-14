@@ -27,6 +27,7 @@ interface InstalledConsumerCase {
       | "interrupted-first-contact"
       | "unrecorded-publication"
       | "invalid-lock-on-update"
+      | "first-metadata-cleanup"
       | "lock-persistence";
     readonly expectedCode: string;
   };
@@ -127,6 +128,7 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
           "interrupted-first-contact",
           "unrecorded-publication",
           "invalid-lock-on-update",
+          "first-metadata-cleanup",
           "lock-persistence",
         ].includes(entry.cacheFailure.mode),
       );
