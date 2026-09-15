@@ -19,6 +19,11 @@ Read repository guidance, requirements, actual callers/interfaces, and existing 
 
 Use [workspace isolation](../ship/WORKSPACE.md), reusing only compatible ownership. Record `refactor` as route owner in [the shared delivery packet](../ship/DELIVERY.md#one-delivery-packet-one-owner), with return owner, source/target refs, requirements, workspace, validation, and doctrine IDs/digests. For a scoped worker, retain the outer route owner instead.
 
+Load and execute [LIFECYCLE](../squadron/LIFECYCLE.md) for dispatch, accepted
+return/custody, cancellation recovery, and terminal owned-agent retirement.
+Keep its evidence in the packet. Root delivery must execute DELIVERY's provider
+promotion/readback gate; scoped workers return, never claim delivery.
+
 Discover and run the repository's relevant baseline checks. Add characterization/protection tests at real behavior boundaries before risky structural edits. Use [TDD](../tdd/SKILL.md) for testable changes, passing the existing owner rather than restarting a delivery. Report baseline failures and unavailable proof.
 
 ## Restructure in bounded steps

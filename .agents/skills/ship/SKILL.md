@@ -27,6 +27,10 @@ Keep a short progress record in the harness session workspace: task states, work
 
 Keep the scoped doctrine selection and per-worker required IDs, source/digest references, and load/application reports with that record. Pass them to fixes, review, and Shepherd; do not lose operator choices at an agent boundary or assume selection means a worker has read the doctrine.
 
+Load and execute [LIFECYCLE](../squadron/LIFECYCLE.md): verified dispatch
+placement, receiver-observed acceptance, cancellation recovery, and actual
+terminal owned-agent retirement. Keep evidence in the same progress record.
+
 Use the [shared delivery packet and finish contract](DELIVERY.md), recording `ship` as owner route and the actual return owner/source/target refs. Every modifying worker uses [changelog](../changelog/SKILL.md); return proposals from isolated workers and serialize consolidation by the integration owner.
 
 ## 2. Coordinate implementation
@@ -35,7 +39,7 @@ Ship owns scheduling, integration, review, and publication. Give implementation 
 
 Use artifact pointers for the spec, tickets, code, and prior findings instead of copying the conversation. A shared exploration worker is useful only when several tasks need the same substantial investigation; save its findings outside the repository and pass the path.
 
-Use the [worker contract](WORKER.md) for dispatch and return: complete bounded task, authorized workspace, actual start/result commits, acceptance evidence, and explicit blockers. Reuse a known worker for fixes when supported. Use configured runtime model preferences; do not revive a separate executor, mandatory model tiers, special ledger tooling, or an alternate finishing route.
+Use the [worker contract](WORKER.md) for dispatch and return: complete bounded task, authorized worktree and harness mapping, actual start/result commits, acceptance evidence, and explicit blockers. Reuse a known worker retained for pending fixes when supported; retire accepted terminal workers under LIFECYCLE. Use configured runtime model preferences; do not revive a separate executor, mandatory model tiers, special ledger tooling, or an alternate finishing route.
 
 For a single issue, dispatch one implementation worker. For a specification:
 
@@ -66,6 +70,10 @@ An internal draft may be reported as work in progress with explicit gaps, never 
 ## 3. Review, publish, and maintain custody
 
 Execute [the shared delivery finish](DELIVERY.md): independent whole-deliverable Roast, repository validation and criterion verdicts, the same PR, current-target synchronization, and real Shepherd custody. Ship owns this finish; linking it is not completion. Include consolidated changelog entries in the reviewed result. No final draft handoff, self-approval, or green claim for an old base.
+
+Before reporting readiness, verify receiver acknowledgment and actual provider
+non-draft state after promotion. Drafts or unaccepted transfers remain owned
+progress/blockers, not completed delivery.
 
 ## Feedback on an existing PR
 

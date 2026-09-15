@@ -36,10 +36,24 @@ return conditions. Source paths must be accessible at the destination; summaries
 do not replace unavailable originals. Keep status-report event identities when
 transferring a controller so resumption does not duplicate reports.
 
-The sender retains custody until the receiver acknowledges the assignment and
-actual workspace/PR state. Do not imply that writing or sending the packet
-transferred ownership, stopped a monitor, or scheduled work. Never leave two
-writers on one branch or two Joe controllers for one repository.
+Load/execute [LIFECYCLE](../squadron/LIFECYCLE.md) for observed acceptance,
+cancellation recovery, retirement; use [WORKSPACE](../ship/WORKSPACE.md) for placement.
+Keep the existing packet, no new ledger. Sender retains custody until receiver
+inspects actual artifacts/worktree/PR and acknowledges scope, state, duties.
+Sending/self-authored ownership proves none; no two branch writers, PR monitors,
+or repository Joe controllers.
+For Shepherd, load/carry [OBSERVATION](../shepherd/OBSERVATION.md):
+per-PR snapshot/streak, exact wakeup/binding, desired/observed cadence, gaps.
+For issue-backed continuation, load [RECOVERY](../shepherd/RECOVERY.md): carry
+episode/issue, kickoff grant, controller/human path, pending operation,
+write release/receiver acknowledgment. Links/scheduled wakes neither prove
+accepted intake nor permit another controller.
+
+After acknowledgment, retire terminal owned senders/workers with evidence
+preserved and duties completed/transferred under LIFECYCLE. Parent retires the
+sender/worker when self-retirement would interrupt safe reporting. If transfer
+or archival cannot complete: report blocker/retained responsibility, never delete workspaces,
+worktrees, or branches to retire agents.
 
 Do not duplicate content already captured in other artifacts (specs, plans, ADRs, issues, commits, diffs). Reference them by path or URL instead.
 

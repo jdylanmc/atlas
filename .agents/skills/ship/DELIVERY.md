@@ -4,7 +4,13 @@ Supporting contract for the peer Ship, Patch, and Refactor routes, not another
 routable skill or permission to invoke Ship. The selected route owns its work
 through independent review, publication, and actual Shepherd custody. Follow
 [invocation policy](../setup/INVOCATION.md); narrower human requests remain narrower.
-Never approve, merge, enable automatic merge, or close tracker items yourself.
+Never approve, merge, enable automatic merge, or close delivery tracker items.
+The sole recovery-issue exception is separately authorized, verified episode
+closure under [RECOVERY](../shepherd/RECOVERY.md).
+
+Load/execute [agent lifecycle](../squadron/LIFECYCLE.md) for dispatch, accepted
+returns/custody, cancellation recovery, terminal retirement. One authority each:
+readiness here, placement in WORKSPACE, lifecycle there. Keep one evidence packet.
 
 ## One delivery packet, one owner
 
@@ -19,10 +25,19 @@ Keep the existing task/session record, not another controller:
   head/base, independent review coverage, findings, and criterion verdicts.
 - Scoped doctrine IDs, source locations, pinned digests, required flags, and
   actual load/application reports as specified by [Doctrine](../doctrine/APPLY.md).
+- Original authorized kickoff: bounded monitor job/lifetime, scheduler grant or
+  explicit override under [OBSERVATION](../shepherd/OBSERVATION.md); narrow recovery
+  issue create/update and existing-controller notification/wake grant under
+  [RECOVERY](../shepherd/RECOVERY.md). Record configured tracker destination/identity/
+  readiness vocabulary, permitted actions, previously human-authorized Joe controller/
+  root conversation—or their absence. Narrower requests/tracker gates prevail;
+  no Joe activation or arbitrary labels/closure. Preserve episode key/issue,
+  pending operation and owner through every continuation.
 
 Require `worktrees` and [workspace isolation](WORKSPACE.md) before PR changes.
 Reuse compatible isolation and serialize integration. Each independent writer
-gets its own workspace. Missing ownership, access, or required capability is an
+gets its own Git worktree; Paseo registrations follow WORKSPACE, not one project
+per writer. Missing ownership, access, or required capability is an
 explicit blocker, never permission to use another writer's branch.
 
 Every modifying agent uses [changelog](../changelog/SKILL.md). Curate notable
@@ -91,19 +106,33 @@ synchronization, including **rebase whenever the target advances**, validation/r
 invalidation, safe publication, and the live observation loop. Supply any outstanding blocker
 even on an early exit; a blocked draft is not delivery complete.
 
-Either actually enter Shepherd in this session or transfer to an identified agent
-that starts and observes the PR. Confirm the owner is running and has observed it
-before reporting custody. If no runtime can monitor, record **handoff blocked /
-monitoring stopped**, the last observed state, and how to resume. Never promise
+Enter Shepherd here, or transfer to an identified agent that starts, observes
+the PR, and acknowledges scope/maintenance duties under LIFECYCLE. Verify live
+ownership, initial observation, accepted custody before reporting transfer.
+Idle may mean scheduled waiter. Without monitoring runtime, record **handoff blocked /
+monitoring stopped**, last observed state, resumption action; never promise
 unattended monitoring after runtime/session loss.
 
-Promote a draft and announce **ready for human signoff** only when acceptance is
-met, independent review is current, required checks pass for the current candidate,
-no unresolved blocking findings remain, and the source contains the latest observed
-target. Shepherd reads provider/live source and target refs again immediately before
-the announcement. A changed ref invalidates the candidate claim and restarts the
-affected maintenance/proof, even when mergeability stayed green. Record the observed
-head/base and time; another base movement can invalidate readiness again.
+Accepted Shepherd must actually promote through the provider and verify non-draft
+readback before announcing **ready for human signoff**:
+- GitHub: `gh pr ready` for resolved PR/repository, then read `isDraft`.
+  Azure DevOps: update `isDraft: false`, then read back. Request success/local
+  flags prove no promotion.
+- Require accepted custody, met acceptance, current independent review, passing
+  required candidate checks, no unresolved blockers, source containing latest
+  observed target.
+- Immediately before promotion, reread provider/live source/target refs.
+  Changed refs invalidate claims and restart affected maintenance/proof even if
+  mergeability stays green. Record head/base/time; further base movement can
+  invalidate readiness again.
+- After promotion, re-observe draft status, source/target, covering checks before
+  announcing. Promotion failure/evidence change: record actual state/blocker;
+  no readiness claim or policy bypass to clear drafts.
+
+Reconcile each selected delivery in a batch. Mixed ready/draft/blocked results
+are progress, never **all delivered** while scoped work remains unfinished.
+Keep unfinished PRs' blockers and custody explicit; never mark blocked PRs ready
+to satisfy a completion report.
 
 Readiness is not actual human approval or a guarantee of immediate mergeability
 under every policy. Report pending human approval separately; a blocking review,
@@ -120,12 +149,16 @@ proof, updates that PR, and returns its actual head/results to the existing Shep
 No recursive route, replacement PR, second controller, or nested monitor. A scoped
 worker within another delivery returns to its owner instead of publishing.
 
-Pure rebase/regeneration stays Shepherd work. Different-kind work or changed
-requirements returns to Joe-mode/the human for routing, not automatic Ship fallback.
+Pure rebase/regeneration stays Shepherd work. For different-kind work/changed
+requirements, load [issue-backed recovery](../shepherd/RECOVERY.md) to existing
+Joe/the human, never automatic Ship fallback. Require concrete functional/
+acceptance evidence, not target diff size. Receiver observes/acknowledges before
+write transfer; return fresh candidate/proof to the same Shepherd for acceptance.
 Recover a missing packet from live evidence; do not require an exact old revision,
 but resolve unknown ownership or product intent before mutation.
 
-Report the PR, criterion verdicts, review/check head/base, pending human signoff,
-and actual Shepherd owner/status. Remove only integrated, completed run-owned
-worker worktrees with no active writer or unpreserved changes. Retain unfinished
-work and the delivery workspace while its PR needs custody.
+Report PR/verified draft status, criterion verdicts, review/check head/base,
+pending human signoff, acknowledged Shepherd owner/observation.
+After accepted returns, retire terminal agents under LIFECYCLE; retain only
+concrete duties or explicit limits. Preserve unfinished work/delivery worktree
+while PR custody needs them; archival grants no workspace/branch/evidence deletion.
