@@ -1,14 +1,21 @@
 import type { Finding } from "../domain/finding.ts";
-import { ingestRequestInput, ingestScopeInput } from "./command_input_contracts.ts";
+import {
+  ingestRequestInput,
+  ingestScopeInput,
+  ingestSourceProbeInput,
+} from "./command_input_contracts.ts";
 import { readInput } from "./input_contract.ts";
 export { ingestCommandInputBudgets } from "./command_input_contracts.ts";
 import {
   validateApproval,
   validateIngestScopeTime,
+  probeAtlasIngestSource,
   type AtlasIngestHandoff,
   type AtlasIngestRequest,
   type AtlasIngestResult,
   type AtlasIngestScope,
+  type AtlasIngestSourceProbeRequest,
+  type AtlasIngestSourceProbeOutcome,
   type AtlasIngestWorkflowState,
   type SourceAuthority,
 } from "../operations/ingest_operation.ts";
@@ -32,7 +39,10 @@ export const ingestPlanCommandUsage =
 export const ingestReconcileCommandUsage =
   "usage: atlas ingest reconcile --machine --ingest-request PATH [--atlas-host-directory PATH]";
 
-export const ingestCommandUsage = `${ingestPlanCommandUsage}\n${ingestReconcileCommandUsage}`;
+export const ingestProbeCommandUsage =
+  "usage: atlas ingest probe --machine --source-probe PATH";
+
+export const ingestCommandUsage = `${ingestPlanCommandUsage}\n${ingestReconcileCommandUsage}\n${ingestProbeCommandUsage}`;
 
 export const ingestCommandExitCodes = Object.freeze({
   approvalRequired: 4,
@@ -138,7 +148,7 @@ export function usageIngestOperationResult(message: string): AtlasIngestResult {
 export function invalidInputIngestOperationResult(message: string): AtlasIngestResult {
   return notCompletedIngestResult(
     [ingestFinding("ATLAS_INGEST_INPUT_INVALID", message)],
-    "Ingest command input did not type-check as an Ingest Scope or Candidate Graph.",
+    "Ingest command input did not type-check as an Ingest Scope, Candidate Graph or tracked-Atlas probe.",
     "Correct the typed Ingest input so every field matches the accepted shape, then retry.",
   );
 }
@@ -181,6 +191,88 @@ export function parseIngestRequest(
           parsed.issues.map((issue) => issue.message).join("\n"),
         ),
       };
+}
+
+export function parseIngestSourceProbe(
+  value: unknown,
+): IngestParseOutcome<AtlasIngestSourceProbeRequest> {
+  const parsed = readInput(ingestSourceProbeInput, value, "probe");
+  return parsed.ok
+    ? parsed
+    : {
+        ok: false,
+        result: invalidInputIngestOperationResult(
+          parsed.issues.map((issue) => issue.message).join("\n"),
+        ),
+      };
+}
+
+export interface AtlasIngestProbeResult extends OperationResult<
+  AtlasIngestResult["operation"],
+  AtlasIngestHandoff,
+  {
+    readonly probe: Extract<
+      AtlasIngestSourceProbeOutcome,
+      { readonly state: "tracked-atlas" }
+    >;
+  }
+> {
+  readonly completion: "completed";
+  readonly disposition: "success";
+}
+
+export function runIngestProbeCommandOperation(
+  request: AtlasIngestSourceProbeRequest,
+): AtlasIngestProbeResult | AtlasIngestResult {
+  const probe = probeAtlasIngestSource(request);
+  if (probe.state === "invalid") {
+    return notCompletedIngestResult(
+      probe.findings,
+      "Tracked-Atlas probe refused the supplied pointer metadata.",
+      "Correct the probe input and record actual Maintainer direction before preparing tracking changes.",
+    );
+  }
+  const summary =
+    "Prepared tracking drafts only; no remote access, proposal or knowledge mutation occurred.";
+  const noSnapshot = Object.freeze({
+    reason: "Probe does not read a Home Atlas or remote snapshot.",
+    state: "not-applicable" as const,
+  });
+  return Object.freeze({
+    "operation-result-schema": operationResultSchemaVersion,
+    completion: "completed",
+    disposition: "success",
+    operation: ingestOperationIdentity,
+    payload: Object.freeze({ probe }),
+    handoff: Object.freeze({
+      "operation-handoff-schema": operationHandoffSchemaVersion,
+      baseSnapshot: noSnapshot,
+      homeAtlas: noSnapshot,
+      operation: ingestOperationIdentity,
+      degradationState: Object.freeze({ state: "not-degraded", reason: summary }),
+      proposedChanges: Object.freeze({
+        state: "available",
+        summary: "Draft TrackedAtlas declaration and cross-Atlas Edge, not applied.",
+      }),
+      recommendedNextAction:
+        "Draft changes were not applied. Verify the remote Atlas and Home Anchor, reconcile the drafts against a committed Home Atlas, run full Lint, and review an ordinary Git proposal before adoption. Approval fields are caller assertions, not authenticated authorization.",
+      result: Object.freeze({ disposition: "success", summary }),
+      reviewLink: Object.freeze({
+        state: "not-applicable",
+        reason: "Probe does not create an Atlas Proposal.",
+      }),
+      unresolvedHumanDecisions: Object.freeze({
+        state: "pending",
+        decisions: Object.freeze([
+          "Tracking adoption still requires review through Git governance.",
+        ]),
+      }),
+      validationState: Object.freeze({
+        state: "passed",
+        findings: probe.findings,
+      }),
+    }),
+  });
 }
 
 // The Crawl Assignment the SDK hands out. The brand is a non-exported symbol, so
@@ -340,7 +432,7 @@ export function correspondenceRefusalResult(
 }
 
 export function serializeIngestMachineResult(
-  result: AtlasIngestResult | AtlasIngestPlanResult,
+  result: AtlasIngestResult | AtlasIngestPlanResult | AtlasIngestProbeResult,
 ): string {
   return `${JSON.stringify(result)}\n`;
 }
@@ -351,7 +443,9 @@ export function exitCodeForIngestPlanOutcome(outcome: AtlasIngestPlanOutcome): n
     : exitCodeForIngestOperationResult(outcome.result);
 }
 
-export function exitCodeForIngestOperationResult(result: AtlasIngestResult): number {
+export function exitCodeForIngestOperationResult(
+  result: AtlasIngestResult | AtlasIngestProbeResult,
+): number {
   if (result.completion === "completed" && result.disposition === "success") {
     return ingestCommandExitCodes.success;
   }

@@ -10,6 +10,7 @@ import { parseGovernRequest } from "../src/interfaces/governance_command.ts";
 import {
   parseIngestRequest,
   parseIngestScope,
+  parseIngestSourceProbe,
 } from "../src/interfaces/ingest_command.ts";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
 
@@ -89,6 +90,34 @@ test("CLI describes the complete Ingest Scope JSON shape without selecting an At
   assert.equal(validator.compile(contract.schema)({}), false);
 });
 
+test("CLI describes the tracking-probe input without implying authenticated approval", () => {
+  const contract = describe("ingest-source-probe");
+  assert.equal(contract.name, "ingest-source-probe");
+  assert.equal(contract.maxFileBytes, 1_048_576);
+  assert.deepEqual(contract.schema["required"], [
+    "approvedAt",
+    "approvedBy",
+    "asOf",
+    "atlasPath",
+    "branch",
+    "fromAnchorId",
+    "repositoryLocator",
+    "title",
+  ]);
+  const validate = schemaValidator().compile(contract.schema);
+  const input: unknown = JSON.parse(
+    readFileSync(
+      new URL("./fixtures/ingest/source-probe-valid.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  assert.equal(validate(input), true);
+  assert.equal(parseIngestSourceProbe(input).ok, true);
+  assert.equal(validate({}), false);
+  assert.match(contract.guidance.join("\n"), /caller assertions/u);
+  assert.match(contract.guidance.join("\n"), /not fetch/u);
+});
+
 test("Governance schema describes conditional approval and UTF-8 budgets", () => {
   const contract = describe("governance-request");
   const validator = schemaValidator();
@@ -148,11 +177,15 @@ test("Emitted schemas and decoding agree on installed adversarial inputs and val
   const parsers = {
     "ingest-scope": parseIngestScope,
     "ingest-request": parseIngestRequest,
+    "ingest-source-probe": parseIngestSourceProbe,
     "governance-request": parseGovernRequest,
   };
   const schemas = {
     "ingest-scope": schemaValidator().compile(describe("ingest-scope").schema),
     "ingest-request": schemaValidator().compile(describe("ingest-request").schema),
+    "ingest-source-probe": schemaValidator().compile(
+      describe("ingest-source-probe").schema,
+    ),
     "governance-request": schemaValidator().compile(
       describe("governance-request").schema,
     ),

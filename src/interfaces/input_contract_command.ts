@@ -12,6 +12,7 @@ import {
   ingestCommandInputBudgets,
   ingestRequestInput,
   ingestScopeInput,
+  ingestSourceProbeInput,
 } from "./command_input_contracts.ts";
 import {
   governanceInputGuidance,
@@ -25,6 +26,10 @@ const definitions = Object.freeze({
   },
   "ingest-request": {
     input: ingestRequestInput,
+    maxFileBytes: ingestCommandInputBudgets.maxFileBytes,
+  },
+  "ingest-source-probe": {
+    input: ingestSourceProbeInput,
     maxFileBytes: ingestCommandInputBudgets.maxFileBytes,
   },
   "governance-request": {
@@ -45,7 +50,7 @@ export function serializeCallerInputResult(
   if (result.disposition === "success") return `${JSON.stringify(result)}\n`;
   const names: readonly InputContractName[] =
     result.operation.kind === "ingest"
-      ? ["ingest-scope", "ingest-request"]
+      ? ["ingest-scope", "ingest-request", "ingest-source-probe"]
       : ["governance-request"];
   const commands = names
     .map((name) => `atlas input-contract --machine ${name}`)
@@ -104,11 +109,17 @@ function describeInputContract(name: InputContractName): InputContract {
       "When shorter, an index set uses an exact hexadecimal byte mask: items[mask@8:55].field selects indices 8, 10, 12, and 14. The offset after @ is byte-aligned; read each pair of hex digits as one byte, least-significant bit first. Set bit k in byte j selects offset + 8*j + k. Zero bits never select an index. This representation also preserves arbitrary gaps and nested child sets.",
       ...(name === "governance-request"
         ? governanceInputGuidance
-        : [
-            "attestation is a detached Approval Attestation, not approvedBy/approvedAt fields at the Scope root. Approval is bound to the exact Scope; copying or inventing an attestation is not human approval.",
-            "asOf, approvedAt, optional expiresAt, and Source revisionTime are timestamp strings checked by the operation. Number fields describe finite numbers at this decoding boundary; they are not silently narrowed to integers.",
-            "Planning hands a Crawl Assignment to the caller; it does not crawl. Reconciliation accepts a Candidate Graph whose Source identity, captured content, citations, locators, authority, and freshness must correspond to the approved Scope and actual Source evidence.",
-          ]),
+        : name === "ingest-source-probe"
+          ? [
+              "approvedBy and approvedAt are caller assertions of Maintainer direction, not authenticated approval or an Approval Attestation. Do not invent them.",
+              "This read-only probe prepares a TrackedAtlas declaration and cross-Atlas Edge. It does not fetch a remote, inspect a Home Atlas, apply changes, run full Lint, or create a proposal.",
+              "asOf and approvedAt must be comparable date-times. fromAnchorId identifies the intended Home Anchor; its existence and the target Atlas must be checked separately before ordinary Git proposal review and adoption.",
+            ]
+          : [
+              "attestation is a detached Approval Attestation, not approvedBy/approvedAt fields at the Scope root. Approval is bound to the exact Scope; copying or inventing an attestation is not human approval.",
+              "asOf, approvedAt, optional expiresAt, and Source revisionTime are timestamp strings checked by the operation. Number fields describe finite numbers at this decoding boundary; they are not silently narrowed to integers.",
+              "Planning hands a Crawl Assignment to the caller; it does not crawl. Reconciliation accepts a Candidate Graph whose Source identity, captured content, citations, locators, authority, and freshness must correspond to the approved Scope and actual Source evidence.",
+            ]),
     ]),
   });
 }

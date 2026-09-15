@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import type { AtlasReadinessReport } from "../src/operations/initialize_operation.ts";
 import type { InitializationArtifactConflict } from "./initialization_artifact_probes.ts";
 import type { GovernanceRetirementProbe } from "./governance_retirement_probe.ts";
+import type { AtlasIngestSourceProbeRequest } from "../src/operations/ingest_operation.ts";
 
 interface InstalledConsumerCase {
   readonly name: string;
@@ -12,6 +13,17 @@ interface InstalledConsumerCase {
   readonly expectedRootAnchorId: string;
   readonly expectedAtlasPaths: readonly string[];
   readonly unmergedLintCode: string;
+  readonly trackingProbe?: {
+    readonly request: AtlasIngestSourceProbeRequest;
+    readonly expectedPaths: readonly string[];
+    readonly expectedTrackedId: string;
+    readonly rejections: readonly {
+      readonly name: string;
+      readonly overrides: Readonly<Record<string, unknown>>;
+      readonly expectedExit: number;
+      readonly expectedCodes: readonly string[];
+    }[];
+  };
   readonly providerInvocation?: {
     readonly expectedProviderCalls: number;
     readonly expectedResultId: string;
@@ -55,7 +67,8 @@ interface InstalledConsumerCase {
     readonly expectedFields: readonly string[];
   };
   readonly inputContracts?: readonly {
-    readonly name: "ingest-scope" | "ingest-request" | "governance-request";
+    readonly name:
+      "ingest-scope" | "ingest-request" | "ingest-source-probe" | "governance-request";
     readonly arguments: readonly string[];
     readonly input: unknown;
     readonly expectedPaths: readonly string[];
@@ -131,6 +144,28 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
     for (const path of entry.expectedAtlasPaths) {
       assert.equal(typeof path, "string");
       assert.match(path, /^\.atlas\//u);
+    }
+    if (entry.trackingProbe !== undefined) {
+      const probe = entry.trackingProbe;
+      for (const value of Object.values(probe.request)) {
+        assert.ok(typeof value === "string");
+        assert.ok(value.trim().length > 0);
+      }
+      assert.equal(probe.expectedPaths.length, 2);
+      assert.match(probe.expectedTrackedId, /^tracked-atlas:/u);
+      for (const path of probe.expectedPaths) assert.match(path, /^\.atlas\/.*\.md$/u);
+      assert.ok(probe.rejections.length > 0);
+      for (const rejection of probe.rejections) {
+        assert.equal(typeof rejection.name, "string");
+        assert.ok(
+          Number.isInteger(rejection.expectedExit) && rejection.expectedExit > 0,
+        );
+        assert.equal(typeof rejection.overrides, "object");
+        assert.notEqual(rejection.overrides, null);
+        assert.ok(rejection.expectedCodes.length > 0);
+        for (const code of rejection.expectedCodes)
+          assert.match(code, /^ATLAS_[A-Z_]+$/u);
+      }
     }
     if (entry.providerInvocation !== undefined) {
       assert.equal(
@@ -280,9 +315,12 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
           assert.ok(entry.inputContracts.length > 0);
           for (const probe of entry.inputContracts) {
             assert.ok(
-              ["ingest-scope", "ingest-request", "governance-request"].includes(
-                probe.name,
-              ),
+              [
+                "ingest-scope",
+                "ingest-request",
+                "ingest-source-probe",
+                "governance-request",
+              ].includes(probe.name),
             );
             assert.ok(Object.hasOwn(probe, "input"));
             for (const values of [

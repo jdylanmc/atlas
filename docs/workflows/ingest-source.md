@@ -9,6 +9,16 @@ adr: docs/adr/0001-sdk-is-a-deterministic-library.md
 Use this instruction file when a human asks to Ingest one local repository
 source into the Home Atlas. Ingest takes one source per invocation.
 
+If the source is another Atlas, do not convert its knowledge into an ordinary
+Source. The installed `atlas input-contract --machine ingest-source-probe`
+documents the request for `atlas ingest probe --machine --source-probe PATH`.
+That read-only adapter returns a draft TrackedAtlas declaration and cross-Atlas
+Edge; it does not fetch the target, inspect the Home Anchor, apply changes,
+create a proposal or run full Lint. Record actual human direction rather than
+copying fixture approval fields, verify both endpoints separately, and review
+the reconciled drafts through a fully Linted ordinary Git proposal before
+adoption. Caller-asserted approval fields are not authenticated authorization.
+
 The Atlas SDK is deterministic and never invokes a model. This workflow, not the
 SDK, dispatches the read-only Crawlers. The SDK owns only the deterministic
 half: the typed Ingest Scope it hands you, the exact Candidate Graph shape it
