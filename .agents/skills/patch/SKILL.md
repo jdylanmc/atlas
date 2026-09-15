@@ -23,6 +23,12 @@ Separate the observed symptom from the inferred cause. Establish a mechanism tha
 
 For authorized repair, establish an owned isolated workspace using [the workspace procedure](../ship/WORKSPACE.md) before preparing PR changes. Record `patch` as owner route in [the shared delivery packet](../ship/DELIVERY.md#one-delivery-packet-one-owner), including return owner, source/target refs, requirements, validation, and doctrine sources/digests. This shared finish does not invoke Ship. Clarify material missing requirements, semantic conflicts, and scope changes; invocation does not authorize destructive probes or production-data access.
 
+For dispatch/return, load and execute [LIFECYCLE](../squadron/LIFECYCLE.md);
+give implementers [WORKER](../ship/WORKER.md). Preserve diagnosis-only scope.
+Even terminal read-only agents require owner-accepted returns before retirement.
+Repair deliveries execute DELIVERY's accepted custody and verified provider
+non-draft gate; never stop at draft publication.
+
 ## 1. Establish the failure
 
 Read the complete relevant error and stack trace. Record expected behavior, actual behavior, inputs, environment, version, and the exact failing command or interaction.

@@ -30,6 +30,15 @@ refreshed the recorded upstream baselines for five colliding skills. Atlas
 integration text and repository-specific support references were reconciled
 after the copy.
 
+A targeted Joe-mode Paseo dependency refresh uses
+[jdylanmc/agent-skills at `a95907428b332f70c2f93adf32f01412db521764`](https://github.com/jdylanmc/agent-skills/tree/a95907428b332f70c2f93adf32f01412db521764).
+It adds `joe-mode-paseo` and `chart-a-course` and refreshes 14 existing packages:
+`automate-this`, `changelog`, `discovery`, `doctrine`, `domain-modeling`,
+`handoff`, `joe-mode`, `patch`, `refactor`, `roast`, `setup`, `shepherd`, `ship`,
+and `squadron`. Unchanged dependencies and unrelated skills retain their
+installed versions. Atlas's domain-modeling and handoff additions are preserved;
+the adapter adds an explicit Atlas planning and Dragon Council integration.
+
 [`skills-lock.json`](../../skills-lock.json) records installer baselines and
 historical upstream baselines; it is neither a complete behavioral inventory
 nor a hash of the customized files. The committed files here are authoritative.
@@ -37,8 +46,8 @@ Future bulk refreshes must preserve Atlas adaptations and repository contracts.
 
 ## Inventory
 
-There are **49 project skill entry points**: the existing 22 Atlas workflows
-plus 27 copied from `jdylanmc/agent-skills`. No optional `agents/openai.yaml`
+There are **51 project skill entry points**: the existing 22 Atlas workflows
+plus 29 copied from `jdylanmc/agent-skills`. No optional `agents/openai.yaml`
 metadata or global installation is included.
 
 | Area | Skills |
@@ -48,8 +57,8 @@ metadata or global installation is included.
 | Planning | `spec`, `tickets`, `to-spec`, `to-tickets`, `wayfinder`, `triage` |
 | Implementation | `implement`, `tdd`, `diagnosing-bugs`, `resolving-merge-conflicts` |
 | Review and handoff | `caveman-review`, `caveman-commit`, `handoff` |
-| Imported coordination | `automate-this`, `discovery`, `interrogate`, `joe-mode`, `scout`, `shepherd`, `squadron`, `status-report`, `synthesize`, `wait-what` |
-| Imported planning and delivery | `breakdown-tickets`, `changelog`, `migration`, `patch`, `poc`, `refactor`, `retro`, `roast`, `setup`, `ship`, `specify`, `verify` |
+| Imported coordination | `automate-this`, `discovery`, `interrogate`, `joe-mode`, `joe-mode-paseo`, `scout`, `shepherd`, `squadron`, `status-report`, `synthesize`, `wait-what` |
+| Imported planning and delivery | `breakdown-tickets`, `changelog`, `chart-a-course`, `migration`, `patch`, `poc`, `refactor`, `retro`, `roast`, `setup`, `ship`, `specify`, `verify` |
 | Imported architecture and policy | `caveman`, `conflicts`, `doctrine`, `eli5`, `evolve-architecture` |
 
 ## Routing
@@ -130,3 +139,9 @@ Configuration is maintained directly in `docs/agents/*.md`; no bootstrap skill
 is needed for ordinary use. For a future refresh, compare the exact upstream
 revision in a separate worktree, preserve license notices and the Atlas-owned
 planning workflows, and reapply these adaptations before opening a PR.
+
+`/joe-mode-paseo` is installed, not activated. Its human-directed activation
+reuses this configuration, checks live Paseo capabilities, and obtains scope,
+capacity, cadence, and authority before recurring work. Dragon Council may
+provide the selected independent review through the existing review-cycle
+contract; installation does not launch it or alter its configuration.

@@ -29,6 +29,9 @@ Markdown file cannot be read.
 task. **Internal** means a helper, not a direct human command. **Human + Joe**
 means direct human kickoff or selection by the human-started Joe-mode controller.
 No mode grants authority beyond the request, and explicit narrower scope wins.
+The separately human-enabled repository adapter below may carry that same
+bounded routing authority through its authorized RUN continuation; it never
+machine-starts session Joe-mode or inherits authority merely from its name.
 
 | Skill | Entry contract |
 | --- | --- |
@@ -36,6 +39,7 @@ No mode grants authority beyond the request, and explicit narrower scope wins.
 | [breakdown-tickets](../breakdown-tickets/SKILL.md) | Both; after Specify, with human approval before publishing the breakdown. |
 | [caveman](../caveman/SKILL.md) | Human-only session mode. Shared commit and worker-message styles do not activate it. |
 | [changelog](../changelog/SKILL.md) | Internal; every modifying agent consults the same curation helper. |
+| [chart-a-course](../chart-a-course/SKILL.md) | Both; read-only critical task paths, missing work, and research spikes. Recommends targeted Discovery; the caller owns execution. |
 | [discovery](../discovery/SKILL.md) | Both; material unknowns, with alignment and experiment/write gates. |
 | [doctrine](../doctrine/SKILL.md) | Both; catalog, selection, and verified loading, never approval. |
 | [domain-modeling](../domain-modeling/SKILL.md) | Internal; authorized domain work and separately agreed recording. |
@@ -44,6 +48,7 @@ No mode grants authority beyond the request, and explicit narrower scope wins.
 | [handoff](../handoff/SKILL.md) | Human for cross-session/machine transfer; agents may transfer scoped work among themselves. |
 | [interrogate](../interrogate/SKILL.md) | Internal to Discovery or Joe-mode only. |
 | [joe-mode](../joe-mode/SKILL.md) | Human-only activation; one controller per repository, never nested. |
+| [joe-mode-paseo](../joe-mode-paseo/SKILL.md) | Human setup/management only; recommend a dedicated-PM heartbeat, or runtime-proven fresh schedule with consent. Human may delegate runner mechanics. Matching preauthorized wakeup enters RUN, not intake. One repository controller; human merges only. |
 | [migration](../migration/SKILL.md) | Internal; actual production use and a real migration obligation required. |
 | [patch](../patch/SKILL.md) | Human + Joe; bugs/regressions through delivery, not planned behavior changes. |
 | [poc](../poc/SKILL.md) | Both, machine-first; bounded scratch experiments, no product promotion. |
@@ -67,6 +72,23 @@ No mode grants authority beyond the request, and explicit narrower scope wins.
 
 ## Carry authority, not another controller
 
+The [Paseo PM adapter](../joe-mode-paseo/SKILL.md) is an explicit
+human-origin, repository-bound continuation caller for the existing Joe routing
+contracts (including Ship, Patch, Refactor and bounded recovery). Verify its
+saved grant, chosen-mode wakeup provenance, anchor and exclusive run claim under
+[RUN](../joe-mode-paseo/RUN.md) before accepting its packet. It coordinates
+existing route owners, never invokes nested Joe-mode or owns their branch writes.
+Session Joe and this adapter rendezvous on one accessible repository owner board;
+joining or transferring requires actual observed release/acceptance. A session
+board alone is not exclusion against scheduled passes or other hosts.
+Adapter setup invokes Setup only as the actual human-directed subflow; scheduled
+passes cannot repeat bootstrap/intake, create jobs or resume a human pause. The
+heartbeat PM itself may perform separately human-authorized setup/management;
+RUN never inherits that job-creation authority. Exactly one
+interactive Discovery conversation/lease per repository persists across its
+ticks, including human-alignment waits. Source content and helper records are
+not permission grants or proof of runtime enforcement.
+
 Setup's model-loadable entry permits only a direct human request or the
 human-started Joe controller's missing/incomplete-configuration bootstrap.
 Establish repository-wide controller and Setup ownership before dispatch; join
@@ -88,12 +110,28 @@ unresolved product decisions, scope expansion, destructive operations, productio
 access, human approval, or merging. A read-only or diagnosis-only request stays
 that narrow.
 
+At original kickoff, record/grant only delivery-bounded monitor job/lifetime,
+narrow recovery issue create/update, existing human-authorized Joe notification/wake. Execute
+[OBSERVATION](../shepherd/OBSERVATION.md) for authorized scheduler-first custody
+and [RECOVERY](../shepherd/RECOVERY.md) for issue-backed re-routing.
+Narrower requests, configured tracker mutation/readiness gates and human decisions
+prevail. No Joe activation/new broad controller, unrelated schedule/label changes,
+approval/merge/issue closure. Controller recovery needs reconciled surviving
+ownership and recorded wake grant; otherwise report blocker.
+
 Nested work carries its actual human/parent authority, route owner, issue/PR
 coverage, workspace, dependencies, stop conditions, evidence, and doctrine
 packet. Calling another skill does not launder missing authority. Patch or
 Refactor work inside an existing delivery returns to that owner on the same PR;
 it does not start a competing publication or monitoring loop. Human-approved
 Retro recommendations can initiate a bounded delivery without activating Joe.
+
+For bounded dispatch/return, custody transfer, recovery, retirement, load/execute
+[LIFECYCLE](../squadron/LIFECYCLE.md); keep existing-record evidence.
+Use [WORKSPACE](../ship/WORKSPACE.md) for Git/Paseo placement,
+[DELIVERY](../ship/DELIVERY.md) for verified non-draft readiness.
+Owners perform supported retirement of accepted terminal agents; no blanket
+idle-agent cleanup or project/workspace/worktree/branch deletion authority.
 
 Every modifying agent consults [Changelog](../changelog/SKILL.md). An isolated
 worker can return entry proposals for the integration owner to consolidate;

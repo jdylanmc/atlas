@@ -31,4 +31,39 @@ Record path, branch, actual base/start commit, owner, and relevant pre-existing 
 
 Preserve baseline failures and missing checks in the report; neither is a clean baseline. The owner resolves their impact before making completion claims.
 
-Independent writers get independent workspaces; serialize integration and shared resources. Before cleanup, confirm run ownership, integration, no live writer, and no uncommitted/unpreserved work. Remove only the specific completed worker worktrees this run owns. Keep the delivery workspace while its PR/Shepherd still needs it.
+Independent write deliveries need distinct Git worktrees, not branches/UI entries.
+Serialize integration/shared resources; read-only agents may share sources without new
+worktrees. Record placement/custody under [lifecycle contract](../squadron/LIFECYCLE.md).
+
+## Paseo placement, when used
+
+Use exactly **one Paseo project per Git repository and one Paseo workspace per
+Git worktree**. Same-worktree agents share registration; independent writers
+use distinct worktrees/workspaces under that project. New agents alone require
+no project/workspace/worktree.
+
+Resolve repository identity/common directory, actual worktree paths, existing
+registrations; reuse compatible ones. Distinguish UI project/workspace, Git
+repository/common directory, branch, mutable state. Before creation, resolve
+ambiguous/duplicate mappings with owner; never force consistency by deleting registrations.
+
+Inspect schemas. Needed worktree/workspace creation always specifies existing
+repository `projectId`; establish one only if absent and authorized.
+Native creation must honor approved layout/ownership. Otherwise create Git
+worktree above, register explicit path:
+`create_workspace({isolation: 'local', path, projectId, title})`.
+Result may report `isolation: 'worktree'`; before use verify actual path,
+project/workspace IDs, Git worktree/branch.
+
+Place agents with verified `workspaceId` in `create_agent`. No invented cwd argument
+or assumed controller-path inheritance: each inspects actual cwd/Git paths/branch/
+starting state. Mismatch/missing mapping capability blocks writes, never permits
+main, project-per-worker, or bypass/allow-all permissions.
+
+## Preserve resources at retirement
+
+Agent archival follows LIFECYCLE, not Git/UI cleanup. Before separately authorized
+worktree removal, verify run ownership, integration, no live writer, no uncommitted/
+unpreserved work. Remove only specific completed run-owned worker worktrees.
+Keep delivery workspace while PR/Shepherd needs it; never archive projects/workspaces
+or delete branches/worktrees merely to clear finished agents.

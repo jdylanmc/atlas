@@ -17,6 +17,10 @@ choose relevant standards from catalog metadata. Send IDs, reasons, required
 flags, source paths, and digests; each applying worker loads the actual texts.
 Every PR-producing worker requires `worktrees`; code reviewers require `solid`.
 
+Load and execute [LIFECYCLE](LIFECYCLE.md) for dispatch, accepted returns,
+recovery, and retirement. Keep evidence in the existing work packet;
+no new controller or ledger.
+
 ## 1. Find truly independent work
 
 Separate work by outcome and ownership, not file count. Useful assignments
@@ -48,13 +52,16 @@ the conversation. Include:
 - Selected skill and actual human/parent authority; decisions still pending.
 - Owner/controller and objective identity, original timing evidence when known,
   issue numbers **and titles**, PR coverage, and parent/return relationships.
-- Authorized workspace, branch/base, owned files/resources, and integration owner.
+- Verified repository/worktree and harness project/workspace mapping, branch/base,
+  owned files/resources, and integration owner.
 - Doctrine packet, [commit style](../setup/COMMIT-STYLE.md), stop conditions,
   expected return, and follow-up/monitor custody.
 
-Writing workers need distinct isolated workspaces, not merely disjoint files
-in one checkout with a shared Git index. Use the existing delivery's
-[workspace procedure](../ship/WORKSPACE.md). Read-only workers may share sources.
+Independent writers need distinct isolated Git worktrees, not disjoint files
+sharing one checkout and Git index. Use the existing delivery's
+[workspace procedure](../ship/WORKSPACE.md), including Paseo's one repository
+project and one workspace per worktree. Read-only workers share compatible
+sources/registration; dispatch alone needs no new isolation.
 Coordinate other shared resources too: ports, databases, fixtures, and services.
 
 Every modifying worker uses [Changelog](../changelog/SKILL.md). Assign one owner
@@ -76,7 +83,8 @@ do not pretend serial work was parallel or install a runtime without permission.
 
 Continue independent work while agents run. Consume completion notifications
 or the supported wait mechanism; do not repeatedly poll known workers.
-Reuse the existing agent for follow-up where supported. Queue human questions
+Reuse agents retained for concrete pending follow-up where supported; retire
+accepted terminal workers under LIFECYCLE. Queue human questions
 through the parent instead of letting workers manufacture answers.
 
 ## 4. Reconcile and return ownership
@@ -95,10 +103,12 @@ passing local tests do not prove the integrated result.
 Do not cherry-pick into another delivery's live branch, take over its review,
 or declare its PR ready from a dispatch summary. Ship/Patch/Refactor own
 reviewed delivery, Shepherd owns ongoing PR maintenance, and Joe owns routing.
-Keep custody until the receiver confirms acceptance. Never approve or merge
+Keep custody until the receiver observes the actual state and acknowledges
+acceptance under LIFECYCLE, not just message delivery. Never approve or merge
 on the human's behalf.
 
-Clean up only confirmed run-owned finished work after integration and
-preservation checks. A return message does not prove its worktree or monitor
-is disposable. If the runtime stops, disclose lost observation/ownership and
-reconcile before resuming.
+Retire terminal owned agents after accepted/preserved results and completed/
+transferred duties, not as workspace/worktree cleanup. Return messages/idle status
+prove neither. Cancellation/runtime stop: reconcile live owners/children/partial
+work under LIFECYCLE before replacement. Report retained duties/capability limits;
+never abandon drafts or call mixed unfinished batches delivered.
