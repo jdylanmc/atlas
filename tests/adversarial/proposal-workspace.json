@@ -1,0 +1,120 @@
+{
+  "schema": 1,
+  "reviewResolutionRule": "A review finding is resolved only after tests/adversarial has a case exercising the Proposal workspace boundary.",
+  "cases": [
+    {
+      "name": "governance-completes-host-tree-without-smudge-or-hook-execution",
+      "gate": "proposal-workspace",
+      "kind": "filter-free-completion",
+      "operation": "governance",
+      "expectation": "accept",
+      "finding": "BALERION-87-R1-01",
+      "filterMode": "smudge"
+    },
+    {
+      "name": "governance-completes-host-tree-without-process-or-hook-execution",
+      "gate": "proposal-workspace",
+      "kind": "filter-free-completion",
+      "operation": "governance",
+      "expectation": "accept",
+      "finding": "BALERION-87-R1-01",
+      "filterMode": "process"
+    },
+    {
+      "name": "ingest-completes-a-clean-worktree-that-rebases-over-an-unrelated-base-advance",
+      "gate": "proposal-workspace",
+      "kind": "rebase-completion",
+      "operation": "ingest",
+      "expectation": "accept",
+      "finding": "BOLAS-87-R1-01"
+    },
+    {
+      "name": "governance-retains-a-competing-host-file-after-completion-refuses-it",
+      "gate": "proposal-workspace",
+      "kind": "ownership-conflict",
+      "operation": "governance",
+      "expectation": "reject",
+      "finding": "BALERION-87-R2-01",
+      "expectedCode": "ATLAS_GOVERNANCE_RUNTIME_FAILED",
+      "conflict": {
+        "kind": "file",
+        "path": "README.md",
+        "content": "SENTINEL: competing host file\n"
+      }
+    },
+    {
+      "name": "governance-retains-a-competing-parent-after-completion-refuses-it",
+      "gate": "proposal-workspace",
+      "kind": "ownership-conflict",
+      "operation": "governance",
+      "expectation": "reject",
+      "finding": "BALERION-87-R2-01",
+      "expectedCode": "ATLAS_GOVERNANCE_RUNTIME_FAILED",
+      "conflict": {
+        "kind": "parent",
+        "path": "docs",
+        "content": "SENTINEL: competing parent\n"
+      }
+    },
+    {
+      "name": "ingest-retains-a-competing-host-file-after-completion-refuses-it",
+      "gate": "proposal-workspace",
+      "kind": "ownership-conflict",
+      "operation": "ingest",
+      "expectation": "reject",
+      "finding": "BALERION-87-R2-01",
+      "expectedCode": "ATLAS_INGEST_RUNTIME_FAILED",
+      "conflict": {
+        "kind": "file",
+        "path": "README.md",
+        "content": "SENTINEL: competing ingest host file\n"
+      }
+    },
+    {
+      "name": "governance-completes-and-rebases-with-an-uninitialized-gitlink",
+      "gate": "proposal-workspace",
+      "kind": "gitlink-rebase-completion",
+      "operation": "governance",
+      "expectation": "accept",
+      "finding": "BALERION-87-R2-02"
+    },
+    {
+      "name": "ingest-completes-and-rebases-with-an-uninitialized-gitlink",
+      "gate": "proposal-workspace",
+      "kind": "gitlink-rebase-completion",
+      "operation": "ingest",
+      "expectation": "accept",
+      "finding": "BALERION-87-R2-02"
+    },
+    {
+      "name": "initialization-completes-a-clean-worktree-that-rebases-over-an-unrelated-base-advance",
+      "gate": "proposal-workspace",
+      "kind": "rebase-completion",
+      "operation": "initialization",
+      "expectation": "accept",
+      "finding": "BOLAS-87-R2-01"
+    },
+    {
+      "name": "initialization-retains-a-competing-host-file-after-completion-refuses-it",
+      "gate": "proposal-workspace",
+      "kind": "ownership-conflict",
+      "operation": "initialization",
+      "expectation": "reject",
+      "finding": "BOLAS-87-R2-01",
+      "expectedCode": "ATLAS_INITIALIZATION_RUNTIME_FAILED",
+      "conflict": {
+        "kind": "file",
+        "path": "README.md",
+        "content": "SENTINEL: competing initialization host file\n"
+      }
+    },
+    {
+      "name": "ingest-discards-an-owned-failed-attempt-so-an-identical-retry-can-succeed",
+      "gate": "proposal-workspace",
+      "kind": "retry-after-owned-failure",
+      "operation": "ingest",
+      "expectation": "accept",
+      "finding": "BOLAS-87-R2-02"
+    }
+  ]
+}

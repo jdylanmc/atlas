@@ -27,6 +27,11 @@ import {
 import { renderAtlasReadinessReportMarkdown } from "../operations/initialize_readiness_report.ts";
 import { runLintOperation } from "../operations/lint_operation.ts";
 import { captureLocalAtlasSnapshot } from "./local_atlas_snapshot.ts";
+import {
+  completeOperationWorkspace,
+  isOperationWorkspaceOwnershipConflict,
+  type OperationWorkspaceOwnershipConflict,
+} from "./operation_workspace.ts";
 import { runTrustedGit, runTrustedGitForWrite } from "./trusted_git.ts";
 
 function git(repository: string, args: readonly string[]): string {
@@ -344,6 +349,7 @@ export function runLocalAtlasInitialization(
   }
 
   const workspace = workspacePath(repository, workflowState.proposalBranch);
+  let completionConflict: OperationWorkspaceOwnershipConflict | undefined;
   const result = runAtlasInitializationWorkflow(workflowState, {
     commitProposal: () => {
       const tree = gitWrite(workspace, ["write-tree"]);
@@ -365,6 +371,14 @@ export function runLocalAtlasInitialization(
         `refs/heads/${workflowState.proposalBranch}`,
         commit,
       ]);
+      try {
+        completeOperationWorkspace(workspace, parent, commit);
+      } catch (error) {
+        if (isOperationWorkspaceOwnershipConflict(error)) {
+          completionConflict = error;
+        }
+        throw error;
+      }
       return { commit, receipt: commit };
     },
     createProposalWorktree: () => {
@@ -433,5 +447,15 @@ export function runLocalAtlasInitialization(
       };
     },
   });
-  return persistReadinessArtifacts(repository, result);
+  const persisted = persistReadinessArtifacts(repository, result);
+  if (completionConflict === undefined) return persisted;
+  return Object.freeze({
+    ...persisted,
+    handoff: Object.freeze({
+      ...persisted.handoff,
+      recommendedNextAction:
+        `Operation Workspace ${workspace} was retained for inspection after an ownership conflict at ` +
+        `${completionConflict.path}. Resolve or preserve the competing path before retrying.`,
+    }),
+  });
 }

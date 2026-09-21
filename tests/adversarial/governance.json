@@ -3,6 +3,29 @@
   "reviewResolutionRule": "A review finding is resolved only after tests/adversarial has a case exercising the governance gate.",
   "cases": [
     {
+      "name": "distinct-same-base-governance-intents-use-independent-proposals",
+      "gate": "governance",
+      "kind": "proposal-concurrency",
+      "expectation": "accept",
+      "absentCode": "ATLAS_GOVERNANCE_WORKSPACE_EXISTS",
+      "concurrentProposals": {
+        "first": {
+          "changelog": "Created No Model Principle.",
+          "id": "no-model",
+          "title": "No Model",
+          "truth": "Trusted validation runs where a model cannot reach it.",
+          "truthId": "no-model"
+        },
+        "second": {
+          "changelog": "Created No Network Principle.",
+          "id": "no-network",
+          "title": "No Network",
+          "truth": "Trusted validation completes without network access.",
+          "truthId": "no-network"
+        }
+      }
+    },
+    {
       "name": "exact-authored-path-duplicates-are-refused",
       "gate": "governance",
       "kind": "change-path-collision",

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import {
+import fs, {
   existsSync,
   mkdirSync,
   readFileSync,
@@ -8,6 +8,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { resolve } from "node:path";
 import test from "node:test";
 import {
@@ -30,6 +31,10 @@ import { exitCodeForInitializeOperationResult } from "../src/interfaces/initiali
 import { renderAtlasReadinessReportMarkdown } from "../src/index.ts";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
 import { exerciseInitializationArtifactConflicts } from "./initialization_artifact_probes.ts";
+import {
+  readProposalWorkspaceCorpus,
+  type ProposalWorkspaceOwnershipConflictCase,
+} from "./proposal_workspace_corpus.ts";
 
 const WORKSPACE = resolve(
   import.meta.dirname,
@@ -58,6 +63,22 @@ function git(repository: string, args: readonly string[]): string {
   });
   assert.equal(result.status, 0, result.stderr);
   return result.stdout.trim();
+}
+
+function gitWithFixtureIdentity(repository: string, args: readonly string[]): string {
+  return git(repository, [
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    ...args,
+  ]);
+}
+
+function writtenText(data: Parameters<typeof fs.writeFileSync>[1]): string {
+  if (typeof data === "string") return data;
+  if (Buffer.isBuffer(data)) return data.toString("utf8");
+  return "";
 }
 
 function initRepository(repository: string): string {
@@ -114,6 +135,108 @@ test("Atlas Initialization writes a valid proposal while the target branch commi
     state: "not-applicable",
   });
 });
+
+for (const entry of readProposalWorkspaceCorpus().cases.filter(
+  (candidate) =>
+    candidate.kind === "rebase-completion" && candidate.operation === "initialization",
+)) {
+  test(`Proposal workspace corpus: ${entry.name}`, () => {
+    const repository = resolve(WORKSPACE, entry.name);
+    initRepository(repository);
+    const result = runLocalAtlasInitialization(repository);
+    assert.equal(result.completion, "completed");
+    const workspace = resolve(
+      repository,
+      ".atlas-operation-workspaces",
+      result.payload.workflowState.proposalBranch,
+    );
+    assert.equal(git(workspace, ["status", "--porcelain", "--untracked-files=no"]), "");
+
+    writeFileSync(resolve(repository, "UNRELATED.md"), "# unrelated\n", "utf8");
+    git(repository, ["add", "UNRELATED.md"]);
+    git(repository, [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "-m",
+      "Advance unrelated host content",
+    ]);
+    const targetHead = git(repository, ["rev-parse", "main"]);
+    gitWithFixtureIdentity(workspace, ["rebase", "main"]);
+    assert.equal(git(workspace, ["rev-parse", "HEAD^"]), targetHead);
+    assert.equal(git(workspace, ["status", "--porcelain", "--untracked-files=no"]), "");
+    const lint = spawnSync(
+      process.execPath,
+      [COMMAND, "lint", "--machine", "--atlas-host-directory", workspace],
+      { encoding: "utf8" },
+    );
+    assert.equal(lint.status, 0, lint.stdout);
+    const lintResult = JSON.parse(lint.stdout) as {
+      readonly completion: string;
+      readonly disposition: string;
+    };
+    assert.equal(lintResult.completion, "completed");
+    assert.equal(lintResult.disposition, "success");
+  });
+}
+
+for (const entry of readProposalWorkspaceCorpus().cases.filter(
+  (candidate): candidate is ProposalWorkspaceOwnershipConflictCase =>
+    candidate.kind === "ownership-conflict" && candidate.operation === "initialization",
+)) {
+  test(`Proposal workspace corpus: ${entry.name}`, (context) => {
+    const repository = resolve(WORKSPACE, entry.name);
+    const targetHead = initRepository(repository);
+    const state = createLocalAtlasInitializationState(repository);
+    const workspace = resolve(
+      repository,
+      ".atlas-operation-workspaces",
+      state.proposalBranch,
+    );
+    const conflict = resolve(workspace, entry.conflict.path);
+    const originalWrite = fs.writeFileSync;
+    let injected = false;
+    const interception = context.mock.method(
+      fs,
+      "writeFileSync",
+      (
+        file: Parameters<typeof fs.writeFileSync>[0],
+        data: Parameters<typeof fs.writeFileSync>[1],
+        options?: Parameters<typeof fs.writeFileSync>[2],
+      ) => {
+        originalWrite(file, data, options);
+        if (
+          !injected &&
+          String(file).endsWith(".atlas-operation-state.json.next") &&
+          writtenText(data).includes('"effect":"write-change-set"')
+        ) {
+          injected = true;
+          mkdirSync(resolve(conflict, ".."), { recursive: true });
+          originalWrite(conflict, entry.conflict.content);
+        }
+      },
+    );
+    syncBuiltinESMExports();
+    let result: ReturnType<typeof runLocalAtlasInitialization>;
+    try {
+      result = runLocalAtlasInitialization(repository);
+    } finally {
+      interception.mock.restore();
+      syncBuiltinESMExports();
+    }
+
+    assert.equal(injected, true);
+    assert.equal(result.completion, "not-completed");
+    assert.equal(result.handoff.validationState.findings[0]?.code, entry.expectedCode);
+    assert.equal(git(repository, ["rev-parse", "main"]), targetHead);
+    assert.notEqual(git(repository, ["branch", "--list", state.proposalBranch]), "");
+    assert.equal(existsSync(workspace), true);
+    assert.equal(readFileSync(conflict, "utf8"), entry.conflict.content);
+    assert.match(result.handoff.recommendedNextAction, /retained.*inspection/iu);
+  });
+}
 
 test("atlas initialize --machine emits only the narrowed Lint Stamp keys", () => {
   const repository = resolve(WORKSPACE, "cli-proposal");
