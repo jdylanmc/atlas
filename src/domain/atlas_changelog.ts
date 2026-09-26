@@ -4,14 +4,17 @@
 //
 // This is the single home for rendering and recognizing a Changelog entry, so
 // operations that append to the Changelog share one skeleton instead of each
-// restating it and drifting. An entry is a single dated heading and a single
-// operation bullet by construction: a Changelog entry body is one line, so any
-// multi-line prose that would forge extra headings or bullets — and thus forge
+// restating it and drifting. An entry block has one date-only heading and one
+// operation bullet; the complete Changelog groups blocks by day. An entry body
+// is one line, so multi-line prose that would forge extra headings or bullets — and thus forge
 // provenance and operation IDs — is not rendered into an entry here.
 //
 // The recognizer below checks what this module renders. It is not a structural
 // contract on the archetype: CONTEXT.md:105 defines the Atlas Changelog
 // without fixing an entry's shape.
+
+import { fromMarkdown } from "mdast-util-from-markdown";
+import { dateTimeMilliseconds } from "./atlas_page.ts";
 
 export const atlasChangelogPath = ".atlas/CHANGELOG.md";
 
@@ -49,6 +52,13 @@ function splitLines(value: string): readonly string[] {
   return lines;
 }
 
+function changelogDay(date: string): string {
+  const milliseconds = dateTimeMilliseconds(date);
+  return milliseconds === undefined
+    ? date
+    : new Date(milliseconds).toISOString().slice(0, 10);
+}
+
 /** Render one Changelog entry block: a single dated heading and a single
  * operation bullet. `prose` is placed mid-line after the operation ID, so a
  * single-line prose does not begin a heading or bullet of its own. */
@@ -57,7 +67,9 @@ export function renderAtlasChangelogEntryBlock(
   operationId: string,
   prose: string,
 ): string {
-  return `## ${date}\n\n- ${operationId}: ${prose}`;
+  const day = changelogDay(date);
+  const metadata = day === date ? "" : ` (at: ${date})`;
+  return `## ${day}\n\n- ${operationId}: ${prose}${metadata}`;
 }
 
 /** True iff the block is exactly one dated heading and one operation bullet with
@@ -76,16 +88,110 @@ export function isSingleAtlasChangelogEntry(block: string): boolean {
   return nonEmpty.length === 2 && headings.length === 1 && bullets.length === 1;
 }
 
-/** Append one stamped entry to the existing Changelog, preserving prior history.
- * A newcomer reads the whole file top to bottom, so the newest entry is appended
- * after the existing content rather than replacing it. */
+function trimLineBreaks(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && "\r\n".includes(value.charAt(start))) start += 1;
+  while (end > start && "\r\n".includes(value.charAt(end - 1))) end -= 1;
+  return value.slice(start, end);
+}
+
+function markdownHeadings(content: string) {
+  // Heading discovery needs block boundaries, not inline interpretation.
+  // tests/atlas_changelog.test.ts pins delimiter-dense CPU growth.
+  const tree = fromMarkdown(content, {
+    extensions: [
+      {
+        disable: {
+          null: [
+            "attention",
+            "autolink",
+            "characterEscape",
+            "characterReference",
+            "codeText",
+            "hardBreakEscape",
+            "htmlText",
+            "labelEnd",
+            "labelStartImage",
+            "labelStartLink",
+          ],
+        },
+      },
+    ],
+  });
+  // Parser-created nodes carry offsets; generic mdast types also allow
+  // caller-assembled trees without positions. tests/atlas_changelog.test.ts
+  // pins position-sensitive historical text preservation.
+  const nodes = tree.children as readonly ((typeof tree.children)[number] & {
+    readonly position: {
+      readonly start: { readonly offset: number };
+      readonly end: { readonly offset: number };
+    };
+  })[];
+  return nodes.filter((node) => node.type === "heading");
+}
+
+function joinBlocks(blocks: readonly string[]): string {
+  return blocks.filter((block) => block !== "").join("\n\n");
+}
+
+function groupChangelogDates(content: string): string {
+  const headings = markdownHeadings(content).filter((node) => node.depth <= 2);
+  const sections: { heading: string; body: string; subsections: string }[] = [];
+  const dates = new Map<string, (typeof sections)[number]>();
+  let prefix = content;
+  for (const [index, heading] of headings.entries()) {
+    if (index === 0) prefix = content.slice(0, heading.position.start.offset);
+    const rawHeading = content.slice(
+      heading.position.start.offset,
+      heading.position.end.offset,
+    );
+    const next = headings[index + 1];
+    const body = trimLineBreaks(
+      content.slice(heading.position.end.offset, next?.position.start.offset),
+    );
+    const section = { heading: rawHeading, body, subsections: "" };
+    if (heading.depth === 1) dates.clear();
+    const date = rawHeading.startsWith("## ") ? rawHeading.slice(3) : "";
+    const day = changelogDay(date);
+    if (/^\d{4}-\d{2}-\d{2}$/u.test(day)) {
+      section.heading = `## ${day}`;
+      const subsections =
+        markdownHeadings(body)[0]?.position.start.offset ?? body.length;
+      section.body = trimLineBreaks(body.slice(0, subsections));
+      section.subsections = trimLineBreaks(body.slice(subsections));
+      if (day !== date) {
+        section.body = joinBlocks([`Recorded at: ${date}`, section.body]);
+      }
+      const existing = dates.get(day);
+      if (existing !== undefined) {
+        existing.body = joinBlocks([existing.body, section.body]);
+        existing.subsections = joinBlocks([existing.subsections, section.subsections]);
+        continue;
+      }
+      dates.set(day, section);
+    }
+    sections.push(section);
+  }
+  return (
+    joinBlocks([
+      trimLineBreaks(prefix),
+      ...sections.map(({ heading, body, subsections }) =>
+        joinBlocks([heading, body, subsections]),
+      ),
+    ]) + "\n"
+  );
+}
+
+/** Append an entry within its UTC day, preserving first-seen day order and
+ * historical text. Only plain date/date-time headings are normalized. */
 export function renderAtlasChangelog(
   existingContent: string | undefined,
   date: string,
   operationId: string,
   prose: string,
 ): string {
-  const header = (existingContent ?? "# Changelog\n").trimEnd();
+  const header = trimLineBreaks(existingContent ?? "# Changelog\n");
   const entry = renderAtlasChangelogEntryBlock(date, operationId, prose);
-  return `${header}\n\n${entry}\n`;
+  return groupChangelogDates(`${header}\n\n${entry}\n`);
 }

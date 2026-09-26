@@ -49,6 +49,24 @@ One entry records one merged knowledge-changing operation, headed by its date
 and a short operation slug. There is no permanent `Unreleased` section,
 because the pull request is already the review gate.
 
+The shared renderer in `src/domain/atlas_changelog.ts` owns date conversion,
+entry rendering, and same-day grouping for Initialization, Governance, and
+Ingest. It uses `YYYY-MM-DD` UTC headings and retains a supplied timestamp in
+the operation bullet as `(at: <original instant>)`. Existing plain timestamp
+headings become date headings with a `Recorded at: <original instant>` marker;
+duplicate day sections retain their content under the first occurrence within
+the same top-level section. Flat operation entries stay ahead of historical
+subsections rather than inheriting an unrelated change category.
+Heading discovery disables inline markup constructs: historical prose is copied,
+not interpreted. Block constructs, including code, quotes, HTML blocks and
+reference definitions, remain enabled. Unnecessary emphasis and link-label
+matching therefore cannot turn opaque delimiter-heavy prose into quadratic
+inline searches.
+Non-date headings, code examples, and other historical text remain content,
+not a schema to validate. The renderer preserves first-seen day order rather
+than reordering curated history; changing chronological presentation is separate
+from normalizing headings.
+
 All six change types apply unchanged. Operations that changed no knowledge —
 failed, cancelled, no-change, and verification-only continuous integration
 runs — produce no entry at all, which also prevents an operation from
