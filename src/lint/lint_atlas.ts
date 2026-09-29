@@ -11,6 +11,11 @@ import { serializeAtlasPages } from "../atlas/serialize_atlas_pages.ts";
 import { loadAndValidateAtlasInput } from "./validate_atlas_input.ts";
 import { compareFindings } from "./validate_atlas_structure.ts";
 import { sdkFindings } from "./sdk_finding.ts";
+import { sourceFreshnessFindings } from "./source_freshness.ts";
+
+export interface AtlasLintOptions {
+  readonly asOf?: string;
+}
 
 const capacityFinding = sdkFindings("sdk-core.changelog-capacity");
 
@@ -33,6 +38,7 @@ function changelogCapacityFindings(
 }
 
 export interface ValidAtlasLintResult {
+  readonly asOf?: string;
   /**
    * Findings that report on the Atlas without denying its validity: warnings,
    * suggestions, inconclusive verdicts, and skipped checks.
@@ -100,7 +106,9 @@ export function deniesAtlasValidity(findings: readonly Finding[]): boolean {
 function decideAtlasLint(
   capturedFiles: readonly CapturedAtlasFile[],
   budgets: AtlasTextBudgets,
+  options: AtlasLintOptions,
 ): AtlasLintResult {
+  const asOf = options.asOf;
   const validation = loadAndValidateAtlasInput(capturedFiles, budgets);
   const { files, captureMetadata } = validation;
   const findings =
@@ -108,6 +116,9 @@ function decideAtlasLint(
       ? Object.freeze(
           [
             ...validation.findings,
+            ...(validation.validationState === "valid"
+              ? sourceFreshnessFindings(validation.pages, asOf)
+              : []),
             ...changelogCapacityFindings(
               captureMetadata.byteLengths[atlasChangelogPath],
               captureMetadata.budgets.maxFileBytes,
@@ -126,6 +137,7 @@ function decideAtlasLint(
   // at the boundary rather than raised.
   const pages = serializeAtlasPages(parseAtlasPages(files));
   return Object.freeze({
+    ...(asOf === undefined ? {} : { asOf }),
     findings,
     opaque: Object.freeze(
       files.filter((file) => classifyAtlasTextPath(file.path) === "opaque"),
@@ -163,9 +175,10 @@ function decideAtlasLint(
 export function lintAtlas(
   capturedFiles: readonly CapturedAtlasFile[],
   budgets: AtlasTextBudgets,
+  options: AtlasLintOptions = Object.freeze({}),
 ): AtlasLintResult {
   try {
-    return decideAtlasLint(capturedFiles, budgets);
+    return decideAtlasLint(capturedFiles, budgets, options);
   } catch {
     return lintFailedResult;
   }

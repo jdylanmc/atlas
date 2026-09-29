@@ -1,6 +1,10 @@
 import type { Finding } from "../domain/finding.ts";
 import type { AtlasTextBudgets, CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
-import { lintAtlas, type AtlasLintResult } from "../lint/lint_atlas.ts";
+import {
+  lintAtlas,
+  type AtlasLintOptions,
+  type AtlasLintResult,
+} from "../lint/lint_atlas.ts";
 import {
   operationHandoffSchemaVersion,
   operationResultSchemaVersion,
@@ -244,8 +248,9 @@ function runtimeFailureResult(lint: AtlasLintResult): LintOperationResult {
 export function runLintOperation(
   capturedFiles: readonly CapturedAtlasFile[],
   budgets: AtlasTextBudgets,
+  options?: AtlasLintOptions,
 ): LintOperationResult {
-  const lint = lintAtlas(capturedFiles, budgets);
+  const lint = lintAtlas(capturedFiles, budgets, options);
   if (didLintRuntimeFail(lint)) return runtimeFailureResult(lint);
   const handoff = completedLintHandoff(lint);
   return Object.freeze({

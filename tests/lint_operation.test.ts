@@ -61,6 +61,171 @@ function completeAtlas(variant: "invalid" | "valid"): CapturedAtlasFile[] {
   return atlasPaths.map((path) => ({ bytes: fixtureBytes(variant, path), path }));
 }
 
+test("Lint reports persisted Source expiry at an explicit observation time without invalidating knowledge", () => {
+  const files = completeAtlas("valid").map((file) =>
+    file.path === ".atlas/sources/atlas-sdk-lint.md"
+      ? {
+          ...file,
+          bytes: encoder.encode(
+            fixtureText(file.path).replace(
+              "  authority: official",
+              '  authority: official\n  revision-time: "2026-01-01T00:00:00Z"\n  refresh-window-days: 1',
+            ),
+          ),
+        }
+      : file,
+  );
+  const before = files.map((file) => new Uint8Array(file.bytes));
+  const fresh = runLintOperation(files, generousBudgets, {
+    asOf: "2026-01-02T00:00:00Z",
+  });
+  assert.deepEqual(fresh.handoff.validationState.findings, []);
+  const expired = runLintOperation(files, generousBudgets, {
+    asOf: "2026-01-02T00:00:00.001Z",
+  });
+  assert.equal(expired.completion, "completed");
+  assert.equal(expired.disposition, "success");
+  assert.equal(expired.handoff.validationState.state, "passed");
+  assert.deepEqual(
+    expired.handoff.validationState.findings.map(({ code, path, severity }) => ({
+      code,
+      path,
+      severity,
+    })),
+    [
+      {
+        code: "ATLAS_SOURCE_STALE",
+        path: ".atlas/sources/atlas-sdk-lint.md",
+        severity: "warning",
+      },
+    ],
+  );
+  assert.equal(
+    JSON.stringify(
+      runLintOperation(files.toReversed(), generousBudgets, {
+        asOf: "2026-01-02T00:00:00.001Z",
+      }),
+    ),
+    JSON.stringify(expired),
+  );
+  assert.deepEqual(
+    files.map((file) => file.bytes),
+    before,
+  );
+  assert.deepEqual(
+    runLintOperation(files, generousBudgets).handoff.validationState.findings,
+    [],
+  );
+});
+
+test("Lint distinguishes unavailable Source freshness from valid fractional windows and invalid observation input", (context) => {
+  context.mock.method(Date, "now", () => {
+    throw new Error("no hidden health clock");
+  });
+  const asOf = "2026-01-02T00:00:00Z";
+  for (const sample of [
+    { metadata: {}, code: "ATLAS_SOURCE_FRESHNESS_UNAVAILABLE" },
+    {
+      metadata: { "revision-time": "2026-01-01", "refresh-window-days": 1 },
+      code: "ATLAS_SOURCE_FRESHNESS_UNAVAILABLE",
+    },
+    {
+      metadata: { "revision-time": "2026-01-01T00:00:00Z" },
+      code: "ATLAS_SOURCE_FRESHNESS_UNAVAILABLE",
+    },
+    {
+      metadata: { "revision-time": "2026-01-01T00:00:00Z", "refresh-window-days": "1" },
+      code: "ATLAS_SOURCE_FRESHNESS_UNAVAILABLE",
+    },
+    {
+      metadata: { "revision-time": "2026-01-01T00:00:00Z", "refresh-window-days": -1 },
+      code: "ATLAS_SOURCE_FRESHNESS_UNAVAILABLE",
+    },
+    {
+      metadata: { "revision-time": "2026-01-01T00:00:00Z", "refresh-window-days": 0 },
+      code: "ATLAS_SOURCE_STALE",
+    },
+    {
+      metadata: { "revision-time": "2026-01-01T00:00:00Z", "refresh-window-days": 0.5 },
+      code: "ATLAS_SOURCE_STALE",
+    },
+    {
+      metadata: { "revision-time": "2026-01-01T00:00:00Z", "refresh-window-days": 1.5 },
+      code: undefined,
+    },
+    {
+      metadata: { "revision-time": "2026-01-03T00:00:00Z", "refresh-window-days": 1 },
+      code: "ATLAS_SOURCE_REVISION_AFTER_OBSERVATION",
+    },
+  ]) {
+    const files = completeAtlas("valid").map((file) =>
+      file.path === ".atlas/sources/atlas-sdk-lint.md"
+        ? {
+            ...file,
+            bytes: encoder.encode(
+              fixtureText(file.path).replace(
+                "  authority: official",
+                [
+                  "  authority: official",
+                  ...Object.entries(sample.metadata).map(
+                    ([key, value]) => `  ${key}: ${JSON.stringify(value)}`,
+                  ),
+                ].join("\n"),
+              ),
+            ),
+          }
+        : file,
+    );
+    let reads = 0;
+    const result = runLintOperation(files, generousBudgets, {
+      get asOf() {
+        assert.equal(++reads, 1);
+        return asOf;
+      },
+    });
+    assert.equal(result.disposition, "success");
+    assert.deepEqual(
+      result.handoff.validationState.findings.map((finding) => finding.code),
+      sample.code === undefined ? [] : [sample.code],
+    );
+    assert.equal(reads, 1);
+  }
+  for (const invalid of ["invalid", "2026-01-01", "2016-12-31T23:59:60Z"]) {
+    const result = runLintOperation(completeAtlas("valid"), generousBudgets, {
+      asOf: invalid,
+    });
+    assert.equal(result.disposition, "failed");
+    assert.deepEqual(
+      result.handoff.validationState.findings.map((finding) => finding.code),
+      ["ATLAS_LINT_AS_OF_INVALID"],
+    );
+  }
+});
+
+test("explicit-time Lint preserves the existing dangling Contradiction error", () => {
+  const files = completeAtlas("valid").map((file) =>
+    file.path === ".atlas/concepts/canonical-serialization.md"
+      ? {
+          ...file,
+          bytes: encoder.encode(
+            fixtureText(file.path).replace(
+              "  confidence: reviewed",
+              "  confidence: reviewed\n  contradicts: truth:missing",
+            ),
+          ),
+        }
+      : file,
+  );
+  const result = runLintOperation(files, generousBudgets, {
+    asOf: "2026-01-02T00:00:00Z",
+  });
+  assert.equal(result.disposition, "failed");
+  assert.deepEqual(
+    result.handoff.validationState.findings.map((finding) => finding.code),
+    ["ATLAS_GOVERNANCE_REFERENCE_UNRESOLVED"],
+  );
+});
+
 test("Lint warns at the Changelog byte threshold without invalidating history", () => {
   const bytes = encoder.encode("\uFEFF" + "\u00E9".repeat(393214) + "x");
   assert.equal(bytes.byteLength, 786432);

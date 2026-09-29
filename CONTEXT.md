@@ -141,7 +141,7 @@ _Avoid_: Insight
 A claim-level reference to a Source object that supports an agent-managed claim. Concepts and Edges require Citations; Principles are exempt because their truths are established by humans, and Anchors are exempt because their orientation is attributed to a DRI rather than cited. A claim's effective Source Authority is derived from its cited Source. Citations are not Edges.
 
 **Stale Knowledge**:
-Derived knowledge supported by Source whose Atlas-defined refresh date has elapsed. Stale Knowledge remains traversable, but Lint surfaces it and the agentic workflow offers to re-Ingest the supporting Source.
+Derived knowledge supported by Source whose Atlas-defined refresh date has elapsed. Stale Knowledge remains traversable; deterministic Lint reports expired Source evidence against an explicitly supplied observation time, and the agentic workflow offers to re-Ingest the supporting Source.
 
 **Edge**:
 A first-class Markdown relationship used to traverse Concepts, Principles, Anchors, and Atlas-defined extensions of those archetypes. Zero or one Edge exists per unordered in-Atlas page pair. It has a stable identity, canonical direction, one or more typed semantics, explanatory context, and Citations supporting the asserted relationship. A cross-Atlas Edge instead connects an Anchor to a tracked Atlas identified by its Atlas Slug. Edges do not connect to Sources.
@@ -169,7 +169,7 @@ _Avoid_: Heresy
 A non-persistent disagreement surfaced while an agent traverses knowledge from multiple sovereign Atlases. Divergence does not invalidate either Atlas and is presented to the human for clarification.
 
 **Dispute**:
-A warning that two cited Concept claims within one Atlas conflict without contradicting a Principle. The Lint workflow surfaces the evidence and Source Authority, then works with a human to reconcile or scope the claims.
+A warning that two cited Concept claims within one Atlas conflict without contradicting a Principle. Planned whole-Atlas Lint reporting surfaces the evidence and Source Authority for a human to reconcile or scope the claims; it does not imply automatic adjudication.
 
 **Atlas Policy**:
 A human-approved, versioned invariant that governs an Atlas. Each Policy declares its scope, naming the workflows it governs such as Atlas maintenance or publication; its evaluation, either deterministic or semantic and therefore subject to Challenge; and its consequence, either invalidating the Atlas or blocking only the operation it governs. A Policy retains its stable identity while its governing intention remains the same; ending it uses Governance Retirement rather than keeping a live tombstone. An Atlas Policy carries an immutable established-by DRI. Agents may propose Policies and amendments but cannot establish them autonomously. Explore is never governed by Policies; it loads an Atlas's Policies once, when traversal first enters that Atlas, as descriptive context.

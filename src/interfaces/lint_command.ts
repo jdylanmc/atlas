@@ -1,4 +1,5 @@
 import { defaultAtlasTextBudgets } from "../atlas/load_atlas_text.ts";
+import { dateTimeMilliseconds } from "../domain/atlas_page.ts";
 import {
   notCompletedLintOperationResult,
   runLintOperation,
@@ -34,7 +35,11 @@ export const lintCommandCaptureBudgets: LintCommandCaptureBudgets = Object.freez
 });
 
 export const lintCommandUsage =
-  "usage: atlas lint --machine [--atlas-host-directory PATH]";
+  "usage: atlas lint --machine [--atlas-host-directory PATH] [--as-of DATE_TIME]";
+
+export function isValidLintObservationTime(value: string): boolean {
+  return dateTimeMilliseconds(value) !== undefined;
+}
 
 export function usageLintOperationResult(message: string): LintOperationResult {
   return notCompletedLintOperationResult({
@@ -82,8 +87,13 @@ export function unreadableAtlasLintOperationResult(
 
 export function runLintCommandOperation(
   capturedFiles: readonly LintCommandCapturedFile[],
+  asOf?: string,
 ): LintOperationResult {
-  return runLintOperation(capturedFiles, lintCommandBudgets);
+  return runLintOperation(
+    capturedFiles,
+    lintCommandBudgets,
+    asOf === undefined ? undefined : { asOf },
+  );
 }
 
 export function exitCodeForLintOperationResult(result: LintOperationResult): number {
