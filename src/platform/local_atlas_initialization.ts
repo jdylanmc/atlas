@@ -390,15 +390,14 @@ export function runLocalAtlasInitialization(
         repository,
         git(repository, ["rev-parse", workflowState.targetBranch]),
       ),
-    lintProposal: () => {
-      const capture = captureLocalAtlasSnapshot(workspace);
+    lintProposal: (commit) => {
+      const capture = captureLocalAtlasSnapshot(workspace, undefined, commit);
       if (capture.state === "failed") throw new Error(capture.reason);
       const lint = runLintOperation(capture.snapshot.capturedFiles, {
         maxFileBytes: 1024 * 1024,
         maxTotalBytes: 16 * 1024 * 1024,
       });
-      const commit = git(workspace, ["rev-parse", "HEAD"]);
-      return { lint, receipt: commit };
+      return { lint, receipt: capture.snapshot.baseSnapshot.reference };
     },
     persistState: (nextState: AtlasInitializationWorkflowState) => {
       writeStateAtomically(repository, nextState);

@@ -395,6 +395,173 @@
         ".atlas/manifest.json"
       ],
       "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
+      "lintStampVerification": [
+        { "name": "original named commit", "expectation": "accept" },
+        {
+          "name": "same blob bytes represented as a symlink are not an Atlas file",
+          "expectation": "reject",
+          "revision": "symlink",
+          "expectedCode": "ATLAS_LINT_STAMP_SNAPSHOT_UNAVAILABLE"
+        },
+        {
+          "name": "identical Atlas tree with different authors times and no parent",
+          "expectation": "accept",
+          "revision": "metadata"
+        },
+        {
+          "name": "unrelated host README change",
+          "expectation": "accept",
+          "revision": "host"
+        },
+        {
+          "name": "raw whitespace change remains different content",
+          "expectation": "reject",
+          "revision": "bytes",
+          "expectedCode": "ATLAS_LINT_STAMP_CONTENT_MISMATCH"
+        },
+        {
+          "name": "real Atlas path change",
+          "expectation": "reject",
+          "revision": "path",
+          "expectedCode": "ATLAS_LINT_STAMP_CONTENT_MISMATCH"
+        },
+        {
+          "name": "UTF-8 BOM is part of content identity",
+          "expectation": "reject",
+          "revision": "bom",
+          "expectedCode": "ATLAS_LINT_STAMP_CONTENT_MISMATCH"
+        },
+        {
+          "name": "CRLF is not LF content identity",
+          "expectation": "reject",
+          "revision": "crlf",
+          "expectedCode": "ATLAS_LINT_STAMP_CONTENT_MISMATCH"
+        },
+        {
+          "name": "missing commit object",
+          "expectation": "reject",
+          "revision": "missing",
+          "expectedCode": "ATLAS_LINT_STAMP_SNAPSHOT_UNAVAILABLE"
+        },
+        {
+          "name": "tree object is not a commit",
+          "expectation": "reject",
+          "revision": "tree",
+          "expectedCode": "ATLAS_LINT_STAMP_SNAPSHOT_UNAVAILABLE"
+        },
+        {
+          "name": "old stamps have no authoritative identity",
+          "expectation": "reject",
+          "patch": { "lint-stamp-schema": "1.0.0" },
+          "remove": ["atlasContentDigest"],
+          "expectedCode": "ATLAS_LINT_STAMP_UNSUPPORTED"
+        },
+        {
+          "name": "unsupported future stamp",
+          "expectation": "reject",
+          "patch": { "lint-stamp-schema": "2.0.0" },
+          "expectedCode": "ATLAS_LINT_STAMP_UNSUPPORTED"
+        },
+        {
+          "name": "missing content identity",
+          "expectation": "reject",
+          "remove": ["atlasContentDigest"],
+          "expectedCode": "ATLAS_LINT_STAMP_INVALID"
+        },
+        {
+          "name": "malformed content identity",
+          "expectation": "reject",
+          "patch": { "atlasContentDigest": "sha256:invalid" },
+          "expectedCode": "ATLAS_LINT_STAMP_INVALID"
+        },
+        {
+          "name": "mutable HEAD is not a locator",
+          "expectation": "reject",
+          "patch": { "atlasCommit": "HEAD", "evidenceRevision": "HEAD" },
+          "expectedCode": "ATLAS_LINT_STAMP_INVALID"
+        },
+        {
+          "name": "mismatched evidence receipt",
+          "expectation": "reject",
+          "patch": { "evidenceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+          "expectedCode": "ATLAS_LINT_STAMP_INVALID"
+        },
+        {
+          "name": "unrecognized fabricated revision",
+          "expectation": "reject",
+          "patch": { "checkRevision": "fabricated" },
+          "expectedCode": "ATLAS_LINT_STAMP_INVALID"
+        },
+        {
+          "name": "malformed JSON",
+          "expectation": "reject",
+          "json": "{",
+          "expectedCode": "ATLAS_LINT_STAMP_INVALID"
+        },
+        {
+          "name": "null JSON",
+          "expectation": "reject",
+          "json": "null",
+          "expectedCode": "ATLAS_LINT_STAMP_INVALID"
+        },
+        {
+          "name": "empty capture cannot verify as a committed Atlas",
+          "expectation": "reject",
+          "revision": "absent",
+          "patch": {
+            "atlasContentDigest": "6bb82a9d5875802b6bb8f10e86fc333c9a51cc9e8bc572681818b3a78256635d"
+          },
+          "expectedCode": "ATLAS_LINT_STAMP_SNAPSHOT_UNAVAILABLE"
+        },
+        {
+          "name": "executable regular files retain their byte identity",
+          "expectation": "accept",
+          "revision": "executable"
+        },
+        {
+          "name": "noncanonical text is not verifiable Atlas content",
+          "expectation": "reject",
+          "revision": "invalid-text",
+          "expectedCode": "ATLAS_LINT_STAMP_SNAPSHOT_UNAVAILABLE"
+        },
+        {
+          "name": "array JSON is not a stamp",
+          "expectation": "reject",
+          "json": "[]",
+          "expectedCode": "ATLAS_LINT_STAMP_INVALID"
+        },
+        {
+          "name": "scalar JSON is not a stamp",
+          "expectation": "reject",
+          "json": "true",
+          "expectedCode": "ATLAS_LINT_STAMP_INVALID"
+        },
+        {
+          "name": "numeric commit is not an immutable locator",
+          "expectation": "reject",
+          "patch": { "atlasCommit": 1, "evidenceRevision": 1 },
+          "expectedCode": "ATLAS_LINT_STAMP_INVALID"
+        },
+        {
+          "name": "numeric digest is not content evidence",
+          "expectation": "reject",
+          "patch": { "atlasContentDigest": 1 },
+          "expectedCode": "ATLAS_LINT_STAMP_INVALID"
+        },
+        {
+          "name": "equal key count does not permit unknown evidence fields",
+          "expectation": "reject",
+          "remove": ["atlasContentDigest"],
+          "patch": { "checkRevision": "fabricated" },
+          "expectedCode": "ATLAS_LINT_STAMP_INVALID"
+        },
+        {
+          "name": "a regular file is not an Atlas Host Directory",
+          "expectation": "reject",
+          "host": "file",
+          "expectedCode": "ATLAS_LINT_STAMP_SNAPSHOT_UNAVAILABLE"
+        }
+      ],
       "readinessArtifacts": {
         "headings": [
           "# Atlas Readiness Report",

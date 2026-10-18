@@ -25,6 +25,8 @@ import test, { after } from "node:test";
 import { pathToFileURL } from "node:url";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
 import { exerciseInitializationArtifactConflicts } from "./initialization_artifact_probes.ts";
+import { exerciseLintStampVerification } from "./lint_stamp_probes.ts";
+import type { LintStampVerification } from "../src/index.ts";
 import { exerciseGovernanceRetirement } from "./governance_retirement_probe.ts";
 import { parseMachineOperationResult } from "./machine_operation_result.ts";
 import { createSuiteArtifactOwner } from "./suite_artifact.ts";
@@ -884,6 +886,44 @@ for (const entry of readInstalledConsumerCorpus().cases) {
         initialization.payload.atlasReadinessReport?.lintStamp.atlasCommit,
         proposal,
       );
+      if (entry.lintStampVerification !== undefined) {
+        const stamp = initialization.payload.atlasReadinessReport.lintStamp;
+        const refs = consumerGit(consumer, ["show-ref"]);
+        const status = consumerGit(consumer, ["status", "--porcelain=v1"]);
+        exerciseLintStampVerification({
+          repository: consumer,
+          stamp,
+          cases: entry.lintStampVerification,
+          verify: (value, host) => {
+            const verified = spawnSync(
+              process.execPath,
+              [
+                "--input-type=module",
+                "--eval",
+                [
+                  'import { readFileSync } from "node:fs";',
+                  'import { verifyLocalAtlasLintStamp } from "@jdylanmc/atlas";',
+                  'const {stamp, host} = JSON.parse(readFileSync(0, "utf8"));',
+                  "process.stdout.write(JSON.stringify(verifyLocalAtlasLintStamp(host, stamp)));",
+                ].join("\n"),
+              ],
+              {
+                cwd: consumer,
+                encoding: "utf8",
+                env: consumerEnvironment(guard),
+                input: JSON.stringify({ stamp: value, host }),
+                killSignal: "SIGKILL",
+                timeout: 30_000,
+              },
+            );
+            assert.equal(verified.status, 0, verified.stderr);
+            assert.equal(verified.stderr, "");
+            return JSON.parse(verified.stdout) as LintStampVerification;
+          },
+        });
+        assert.equal(consumerGit(consumer, ["show-ref"]), refs);
+        assert.equal(consumerGit(consumer, ["status", "--porcelain=v1"]), status);
+      }
       if (entry.readinessArtifacts !== undefined) {
         const directory = join(
           consumer,
@@ -911,8 +951,10 @@ for (const entry of readInstalledConsumerCorpus().cases) {
         );
         assert.ok(markdown.includes(proposal));
         assert.deepEqual(JSON.parse(readFileSync(stampPath, "utf8")), {
-          "lint-stamp-schema": "1.0.0",
+          "lint-stamp-schema": "1.1.0",
           atlasCommit: proposal,
+          atlasContentDigest:
+            initialization.payload.atlasReadinessReport.lintStamp.atlasContentDigest,
           evidenceRevision: proposal,
         });
         assert.ok(initialization.handoff.recommendedNextAction.includes(markdownPath));

@@ -152,8 +152,9 @@ const successfulProposalLintBrand: unique symbol = Symbol("successful-proposal-l
 
 export interface LintStamp {
   readonly [lintStampBrand]: true;
-  readonly "lint-stamp-schema": "1.0.0";
+  readonly "lint-stamp-schema": "1.1.0";
   readonly atlasCommit: string;
+  readonly atlasContentDigest: string;
   readonly evidenceRevision: string;
 }
 
@@ -223,7 +224,7 @@ export interface AtlasInitializationRuntime {
   readonly createProposalWorktree: () => { readonly receipt: string };
   readonly currentTargetHead: () => string;
   readonly currentBaseSnapshotDigest: () => string;
-  readonly lintProposal: () => {
+  readonly lintProposal: (commit: string) => {
     readonly lint: LintOperationResult;
     readonly receipt: string;
   };
@@ -1433,8 +1434,9 @@ function successfulProposalLint(input: {
 function completedReport(evidence: SuccessfulProposalLint): AtlasReadinessReport {
   const lintStamp: LintStamp = Object.freeze({
     [lintStampBrand]: true as const,
-    "lint-stamp-schema": "1.0.0",
+    "lint-stamp-schema": "1.1.0",
     atlasCommit: evidence.atlasCommit,
+    atlasContentDigest: evidence.lint.payload.lint.atlasContentDigest,
     evidenceRevision: evidence.evidenceRevision,
   });
   return Object.freeze({
@@ -1810,7 +1812,7 @@ export function runAtlasInitializationWorkflow(
     let lint: LintOperationResult | undefined;
     let lintReceipt = receiptFor(nextState, "lint-proposal")?.receipt;
     if (receiptFor(nextState, "lint-proposal") === undefined) {
-      const linted = runtime.lintProposal();
+      const linted = runtime.lintProposal(commit);
       lint = linted.lint;
       lintReceipt = linted.receipt;
       nextState = addReceipt(nextState, {
@@ -1820,7 +1822,7 @@ export function runAtlasInitializationWorkflow(
       latestState = nextState;
       runtime.persistState?.(nextState);
     } else {
-      const linted = runtime.lintProposal();
+      const linted = runtime.lintProposal(commit);
       lint = linted.lint;
       lintReceipt = linted.receipt;
     }

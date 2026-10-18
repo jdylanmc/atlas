@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import type { AtlasReadinessReport } from "../src/operations/initialize_operation.ts";
 import type { InitializationArtifactConflict } from "./initialization_artifact_probes.ts";
 import type { GovernanceRetirementProbe } from "./governance_retirement_probe.ts";
+import type { LintStampProbe } from "./lint_stamp_probes.ts";
 
 interface InstalledConsumerCase {
   readonly name: string;
@@ -47,6 +48,7 @@ interface InstalledConsumerCase {
     readonly quotations: readonly string[];
     readonly sourceContent: string;
   };
+  readonly lintStampVerification?: readonly LintStampProbe[];
   readonly retirement?: GovernanceRetirementProbe;
   readonly repeatedEmptyEdges?: {
     readonly alternatingPairs: number;
@@ -231,6 +233,40 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
       if (entry.retirement.opaqueExamples !== undefined) {
         assert.ok(entry.retirement.opaqueExamples.governor.length > 0);
         assert.ok(entry.retirement.opaqueExamples.documentId.length > 0);
+      }
+    }
+    if (entry.lintStampVerification !== undefined) {
+      assert.ok(entry.lintStampVerification.length > 0);
+      assert.ok(
+        entry.lintStampVerification.some((probe) => probe.expectation === "accept"),
+      );
+      assert.ok(
+        entry.lintStampVerification.some((probe) => probe.expectation === "reject"),
+      );
+      for (const probe of entry.lintStampVerification) {
+        assert.ok(probe.name.length > 0);
+        if (probe.host !== undefined) assert.equal(probe.host, "file");
+        assert.ok(["accept", "reject"].includes(probe.expectation));
+        if (probe.expectation === "reject")
+          assert.match(probe.expectedCode ?? "", /^ATLAS_LINT_STAMP_[A-Z_]+$/u);
+        if (probe.revision !== undefined) {
+          assert.ok(
+            [
+              "metadata",
+              "host",
+              "bytes",
+              "path",
+              "bom",
+              "crlf",
+              "tree",
+              "missing",
+              "symlink",
+              "executable",
+              "absent",
+              "invalid-text",
+            ].includes(probe.revision),
+          );
+        }
       }
     }
     if (entry.readinessArtifacts !== undefined) {

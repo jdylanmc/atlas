@@ -1,9 +1,15 @@
 {
   "schema": 1,
   "reviewResolutionRule": "A review finding is resolved only after this corpus has a reject or accept case that exercises the Lint Stamp gates.",
-  "allowedKeys": ["lint-stamp-schema", "atlasCommit", "evidenceRevision"],
+  "allowedKeys": [
+    "lint-stamp-schema",
+    "atlasCommit",
+    "atlasContentDigest",
+    "evidenceRevision"
+  ],
   "literalFields": [
     "atlasCommit",
+    "atlasContentDigest",
     "evidenceRevision",
     "checkRevision",
     "frameworkRevision",

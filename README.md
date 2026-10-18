@@ -157,11 +157,49 @@ The local initialization adapter provides the same artifacts.
 
 These files are generated Operation Workspace state, outside `.atlas/` and
 outside the proposal worktree. They are ignored by Git and are not added to the
-proposal commit. The JSON stamp retains exactly `lint-stamp-schema`,
-`atlasCommit`, and `evidenceRevision`; it records the evidence produced by
-Initialization, not a new validation or approval. Any commit change invalidates
-that stamp. Semantic verdicts and the producing SDK version are not identified
-by it, and deterministic evidence is reproducible only within one SDK version.
+proposal commit. Lint Stamp schema `1.1.0` retains exactly `lint-stamp-schema`,
+`atlasCommit`, `atlasContentDigest`, and `evidenceRevision`. The authoritative
+identity is the validated Atlas's original paths and bytes, before page
+serialization; `atlasCommit` is only a run-specific locator and
+`evidenceRevision` names that same commit. Different Git authors, timestamps,
+parents, or unrelated host files do not change the content identity. Production
+Git metadata is not made deterministic.
+
+Verify an emitted stamp from an installed consumer:
+
+```js
+import { readFileSync } from "node:fs";
+import { verifyLocalAtlasLintStamp } from "@jdylanmc/atlas";
+
+const stampPath = process.argv[2];
+if (stampPath === undefined) throw new Error("Pass the path to lint-stamp.json.");
+const result = verifyLocalAtlasLintStamp(
+  process.cwd(), // The original Atlas Host Directory, including a nested host.
+  readFileSync(stampPath, "utf8"),
+);
+if (result.state !== "verified") throw new Error(JSON.stringify(result.findings));
+```
+
+Verification reads the named commit without checkout, ignores current HEAD,
+dirty Atlas files and Git replacement objects, and compares its content digest.
+It refuses missing commits or Atlases, non-regular files, malformed evidence,
+and unsupported stamp schemas, including legacy `1.0.0` stamps without a digest.
+Legacy stamps are not upgraded by inference: obtain a new stamp through
+Initialization and preserve conflicting old output artifacts rather than
+overwriting them. A matching checksum does **not** authenticate who produced
+the stamp, replay Lint, prove a semantic verdict, or grant human approval.
+The producing SDK and semantic verdict revisions remain unidentified.
+
+The versioned digest uses the SDK's bare lowercase hexadecimal SHA-256 format.
+Hash the UTF-8 text `atlas-content-v1`, one NUL byte, and compact JSON.
+The JSON is an array of `[originalAtlasRelativePath, rawByteLength,
+lowercaseRawByteSha256]` tuples sorted by path in Unicode code-point order.
+Original bytes include a byte-order mark, whitespace and line endings; the
+selected host's `.atlas/` prefix is retained, but its enclosing repository path
+is not. Executable regular files retain their byte identity; symbolic links
+are not treated as files. The digest recipe is versioned independently of Git
+object format, while reproducing validation verdicts still requires the
+appropriate SDK and check implementations.
 
 Resume reuses byte-identical artifacts without rewriting them. Conflicting
 files, symbolic links, and non-file destinations are refused rather than

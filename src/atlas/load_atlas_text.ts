@@ -1,5 +1,6 @@
 import { compareCodePoints } from "./compare_code_points.ts";
 import { rethrowProcessLimit } from "./process_limit.ts";
+import { sha256Bytes, sha256Hex } from "./sha256.ts";
 
 export interface CapturedAtlasFile {
   readonly bytes: Uint8Array;
@@ -174,6 +175,7 @@ export function loadAtlasTextWithByteLengths(
   capturedFiles: readonly CapturedAtlasFile[],
   budgets: AtlasTextBudgets,
 ): {
+  readonly atlasContentDigest: string;
   readonly files: readonly AtlasTextFile[];
   readonly byteLengths: Readonly<Record<string, number>>;
 } {
@@ -182,10 +184,14 @@ export function loadAtlasTextWithByteLengths(
   }
   assertBudgets(budgets);
 
-  const normalized = [...capturedFiles].map((file) => ({
-    bytes: file.bytes,
-    path: normalizeAtlasTextPath(file.path),
-  }));
+  const normalized = [...capturedFiles].map((file) => {
+    const originalPath = file.path;
+    return {
+      bytes: file.bytes,
+      originalPath,
+      path: normalizeAtlasTextPath(originalPath),
+    };
+  });
   normalized.sort((left, right) => compareCodePoints(left.path, right.path));
 
   let previousPath: string | undefined;
@@ -209,10 +215,12 @@ export function loadAtlasTextWithByteLengths(
 
   const decoder = new TextDecoder("utf-8", { fatal: true });
   const files: AtlasTextFile[] = [];
+  const identities: (readonly [string, number, string])[] = [];
   for (const file of normalized) {
+    const bytes = new Uint8Array(file.bytes);
     let content: string;
     try {
-      content = decoder.decode(file.bytes);
+      content = decoder.decode(bytes);
     } catch (error: unknown) {
       rethrowProcessLimit(error);
       throw new AtlasLoadError("INVALID_UTF8");
@@ -221,8 +229,14 @@ export function loadAtlasTextWithByteLengths(
       throw new AtlasLoadError("NON_CANONICAL_LINE_TERMINATOR");
     }
     files.push(Object.freeze({ content, path: file.path }));
+    identities.push([file.originalPath, bytes.byteLength, sha256Bytes(bytes)]);
   }
   return Object.freeze({
+    atlasContentDigest: sha256Hex(
+      `atlas-content-v1\0${JSON.stringify(
+        identities.toSorted((left, right) => compareCodePoints(left[0], right[0])),
+      )}`,
+    ),
     files: Object.freeze(files),
     byteLengths: Object.freeze(byteLengths),
   });

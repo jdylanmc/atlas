@@ -1,5 +1,5 @@
 import { lstatSync, type Stats } from "node:fs";
-import { dirname, relative, resolve, sep } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
 import type { Finding } from "../domain/finding.ts";
 import {
@@ -14,6 +14,7 @@ import {
 } from "../operations/operation_result.ts";
 import { resolveAtlasCache } from "./atlas_cache.ts";
 import { captureAtlasTree } from "./atlas_tree_capture.ts";
+import { findGitRoot } from "./local_git_root.ts";
 
 // The shared Atlas tree capture primitive retains Explore's bounded batch Git
 // object reads ("cat-file" in --batch-check and ["cat-file", "--batch"]),
@@ -210,21 +211,6 @@ function unreadableAtlasResult(message: string): ExploreOperationResult {
 function repositoryPath(root: string, absolutePath: string): string {
   const path = relative(root, absolutePath).split(sep).join("/");
   return path === "" ? "." : path;
-}
-
-function findGitRoot(
-  start: string,
-  readStat: LocalExploreStatReader,
-): string | undefined {
-  let current = resolve(start);
-  for (;;) {
-    const gitPath = resolve(current, ".git");
-    const stat = readStat(gitPath, { throwIfNoEntry: false });
-    if (stat !== undefined) return current;
-    const next = dirname(current);
-    if (next === current) return undefined;
-    current = next;
-  }
 }
 
 function git(

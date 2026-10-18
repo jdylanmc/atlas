@@ -5,6 +5,8 @@ import type {
 import type { CompletedLintOperationPayload } from "../src/operations/lint_operation.ts";
 
 const validLint = Object.freeze({
+  atlasContentDigest:
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   findings: Object.freeze([]),
   opaque: Object.freeze([]),
   outcome: "valid" as const,
@@ -19,8 +21,10 @@ const forgedCompletedPayload: CompletedLintOperationPayload = {
 
 // @ts-expect-error missing the non-exported Lint Stamp brand.
 const forgedLintStamp: LintStamp = {
-  "lint-stamp-schema": "1.0.0",
+  "lint-stamp-schema": "1.1.0",
   atlasCommit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  atlasContentDigest:
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   evidenceRevision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 };
 
