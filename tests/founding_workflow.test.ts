@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { parseAtlasPage } from "../src/atlas/parse_atlas_pages.ts";
 
 import {
   atlasInitializationFiles,
@@ -303,6 +304,29 @@ test("composed founding workflow succeeds while leaving the legacy minimal path 
   assert.equal(written, 1);
   assert.equal(committed, 1);
   assert.equal(linted, 1);
+  for (const path of [
+    ".atlas/index.md",
+    ".atlas/types/persona/meridian.md",
+    ".atlas/anchors/founding.md",
+  ]) {
+    const change = writtenChangeSet?.changes.find((entry) => entry.path === path);
+    assert.ok(change !== undefined, path);
+    const parsed = parseAtlasPage(change);
+    assert.ok("page" in parsed);
+    const { sdk } = parsed.page;
+    assert.deepEqual(sdk["created-by"], { kind: "runtime", name: "Atlas SDK" });
+    assert.deepEqual(sdk["updated-by"], { kind: "runtime", name: "Atlas SDK" });
+    assert.equal(sdk["created-at-source"], "sentinel");
+    assert.equal(sdk["updated-at-source"], "sentinel");
+  }
+  const authoredGovernance = writtenChangeSet?.changes.find(
+    (entry) => entry.path === foundingGovernanceFields.changes[0]?.path,
+  );
+  assert.equal(
+    authoredGovernance?.content,
+    foundingGovernanceFields.changes[0]?.content,
+    "Caller-authored provenance must not be rewritten by composition",
+  );
   assert.ok(
     writtenChangeSet?.changes.some(
       (change) => change.path === ".atlas/types/persona/meridian.md",

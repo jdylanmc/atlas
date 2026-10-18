@@ -5,7 +5,7 @@ Atlas SDK is a structured knowledge environment that helps coding agents discove
 ## Language
 
 **Atlas SDK**:
-The framework and operation-scoped composite view through which an agent discovers connected knowledge domains. Atlas SDK is installed on an operator's machine as one versioned package rather than copied into the Atlases it manages, so its contracts are trusted because the operator chose and can inspect that version, not because any bytes were committed inside an Atlas. Atlas SDK does not own a central knowledge graph or registry.
+The framework and operation-scoped composite view through which an agent discovers connected knowledge domains. Atlas SDK is installed on an operator's machine as one versioned package rather than copied into the Atlases it manages, so its contracts are trusted because the operator chose and can inspect that version, not because any bytes were committed inside an Atlas. Atlas SDK does not own a central knowledge graph or registry; its deterministic runtime is not an agent, and writer attribution is distinct from human establishment or approval.
 
 **Atlas**:
 A sovereign, bounded knowledge domain rooted in one Atlas Host Directory. Its knowledge, governance, automation, and records live beneath `.atlas/`, and it may track other Atlases.
@@ -104,7 +104,7 @@ An optional, read-only static projection through which humans browse one Home At
 The Atlas Site's current evidence-linked view of whether the published Atlas Head passes a full Lint and how fresh its supporting Source is. Structural, governance, and connection diagnostics explain those two headline signals without collapsing them into a composite score.
 
 **Knowledge Evolution**:
-The Atlas Site's reconstruction of how an Atlas's knowledge, evidence, graph, and governance changed across Changelog operation IDs in Git history. It describes durable understanding rather than agent or contributor productivity.
+The Atlas Site's reconstruction of how an Atlas's knowledge, evidence, graph, and governance changed across Changelog operation IDs in Git history. It describes durable understanding rather than agent or contributor productivity; explicitly marked placeholder dates are not event times.
 
 **Core Archetype**:
 A page kind Atlas SDK owns and names in every Atlas, rather than one an Atlas defines for itself. An Atlas Schema extends a Core Archetype but never redefines what it means.

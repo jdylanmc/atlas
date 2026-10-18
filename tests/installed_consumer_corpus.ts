@@ -12,6 +12,11 @@ interface InstalledConsumerCase {
   readonly expectedRootAnchorId: string;
   readonly expectedAtlasPaths: readonly string[];
   readonly unmergedLintCode: string;
+  readonly writerProvenance?: {
+    readonly actor: { readonly kind: string; readonly name: string };
+    readonly schemaVersion: string;
+    readonly sentinelTime: string;
+  };
   readonly providerInvocation?: {
     readonly expectedProviderCalls: number;
     readonly expectedResultId: string;
@@ -164,6 +169,13 @@ export function readInstalledConsumerCorpus(): InstalledConsumerCorpus {
         ].includes(entry.cacheFailure.mode),
       );
       assert.match(entry.cacheFailure.expectedCode, /^ATLAS_[A-Z_]+$/u);
+    }
+    if (entry.writerProvenance !== undefined) {
+      assert.equal(entry.writerProvenance.actor.kind, "runtime");
+      assert.equal(entry.writerProvenance.actor.name, "Atlas SDK");
+      assert.equal(entry.writerProvenance.schemaVersion, "1.1.0");
+      assert.equal(entry.writerProvenance.sentinelTime, "2026-01-01T00:00:00Z");
+      assert.ok(entry.citationCorrespondence !== undefined);
     }
     if (entry.citationCorrespondence !== undefined) {
       for (const value of [

@@ -30,6 +30,7 @@ import { exitCodeForInitializeOperationResult } from "../src/interfaces/initiali
 import { renderAtlasReadinessReportMarkdown } from "../src/index.ts";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
 import { exerciseInitializationArtifactConflicts } from "./initialization_artifact_probes.ts";
+import { parseAtlasPages } from "../src/atlas/parse_atlas_pages.ts";
 
 const WORKSPACE = resolve(
   import.meta.dirname,
@@ -113,6 +114,30 @@ test("Atlas Initialization writes a valid proposal while the target branch commi
     reason: "Forge publication was not requested; the Atlas Proposal remains local.",
     state: "not-applicable",
   });
+});
+
+test("Initialization distinguishes the deterministic writer and sentinel time", () => {
+  const repository = resolve(WORKSPACE, "writer-provenance");
+  const before = initRepository(repository);
+  const result = runLocalAtlasInitialization(repository);
+  assert.equal(result.disposition, "success");
+  const content = git(repository, [
+    "show",
+    `${result.payload.workflowState.proposalBranch}:.atlas/index.md`,
+  ]);
+  const root = parseAtlasPages([{ content, path: ".atlas/index.md" }])[0];
+  assert.ok(root !== undefined);
+  assert.deepEqual(root.page.sdk["created-by"], {
+    kind: "runtime",
+    name: "Atlas SDK",
+  });
+  assert.deepEqual(root.page.sdk["updated-by"], root.page.sdk["created-by"]);
+  assert.equal(root.page.sdk["created-at-source"], "sentinel");
+  assert.equal(root.page.sdk["updated-at-source"], "sentinel");
+  assert.equal(root.page.sdk["created-at"], "2026-01-01T00:00:00Z");
+  assert.equal(root.page.sdk["updated-at"], "2026-01-01T00:00:00Z");
+  assert.equal(root.page.sdk["atlas-sdk-schema"], "1.1.0");
+  assert.equal(git(repository, ["rev-parse", "main"]), before);
 });
 
 test("atlas initialize --machine emits only the narrowed Lint Stamp keys", () => {

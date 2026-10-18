@@ -496,12 +496,14 @@ interface StructuralValidationSdkFieldCase {
 
 interface StructuralValidationTimestampCase {
   readonly createdAt: string;
+  readonly createdAtSource?: string;
   readonly expectedCodes: readonly string[];
   readonly expectation: "accept" | "reject";
   readonly gate: "structural-validation";
   readonly kind: "timestamp-order";
   readonly name: string;
   readonly updatedAt: string;
+  readonly updatedAtSource?: string;
 }
 
 interface StructuralValidationMarkupBudgetCase {
@@ -761,6 +763,22 @@ function parseStructuralValidationCorpus(value: unknown): StructuralValidationCo
         else rejects += 1;
         return {
           createdAt: assertString(entry["createdAt"], `${path}.createdAt`),
+          ...(entry["createdAtSource"] === undefined
+            ? {}
+            : {
+                createdAtSource: assertString(
+                  entry["createdAtSource"],
+                  `${path}.createdAtSource`,
+                ),
+              }),
+          ...(entry["updatedAtSource"] === undefined
+            ? {}
+            : {
+                updatedAtSource: assertString(
+                  entry["updatedAtSource"],
+                  `${path}.updatedAtSource`,
+                ),
+              }),
           expectedCodes: assertPossiblyEmptyStringArray(
             entry["expectedCodes"],
             `${path}.expectedCodes`,
@@ -1846,7 +1864,9 @@ function structuralAtlasPage(
   body: string,
   timestamps: {
     readonly createdAt?: string;
+    readonly createdAtSource?: string;
     readonly updatedAt?: string;
+    readonly updatedAtSource?: string;
   } = {},
 ) {
   return Object.freeze({
@@ -1860,6 +1880,12 @@ function structuralAtlasPage(
       `  title: ${title}`,
       `  created-at: "${timestamps.createdAt ?? "2026-08-24T00:00:00Z"}"`,
       `  updated-at: "${timestamps.updatedAt ?? "2026-08-24T00:00:00Z"}"`,
+      ...(timestamps.createdAtSource === undefined
+        ? []
+        : [`  created-at-source: ${JSON.stringify(timestamps.createdAtSource)}`]),
+      ...(timestamps.updatedAtSource === undefined
+        ? []
+        : [`  updated-at-source: ${JSON.stringify(timestamps.updatedAtSource)}`]),
       "  created-by: { kind: human, name: Fixture Maintainer }",
       "  updated-by: { kind: human, name: Fixture Maintainer }",
       "  tags: []",
@@ -2224,7 +2250,7 @@ for (const entry of structuralValidationCorpus.cases) {
         "concept",
         "Timestamps",
         "# Timestamps\n",
-        { createdAt: entry.createdAt, updatedAt: entry.updatedAt },
+        entry,
       );
       const findings = validateAtlasStructure([structuralRoot, page]);
       assert.deepEqual(

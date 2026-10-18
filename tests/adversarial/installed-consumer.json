@@ -20,6 +20,11 @@
       ],
       "governanceTreeReceipt": true,
       "isolatedPackPreservesProducerOutput": true,
+      "writerProvenance": {
+        "actor": { "kind": "runtime", "name": "Atlas SDK" },
+        "schemaVersion": "1.1.0",
+        "sentinelTime": "2026-01-01T00:00:00Z"
+      },
       "unmergedLintCode": "ATLAS_LINT_ATLAS_NOT_FOUND",
       "citationCorrespondence": {
         "claim": "# Installed **claim** with [a link](https://example.invalid), &copy;, <b>HTML</b>, and [^forged].\n\n    indented claim\n- unordered claim\n1. ordered claim\n```ts\nconst claimFence = true;\n```",

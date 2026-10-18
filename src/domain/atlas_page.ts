@@ -6,7 +6,13 @@ const nonBlank = ".*\\S.*";
 
 const ActorSchema = Type.Object(
   {
-    kind: Type.Readonly(Type.Union([Type.Literal("agent"), Type.Literal("human")])),
+    kind: Type.Readonly(
+      Type.Union([
+        Type.Literal("agent"),
+        Type.Literal("human"),
+        Type.Literal("runtime"),
+      ]),
+    ),
     name: Type.Readonly(Type.String({ minLength: 1, pattern: nonBlank })),
   },
   { additionalProperties: false },
@@ -36,6 +42,7 @@ const SdkPageMetadataSchema = Type.Object(
   {
     "atlas-sdk-schema": Type.Readonly(Type.String({ minLength: 1, pattern: nonBlank })),
     "created-at": Type.Readonly(AtlasDateTimeSchema),
+    "created-at-source": Type.Readonly(Type.Optional(Type.Literal("sentinel"))),
     "created-by": Type.Readonly(ActorSchema),
     "citation-correspondence": Type.Readonly(
       Type.Optional(
@@ -63,6 +70,7 @@ const SdkPageMetadataSchema = Type.Object(
     title: Type.Readonly(Type.String({ minLength: 1, pattern: nonBlank })),
     type: Type.Readonly(Type.String({ minLength: 1, pattern: nonBlank })),
     "updated-at": Type.Readonly(AtlasDateTimeSchema),
+    "updated-at-source": Type.Readonly(Type.Optional(Type.Literal("sentinel"))),
     "updated-by": Type.Readonly(ActorSchema),
   },
   { additionalProperties: true },
