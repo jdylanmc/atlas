@@ -5,16 +5,13 @@ import {
   atlasPathCollisionKey,
   atlasPathCollisionSegments,
   loadAtlasText,
+  locateNonCanonicalLineTerminator,
   AtlasLoadError,
   trimWin32PathSegment,
   type CapturedAtlasFile,
 } from "../src/atlas/load_atlas_text.ts";
 
 const encoder = new TextEncoder();
-const BUDGETS = Object.freeze({
-  maxFileBytes: 32,
-  maxTotalBytes: 64,
-});
 
 function captured(path: string, content: string): CapturedAtlasFile {
   return { bytes: encoder.encode(content), path };
@@ -40,7 +37,7 @@ test("loads exact text in fixed code-point path order", () => {
     captured(".atlas/a.md", "short"),
   ];
 
-  assert.deepEqual(loadAtlasText(input, BUDGETS), [
+  assert.deepEqual(loadAtlasText(input), [
     { content: "short", path: ".atlas/a.md" },
     { content: "long", path: ".atlas/a/long.md" },
     { content: "z\r\n", path: ".atlas/z.md" },
@@ -51,37 +48,33 @@ test("loads exact text in fixed code-point path order", () => {
 
 test("reversed input produces identical success and error results", () => {
   const valid = [captured(".atlas/z.md", "z"), captured(".atlas/a.md", "a")];
-  assert.deepEqual(
-    loadAtlasText(valid, BUDGETS),
-    loadAtlasText([...valid].reverse(), BUDGETS),
-  );
+  assert.deepEqual(loadAtlasText(valid), loadAtlasText([...valid].reverse()));
 
   const invalid = [
     {
       bytes: new Uint8Array([0xc3, 0x28]),
       path: ".atlas/z.md",
     },
-    captured(".atlas/a.md", "oversized"),
+    captured(".atlas/a.md", "lone\rreturn"),
   ];
-  const budgets = { maxFileBytes: 4, maxTotalBytes: 100 };
-  const forwardError = errorCode(() => loadAtlasText(invalid, budgets));
+  const forwardError = errorCode(() => loadAtlasText(invalid));
   assert.equal(
     forwardError,
-    errorCode(() => loadAtlasText([...invalid].reverse(), budgets)),
+    errorCode(() => loadAtlasText([...invalid].reverse())),
   );
-  assert.equal(forwardError, "FILE_TOO_LARGE");
+  assert.equal(forwardError, "INVALID_UTF8");
 });
 
 test("normalizes paths and rejects duplicate normalized paths", () => {
-  assert.deepEqual(loadAtlasText([captured(".atlas//a/./page.md", "text")], BUDGETS), [
+  assert.deepEqual(loadAtlasText([captured(".atlas//a/./page.md", "text")]), [
     { content: "text", path: ".atlas/a/page.md" },
   ]);
   assert.equal(
     errorCode(() =>
-      loadAtlasText(
-        [captured(".atlas/a/page.md", "one"), captured(".atlas//a/./page.md", "two")],
-        BUDGETS,
-      ),
+      loadAtlasText([
+        captured(".atlas/a/page.md", "one"),
+        captured(".atlas//a/./page.md", "two"),
+      ]),
     ),
     "DUPLICATE_PATH",
   );
@@ -148,7 +141,7 @@ test("rejects absolute, traversal, backslash, and non-Atlas paths", () => {
     ".atlas/concepts/\u2066page.md",
   ]) {
     assert.equal(
-      errorCode(() => loadAtlasText([captured(path, "text")], BUDGETS)),
+      errorCode(() => loadAtlasText([captured(path, "text")])),
       "INVALID_PATH",
     );
   }
@@ -157,7 +150,7 @@ test("rejects absolute, traversal, backslash, and non-Atlas paths", () => {
 test("returned text has no caller mutation aliases", () => {
   const bytes = encoder.encode("original");
   const input: CapturedAtlasFile[] = [{ bytes, path: ".atlas/index.md" }];
-  const loaded = loadAtlasText(input, BUDGETS);
+  const loaded = loadAtlasText(input);
 
   bytes.fill(0);
   input[0] = captured(".atlas/changed.md", "changed");
@@ -167,7 +160,7 @@ test("returned text has no caller mutation aliases", () => {
 test("rejects bytes backed by shared memory", () => {
   const bytes = new Uint8Array(new SharedArrayBuffer(4));
   assert.equal(
-    errorCode(() => loadAtlasText([{ bytes, path: ".atlas/shared.md" }], BUDGETS)),
+    errorCode(() => loadAtlasText([{ bytes, path: ".atlas/shared.md" }])),
     "SHARED_BYTES_NOT_ALLOWED",
   );
 });
@@ -183,7 +176,7 @@ test("rejects species-poisoned shared memory", () => {
   });
   const bytes = new Uint8Array(buffer);
   assert.equal(
-    errorCode(() => loadAtlasText([{ bytes, path: ".atlas/shared.md" }], BUDGETS)),
+    errorCode(() => loadAtlasText([{ bytes, path: ".atlas/shared.md" }])),
     "SHARED_BYTES_NOT_ALLOWED",
   );
 });
@@ -199,7 +192,7 @@ test("rejects shared memory hidden by an overridden buffer getter", () => {
   Object.setPrototypeOf(bytes, MisleadingBytes.prototype);
   assert.ok(bytes.buffer instanceof ArrayBuffer);
   assert.equal(
-    errorCode(() => loadAtlasText([{ bytes, path: ".atlas/shared.md" }], BUDGETS)),
+    errorCode(() => loadAtlasText([{ bytes, path: ".atlas/shared.md" }])),
     "SHARED_BYTES_NOT_ALLOWED",
   );
 });
@@ -209,7 +202,7 @@ test("rejects cross-context shared memory", () => {
     "new Uint8Array(new SharedArrayBuffer(4))",
   ) as Uint8Array;
   assert.equal(
-    errorCode(() => loadAtlasText([{ bytes, path: ".atlas/shared.md" }], BUDGETS)),
+    errorCode(() => loadAtlasText([{ bytes, path: ".atlas/shared.md" }])),
     "SHARED_BYTES_NOT_ALLOWED",
   );
 });
@@ -217,55 +210,70 @@ test("rejects cross-context shared memory", () => {
 test("rejects non-canonical line terminators before text reaches consumers", () => {
   for (const character of ["\r", "\u2028", "\u2029"]) {
     assert.equal(
-      errorCode(() =>
-        loadAtlasText([captured(".atlas/page.md", `a${character}b`)], BUDGETS),
-      ),
+      errorCode(() => loadAtlasText([captured(".atlas/page.md", `a${character}b`)])),
       "NON_CANONICAL_LINE_TERMINATOR",
       JSON.stringify(character),
     );
   }
 });
 
+function lineTerminatorError(action: () => unknown): AtlasLoadError {
+  try {
+    action();
+  } catch (error: unknown) {
+    assert.ok(error instanceof AtlasLoadError);
+    assert.equal(error.code, "NON_CANONICAL_LINE_TERMINATOR");
+    return error;
+  }
+  assert.fail("Expected AtlasLoadError.");
+}
+
+test("locates the first non-canonical line terminator by LF line and UTF-16 column", () => {
+  assert.equal(locateNonCanonicalLineTerminator("a\nb\r\nc\n"), undefined);
+  assert.deepEqual(locateNonCanonicalLineTerminator("ab\rc"), { column: 3, line: 1 });
+  assert.deepEqual(locateNonCanonicalLineTerminator("one\r\ntwo\nx\u2028y\rz"), {
+    column: 2,
+    line: 3,
+  });
+  assert.deepEqual(locateNonCanonicalLineTerminator("\u{1F600}\u2029"), {
+    column: 3,
+    line: 1,
+  });
+  assert.deepEqual(locateNonCanonicalLineTerminator("\n\n\r"), { column: 1, line: 3 });
+});
+
+test("accepts CRLF line endings", () => {
+  assert.deepEqual(loadAtlasText([captured(".atlas/page.md", "a\r\nb\r\n")]), [
+    { content: "a\r\nb\r\n", path: ".atlas/page.md" },
+  ]);
+});
+
+test("reports every file carrying a non-canonical line terminator at its first position", () => {
+  const error = lineTerminatorError(() =>
+    loadAtlasText([
+      captured(".atlas/z.md", "first\nsecond\u2029\rthird"),
+      captured(".atlas/clean.md", "clean\r\n"),
+      captured(".atlas//a/./page.md", "x\r"),
+    ]),
+  );
+  assert.deepEqual(error.lineTerminators, [
+    { column: 2, line: 1, path: ".atlas/a/page.md" },
+    { column: 7, line: 2, path: ".atlas/z.md" },
+  ]);
+  assert.equal(Object.isFrozen(error.lineTerminators), true);
+});
+
 test("strictly rejects invalid UTF-8", () => {
   assert.equal(
     errorCode(() =>
-      loadAtlasText(
-        [{ bytes: new Uint8Array([0xc3, 0x28]), path: ".atlas/bad.txt" }],
-        BUDGETS,
-      ),
+      loadAtlasText([{ bytes: new Uint8Array([0xc3, 0x28]), path: ".atlas/bad.txt" }]),
     ),
     "INVALID_UTF8",
   );
 });
 
-test("enforces per-file and total byte budgets in path order", () => {
-  const input = [captured(".atlas/b.txt", "5678"), captured(".atlas/a.txt", "1234")];
-  assert.equal(
-    errorCode(() => loadAtlasText(input, { maxFileBytes: 3, maxTotalBytes: 100 })),
-    "FILE_TOO_LARGE",
-  );
-  assert.equal(
-    errorCode(() => loadAtlasText(input, { maxFileBytes: 4, maxTotalBytes: 7 })),
-    "TOTAL_TOO_LARGE",
-  );
-});
-
-test("rejects every invalid budget shape", () => {
-  for (const budgets of [
-    { maxFileBytes: -1, maxTotalBytes: 0 },
-    { maxFileBytes: 0.5, maxTotalBytes: 0 },
-    { maxFileBytes: 0, maxTotalBytes: -1 },
-    { maxFileBytes: 0, maxTotalBytes: 0.5 },
-  ]) {
-    assert.equal(
-      errorCode(() => loadAtlasText([], budgets)),
-      "INVALID_BUDGET",
-    );
-  }
-});
-
 test("returns deeply immutable records and collection", () => {
-  const loaded = loadAtlasText([captured(".atlas/index.md", "text")], BUDGETS);
+  const loaded = loadAtlasText([captured(".atlas/index.md", "text")]);
   assert.equal(Object.isFrozen(loaded), true);
   assert.equal(Object.isFrozen(loaded[0]), true);
   assert.throws(() => {

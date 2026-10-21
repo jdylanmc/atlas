@@ -1,0 +1,9 @@
+# Counts prose words only: headings, code, table cells, and frontmatter are
+# excluded by Vale's summary scope.
+extends: occurrence
+message: "Page prose runs to %d words. Split it into an overview page and child pages."
+description: Long pages are hard to read and route; split one topic per page.
+level: error
+scope: summary
+max: 1000
+token: "[\\p{L}\\p{N}]+(?:['’-][\\p{L}\\p{N}]+)*"

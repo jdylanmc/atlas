@@ -131,15 +131,6 @@ class UsageError extends Error {}
 class MissingAtlasError extends Error {}
 class UnreadableAtlasError extends Error {}
 class InputBudgetError extends Error {}
-export class CaptureBudgetError extends Error {
-  readonly capturedFiles: readonly LintCommandCapturedFile[];
-
-  constructor(message: string, capturedFiles: readonly LintCommandCapturedFile[]) {
-    super(message);
-    this.capturedFiles = capturedFiles;
-  }
-}
-
 type ReadFile = (fd: number) => Uint8Array;
 
 function compareNames(left: Dirent, right: Dirent): number {
@@ -167,8 +158,7 @@ function closeQuietly(fd: number): void {
     closeSync(fd);
   } catch {
     // A failure closing an already-validated descriptor must never mask an
-    // exception (in particular a CaptureBudgetError carrying partial
-    // results) already propagating out of the caller's try block.
+    // exception already propagating out of the caller's try block.
   }
 }
 
@@ -205,7 +195,6 @@ function collectAtlasFiles(
   files: LintCommandCapturedFile[],
   budgets: LintCommandCaptureBudgets,
   readFile: ReadFile,
-  totalBytes: { value: number },
   depth: number,
 ): void {
   if (depth > budgets.maxTraversalDepth) {
@@ -231,7 +220,7 @@ function collectAtlasFiles(
     }
     if (stat.isDirectory()) {
       assertGenuineDirectory(path);
-      collectAtlasFiles(root, path, files, budgets, readFile, totalBytes, depth + 1);
+      collectAtlasFiles(root, path, files, budgets, readFile, depth + 1);
       continue;
     }
     if (!stat.isFile()) continue;
@@ -266,44 +255,13 @@ function collectAtlasFiles(
         throw new UnreadableAtlasError("Atlas files could not be captured safely.");
       }
       const relativePath = repositoryPath(root, path);
-      if (fdStat.size > budgets.maxFileBytes) {
-        throw new CaptureBudgetError("A captured Atlas file exceeds the byte budget.", [
-          ...files,
-          { bytes: new Uint8Array(budgets.maxFileBytes + 1), path: relativePath },
-        ]);
-      }
-      if (totalBytes.value + fdStat.size > budgets.maxTotalBytes) {
-        throw new CaptureBudgetError(
-          "Captured Atlas files exceed the total byte budget.",
-          [
-            ...files,
-            {
-              bytes: new Uint8Array(budgets.maxTotalBytes - totalBytes.value + 1),
-              path: relativePath,
-            },
-          ],
-        );
-      }
+      let bytes: Uint8Array;
       try {
-        const bytes = readFile(fd);
-        if (bytes.byteLength > budgets.maxFileBytes) {
-          throw new CaptureBudgetError(
-            "A captured Atlas file exceeds the byte budget.",
-            [...files, { bytes, path: relativePath }],
-          );
-        }
-        if (totalBytes.value + bytes.byteLength > budgets.maxTotalBytes) {
-          throw new CaptureBudgetError(
-            "Captured Atlas files exceed the total byte budget.",
-            [...files, { bytes, path: relativePath }],
-          );
-        }
-        totalBytes.value += bytes.byteLength;
-        files.push({ bytes, path: relativePath });
-      } catch (error: unknown) {
-        if (error instanceof CaptureBudgetError) throw error;
+        bytes = readFile(fd);
+      } catch {
         throw new UnreadableAtlasError("Atlas files could not be read.");
       }
+      files.push({ bytes, path: relativePath });
     } finally {
       closeQuietly(fd);
     }
@@ -316,10 +274,6 @@ export function captureAtlasHostDirectory(
   readFile: ReadFile = readFileSync,
 ): readonly LintCommandCapturedFile[] {
   if (
-    !Number.isSafeInteger(budgets.maxFileBytes) ||
-    budgets.maxFileBytes < 0 ||
-    !Number.isSafeInteger(budgets.maxTotalBytes) ||
-    budgets.maxTotalBytes < 0 ||
     !Number.isSafeInteger(budgets.maxFiles) ||
     budgets.maxFiles < 0 ||
     !Number.isSafeInteger(budgets.maxTraversalDepth) ||
@@ -347,14 +301,8 @@ export function captureAtlasHostDirectory(
   }
   assertGenuineDirectory(atlasRoot);
   const files: LintCommandCapturedFile[] = [];
-  collectAtlasFiles(root, atlasRoot, files, budgets, readFile, { value: 0 }, 1);
+  collectAtlasFiles(root, atlasRoot, files, budgets, readFile, 1);
   return files;
-}
-
-function resultForCaptureBudgetError(error: CaptureBudgetError): number {
-  const result = runLintCommandOperation(error.capturedFiles);
-  process.stdout.write(serializeLintMachineResult(result));
-  return exitCodeForLintOperationResult(result);
 }
 
 function parseLintCommand(arguments_: readonly string[]): ParsedLintCommand {
@@ -458,7 +406,6 @@ function mainLint(arguments_: readonly string[]): number {
     process.stdout.write(serializeLintMachineResult(result));
     return exitCodeForLintOperationResult(result);
   } catch (error: unknown) {
-    if (error instanceof CaptureBudgetError) return resultForCaptureBudgetError(error);
     if (error instanceof MissingAtlasError) {
       const result = missingAtlasLintOperationResult(error.message);
       process.stdout.write(serializeLintMachineResult(result));

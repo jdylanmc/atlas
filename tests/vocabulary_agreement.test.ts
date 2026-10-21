@@ -148,7 +148,11 @@ function inDirectory<T>(directory: string, run: () => T): T {
 // decision rather than an edit, because the check is global: one entry excuses
 // that directory in every contract source, forever.
 test("the reserved page directories are exactly the ones Atlas SDK claims", () => {
-  assert.deepEqual([...reservedPageDirectories].toSorted(), ["atlas-cache", "types"]);
+  assert.deepEqual([...reservedPageDirectories].toSorted(), [
+    "atlas-cache",
+    "types",
+    "vale",
+  ]);
 });
 
 test("optional extension vocabulary states its implemented representation accurately", () => {

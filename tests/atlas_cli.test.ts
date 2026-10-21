@@ -1,13 +1,19 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  chmodSync,
+  cpSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
 import {
   atlasCommandNames,
   atlasCommandUsage,
   captureAtlasHostDirectory,
-  CaptureBudgetError,
 } from "../scripts/atlas.ts";
 import {
   atlasCommandExitCodes,
@@ -25,14 +31,34 @@ import {
   unreadableAtlasLintOperationResult,
   usageLintOperationResult,
 } from "../src/interfaces/lint_command.ts";
-import {
-  runLintOperation,
-  type LintOperationResult,
-} from "../src/operations/lint_operation.ts";
+import type { LintOperationResult } from "../src/operations/lint_operation.ts";
+import { writeProseStyle } from "./prose_lint_fixtures.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const COMMAND = resolve(ROOT, "scripts", "atlas.ts");
 const WORKSPACE = resolve(ROOT, ".test-workspaces", "atlas-cli");
+const HOSTS = resolve(ROOT, ".test-workspaces", "atlas-cli-hosts");
+
+test.after(() => {
+  rmSync(HOSTS, { force: true, recursive: true });
+});
+
+/**
+ * Copies a committed fixture Atlas into its own Atlas Host Directory. The CLI
+ * runs the real bundled Vale, so a host meant to lint as its fixture does
+ * carries the Atlas SDK default prose style unless a test omits it.
+ */
+function fixtureHost(
+  fixture: string,
+  name: string,
+  options: { readonly proseStyle: boolean } = { proseStyle: true },
+): string {
+  const host = resolve(HOSTS, name);
+  rmSync(host, { force: true, recursive: true });
+  cpSync(resolve(ROOT, "tests", "fixtures", fixture), host, { recursive: true });
+  if (options.proseStyle) writeProseStyle(host);
+  return host;
+}
 
 interface CommandResult {
   readonly status: number | null;
@@ -53,13 +79,8 @@ function runAtlas(arguments_: readonly string[]): CommandResult {
   };
 }
 
-function runAtlasLint(fixture: string): CommandResult {
-  return runAtlas([
-    "lint",
-    "--machine",
-    "--atlas-host-directory",
-    resolve(ROOT, fixture),
-  ]);
+function runAtlasLint(atlasHostDirectory: string): CommandResult {
+  return runAtlas(["lint", "--machine", "--atlas-host-directory", atlasHostDirectory]);
 }
 
 function parseResult(stdout: Buffer): LintOperationResult {
@@ -160,7 +181,7 @@ test("Atlas command refusal helpers preserve the public machine contract", () =>
 });
 
 test("atlas lint --machine emits a completed Operation Result and Handoff for a valid complete fixture", () => {
-  const command = runAtlasLint("tests/fixtures/complete-atlas");
+  const command = runAtlasLint(fixtureHost("complete-atlas", "valid"));
 
   assert.equal(command.status, lintCommandExitCodes.success);
   assert.equal(command.stderr, "");
@@ -179,7 +200,7 @@ test("atlas lint --machine emits a completed Operation Result and Handoff for a 
 });
 
 test("atlas lint --machine emits stable diagnostics and an invalid exit code for an invalid complete fixture", () => {
-  const command = runAtlasLint("tests/fixtures/invalid-complete-atlas");
+  const command = runAtlasLint(fixtureHost("invalid-complete-atlas", "invalid"));
 
   assert.equal(command.status, lintCommandExitCodes.atlasInvalid);
   assert.equal(command.stderr, "");
@@ -203,9 +224,64 @@ test("atlas lint --machine emits stable diagnostics and an invalid exit code for
   });
 });
 
+test("atlas lint --machine fails a page whose prose exceeds the default Vale page length", () => {
+  const host = fixtureHost("complete-atlas", "long-page");
+  appendFileSync(
+    resolve(host, ".atlas", "anchors", "lint.md"),
+    `\n${"word ".repeat(1001).trimEnd()}.\n`,
+  );
+
+  const command = runAtlasLint(host);
+
+  assert.equal(command.status, lintCommandExitCodes.atlasInvalid);
+  assert.equal(command.stderr, "");
+  const result = parseResult(command.stdout);
+  assert.equal(result.completion, "completed");
+  assert.equal(result.disposition, "failed");
+  assert.equal(result.payload.state, "completed");
+  assert.equal(result.payload.lint.outcome, "invalid");
+  assert.deepEqual(
+    result.payload.lint.findings.map(({ attribution, code, path, severity }) => ({
+      attribution,
+      code,
+      path,
+      severity,
+    })),
+    [
+      {
+        attribution: {
+          checkId: "vale.AtlasSDK.PageLength",
+          kind: "atlas-owned",
+          trusted: false,
+        },
+        code: "VALE_ATLASSDK_PAGELENGTH",
+        path: ".atlas/anchors/lint.md",
+        severity: "error",
+      },
+    ],
+  );
+});
+
+test("atlas lint --machine fails an Atlas missing its Vale configuration", () => {
+  const command = runAtlasLint(
+    fixtureHost("complete-atlas", "no-vale-config", { proseStyle: false }),
+  );
+
+  assert.equal(command.status, lintCommandExitCodes.atlasInvalid);
+  const result = parseResult(command.stdout);
+  assert.equal(result.completion, "completed");
+  assert.equal(result.payload.state, "completed");
+  assert.equal(result.payload.lint.outcome, "invalid");
+  assert.deepEqual(
+    result.payload.lint.findings.map(({ code, path }) => ({ code, path })),
+    [{ code: "ATLAS_VALE_CONFIG_MISSING", path: ".atlas/.vale.ini" }],
+  );
+});
+
 test("atlas lint --machine emits byte-identical stdout for repeated identical inputs", () => {
-  const first = runAtlasLint("tests/fixtures/complete-atlas");
-  const second = runAtlasLint("tests/fixtures/complete-atlas");
+  const host = fixtureHost("complete-atlas", "repeated");
+  const first = runAtlasLint(host);
+  const second = runAtlasLint(host);
 
   assert.equal(first.status, lintCommandExitCodes.success);
   assert.equal(second.status, lintCommandExitCodes.success);
@@ -227,9 +303,9 @@ test("atlas lint --machine rejects duplicate flags instead of linting the last A
     "lint",
     "--machine",
     "--atlas-host-directory",
-    resolve(ROOT, "tests/fixtures/invalid-complete-atlas"),
+    fixtureHost("invalid-complete-atlas", "duplicate-invalid"),
     "--atlas-host-directory",
-    resolve(ROOT, "tests/fixtures/complete-atlas"),
+    fixtureHost("complete-atlas", "duplicate-valid"),
   ]);
   assert.equal(duplicateAtlas.status, lintCommandExitCodes.usage);
   const duplicateAtlasResult = parseResult(duplicateAtlas.stdout);
@@ -318,66 +394,16 @@ test("atlas lint --machine gives unreadable Atlas files a distinct runtime diagn
   }
 });
 
-test("Atlas capture enforces total byte budget before reading the offending file", () => {
-  rmSync(WORKSPACE, { force: true, recursive: true });
-  mkdirSync(resolve(WORKSPACE, ".atlas"), { recursive: true });
-  writeFileSync(resolve(WORKSPACE, ".atlas", "a.md"), "a".repeat(10));
-  writeFileSync(resolve(WORKSPACE, ".atlas", "b.md"), "b".repeat(10));
-  let bytesRead = 0;
-  try {
-    captureAtlasHostDirectory(
-      WORKSPACE,
-      {
-        maxFileBytes: 10,
-        maxFiles: 10,
-        maxTotalBytes: 15,
-        maxTraversalDepth: 4,
-      },
-      (fd) => {
-        const bytes = readFileSync(fd);
-        bytesRead += bytes.byteLength;
-        return bytes;
-      },
-    );
-    assert.fail("expected capture budget failure");
-  } catch (error: unknown) {
-    assert.ok(error instanceof CaptureBudgetError);
-    assert.equal(bytesRead, 10);
-    const result = runLintOperation(error.capturedFiles, {
-      maxFileBytes: 10,
-      maxTotalBytes: 15,
-    });
-    assert.equal(result.completion, "completed");
-    assert.equal(result.disposition, "failed");
-    if (result.payload.state !== "completed") assert.fail("budget result failed");
-    assert.equal(result.payload.lint.findings[0]?.code, "ATLAS_LOAD_TOTAL_TOO_LARGE");
-  } finally {
-    rmSync(WORKSPACE, { force: true, recursive: true });
-  }
-});
-
 test("Atlas capture enforces file count and traversal depth during the walk", () => {
   rmSync(WORKSPACE, { force: true, recursive: true });
   mkdirSync(resolve(WORKSPACE, ".atlas", "a", "b"), { recursive: true });
   writeFileSync(resolve(WORKSPACE, ".atlas", "a.md"), "a");
   assert.throws(
-    () =>
-      captureAtlasHostDirectory(WORKSPACE, {
-        maxFileBytes: 10,
-        maxFiles: 0,
-        maxTotalBytes: 10,
-        maxTraversalDepth: 4,
-      }),
+    () => captureAtlasHostDirectory(WORKSPACE, { maxFiles: 0, maxTraversalDepth: 4 }),
     /file count/u,
   );
   assert.throws(
-    () =>
-      captureAtlasHostDirectory(WORKSPACE, {
-        maxFileBytes: 10,
-        maxFiles: 10,
-        maxTotalBytes: 10,
-        maxTraversalDepth: 1,
-      }),
+    () => captureAtlasHostDirectory(WORKSPACE, { maxFiles: 10, maxTraversalDepth: 1 }),
     /traversal depth/u,
   );
   rmSync(WORKSPACE, { force: true, recursive: true });

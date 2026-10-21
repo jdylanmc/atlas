@@ -28,6 +28,7 @@ import { renderAtlasReadinessReportMarkdown } from "../operations/initialize_rea
 import { runLintOperation } from "../operations/lint_operation.ts";
 import { captureLocalAtlasSnapshot } from "./local_atlas_snapshot.ts";
 import { runTrustedGit, runTrustedGitForWrite } from "./trusted_git.ts";
+import { createValeProseLinter } from "./vale_prose_linter.ts";
 
 function git(repository: string, args: readonly string[]): string {
   const result = runTrustedGit(repository, args);
@@ -393,10 +394,10 @@ export function runLocalAtlasInitialization(
     lintProposal: () => {
       const capture = captureLocalAtlasSnapshot(workspace);
       if (capture.state === "failed") throw new Error(capture.reason);
-      const lint = runLintOperation(capture.snapshot.capturedFiles, {
-        maxFileBytes: 1024 * 1024,
-        maxTotalBytes: 16 * 1024 * 1024,
-      });
+      const lint = runLintOperation(
+        capture.snapshot.capturedFiles,
+        createValeProseLinter(),
+      );
       const commit = git(workspace, ["rev-parse", "HEAD"]);
       return { lint, receipt: commit };
     },

@@ -1,0 +1,190 @@
+{
+  "schema": 1,
+  "reviewResolutionRule": "A review finding is resolved only after this corpus has a reject or accept case that exercises it.",
+  "cases": [
+    {
+      "name": "reject an Atlas without its Vale configuration before running prose Lint",
+      "gate": "prose-lint",
+      "expectation": "reject",
+      "proseStyle": false,
+      "files": [
+        {
+          "path": ".atlas/index.md",
+          "text": "---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  local-atlas-schema: 1.0.0\n  id: anchor:root\n  type: anchor\n  title: Root\n  created-at: \"2026-08-17T00:00:00Z\"\n  created-by: { kind: human, name: Fixture Author }\n  updated-at: \"2026-08-17T00:00:00Z\"\n  updated-by: { kind: human, name: Fixture Author }\n  tags: []\natlas: {}\n---\n# Root\n"
+        }
+      ],
+      "expectProseLinterCalled": false,
+      "expectedFindings": [
+        {
+          "code": "ATLAS_VALE_CONFIG_MISSING",
+          "path": ".atlas/.vale.ini",
+          "severity": "error"
+        }
+      ]
+    },
+    {
+      "name": "report Lint not completed when the Vale binary cannot run",
+      "gate": "prose-lint",
+      "expectation": "not-completed",
+      "proseStyle": true,
+      "files": [
+        {
+          "path": ".atlas/index.md",
+          "text": "---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  local-atlas-schema: 1.0.0\n  id: anchor:root\n  type: anchor\n  title: Root\n  created-at: \"2026-08-17T00:00:00Z\"\n  created-by: { kind: human, name: Fixture Author }\n  updated-at: \"2026-08-17T00:00:00Z\"\n  updated-by: { kind: human, name: Fixture Author }\n  tags: []\natlas: {}\n---\n# Root\n"
+        }
+      ],
+      "vale": {
+        "status": null,
+        "stdout": ""
+      },
+      "expectProseLinterCalled": true,
+      "expectedFindings": [
+        {
+          "code": "ATLAS_VALE_UNAVAILABLE",
+          "path": ".atlas",
+          "severity": "error"
+        }
+      ]
+    },
+    {
+      "name": "report Lint not completed when Vale returns no readable alert report",
+      "gate": "prose-lint",
+      "expectation": "not-completed",
+      "proseStyle": true,
+      "files": [
+        {
+          "path": ".atlas/index.md",
+          "text": "---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  local-atlas-schema: 1.0.0\n  id: anchor:root\n  type: anchor\n  title: Root\n  created-at: \"2026-08-17T00:00:00Z\"\n  created-by: { kind: human, name: Fixture Author }\n  updated-at: \"2026-08-17T00:00:00Z\"\n  updated-by: { kind: human, name: Fixture Author }\n  tags: []\natlas: {}\n---\n# Root\n"
+        }
+      ],
+      "vale": {
+        "status": 0,
+        "stdout": "not json"
+      },
+      "expectProseLinterCalled": true,
+      "expectedFindings": [
+        {
+          "code": "ATLAS_VALE_UNAVAILABLE",
+          "path": ".atlas",
+          "severity": "error"
+        }
+      ]
+    },
+    {
+      "name": "reject an Atlas whose page carries an error-level Vale alert",
+      "gate": "prose-lint",
+      "expectation": "reject",
+      "proseStyle": true,
+      "files": [
+        {
+          "path": ".atlas/index.md",
+          "text": "---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  local-atlas-schema: 1.0.0\n  id: anchor:root\n  type: anchor\n  title: Root\n  created-at: \"2026-08-17T00:00:00Z\"\n  created-by: { kind: human, name: Fixture Author }\n  updated-at: \"2026-08-17T00:00:00Z\"\n  updated-by: { kind: human, name: Fixture Author }\n  tags: []\natlas: {}\n---\n# Root\n"
+        }
+      ],
+      "vale": {
+        "status": 1,
+        "stdout": "{\".atlas/index.md\": [{\"Check\": \"AtlasSDK.PageLength\", \"Line\": 16, \"Span\": [1, 6], \"Message\": \"Keep each page under 1000 words.\", \"Severity\": \"error\"}]}"
+      },
+      "expectProseLinterCalled": true,
+      "expectedFindings": [
+        {
+          "code": "VALE_ATLASSDK_PAGELENGTH",
+          "path": ".atlas/index.md",
+          "severity": "error",
+          "line": 16,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "name": "accept an Atlas whose page carries only a warning-level Vale alert",
+      "gate": "prose-lint",
+      "expectation": "accept",
+      "proseStyle": true,
+      "files": [
+        {
+          "path": ".atlas/index.md",
+          "text": "---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  local-atlas-schema: 1.0.0\n  id: anchor:root\n  type: anchor\n  title: Root\n  created-at: \"2026-08-17T00:00:00Z\"\n  created-by: { kind: human, name: Fixture Author }\n  updated-at: \"2026-08-17T00:00:00Z\"\n  updated-by: { kind: human, name: Fixture Author }\n  tags: []\natlas: {}\n---\n# Root\n"
+        }
+      ],
+      "vale": {
+        "status": 0,
+        "stdout": "{\".atlas/index.md\": [{\"Check\": \"AtlasSDK.PageLength\", \"Line\": 16, \"Span\": [1, 6], \"Message\": \"Keep each page under 1000 words.\", \"Severity\": \"warning\"}]}"
+      },
+      "expectProseLinterCalled": true,
+      "expectedFindings": [
+        {
+          "code": "VALE_ATLASSDK_PAGELENGTH",
+          "path": ".atlas/index.md",
+          "severity": "warning",
+          "line": 16,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "name": "reject non-canonical line terminators with one located Finding per offending file",
+      "gate": "prose-lint",
+      "expectation": "reject",
+      "proseStyle": true,
+      "files": [
+        {
+          "path": ".atlas/index.md",
+          "text": "---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  local-atlas-schema: 1.0.0\n  id: anchor:root\n  type: anchor\n  title: Root\n  created-at: \"2026-08-17T00:00:00Z\"\n  created-by: { kind: human, name: Fixture Author }\n  updated-at: \"2026-08-17T00:00:00Z\"\n  updated-by: { kind: human, name: Fixture Author }\n  tags: []\natlas: {}\n---\n# Root\n"
+        },
+        {
+          "path": ".atlas/concepts/carriage.md",
+          "text": "first line\r\nsecond\rline\nthird\rline\n"
+        },
+        {
+          "path": ".atlas/concepts/crlf.md",
+          "text": "only\r\ncanonical\r\nendings\r\n"
+        },
+        {
+          "path": ".atlas/concepts/separator.md",
+          "text": "one\n\ntwo\u2028three\u2029four\n"
+        }
+      ],
+      "expectProseLinterCalled": false,
+      "expectedFindings": [
+        {
+          "code": "ATLAS_LOAD_NON_CANONICAL_LINE_TERMINATOR",
+          "path": ".atlas/concepts/carriage.md",
+          "severity": "error",
+          "line": 2,
+          "column": 7
+        },
+        {
+          "code": "ATLAS_LOAD_NON_CANONICAL_LINE_TERMINATOR",
+          "path": ".atlas/concepts/separator.md",
+          "severity": "error",
+          "line": 3,
+          "column": 4
+        }
+      ]
+    },
+    {
+      "name": "accept a page larger than one mebibyte because Lint enforces no byte budget",
+      "gate": "prose-lint",
+      "expectation": "accept",
+      "proseStyle": true,
+      "files": [
+        {
+          "path": ".atlas/index.md",
+          "text": "---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  local-atlas-schema: 1.0.0\n  id: anchor:root\n  type: anchor\n  title: Root\n  created-at: \"2026-08-17T00:00:00Z\"\n  created-by: { kind: human, name: Fixture Author }\n  updated-at: \"2026-08-17T00:00:00Z\"\n  updated-by: { kind: human, name: Fixture Author }\n  tags: []\natlas: {}\n---\n# Root\n\n",
+          "padding": {
+            "text": "atlas ",
+            "count": 200000
+          }
+        }
+      ],
+      "minimumFileBytes": 1048576,
+      "vale": {
+        "status": 0,
+        "stdout": "{}"
+      },
+      "expectProseLinterCalled": true,
+      "expectedFindings": []
+    }
+  ]
+}

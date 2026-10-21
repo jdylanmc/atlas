@@ -10,6 +10,7 @@ import {
   runAtlasInitializationWorkflow,
 } from "../src/operations/initialize_operation.ts";
 import { runLintOperation } from "../src/operations/lint_operation.ts";
+import { passingProseLinter } from "./prose_lint_fixtures.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const MINIMAL_RESULT_FIXTURE = join(
@@ -78,10 +79,7 @@ test("the minimal initialization operation result remains byte-identical to the 
     currentTargetHead: () => state.targetHead,
     currentBaseSnapshotDigest: () => state.baseSnapshotDigest,
     lintProposal: () => ({
-      lint: runLintOperation(atlasInitializationFiles(state), {
-        maxFileBytes: 4096,
-        maxTotalBytes: 65536,
-      }),
+      lint: runLintOperation(atlasInitializationFiles(state), passingProseLinter),
       receipt: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     }),
     writeChangeSet: () => ({ receipt: "tree-golden" }),

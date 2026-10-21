@@ -1,9 +1,9 @@
-import { defaultAtlasTextBudgets } from "../atlas/load_atlas_text.ts";
 import {
   notCompletedLintOperationResult,
   runLintOperation,
   type LintOperationResult,
 } from "../operations/lint_operation.ts";
+import { createValeProseLinter } from "../platform/vale_prose_linter.ts";
 
 export interface LintCommandCapturedFile {
   readonly bytes: Uint8Array;
@@ -11,9 +11,7 @@ export interface LintCommandCapturedFile {
 }
 
 export interface LintCommandCaptureBudgets {
-  readonly maxFileBytes: number;
   readonly maxFiles: number;
-  readonly maxTotalBytes: number;
   readonly maxTraversalDepth: number;
 }
 
@@ -24,12 +22,8 @@ export const lintCommandExitCodes = Object.freeze({
   usage: 64,
 } as const);
 
-export const lintCommandBudgets = defaultAtlasTextBudgets;
-
 export const lintCommandCaptureBudgets: LintCommandCaptureBudgets = Object.freeze({
-  maxFileBytes: lintCommandBudgets.maxFileBytes,
   maxFiles: 4096,
-  maxTotalBytes: lintCommandBudgets.maxTotalBytes,
   maxTraversalDepth: 32,
 });
 
@@ -83,7 +77,7 @@ export function unreadableAtlasLintOperationResult(
 export function runLintCommandOperation(
   capturedFiles: readonly LintCommandCapturedFile[],
 ): LintOperationResult {
-  return runLintOperation(capturedFiles, lintCommandBudgets);
+  return runLintOperation(capturedFiles, createValeProseLinter());
 }
 
 export function exitCodeForLintOperationResult(result: LintOperationResult): number {

@@ -38,6 +38,10 @@ export const contractVocabularyBindings = Object.freeze([
     term: "Search Provider",
   }),
   Object.freeze({
+    exportedIdentifiers: Object.freeze(["ProseLinter"]),
+    term: "Prose Linter",
+  }),
+  Object.freeze({
     exportedIdentifiers: Object.freeze(["AtlasSnapshot"]),
     term: "Atlas Snapshot",
   }),
@@ -186,6 +190,11 @@ export const unboundGlossaryTerms = Object.freeze([
   Object.freeze({
     reason: "The product name, not an exported contract identifier.",
     term: "Atlas SDK",
+  }),
+  Object.freeze({
+    reason:
+      "The bundled third-party prose linter and the `.atlas/vale/` directory its styles live in, not an exported contract identifier.",
+    term: "Vale",
   }),
   Object.freeze({
     reason:

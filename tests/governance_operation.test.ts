@@ -32,9 +32,9 @@ import {
   notCompletedLintOperationResult,
   runLintOperation,
 } from "../src/operations/lint_operation.ts";
+import { passingProseLinter, withProseStyle } from "./prose_lint_fixtures.ts";
 import { writtenTreeMatchesChangeSet } from "../src/platform/local_atlas_governance.ts";
 
-const budgets = Object.freeze({ maxFileBytes: 4096, maxTotalBytes: 65536 });
 const governanceCorpus = JSON.parse(
   readFileSync(resolve(import.meta.dirname, "adversarial", "governance.json"), "utf8"),
 ) as {
@@ -742,9 +742,11 @@ function runtime(
           : buildAtlasGovernanceChangeSet(workflowState, maintenanceRequest, baseFiles)
               .changes;
       const lintFiles =
-        options.lintUsesEmptyAtlas === true ? [] : applyChanges(baseFiles, derived);
+        options.lintUsesEmptyAtlas === true
+          ? []
+          : withProseStyle(applyChanges(baseFiles, derived));
       return {
-        lint: runLintOperation(lintFiles, budgets),
+        lint: runLintOperation(lintFiles, passingProseLinter),
         receipt: options.lintReceipt ?? commit,
       };
     },
@@ -955,8 +957,8 @@ test("Governance rejects Git-backed written bytes that differ from the canonical
         assert.ok(acceptedChangeSet);
         return {
           lint: runLintOperation(
-            applyChanges([root, changelog], acceptedChangeSet.changes),
-            budgets,
+            withProseStyle(applyChanges([root, changelog], acceptedChangeSet.changes)),
+            passingProseLinter,
           ),
           receipt: commit,
         };

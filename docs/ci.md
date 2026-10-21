@@ -76,16 +76,27 @@ carry into the package. Use `npm run package:publish` for publishing for the
 same reason; bare `npm publish` is not the supported release path because the
 repository `.npmrc` suppresses lifecycle scripts by default.
 
-`npm run ci` performs deterministic Prettier checks, type-aware ESLint flat
+`npm run ci` first runs `npm run vale:install`, which downloads the pinned Vale
+release for the current platform, verifies its SHA-256 against
+`src/platform/vale_release.ts`, and installs it into `node_modules` as the same
+`@jdylanmc/atlas-vale-<os>-<cpu>` package an installed Atlas SDK resolves. It then
+performs deterministic Prettier checks, type-aware ESLint flat
 configuration, strict TypeScript checking with `erasableSyntaxOnly`, fail-closed
 Node.js test-runner coverage, a committed SDK Atlas Lint gate, glossary and
 contract vocabulary agreement, byte-exact Cacophony prompt validation, and
 Actionlint `1.7.7`. The SDK Atlas gate runs `atlas lint --machine` against the
 repository Atlas Host Directory and requires a completed Valid Atlas Lint Result
-with no error Findings. This confirms only the deterministic Lint rules that
-exist today; the Atlas Manifest is still carried as an opaque record, and rules
-that would validate its declared schema against the rest of the Atlas remain
-deferred.
+with no error Findings, including the repository Atlas's own Vale prose rules.
+This confirms only the deterministic Lint rules that exist today; the Atlas
+Manifest is still carried as an opaque record, and rules that would validate its
+declared schema against the rest of the Atlas remain deferred.
+
+Publishing a release also publishes the six platform packages:
+`npm run vale:pack` downloads and verifies every pinned Vale asset and writes one
+`@jdylanmc/atlas-vale-<os>-<cpu>@<vale version>` tarball per platform into
+`dist/vale-packages/`. Publish those before `@jdylanmc/atlas`, whose exact-version
+`optionalDependencies` resolve them; refresh `package-lock.json` after they are
+published.
 
 Structural Lint compares `created-at` and `updated-at` through the shared
 `dateTimeMilliseconds` contract. A schema-valid but unrepresentable instant
@@ -96,8 +107,8 @@ does not change the page-envelope schema.
 
 Structural Lint caps each page body at 2,048 lexically counted Markdown markup
 marks, down from 8,192 to bound delimiter-heavy input before the Markdown reader
-runs. The markup guard reports `ATLAS_PAGE_BODY_TOO_MARKED` even when the caller's
-byte budget admits the page. Exactly 2,048 marks remain permitted when the other
+runs. The markup guard reports `ATLAS_PAGE_BODY_TOO_MARKED` even when no other
+check rejects the page; Atlas SDK imposes no byte budget on Atlas files. Exactly 2,048 marks remain permitted when the other
 checks pass; plain prose is not charged as markup. The existing nesting-depth
 limit of 64, body-line limit of 16,384, and frontmatter limit of 32,768 characters
 are unchanged.
@@ -162,7 +173,7 @@ ordering by object ID. Scores depend on the indexed corpus, not a model.
 
 Repository-backed regression cases check useful answers with their real routes
 and Citations. Ranking does not grant reachability, change Re-anchoring, or alter
-the result shape, evidence, degradation, or capture budgets.
+the result shape, evidence, degradation, or capture file-count budgets.
 
 ## Glossary and contract vocabulary agreement
 

@@ -95,7 +95,6 @@ export {
   exploreCommandExitCodes,
   exploreCommandUsage,
   missingAtlasExploreOperationResult,
-  oversizedAtlasExploreOperationResult,
   oversizedQueryExploreOperationResult,
   serializeExploreMachineResult,
   unreadableAtlasExploreOperationResult,
@@ -103,7 +102,6 @@ export {
 } from "./interfaces/explore_command.ts";
 export {
   exitCodeForLintOperationResult,
-  lintCommandBudgets,
   lintCommandCaptureBudgets,
   lintCommandExitCodes,
   lintCommandUsage,
@@ -144,6 +142,27 @@ export type {
   SuccessfulProposalLint,
 } from "./operations/initialize_operation.ts";
 export { runLintOperation } from "./operations/lint_operation.ts";
+export { proseLintConfigPath, proseLintStylesDirectory } from "./lint/prose_lint.ts";
+export type {
+  ProseLinter,
+  ProseLintOutcome,
+  ProseLintRequest,
+} from "./lint/prose_lint.ts";
+export {
+  atlasSdkPageWordLimit,
+  atlasSdkProseStyleFiles,
+} from "./lint/atlas_sdk_prose_style.ts";
+export type { AtlasSdkProseStyleFile } from "./lint/atlas_sdk_prose_style.ts";
+export {
+  createValeProseLinter,
+  resolveValeBinary,
+} from "./platform/vale_prose_linter.ts";
+export type {
+  ValeBinaryResolution,
+  ValeProseLinterOptions,
+} from "./platform/vale_prose_linter.ts";
+export { valePlatformReleases, valeVersion } from "./platform/vale_release.ts";
+export type { ValePlatformRelease } from "./platform/vale_release.ts";
 export { renderAtlasReadinessReportMarkdown } from "./operations/initialize_readiness_report.ts";
 export type {
   CompletedLintOperationPayload,

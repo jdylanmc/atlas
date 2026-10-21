@@ -78,6 +78,14 @@
         {
           "content": "---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  created-at: \"2026-01-01T00:00:00Z\"\n  created-by:\n    kind: agent\n    name: Atlas SDK\n  id: anchor:root\n  local-atlas-schema: 1.0.0\n  originating-operation: atlas-initialization\n  tags: []\n  title: Home Atlas\n  type: anchor\n  updated-at: \"2026-01-01T00:00:00Z\"\n  updated-by:\n    kind: agent\n    name: Atlas SDK\natlas: {}\n---\n\n# Home Atlas\n\nThis Root Anchor starts a minimal Home Atlas with no Guide Persona, founding knowledge, or Atlas Site.\n",
           "path": ".atlas/index.md"
+        },
+        {
+          "content": "# Vale prose Lint for this Atlas. Atlas SDK runs its bundled Vale with this\n# file on every Lint; an error-level alert fails Lint. This Atlas owns this\n# configuration and may change, disable, or extend any rule.\nStylesPath = vale/styles\nMinAlertLevel = suggestion\n\n[*.md]\nBasedOnStyles = AtlasSDK\n",
+          "path": ".atlas/.vale.ini"
+        },
+        {
+          "content": "# Counts prose words only: headings, code, table cells, and frontmatter are\n# excluded by Vale's summary scope.\nextends: occurrence\nmessage: \"Page prose runs to %d words. Split it into an overview page and child pages.\"\ndescription: Long pages are hard to read and route; split one topic per page.\nlevel: error\nscope: summary\nmax: 1000\ntoken: \"[\\\\p{L}\\\\p{N}]+(?:['’-][\\\\p{L}\\\\p{N}]+)*\"\n",
+          "path": ".atlas/vale/styles/AtlasSDK/PageLength.yml"
         }
       ],
       "targetHead": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -135,12 +143,20 @@
           "findings": [],
           "opaque": [
             {
+              "content": "# Vale prose Lint for this Atlas. Atlas SDK runs its bundled Vale with this\n# file on every Lint; an error-level alert fails Lint. This Atlas owns this\n# configuration and may change, disable, or extend any rule.\nStylesPath = vale/styles\nMinAlertLevel = suggestion\n\n[*.md]\nBasedOnStyles = AtlasSDK\n",
+              "path": ".atlas/.vale.ini"
+            },
+            {
               "content": "# Changelog\n\n## 2026-01-01\n\n- atlas-initialization: Initialized minimal Home Atlas.\n",
               "path": ".atlas/CHANGELOG.md"
             },
             {
               "content": "{\n  \"atlas-manifest-schema\": \"1.0.0\",\n  \"atlas-sdk-schema\": \"1.0.0\",\n  \"local-atlas-schema\": \"1.0.0\"\n}\n",
               "path": ".atlas/manifest.json"
+            },
+            {
+              "content": "# Counts prose words only: headings, code, table cells, and frontmatter are\n# excluded by Vale's summary scope.\nextends: occurrence\nmessage: \"Page prose runs to %d words. Split it into an overview page and child pages.\"\ndescription: Long pages are hard to read and route; split one topic per page.\nlevel: error\nscope: summary\nmax: 1000\ntoken: \"[\\\\p{L}\\\\p{N}]+(?:['’-][\\\\p{L}\\\\p{N}]+)*\"\n",
+              "path": ".atlas/vale/styles/AtlasSDK/PageLength.yml"
             }
           ],
           "outcome": "valid",

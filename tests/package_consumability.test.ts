@@ -28,6 +28,7 @@ import { exerciseInitializationArtifactConflicts } from "./initialization_artifa
 import { exerciseGovernanceRetirement } from "./governance_retirement_probe.ts";
 import { parseMachineOperationResult } from "./machine_operation_result.ts";
 import { createSuiteArtifactOwner } from "./suite_artifact.ts";
+import { valePlatformRelease } from "../src/platform/vale_release.ts";
 import type { AtlasInitializationResult } from "../src/operations/initialize_operation.ts";
 import type { LintOperationResult } from "../src/operations/lint_operation.ts";
 import type { ExploreOperationResult } from "../src/operations/explore_operation.ts";
@@ -293,6 +294,29 @@ const installedConsumerArtifact = createSuiteArtifactOwner(packArtifact);
 after(() => installedConsumerArtifact.dispose());
 
 /**
+ * Places this platform's Vale package where npm would install Atlas SDK's
+ * optional dependency on it. The platform packages are produced by
+ * `npm run vale:install` rather than fetched, so an offline install cannot
+ * resolve them; the installed SDK must still find its bundled Vale by ordinary
+ * module resolution from its own location.
+ */
+function installBundledVale(consumer: string): void {
+  const release = valePlatformRelease(process.platform, process.arch);
+  assert.ok(
+    release !== undefined,
+    `no Vale release for ${process.platform}-${process.arch}`,
+  );
+  const source = join(ROOT, "node_modules", ...release.packageName.split("/"));
+  assert.ok(
+    existsSync(join(source, "package.json")),
+    `${release.packageName} is not installed; run npm run vale:install`,
+  );
+  cpSync(source, join(consumer, "node_modules", ...release.packageName.split("/")), {
+    recursive: true,
+  });
+}
+
+/**
  * A consumer with its own directory, its own Git history, and Atlas SDK
  * installed from the packed artifact with production dependencies only.
  *
@@ -384,6 +408,7 @@ function createConsumer(workspace: string): string {
     ],
     offlineInstall,
   );
+  installBundledVale(consumer);
 
   writeFileSync(join(consumer, ".gitignore"), "node_modules/\n");
   for (const argv of [

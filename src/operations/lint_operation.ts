@@ -1,6 +1,11 @@
 import type { Finding } from "../domain/finding.ts";
-import type { AtlasTextBudgets, CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
-import { lintAtlas, type AtlasLintResult } from "../lint/lint_atlas.ts";
+import type { CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
+import {
+  lintAtlas,
+  proseLintUnavailableCode,
+  type AtlasLintResult,
+} from "../lint/lint_atlas.ts";
+import type { ProseLinter } from "../lint/prose_lint.ts";
 import {
   operationHandoffSchemaVersion,
   operationResultSchemaVersion,
@@ -176,7 +181,8 @@ function didLintRuntimeFail(lint: AtlasLintResult): boolean {
   return lint.findings.some(
     (finding) =>
       finding.code === "ATLAS_LINT_FAILED" ||
-      finding.code === "ATLAS_CAPTURE_UNREADABLE",
+      finding.code === "ATLAS_CAPTURE_UNREADABLE" ||
+      finding.code === proseLintUnavailableCode,
   );
 }
 
@@ -228,24 +234,32 @@ export function notCompletedLintOperationResult(
 
 function runtimeFailureResult(lint: AtlasLintResult): LintOperationResult {
   const finding = lint.findings[0] as Finding;
+  const prose = finding.code === proseLintUnavailableCode;
   return notCompletedLintOperationResult({
     baseSnapshotReason: "Lint could not complete against the captured Atlas files.",
     code: finding.code,
-    degradationReason: "Lint could not complete because the program running it failed.",
+    degradationReason: prose
+      ? "Lint could not complete because the Atlas's Vale prose rules could not run."
+      : "Lint could not complete because the program running it failed.",
     homeAtlasReason: "Lint could not complete against the captured Atlas files.",
     message: finding.message,
-    recommendedNextAction:
-      "Retry Lint in a healthy runtime; if it repeats, escalate the operation failure.",
+    recommendedNextAction: prose
+      ? "Reinstall Atlas SDK so its bundled Vale binary for this platform is present, then run Lint again."
+      : "Retry Lint in a healthy runtime; if it repeats, escalate the operation failure.",
     subject: "captured-home-atlas",
     summary: "Lint did not complete.",
   });
 }
 
+/**
+ * Lints one captured Home Atlas with the given prose linter. Prose Lint is
+ * required, so callers supply the bundled Vale linter rather than opting in.
+ */
 export function runLintOperation(
   capturedFiles: readonly CapturedAtlasFile[],
-  budgets: AtlasTextBudgets,
+  proseLinter: ProseLinter,
 ): LintOperationResult {
-  const lint = lintAtlas(capturedFiles, budgets);
+  const lint = lintAtlas(capturedFiles, proseLinter);
   if (didLintRuntimeFail(lint)) return runtimeFailureResult(lint);
   const handoff = completedLintHandoff(lint);
   return Object.freeze({

@@ -43,13 +43,11 @@ const encoder = new TextEncoder();
 const budgets: ExploreBudgets = Object.freeze({
   maxContextCharacters: 4096,
   maxEdges: 128,
-  maxFileBytes: 8192,
   maxObjects: 128,
   maxQueryCharacters: 256,
   maxResults: 5,
   maxRouteEdges: 16,
   maxTerms: 256,
-  maxTotalBytes: 65536,
 });
 
 function git(repository: string, args: readonly string[]): string {
@@ -2840,9 +2838,7 @@ test("Atlas tree capture uses default trusted Git runners", () => {
   });
   assert.equal(revision.status, 0, revision.stderr);
   const capture = captureAtlasTree(remote, revision.stdout.trim(), ".atlas", ".", {
-    maxFileBytes: 8192,
     maxFiles: 128,
-    maxTotalBytes: 65536,
   });
   assert.equal(capture.state, "captured");
 });

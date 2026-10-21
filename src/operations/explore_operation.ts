@@ -87,13 +87,11 @@ const noReviewLink: OperationReviewLink = Object.freeze({
 const defaultBudgetValues = Object.freeze({
   maxContextCharacters: 4096,
   maxEdges: 2048,
-  maxFileBytes: 1024 * 1024,
   maxObjects: 2048,
   maxQueryCharacters: 1024,
   maxResults: 5,
   maxRouteEdges: 32,
   maxTerms: 128,
-  maxTotalBytes: 16 * 1024 * 1024,
 });
 
 function budgetsOf(request: ExploreOperationRequest): ExploreBudgets {
@@ -245,7 +243,7 @@ export function runExploreOperation(
   request: ExploreOperationRequest,
 ): ExploreOperationResult {
   const budgets = budgetsOf(request);
-  const validated = loadAndValidateAtlasInput(request.capturedFiles, budgets);
+  const validated = loadAndValidateAtlasInput(request.capturedFiles);
   const atlasView = buildAtlasView({
     identity: Object.freeze({
       atlas: request.homeAtlas,

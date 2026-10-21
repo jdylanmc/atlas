@@ -188,9 +188,8 @@ export function hasConnectedAtlasEdges(homeView: AtlasView): boolean {
 function loadTrackedSnapshot(
   trackedAtlas: TrackedAtlas,
   snapshot: ResolvedTrackedAtlasSnapshot,
-  budgets: ExploreBudgets,
 ): SnapshotEntry {
-  const validation = loadAndValidateAtlasInput(snapshot.capturedFiles, budgets);
+  const validation = loadAndValidateAtlasInput(snapshot.capturedFiles);
   const identity: AtlasViewSnapshotIdentity = Object.freeze({
     atlas: Object.freeze({
       reference: trackedAtlas.locator.canonicalRepository,
@@ -208,7 +207,6 @@ function loadTrackedSnapshot(
 
 function resolveSnapshots(
   homeView: AtlasView,
-  budgets: ExploreBudgets,
   resolver: AtlasCacheResolver,
 ): {
   readonly diagnostics: readonly Finding[];
@@ -259,11 +257,7 @@ function resolveSnapshots(
         continue;
       }
       diagnostics.push(...resolved.snapshot.findings);
-      const trackedEntry = loadTrackedSnapshot(
-        parsed.trackedAtlas,
-        resolved.snapshot,
-        budgets,
-      );
+      const trackedEntry = loadTrackedSnapshot(parsed.trackedAtlas, resolved.snapshot);
       if (findRoot(trackedEntry.view) === undefined) {
         diagnostics.push(
           diagnostic(
@@ -699,7 +693,7 @@ export function exploreConnectedAtlas(
 ): ExplorePayload | undefined {
   /* c8 ignore next -- resolver callers already short-circuit the no-tracked-Atlas path in tests. */
   if (!hasConnectedAtlasEdges(homeView)) return undefined;
-  const resolved = resolveSnapshots(homeView, budgets, resolver);
+  const resolved = resolveSnapshots(homeView, resolver);
   const built = buildNodes(resolved.snapshots);
   const rootIdentity = homeView.snapshots[0] as AtlasViewSnapshotIdentity;
   const root = built.nodeByKey.get(canonicalNodeKey(rootIdentity, rootAnchorPageId));

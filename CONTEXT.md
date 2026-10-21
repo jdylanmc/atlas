@@ -205,11 +205,17 @@ The proposed concepts, Edges, and Citations Crawlers return from one source, rec
 The correspondence between one term in this glossary and the supported identifiers Atlas SDK contracts spell that term with; a term alone does not determine a directory plural. A binding records spellings constrained by naming conventions, and trusted validation reports disagreements or unsupported derivations rather than guessing; an avoided term may not be bound.
 
 **Lint**:
-The human-facing workflow for validating an Atlas. Trusted deterministic validation runs before isolated Atlas-owned deterministic checks and semantic verification, and every semantic verdict must survive a Challenge before it counts; pure Lint reports findings without mutating knowledge. Lint also reports what an Atlas is missing, and validates an Atlas's edges into tracked Atlases rather than their contents.
+The human-facing workflow for validating an Atlas. Trusted deterministic validation runs before isolated Atlas-owned deterministic checks, including the Atlas's Vale prose rules, and semantic verification, and every semantic verdict must survive a Challenge before it counts; pure Lint reports findings without mutating knowledge. Lint also reports what an Atlas is missing, and validates an Atlas's edges into tracked Atlases rather than their contents.
 _Avoid_: Weave
 
 **Lint Stamp**:
 A deterministic machine-readable attestation that one exact Atlas commit completed a full Lint with matching evidence. Its trusted deterministic portion is reproducible validation evidence rather than committed Atlas knowledge, and any change to the stamped commit invalidates it. A stamp neither reproduces nor identifies the semantic half of a Lint, whose verdicts are attested rather than recomputed, and it does not record which Atlas SDK produced it, so even the deterministic half is reproducible only within one Atlas SDK version. Schema, check, and Policy revisions belong in the stamp only when Atlas SDK has authoritative revision sources for them.
+
+**Vale**:
+The prose linter Atlas SDK bundles at one pinned release and runs during every Lint over an Atlas's pages. Vale reads only the Atlas's own `.atlas/.vale.ini` and the styles beneath `.atlas/vale/`, which Atlas Initialization seeds from the Atlas SDK default prose style and the Atlas owns from then on. An error-level Vale alert is an Atlas-owned error Finding and denies the Atlas validity; an Atlas without its Vale configuration fails Lint, and a Lint whose Vale rules could not run is not completed. Page length is a Vale rule, not a size limit Atlas SDK imposes.
+
+**Prose Linter**:
+The seam through which Lint runs an Atlas's Vale rules over exactly the text it loaded. Atlas SDK supplies the Vale-backed Prose Linter; Lint decides only what to ask it and how its findings affect the Atlas's validity.
 
 **Finding**:
 One result reported by a Lint, attributed to the check that raised it and to whether that check is trusted Atlas SDK validation or Atlas-owned. A finding is an error, a warning, a suggestion, an inconclusive semantic verdict, or a check skipped because one it depended on failed. An Atlas-owned check may add findings; it may never suppress or downgrade a trusted one.

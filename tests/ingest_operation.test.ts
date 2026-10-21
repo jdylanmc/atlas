@@ -35,12 +35,12 @@ import {
   type AtlasIngestWorkflowState,
 } from "../src/operations/ingest_operation.ts";
 import { runLintOperation } from "../src/operations/lint_operation.ts";
+import { passingProseLinter, withProseStyle } from "./prose_lint_fixtures.ts";
 import {
   attestationPayloadDigest,
   type AtlasApprovalAttestation,
 } from "../src/operations/operation_support.ts";
 
-const budgets = Object.freeze({ maxFileBytes: 8192, maxTotalBytes: 262_144 });
 const encoder = new TextEncoder();
 const markdownOptions = Object.freeze({
   extensions: [gfmFootnote()],
@@ -339,9 +339,11 @@ function runtime(
       const changeSet =
         captured ?? reconcileCandidateGraph(workflowState, ingestRequest);
       const lintFiles =
-        options.lintUsesEmptyAtlas === true ? [] : applyChanges(baseFiles, changeSet);
+        options.lintUsesEmptyAtlas === true
+          ? []
+          : withProseStyle(applyChanges(baseFiles, changeSet));
       return {
-        lint: runLintOperation(lintFiles, budgets),
+        lint: runLintOperation(lintFiles, passingProseLinter),
         receipt: options.lintReceipt ?? commit,
       };
     },
@@ -1235,7 +1237,10 @@ test("Lint rejects an emitted quotation that no longer matches retained citation
         : change,
     ),
   };
-  const lint = runLintOperation(applyChanges(baseFilesDefault, tampered), budgets);
+  const lint = runLintOperation(
+    withProseStyle(applyChanges(baseFilesDefault, tampered)),
+    passingProseLinter,
+  );
 
   assert.ok(
     codes(lint.handoff.validationState.findings).includes(
@@ -1403,7 +1408,10 @@ test("Lint keeps pre-metadata citation pages backward compatible", () => {
       return serialized;
     }),
   };
-  const lint = runLintOperation(applyChanges(baseFilesDefault, legacy), budgets);
+  const lint = runLintOperation(
+    withProseStyle(applyChanges(baseFilesDefault, legacy)),
+    passingProseLinter,
+  );
 
   assert.equal(
     codes(lint.handoff.validationState.findings).includes(

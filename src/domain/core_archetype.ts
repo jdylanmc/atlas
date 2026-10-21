@@ -73,6 +73,7 @@ export const corePageDirectories: ReadonlySet<string> = new Set(
 export const reservedPageDirectories: ReadonlySet<string> = new Set([
   "atlas-cache",
   "types",
+  "vale",
 ]);
 
 export const rootAnchorPageId = `${coreArchetypes.Anchor.idPrefix}:root`;

@@ -11,25 +11,12 @@ export interface AtlasTextFile {
   readonly path: string;
 }
 
-export interface AtlasTextBudgets {
-  readonly maxFileBytes: number;
-  readonly maxTotalBytes: number;
-}
-
-export const defaultAtlasTextBudgets: AtlasTextBudgets = Object.freeze({
-  maxFileBytes: 1024 * 1024,
-  maxTotalBytes: 16 * 1024 * 1024,
-});
-
 export type AtlasLoadErrorCode =
   | "DUPLICATE_PATH"
-  | "FILE_TOO_LARGE"
-  | "INVALID_BUDGET"
   | "INVALID_PATH"
   | "INVALID_UTF8"
   | "NON_CANONICAL_LINE_TERMINATOR"
-  | "SHARED_BYTES_NOT_ALLOWED"
-  | "TOTAL_TOO_LARGE";
+  | "SHARED_BYTES_NOT_ALLOWED";
 
 const nonCanonicalLineTerminator = /\r(?!\n)|[\u2028\u2029]/u;
 
@@ -37,25 +24,57 @@ export function containsNonCanonicalLineTerminator(content: string): boolean {
   return nonCanonicalLineTerminator.test(content);
 }
 
+/** The first non-canonical line terminator in one loaded Atlas file. */
+export interface NonCanonicalLineTerminator {
+  readonly column: number;
+  readonly line: number;
+  readonly path: string;
+}
+
+/**
+ * Locates the first non-canonical line terminator in `content`, counting lines
+ * only at the LF that every accepted Atlas line ends with, so the reported
+ * position is the one an editor showing canonical text would display.
+ */
+export function locateNonCanonicalLineTerminator(
+  content: string,
+): { readonly column: number; readonly line: number } | undefined {
+  const match = nonCanonicalLineTerminator.exec(content);
+  if (match === null) return undefined;
+  const before = content.slice(0, match.index);
+  const lineStart = before.lastIndexOf("\n") + 1;
+  return Object.freeze({
+    column: match.index - lineStart + 1,
+    line: before.split("\n").length,
+  });
+}
+
 const messages: Readonly<Record<AtlasLoadErrorCode, string>> = Object.freeze({
   DUPLICATE_PATH: "Captured Atlas files contain a duplicate normalized path.",
-  FILE_TOO_LARGE: "A captured Atlas file exceeds the byte budget.",
-  INVALID_BUDGET: "Atlas byte budgets must be non-negative safe integers.",
   INVALID_PATH: "A captured Atlas file has an invalid path.",
   INVALID_UTF8: "A captured Atlas file is not valid UTF-8.",
   NON_CANONICAL_LINE_TERMINATOR:
     "A captured Atlas file contains a non-canonical line terminator.",
   SHARED_BYTES_NOT_ALLOWED: "Captured Atlas file bytes must not use shared memory.",
-  TOTAL_TOO_LARGE: "Captured Atlas files exceed the total byte budget.",
 });
 
 export class AtlasLoadError extends Error {
   readonly code: AtlasLoadErrorCode;
+  /**
+   * Every file carrying a non-canonical line terminator, populated only for
+   * NON_CANONICAL_LINE_TERMINATOR. Those paths have already passed path
+   * normalization, so they are safe to name in a Finding.
+   */
+  readonly lineTerminators: readonly NonCanonicalLineTerminator[];
 
-  constructor(code: AtlasLoadErrorCode) {
+  constructor(
+    code: AtlasLoadErrorCode,
+    lineTerminators: readonly NonCanonicalLineTerminator[] = Object.freeze([]),
+  ) {
     super(messages[code]);
     this.name = "AtlasLoadError";
     this.code = code;
+    this.lineTerminators = lineTerminators;
   }
 }
 
@@ -129,17 +148,6 @@ export function atlasPathCollisionKey(path: string): string {
   return atlasPathCollisionSegments(path).join("/");
 }
 
-function assertBudgets(budgets: AtlasTextBudgets): void {
-  if (
-    !Number.isSafeInteger(budgets.maxFileBytes) ||
-    budgets.maxFileBytes < 0 ||
-    !Number.isSafeInteger(budgets.maxTotalBytes) ||
-    budgets.maxTotalBytes < 0
-  ) {
-    throw new AtlasLoadError("INVALID_BUDGET");
-  }
-}
-
 // Captured accessors are invoked only with explicit Reflect receivers.
 // eslint-disable-next-line @typescript-eslint/unbound-method
 const typedArrayBufferGetter = Object.getOwnPropertyDescriptor(
@@ -163,24 +171,21 @@ function hasSharedBackingBuffer(bytes: Uint8Array): boolean {
   }
 }
 
+/**
+ * Loads captured Atlas bytes as immutable, path-normalized UTF-8 text. Atlas
+ * SDK imposes no byte budget on an Atlas: page length is an Atlas-owned prose
+ * rule enforced by the Atlas's Vale configuration, not a loader limit.
+ *
+ * Every file carrying a non-canonical line terminator is located before the
+ * load is refused, so one Lint reports each such file at its first offending
+ * position rather than one anonymous whole-Atlas failure.
+ */
 export function loadAtlasText(
   capturedFiles: readonly CapturedAtlasFile[],
-  budgets: AtlasTextBudgets,
 ): readonly AtlasTextFile[] {
-  return loadAtlasTextWithByteLengths(capturedFiles, budgets).files;
-}
-
-export function loadAtlasTextWithByteLengths(
-  capturedFiles: readonly CapturedAtlasFile[],
-  budgets: AtlasTextBudgets,
-): {
-  readonly files: readonly AtlasTextFile[];
-  readonly byteLengths: Readonly<Record<string, number>>;
-} {
   if (capturedFiles.some((file) => hasSharedBackingBuffer(file.bytes))) {
     throw new AtlasLoadError("SHARED_BYTES_NOT_ALLOWED");
   }
-  assertBudgets(budgets);
 
   const normalized = [...capturedFiles].map((file) => ({
     bytes: file.bytes,
@@ -189,26 +194,16 @@ export function loadAtlasTextWithByteLengths(
   normalized.sort((left, right) => compareCodePoints(left.path, right.path));
 
   let previousPath: string | undefined;
-  let totalBytes = 0;
-  const byteLengths: Record<string, number> = {};
   for (const file of normalized) {
     if (file.path === previousPath) {
       throw new AtlasLoadError("DUPLICATE_PATH");
     }
     previousPath = file.path;
-    const byteLength = file.bytes.byteLength;
-    if (byteLength > budgets.maxFileBytes) {
-      throw new AtlasLoadError("FILE_TOO_LARGE");
-    }
-    totalBytes += byteLength;
-    if (totalBytes > budgets.maxTotalBytes) {
-      throw new AtlasLoadError("TOTAL_TOO_LARGE");
-    }
-    byteLengths[file.path] = byteLength;
   }
 
   const decoder = new TextDecoder("utf-8", { fatal: true });
   const files: AtlasTextFile[] = [];
+  const lineTerminators: NonCanonicalLineTerminator[] = [];
   for (const file of normalized) {
     let content: string;
     try {
@@ -217,13 +212,17 @@ export function loadAtlasTextWithByteLengths(
       rethrowProcessLimit(error);
       throw new AtlasLoadError("INVALID_UTF8");
     }
-    if (containsNonCanonicalLineTerminator(content)) {
-      throw new AtlasLoadError("NON_CANONICAL_LINE_TERMINATOR");
+    const terminator = locateNonCanonicalLineTerminator(content);
+    if (terminator !== undefined) {
+      lineTerminators.push(Object.freeze({ ...terminator, path: file.path }));
     }
     files.push(Object.freeze({ content, path: file.path }));
   }
-  return Object.freeze({
-    files: Object.freeze(files),
-    byteLengths: Object.freeze(byteLengths),
-  });
+  if (lineTerminators.length > 0) {
+    throw new AtlasLoadError(
+      "NON_CANONICAL_LINE_TERMINATOR",
+      Object.freeze(lineTerminators),
+    );
+  }
+  return Object.freeze(files);
 }

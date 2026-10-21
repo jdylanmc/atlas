@@ -7,9 +7,7 @@ import {
 } from "./trusted_git.ts";
 
 export interface AtlasTreeCaptureBudgets {
-  readonly maxFileBytes: number;
   readonly maxFiles: number;
-  readonly maxTotalBytes: number;
 }
 
 export type AtlasTreeTextGitRunner = typeof runTrustedGit;
@@ -29,7 +27,7 @@ export type AtlasTreeCaptureResult =
     }
   | {
       readonly reason: string;
-      readonly state: "missing" | "oversized" | "too-many-files" | "unreadable";
+      readonly state: "missing" | "too-many-files" | "unreadable";
     };
 
 interface TreeEntry {
@@ -49,11 +47,10 @@ function batchInput(entries: readonly TreeEntry[]): string {
   return `${entries.map((entry) => entry.object).join("\n")}\n`;
 }
 
-function batchBufferBudget(
-  entries: readonly TreeEntry[],
-  maxTotalBytes: number,
-): number {
-  return maxTotalBytes + entries.length * 128 + 1;
+// The batch output is exactly each object's header and content, so the buffer
+// is sized from the object sizes Git already reported rather than a byte cap.
+function batchBufferBudget(blobs: readonly CheckedBlob[]): number {
+  return blobs.reduce((total, blob) => total + blob.size + 128, 1);
 }
 
 function parseTreeEntries(output: string): readonly TreeEntry[] {
@@ -101,11 +98,10 @@ function parseBatchCheckLine(
 function checkedBlobs(
   repository: string,
   entries: readonly TreeEntry[],
-  budgets: AtlasTreeCaptureBudgets,
   readBatchText: AtlasTreeBatchTextGitRunner,
 ):
   | { readonly blobs: readonly CheckedBlob[]; readonly state: "checked" }
-  | { readonly reason: string; readonly state: "oversized" | "unreadable" } {
+  | { readonly reason: string; readonly state: "unreadable" } {
   const result = readBatchText(
     repository,
     ["cat-file", "--batch-check"],
@@ -127,7 +123,6 @@ function checkedBlobs(
     });
   }
   const blobs: CheckedBlob[] = [];
-  let totalBytes = 0;
   for (const [index, line] of lines.entries()) {
     const entry = entries[index] as TreeEntry;
     const checked = parseBatchCheckLine(line);
@@ -143,19 +138,6 @@ function checkedBlobs(
         state: "unreadable" as const,
       });
     }
-    if (checked.size > budgets.maxFileBytes) {
-      return Object.freeze({
-        reason: "The Atlas Snapshot exceeded the declared per-file byte budget.",
-        state: "oversized" as const,
-      });
-    }
-    if (totalBytes + checked.size > budgets.maxTotalBytes) {
-      return Object.freeze({
-        reason: "The Atlas Snapshot exceeded the declared total byte budget.",
-        state: "oversized" as const,
-      });
-    }
-    totalBytes += checked.size;
     blobs.push(
       Object.freeze({ object: entry.object, path: entry.path, size: checked.size }),
     );
@@ -180,7 +162,6 @@ function capturedBlobs(
   blobs: readonly CheckedBlob[],
   hostRepositoryPath: string,
   readBatchBytes: AtlasTreeBatchBytesGitRunner,
-  maxTotalBytes: number,
 ):
   | { readonly files: readonly CapturedAtlasFile[]; readonly state: "captured" }
   | { readonly reason: string; readonly state: "unreadable" } {
@@ -188,10 +169,7 @@ function capturedBlobs(
     repository,
     ["cat-file", "--batch"],
     `${blobs.map((blob) => blob.object).join("\n")}\n`,
-    batchBufferBudget(
-      blobs.map((blob) => ({ ...blob, mode: "100644", type: "blob" })),
-      maxTotalBytes,
-    ),
+    batchBufferBudget(blobs),
   );
   if (result.state === "failed") {
     return Object.freeze({
@@ -285,21 +263,15 @@ export function captureAtlasTree(
       state: "too-many-files" as const,
     });
   }
-  const checked = checkedBlobs(repository, entries, budgets, readBatchText);
-  switch (checked.state) {
-    case "oversized":
-      return Object.freeze({ reason: checked.reason, state: "oversized" as const });
-    case "unreadable":
-      return Object.freeze({ reason: checked.reason, state: "unreadable" as const });
-    case "checked":
-      break;
+  const checked = checkedBlobs(repository, entries, readBatchText);
+  if (checked.state === "unreadable") {
+    return Object.freeze({ reason: checked.reason, state: "unreadable" as const });
   }
   const captured = capturedBlobs(
     repository,
     checked.blobs,
     hostRepositoryPath,
     readBatchBytes,
-    budgets.maxTotalBytes,
   );
   if (captured.state === "unreadable") {
     return Object.freeze({ reason: captured.reason, state: "unreadable" as const });

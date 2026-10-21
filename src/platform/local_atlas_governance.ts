@@ -29,6 +29,7 @@ import {
   runTrustedGitWithInput,
   type TrustedGitResult,
 } from "./trusted_git.ts";
+import { createValeProseLinter } from "./vale_prose_linter.ts";
 
 // Atlas SDK does not invoke a model (docs/adr/0001-sdk-is-a-deterministic-library.md).
 // This platform adapter drives the deterministic governance workflow against a
@@ -37,11 +38,6 @@ import {
 // and Lints the proposal. Every effect is local Git and the filesystem — no
 // network, no model, no semantic judgment. Approval and semantic verdicts are
 // carried by the request the operation validates; this adapter supplies none.
-
-const lintBudgets = Object.freeze({
-  maxFileBytes: 1024 * 1024,
-  maxTotalBytes: 16 * 1024 * 1024,
-});
 
 type GitRunner = (repository: string, args: readonly string[]) => TrustedGitResult;
 
@@ -419,7 +415,10 @@ export function runLocalAtlasGovernance(
     currentTargetHead: () => git(root, ["rev-parse", workflowState.targetBranch]),
     existingAtlasFiles: () => capturedAtlasFiles(root),
     lintProposal: () => {
-      const lint = runLintOperation(capturedAtlasFiles(workspace), lintBudgets);
+      const lint = runLintOperation(
+        capturedAtlasFiles(workspace),
+        createValeProseLinter(),
+      );
       const commit = git(workspace, ["rev-parse", "HEAD"]);
       return { lint, receipt: commit };
     },

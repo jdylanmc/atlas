@@ -4,7 +4,7 @@ Atlas SDK is a deterministic TypeScript package for working with an Atlas: a bou
 
 Today the package has these reachable command-line workflows:
 
-- `atlas lint --machine [--atlas-host-directory PATH]` validates a Home Atlas and prints an Operation Result as JSON.
+- `atlas lint --machine [--atlas-host-directory PATH]` validates a Home Atlas — its structure and its own Vale prose rules — and prints an Operation Result as JSON.
 - `atlas initialize --machine [--atlas-host-directory PATH] [--resume-proposal-branch NAME]` creates or resumes an Atlas Initialization proposal in a Git-backed host directory.
 - `atlas explore --machine QUERY [--atlas-host-directory PATH]` reads a Home Atlas and reachable connected Atlases and returns routed Explore results as JSON.
 - `atlas ingest plan|reconcile --machine ...` hands out a Crawl Assignment for an approved Ingest Scope, then reconciles a returned Candidate Graph into one proposal.
@@ -56,7 +56,10 @@ Atlas SDK is intended to be consumed as the public scoped npm package `@jdylanmc
 npm install @jdylanmc/atlas
 ```
 
-Atlas SDK currently supports Node.js 24.x and npm 11.6.2.
+Atlas SDK currently supports Node.js 24.x and npm 11.6.2. Installing it also
+installs the pinned Vale binary for the current platform through an optional
+dependency; do not install with `--omit=optional` or `--no-optional`, or Lint
+cannot complete. See [Prose Lint with Vale](#prose-lint-with-vale).
 
 ## Command-line usage
 
@@ -262,23 +265,48 @@ approval is supplied, the adapter continues with QMD lexical search. Any QMD
 runtime failure remains visible as `ATLAS_QMD_RUNTIME_FALLBACK` and preserves
 built-in lexical Explore.
 
-### Changelog capacity warning
+### Prose Lint with Vale
 
-Lint reports `ATLAS_CHANGELOG_NEAR_CAPACITY` when `.atlas/CHANGELOG.md` reaches
-75% of the smaller of the configured Lint per-file budget and the SDK's default
-snapshot per-file limit. With the default 1 MiB limit, the warning begins at
-786,432 bytes (768 KiB), leaving 256 KiB before the per-file boundary.
-The count uses the original captured UTF-8 bytes, including any byte-order mark,
-not the decoded character count.
+Every Lint runs the Atlas's own [Vale](https://vale.sh) prose rules over its
+pages. Prose Lint is not optional:
 
-This is a warning, not invalidity: an otherwise valid Atlas still passes Lint
-with exit 0. The Finding appears in the ordinary Lint result and handoff.
-It does not change Explore's structural completeness, validation verdict, or
-reachable results; genuine Explore degradation diagnostics remain unchanged.
-Plan human-reviewed capacity maintenance that preserves history; Atlas SDK
-does not rotate, archive, truncate, or enlarge capture limits automatically.
-This warning does not predict remaining operation counts or prevent unrelated
-total-size, file-count, or runtime failures.
+- **Self-contained in `.atlas/`.** Vale reads only `.atlas/.vale.ini` and the
+  styles beneath `.atlas/vale/` (`StylesPath = vale/styles`). Atlas Initialization
+  seeds them from the Atlas SDK default prose style; from then on the Atlas owns
+  them and may change, disable, or extend any rule.
+- **Errors fail Lint.** An error-level Vale alert is an `atlas-owned` error
+  Finding coded `VALE_<STYLE>_<RULE>` (for example `VALE_ATLASSDK_PAGELENGTH`),
+  located at the alert's line and columns, and denies the Atlas validity exactly
+  as a structural error does (exit 1). Warnings and suggestions are reported
+  without denying validity.
+- **Configuration is required.** An Atlas without `.atlas/.vale.ini` fails with
+  `ATLAS_VALE_CONFIG_MISSING`; a configuration Vale rejects fails with
+  `ATLAS_VALE_CONFIG_INVALID` at the file Vale names.
+- **Vale must run.** Atlas SDK bundles one pinned Vale release (3.24.0) through
+  exact-version optional dependencies, `@jdylanmc/atlas-vale-<os>-<cpu>`, for
+  `darwin`, `linux`, and `win32` on `arm64` and `x64`. A missing, unrunnable, or
+  wrong-version binary, or an unsupported platform, leaves Lint not completed
+  with `ATLAS_VALE_UNAVAILABLE` (exit 2) rather than skipping prose rules.
+- **Deterministic.** Vale lints a private copy of exactly the text Lint loaded,
+  with an empty environment and no global configuration, so an Atlas's verdict
+  does not depend on the caller's Vale setup or uncommitted files elsewhere.
+
+The default style has one rule, `AtlasSDK.PageLength`: a page whose prose
+exceeds 1,000 words is an error. It counts words in Vale's `summary` scope, so
+headings, code, table cells, and frontmatter are excluded, and it counts
+Unicode letters and digits, so contractions and hyphenated words count once.
+Atlas SDK imposes no byte budget on Atlas files; page length is this Atlas-owned
+rule instead.
+
+To add the default style to an existing Atlas, write each entry of
+`atlasSdkProseStyleFiles` (exported from `@jdylanmc/atlas`) to its `path`
+beneath the Atlas Host Directory and commit the files.
+
+Line endings are a trusted Lint check, not a Vale rule: Vale treats a lone
+carriage return as a line break, so it cannot see one. Lint reports every file
+containing a lone carriage return, U+2028, or U+2029 as
+`ATLAS_LOAD_NON_CANONICAL_LINE_TERMINATOR` at that file's first offending line
+and column. LF and CRLF line endings are accepted.
 
 ### Ingest planning output
 
@@ -320,6 +348,11 @@ import { prepareAtlasQmd } from "@jdylanmc/atlas/atlas-qmd";
 Internal source paths are not exported. Treat anything absent from the
 `exports` map as private implementation detail.
 
+`runLintOperation(capturedFiles, proseLinter)` requires a `ProseLinter`; pass
+`createValeProseLinter()` to run the bundled Vale, as the CLI does. A custom
+`ProseLinter` replaces Vale only for that caller and is not what `atlas lint`
+runs.
+
 `renderAtlasReadinessReportMarkdown(report)` renders an existing
 `AtlasReadinessReport` without filesystem effects. It preserves the supplied
 report data; rendering does not validate a proposal or authenticate its stamp.
@@ -354,4 +387,4 @@ later caller mutations cannot change the reported identity.
 
 ## Package contents
 
-The npm artifact ships only the compiled runtime, declaration files, `package.json`, and this README. Development fixtures, tests, local workspaces, and source-tree automation are not part of the package artifact.
+The npm artifact ships only the compiled runtime, declaration files, `package.json`, and this README. The Vale binary ships separately in the per-platform `@jdylanmc/atlas-vale-<os>-<cpu>` packages, each carrying the unmodified Vale release binary and its MIT license. Development fixtures, tests, local workspaces, and source-tree automation are not part of the package artifact.

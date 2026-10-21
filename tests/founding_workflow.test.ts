@@ -28,6 +28,7 @@ import {
   virtualAtlasTextFiles,
 } from "../src/index.ts";
 import { runLintOperation } from "../src/operations/lint_operation.ts";
+import { passingProseLinter } from "./prose_lint_fixtures.ts";
 import {
   invalidateDependentCheckpoints,
   type FoundingCheckpoint,
@@ -282,10 +283,7 @@ test("composed founding workflow succeeds while leaving the legacy minimal path 
         linted += 1;
         assert.ok(writtenChangeSet);
         return {
-          lint: runLintOperation(captured(writtenChangeSet), {
-            maxFileBytes: 1_000_000,
-            maxTotalBytes: 5_000_000,
-          }),
+          lint: runLintOperation(captured(writtenChangeSet), passingProseLinter),
           receipt: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         };
       },
@@ -342,10 +340,7 @@ test("host-integration depends on persona only when a persona pointer is actuall
     lintProposal: () => {
       assert.ok(writtenChangeSet);
       return {
-        lint: runLintOperation(captured(writtenChangeSet), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
+        lint: runLintOperation(captured(writtenChangeSet), passingProseLinter),
         receipt: "cccccccccccccccccccccccccccccccccccccccc",
       };
     },
@@ -483,10 +478,7 @@ test("directive weakening is rejected before any filesystem side effect", () => 
       lintProposal: () => {
         effects += 1;
         return {
-          lint: runLintOperation(atlasInitializationFiles(initial), {
-            maxFileBytes: 4096,
-            maxTotalBytes: 65536,
-          }),
+          lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
           receipt: "c",
         };
       },
@@ -536,10 +528,7 @@ test("persona activation before approval is rejected pre-write", () => {
       lintProposal: () => {
         effects += 1;
         return {
-          lint: runLintOperation(atlasInitializationFiles(initial), {
-            maxFileBytes: 4096,
-            maxTotalBytes: 65536,
-          }),
+          lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
           receipt: "c",
         };
       },
@@ -573,10 +562,7 @@ test("persona activation before approval is rejected pre-write", () => {
       currentTargetHead: () => initial.targetHead,
       currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
       lintProposal: () => ({
-        lint: runLintOperation(atlasInitializationFiles(initial), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
+        lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
         receipt: "c",
       }),
       writeChangeSet: () => ({ receipt: "written" }),
@@ -665,10 +651,10 @@ test("governance invalidation affects only true downstream dependents", () => {
       currentTargetHead: () => staleState.targetHead,
       currentBaseSnapshotDigest: () => staleState.baseSnapshotDigest,
       lintProposal: () => ({
-        lint: runLintOperation(atlasInitializationFiles(staleState), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
+        lint: runLintOperation(
+          atlasInitializationFiles(staleState),
+          passingProseLinter,
+        ),
         receipt: "c",
       }),
       writeChangeSet: () => ({ receipt: "written" }),
@@ -703,10 +689,7 @@ test("governance invalidation affects only true downstream dependents", () => {
       currentTargetHead: () => state().targetHead,
       currentBaseSnapshotDigest: () => state().baseSnapshotDigest,
       lintProposal: () => ({
-        lint: runLintOperation(atlasInitializationFiles(state()), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
+        lint: runLintOperation(atlasInitializationFiles(state()), passingProseLinter),
         receipt: "c",
       }),
       writeChangeSet: () => ({ receipt: "written" }),
@@ -803,10 +786,7 @@ test("raw founding input rejects injected persona authority before typing", () =
     currentTargetHead: () => initial.targetHead,
     currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
     lintProposal: () => ({
-      lint: runLintOperation(atlasInitializationFiles(initial), {
-        maxFileBytes: 4096,
-        maxTotalBytes: 65536,
-      }),
+      lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
       receipt: "c",
     }),
     writeChangeSet: () => ({ receipt: "written" }),
@@ -848,10 +828,7 @@ test("raw founding input rejects injected persona authority before typing", () =
       currentTargetHead: () => initial.targetHead,
       currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
       lintProposal: () => ({
-        lint: runLintOperation(atlasInitializationFiles(initial), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
+        lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
         receipt: "c",
       }),
       writeChangeSet: () => ({ receipt: "written" }),
@@ -870,10 +847,7 @@ test("raw founding input rejects injected persona authority before typing", () =
     currentTargetHead: () => initial.targetHead,
     currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
     lintProposal: () => ({
-      lint: runLintOperation(atlasInitializationFiles(initial), {
-        maxFileBytes: 4096,
-        maxTotalBytes: 65536,
-      }),
+      lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
       receipt: "c",
     }),
     writeChangeSet: () => ({ receipt: "written" }),
@@ -894,10 +868,7 @@ test("raw founding input rejects injected persona authority before typing", () =
       currentTargetHead: () => initial.targetHead,
       currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
       lintProposal: () => ({
-        lint: runLintOperation(atlasInitializationFiles(initial), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
+        lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
         receipt: "c",
       }),
       writeChangeSet: () => ({ receipt: "written" }),
@@ -921,10 +892,7 @@ test("raw founding input rejects injected persona authority before typing", () =
       currentTargetHead: () => initial.targetHead,
       currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
       lintProposal: () => ({
-        lint: runLintOperation(atlasInitializationFiles(initial), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
+        lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
         receipt: "c",
       }),
       writeChangeSet: () => ({ receipt: "written" }),
@@ -952,10 +920,7 @@ test("raw founding input rejects injected persona authority before typing", () =
       currentTargetHead: () => initial.targetHead,
       currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
       lintProposal: () => ({
-        lint: runLintOperation(atlasInitializationFiles(initial), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
+        lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
         receipt: "c",
       }),
       writeChangeSet: () => ({ receipt: "written" }),
@@ -993,10 +958,7 @@ test("raw founding input rejects injected persona authority before typing", () =
       currentTargetHead: () => initial.targetHead,
       currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
       lintProposal: () => ({
-        lint: runLintOperation(atlasInitializationFiles(initial), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
+        lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
         receipt: "c",
       }),
       writeChangeSet: () => ({ receipt: "written" }),
@@ -1039,10 +1001,7 @@ test("composed initialization covers declined capabilities and runtime failure h
       currentTargetHead: () => initial.targetHead,
       currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
       lintProposal: () => ({
-        lint: runLintOperation(atlasInitializationFiles(initial), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
+        lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
         receipt: "c",
       }),
       writeChangeSet: () => ({ receipt: "written" }),
@@ -1077,10 +1036,7 @@ test("composed initialization covers declined capabilities and runtime failure h
       currentTargetHead: () => "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
       lintProposal: () => ({
-        lint: runLintOperation(atlasInitializationFiles(initial), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
+        lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
         receipt: "c",
       }),
       writeChangeSet: () => ({ receipt: "written" }),
@@ -1103,10 +1059,7 @@ test("composed initialization covers declined capabilities and runtime failure h
       currentTargetHead: () => initial.targetHead,
       currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
       lintProposal: () => ({
-        lint: runLintOperation(atlasInitializationFiles(initial), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
+        lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
         receipt: "c",
       }),
       writeChangeSet: () => ({ receipt: "written" }),
@@ -1125,10 +1078,7 @@ test("composed initialization covers declined capabilities and runtime failure h
       currentTargetHead: () => initial.targetHead,
       currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
       lintProposal: () => ({
-        lint: runLintOperation(atlasInitializationFiles(initial), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
+        lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
         receipt: "c",
       }),
       writeChangeSet: () => ({ receipt: "written" }),
@@ -1154,10 +1104,7 @@ test("composed initialization covers declined capabilities and runtime failure h
       currentTargetHead: () => initial.targetHead,
       currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
       lintProposal: () => ({
-        lint: runLintOperation(atlasInitializationFiles(initial), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
+        lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
         receipt: "c",
       }),
       writeChangeSet: () => ({ receipt: "written" }),
@@ -1179,10 +1126,7 @@ test("composed initialization covers declined capabilities and runtime failure h
       currentTargetHead: () => initial.targetHead,
       currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
       lintProposal: () => ({
-        lint: runLintOperation(atlasInitializationFiles(initial), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
+        lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
         receipt: "c",
       }),
       writeChangeSet: () => ({ receipt: "written" }),
@@ -1201,10 +1145,7 @@ test("composed initialization covers declined capabilities and runtime failure h
       currentTargetHead: () => "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
       lintProposal: () => ({
-        lint: runLintOperation(atlasInitializationFiles(initial), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
+        lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
         receipt: "c",
       }),
       writeChangeSet: () => ({ receipt: "written" }),

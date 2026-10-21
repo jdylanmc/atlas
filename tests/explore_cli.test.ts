@@ -15,7 +15,6 @@ import {
   exploreCommandBudgets,
   exploreCommandExitCodes,
   missingAtlasExploreOperationResult,
-  oversizedAtlasExploreOperationResult,
   serializeExploreMachineResult,
   unreadableAtlasExploreOperationResult,
   usageExploreOperationResult,
@@ -277,40 +276,6 @@ test("atlas explore --machine refuses too many committed Atlas files before per-
   );
 });
 
-test("atlas explore --machine refuses oversized committed Atlas files before reading them", () => {
-  const repository = resolve(WORKSPACE, "oversized-atlas");
-  initAtlasRepository(repository);
-  writeFileSync(
-    resolve(repository, ".atlas", "oversized.md"),
-    "x".repeat(exploreCommandBudgets.maxFileBytes + 1),
-    "utf8",
-  );
-  git(repository, ["add", ".atlas/oversized.md"]);
-  git(repository, [
-    "-c",
-    "user.name=Fixture",
-    "-c",
-    "user.email=fixture@example.invalid",
-    "commit",
-    "-m",
-    "Add oversized Atlas file",
-  ]);
-
-  const command = runAtlas([
-    "explore",
-    "--machine",
-    "canonical bytes",
-    "--atlas-host-directory",
-    repository,
-  ]);
-
-  assert.equal(command.status, exploreCommandExitCodes.usage);
-  assert.equal(
-    parseExploreResult(command.stdout).handoff.validationState.findings[0]?.code,
-    "ATLAS_EXPLORE_ATLAS_TOO_LARGE",
-  );
-});
-
 test("atlas explore --machine is read-only against the selected Atlas repository", () => {
   const repository = resolve(WORKSPACE, "read-only");
   const head = initAtlasRepository(repository);
@@ -333,7 +298,6 @@ test("atlas explore --machine is read-only against the selected Atlas repository
 test("Explore command helpers preserve machine JSON and exit classes", () => {
   const usage = usageExploreOperationResult("bad arguments");
   const missing = missingAtlasExploreOperationResult("missing Atlas");
-  const oversized = oversizedAtlasExploreOperationResult("large Atlas");
   const unreadable = unreadableAtlasExploreOperationResult("unreadable Atlas");
   const operationNotCompleted = {
     ...usage,
@@ -371,10 +335,6 @@ test("Explore command helpers preserve machine JSON and exit classes", () => {
   assert.equal(exitCodeForExploreOperationResult(usage), exploreCommandExitCodes.usage);
   assert.equal(
     exitCodeForExploreOperationResult(missing),
-    exploreCommandExitCodes.usage,
-  );
-  assert.equal(
-    exitCodeForExploreOperationResult(oversized),
     exploreCommandExitCodes.usage,
   );
   assert.equal(
@@ -478,24 +438,6 @@ test("local Explore capture fails closed on unsupported Git entries and read dri
     },
   });
   assert.equal(badMode.state, "unreadable");
-
-  const twoFiles = `${tree}100644 blob ${"c".repeat(40)}\t.atlas/second.md\0`;
-  const totalTooLarge = captureLocalAtlasExploreSnapshot(
-    repository,
-    { ...exploreCommandBudgets, maxFileBytes: 10, maxTotalBytes: 9 },
-    {
-      readBatchText: () => ({
-        state: "succeeded",
-        stdout: `${"b".repeat(40)} blob 5\n${"c".repeat(40)} blob 5\n`,
-      }),
-      readText: (_repository, args) => {
-        if (args[0] === "rev-parse") return { state: "succeeded", stdout: revision };
-        if (args[0] === "ls-tree") return { state: "succeeded", stdout: twoFiles };
-        return { reason: "unexpected", state: "failed" };
-      },
-    },
-  );
-  assert.equal(totalTooLarge.state, "oversized");
 
   const readFailed = captureLocalAtlasExploreSnapshot(
     repository,

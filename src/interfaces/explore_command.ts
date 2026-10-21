@@ -18,14 +18,12 @@ export const exploreCommandExitCodes = Object.freeze({
 export const exploreCommandBudgets = Object.freeze({
   maxContextCharacters: 4096,
   maxEdges: 2048,
-  maxFileBytes: 1024 * 1024,
   maxFiles: 4096,
   maxObjects: 2048,
   maxQueryCharacters: 1024,
   maxResults: 5,
   maxRouteEdges: 32,
   maxTerms: 128,
-  maxTotalBytes: 16 * 1024 * 1024,
 });
 
 const exploreOperationIdentity = Object.freeze({
@@ -175,21 +173,6 @@ export function oversizedQueryExploreOperationResult(
   );
 }
 
-export function oversizedAtlasExploreOperationResult(
-  message: string,
-): ExploreOperationResult {
-  return notCompletedExploreResult(
-    [exploreFinding("ATLAS_EXPLORE_ATLAS_TOO_LARGE", message)],
-    "Explore command input exceeded its byte budget before it could be read.",
-    "Reduce the committed Atlas Snapshot to the supported byte budget, then retry Explore.",
-    {
-      baseSnapshotReason: "Explore refused an oversized Git-backed Atlas Snapshot.",
-      degraded: false,
-      homeAtlasReason: "Explore refused an oversized Atlas Host Directory.",
-    },
-  );
-}
-
 export function exitCodeForExploreOperationResult(
   result: ExploreOperationResult,
 ): number {
@@ -202,7 +185,6 @@ export function exitCodeForExploreOperationResult(
   if (
     codes.has("ATLAS_EXPLORE_USAGE") ||
     codes.has("ATLAS_EXPLORE_ATLAS_NOT_FOUND") ||
-    codes.has("ATLAS_EXPLORE_ATLAS_TOO_LARGE") ||
     codes.has("ATLAS_EXPLORE_ATLAS_TOO_MANY_FILES") ||
     codes.has("ATLAS_EXPLORE_QUERY_TOO_LARGE")
   ) {

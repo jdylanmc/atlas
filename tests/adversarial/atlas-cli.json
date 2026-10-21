@@ -44,38 +44,6 @@
       "expectedCode": "ATLAS_INPUT_CONTRACT_USAGE"
     },
     {
-      "name": "warn at Changelog capacity without falsely degrading Explore or rewriting history",
-      "gate": "atlas-cli",
-      "kind": "command",
-      "arguments": [
-        "lint",
-        "--machine",
-        "--atlas-host-directory",
-        "{atlasHostDirectory}"
-      ],
-      "fixtureAtlasHostRepository": true,
-      "generatedChangelogByteLength": 786432,
-      "expectedExploreResultId": "concept:canonical-serialization",
-      "expectedExit": 0,
-      "expectedCode": "ATLAS_CHANGELOG_NEAR_CAPACITY"
-    },
-    {
-      "name": "accept Changelog history one byte below the capacity warning",
-      "gate": "atlas-cli",
-      "kind": "command",
-      "arguments": [
-        "lint",
-        "--machine",
-        "--atlas-host-directory",
-        "{atlasHostDirectory}"
-      ],
-      "fixtureAtlasHostRepository": true,
-      "generatedChangelogByteLength": 786431,
-      "expectedExploreResultId": "concept:canonical-serialization",
-      "expectedExit": 0,
-      "expectedCode": null
-    },
-    {
       "name": "reject a missing Atlas command with discoverable typed usage",
       "gate": "atlas-cli",
       "kind": "command",
@@ -311,29 +279,6 @@
         "writeFileSync",
         "runTrustedGitForWrite"
       ]
-    },
-    {
-      "name": "reject total byte budget before reading the offending file",
-      "gate": "atlas-cli",
-      "kind": "capture-budget",
-      "files": [
-        {
-          "path": ".atlas/a.md",
-          "text": "aaaaaaaaaa"
-        },
-        {
-          "path": ".atlas/b.md",
-          "text": "bbbbbbbbbb"
-        }
-      ],
-      "budgets": {
-        "maxFileBytes": 10,
-        "maxFiles": 10,
-        "maxTotalBytes": 15,
-        "maxTraversalDepth": 4
-      },
-      "maxBytesRead": 10,
-      "expectedCode": "ATLAS_LOAD_TOTAL_TOO_LARGE"
     },
     {
       "name": "reject an Ingest command seam that reaches for the network or a model",

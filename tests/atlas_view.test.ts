@@ -8,11 +8,6 @@ import { assertGrowthRatio, assertWallClockUnder } from "./growth.ts";
 
 const encoder = new TextEncoder();
 
-const budgets = Object.freeze({
-  maxFileBytes: 8192,
-  maxTotalBytes: 65536,
-});
-
 function captured(path: string, content: string): CapturedAtlasFile {
   return { bytes: encoder.encode(content), path };
 }
@@ -71,7 +66,7 @@ test("Atlas View carries normalized objects, locations, digests, ownership, vali
     ),
     edge("root-target", "anchor:root", "concept:target"),
   ];
-  const validated = loadAndValidateAtlasInput(files, budgets);
+  const validated = loadAndValidateAtlasInput(files);
   const identity = Object.freeze({
     atlas: Object.freeze({ reference: "local-home-atlas", state: "known" as const }),
     role: "home" as const,
@@ -164,7 +159,7 @@ test("Atlas View does not invent graph indexes for Edge pages without endpoints"
       "# incomplete",
     ),
   ];
-  const validated = loadAndValidateAtlasInput(files, budgets);
+  const validated = loadAndValidateAtlasInput(files);
   const atlasView = buildAtlasView({
     identity: {
       atlas: { reference: "local-home-atlas", state: "known" },
@@ -185,7 +180,7 @@ test("Atlas View carries invalid validation state decided before it is built", (
     page(".atlas/index.md", "anchor:root", "anchor", "Root", "# Root"),
     page(".atlas/concepts/wrong.md", "concept:wrong", "anchor", "Wrong", "# Wrong"),
   ];
-  const validated = loadAndValidateAtlasInput(files, budgets);
+  const validated = loadAndValidateAtlasInput(files);
   const atlasView = buildAtlasView({
     identity: {
       atlas: { reference: "local-home-atlas", state: "known" },
@@ -204,14 +199,12 @@ test("Atlas View carries invalid validation state decided before it is built", (
 });
 
 test("Atlas View carries tracked snapshot identity beside the Home Atlas", () => {
-  const home = loadAndValidateAtlasInput(
-    [page(".atlas/index.md", "anchor:root", "anchor", "Root", "# Root")],
-    budgets,
-  );
-  const tracked = loadAndValidateAtlasInput(
-    [page(".atlas/index.md", "anchor:tracked", "anchor", "Tracked", "# Tracked")],
-    budgets,
-  );
+  const home = loadAndValidateAtlasInput([
+    page(".atlas/index.md", "anchor:root", "anchor", "Root", "# Root"),
+  ]);
+  const tracked = loadAndValidateAtlasInput([
+    page(".atlas/index.md", "anchor:tracked", "anchor", "Tracked", "# Tracked"),
+  ]);
   const atlasView = buildAtlasView(
     {
       identity: {
@@ -316,10 +309,7 @@ test("Atlas View construction stays within the declared growth budget", () => {
   const small = generated(40);
   const large = generated(80);
   const run = (files: readonly CapturedAtlasFile[]): void => {
-    const validated = loadAndValidateAtlasInput(files, {
-      maxFileBytes: 8192,
-      maxTotalBytes: 1024 * 1024,
-    });
+    const validated = loadAndValidateAtlasInput(files);
     buildAtlasView({
       identity: {
         atlas: { reference: "local-home-atlas", state: "known" },
