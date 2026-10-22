@@ -298,10 +298,6 @@ Unicode letters and digits, so contractions and hyphenated words count once.
 Atlas SDK imposes no byte budget on Atlas files; page length is this Atlas-owned
 rule instead.
 
-To add the default style to an existing Atlas, write each entry of
-`atlasSdkProseStyleFiles` (exported from `@jdylanmc/atlas`) to its `path`
-beneath the Atlas Host Directory and commit the files.
-
 Line endings are a trusted Lint check, not a Vale rule: Vale treats a lone
 carriage return as a line break, so it cannot see one. Lint reports every file
 containing a lone carriage return, U+2028, or U+2029 as

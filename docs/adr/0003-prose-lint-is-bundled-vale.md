@@ -42,9 +42,8 @@ leaves Lint incomplete.
 
 **Every Atlas carries `.atlas/.vale.ini` and `.atlas/vale/`.** Initialization seeds
 the Atlas SDK default prose style; the Atlas owns it from then on and Atlas SDK does
-not rewrite it. An Atlas without its configuration fails Lint, so existing Atlases
-must add the default style before their next proposal. `vale` is a reserved `.atlas/`
-directory name.
+not rewrite it. An Atlas without its configuration fails Lint. `vale` is a reserved
+`.atlas/` directory name.
 
 **Vale findings are Atlas-owned.** They carry `atlas-owned`, untrusted attribution,
 so they may add findings but never suppress or downgrade a trusted one. Their
