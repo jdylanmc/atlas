@@ -224,7 +224,7 @@ test("Operation Workflow reports captured-file runtime failure as degraded non-c
 
 test("Operation Workflow reports unavailable Vale prose Lint as degraded non-completion", () => {
   const linter = recordingProseLinter({
-    reason: "the bundled Vale binary is missing",
+    reason: "the pinned Vale binary is missing",
     state: "unavailable",
   });
   const result = runLintOperation(completeAtlas("valid"), linter);
@@ -244,7 +244,7 @@ test("Operation Workflow reports unavailable Vale prose Lint as degraded non-com
   );
   assert.match(
     result.payload.findings[0]?.message ?? "",
-    /the bundled Vale binary is missing/u,
+    /the pinned Vale binary is missing/u,
   );
   assert.deepEqual(result.handoff.degradationState, {
     reason:
@@ -257,7 +257,7 @@ test("Operation Workflow reports unavailable Vale prose Lint as degraded non-com
   });
   assert.equal(
     result.handoff.recommendedNextAction,
-    "Reinstall Atlas SDK so its bundled Vale binary for this platform is present, then run Lint again.",
+    "Connect to the network so Atlas SDK can download and verify its pinned Vale release, then run Lint again.",
   );
 });
 

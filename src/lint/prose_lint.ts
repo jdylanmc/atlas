@@ -31,7 +31,7 @@ export type ProseLintOutcome =
 
 /**
  * The seam through which Lint runs an Atlas's prose rules. Atlas SDK's own
- * implementation runs the bundled, version-pinned Vale binary; Lint itself only
+ * implementation runs the version-pinned Vale binary it downloads and caches; Lint itself only
  * decides what to ask and how the answer affects the Atlas's validity.
  */
 export interface ProseLinter {

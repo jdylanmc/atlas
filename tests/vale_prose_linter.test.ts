@@ -1,15 +1,28 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { gzipSync } from "node:zlib";
 import type { AtlasTextFile } from "../src/atlas/load_atlas_text.ts";
 import { atlasSdkProseStyleFiles } from "../src/lint/atlas_sdk_prose_style.ts";
 import type { ProseLintRequest } from "../src/lint/prose_lint.ts";
 import {
   createValeProseLinter,
+  downloadValeAsset,
   resolveValeBinary,
+  valeCacheDirectory,
   valeEnvironment,
+  type ValeProseLinterOptions,
   type ValeRunner,
 } from "../src/platform/vale_prose_linter.ts";
 import {
@@ -18,6 +31,7 @@ import {
   valeReleaseUrl,
   valeVersion,
 } from "../src/platform/vale_release.ts";
+import { fakeRelease, tar } from "./vale_archive_fixtures.ts";
 
 function at<T>(items: readonly T[] | undefined, index: number): T {
   const item = items?.[index];
@@ -38,23 +52,38 @@ function request(files: readonly AtlasTextFile[]): ProseLintRequest {
   });
 }
 
-const installed = {
-  platform: "linux",
-  arch: "x64",
-  resolveModule: (specifier: string) => {
-    assert.equal(specifier, "@jdylanmc/atlas-vale-linux-x64/package.json");
-    return "/pkg/package.json";
-  },
-};
+function emptyCache(): string {
+  return join(mkdtempSync(join(tmpdir(), "atlas-vale-cache-")), "vale", "linux-x64");
+}
 
-test("Atlas SDK pins one Vale release for six platforms", () => {
+/** A machine cache already holding a binary; `run` decides what it reports. */
+function installed(): ValeProseLinterOptions {
+  const cacheDirectory = emptyCache();
+  mkdirSync(cacheDirectory, { recursive: true });
+  writeFileSync(join(cacheDirectory, "vale"), "cached");
+  return {
+    arch: "x64",
+    cacheDirectory,
+    download: () => {
+      throw new Error("a cached binary needs no download");
+    },
+    platform: "linux",
+  };
+}
+
+const releaseArchive = gzipSync(
+  tar([
+    { content: "fresh binary", name: "vale_3/vale" },
+    { content: "MIT", name: "vale_3/LICENSE" },
+  ]),
+);
+const testRelease = fakeRelease("vale_test_Linux_64-bit.tar.gz", releaseArchive);
+const pinned: ValeRunner = () => ({ status: 0, stdout: versionOutput });
+
+test("Atlas SDK pins one official Vale release for six platforms", () => {
   assert.equal(valePlatformReleases.length, 6);
   for (const release of valePlatformReleases) {
     assert.match(release.sha256, /^[0-9a-f]{64}$/u);
-    assert.equal(
-      release.packageName,
-      `@jdylanmc/atlas-vale-${release.os}-${release.cpu}`,
-    );
     assert.equal(release.binary, release.os === "win32" ? "vale.exe" : "vale");
     assert.equal(valePlatformRelease(release.os, release.cpu), release);
   }
@@ -80,82 +109,223 @@ test("Vale runs with an empty environment apart from the Windows loader's System
   assert.deepEqual(valeEnvironment("win32", {}), {});
 });
 
+test("Vale is cached once per machine beside the other Atlas SDK tool runtimes", () => {
+  assert.equal(
+    valeCacheDirectory("linux", "x64", { XDG_CACHE_HOME: "/xdg" }),
+    join("/xdg", "atlas", "tool-runtimes", "vale", valeVersion, "linux-x64"),
+  );
+  assert.match(
+    valeCacheDirectory("darwin", "arm64", {}),
+    /[\\/]\.cache[\\/]atlas[\\/]tool-runtimes[\\/]vale[\\/]3\.24\.0[\\/]darwin-arm64$/u,
+  );
+});
+
 test("an unsupported platform cannot resolve Vale", () => {
   const resolution = resolveValeBinary({ arch: "riscv64", platform: "linux" });
   assert.equal(resolution.state, "unavailable");
   assert.match(
     (resolution as { reason: string }).reason,
-    /^Atlas SDK bundles Vale 3\.24\.0 for darwin-arm64, .*win32-x64; linux-riscv64 is not supported\.$/u,
+    /^Atlas SDK runs Vale 3\.24\.0 on darwin-arm64, .*win32-x64; linux-riscv64 is not supported\.$/u,
   );
 });
 
-test("a missing platform package cannot resolve Vale", () => {
+test("a cached pinned Vale binary resolves without downloading", () => {
+  const options = installed();
+  const calls: string[][] = [];
   const resolution = resolveValeBinary({
-    arch: "x64",
-    platform: "linux",
-    resolveModule: () => {
-      throw new Error("MODULE_NOT_FOUND");
+    ...options,
+    run: (binary, args, cwd) => {
+      calls.push([binary, ...args, cwd]);
+      return { status: 0, stdout: versionOutput };
     },
   });
-  assert.deepEqual(resolution, {
-    reason:
-      "The bundled Vale package @jdylanmc/atlas-vale-linux-x64@3.24.0 is not installed.",
-    state: "unavailable",
-  });
+  const binary = join(options.cacheDirectory as string, "vale");
+  assert.deepEqual(resolution, { path: binary, state: "resolved" });
+  assert.deepEqual(calls, [[binary, "--version", options.cacheDirectory]]);
 });
 
-test("a Vale binary that cannot run or reports another version is refused", () => {
+test("the first use downloads, verifies, and atomically installs the pinned release", () => {
+  const cacheDirectory = emptyCache();
+  const urls: string[] = [];
+  const resolution = resolveValeBinary({
+    cacheDirectory,
+    download: (url) => {
+      urls.push(url);
+      return releaseArchive;
+    },
+    release: testRelease,
+    run: pinned,
+  });
+  const binary = join(cacheDirectory, "vale");
+  assert.deepEqual(resolution, { path: binary, state: "resolved" });
+  assert.deepEqual(urls, [valeReleaseUrl(testRelease)]);
+  assert.equal(readFileSync(binary, "utf8"), "fresh binary");
+  assert.deepEqual(readdirSync(cacheDirectory), ["vale"]);
+  if (process.platform !== "win32") {
+    assert.equal(statSync(binary).mode & 0o111, 0o111);
+  }
+});
+
+test("a cached binary reporting another version is replaced", () => {
+  const options = installed();
+  let checks = 0;
+  const resolution = resolveValeBinary({
+    ...options,
+    download: () => releaseArchive,
+    release: testRelease,
+    run: () => {
+      checks += 1;
+      return checks === 1
+        ? { status: 0, stdout: "vale version 3.0.0\n" }
+        : pinned("", [], "");
+    },
+  });
+  assert.equal(resolution.state, "resolved");
+  assert.equal(
+    readFileSync(join(options.cacheDirectory as string, "vale"), "utf8"),
+    "fresh binary",
+  );
+});
+
+test("a failed download, digest, or install leaves Vale unavailable", () => {
+  const offline = resolveValeBinary({
+    cacheDirectory: emptyCache(),
+    download: () => {
+      throw new Error("ENOTFOUND");
+    },
+    release: testRelease,
+    run: pinned,
+  });
+  assert.deepEqual(offline, {
+    reason: `Vale ${valeVersion} could not be downloaded from ${valeReleaseUrl(testRelease)}; connect to the network and run Lint again.`,
+    state: "unavailable",
+  });
+
+  const tampered = resolveValeBinary({
+    cacheDirectory: emptyCache(),
+    download: () => releaseArchive,
+    release: { ...testRelease, sha256: "0".repeat(64) },
+    run: pinned,
+  });
+  assert.equal(tampered.state, "unavailable");
+  assert.match(
+    (tampered as { reason: string }).reason,
+    /^The downloaded Vale 3\.24\.0 release failed verification: .* has SHA-256 [0-9a-f]{64}; Atlas SDK pins 0{64}\.$/u,
+  );
+
+  const blocked = mkdtempSync(join(tmpdir(), "atlas-vale-cache-"));
+  writeFileSync(join(blocked, "file"), "not a directory");
+  const unwritable = resolveValeBinary({
+    cacheDirectory: join(blocked, "file", "vale"),
+    download: () => releaseArchive,
+    release: testRelease,
+    run: pinned,
+  });
+  assert.deepEqual(unwritable, {
+    reason: `Vale ${valeVersion} could not be installed in ${join(blocked, "file", "vale")}.`,
+    state: "unavailable",
+  });
+  assert.deepEqual(readdirSync(blocked), ["file"]);
+});
+
+test("an installed binary that cannot run or reports another version is refused", () => {
   const runs: readonly ReturnType<ValeRunner>[] = [
     { error: new Error("EACCES"), status: null, stdout: "" },
     { status: 1, stdout: versionOutput },
     { status: 0, stdout: "vale version 3.0.0\n" },
   ];
   const reasons = runs.map((result) => {
-    const resolution = resolveValeBinary({ ...installed, run: () => result });
+    const resolution = resolveValeBinary({
+      cacheDirectory: emptyCache(),
+      download: () => releaseArchive,
+      release: testRelease,
+      run: () => result,
+    });
     assert.equal(resolution.state, "unavailable");
     return (resolution as { reason: string }).reason;
   });
   assert.deepEqual(reasons, [
-    "The bundled Vale binary in @jdylanmc/atlas-vale-linux-x64 could not run.",
-    "The bundled Vale binary in @jdylanmc/atlas-vale-linux-x64 could not run.",
-    "The bundled Vale binary in @jdylanmc/atlas-vale-linux-x64 is not Vale 3.24.0.",
+    `The installed Vale ${valeVersion} binary could not run.`,
+    `The installed Vale ${valeVersion} binary could not run.`,
+    `The installed Vale binary is not Vale ${valeVersion}.`,
   ]);
 });
 
-test("a Vale binary missing from its installed package cannot run", () => {
+test("the default runner reports a binary that cannot start", (t) => {
+  if (process.platform === "win32") {
+    t.skip("POSIX executable semantics");
+    return;
+  }
   const resolution = resolveValeBinary({
-    arch: process.arch,
-    platform: process.platform,
-    resolveModule: () => join(tmpdir(), "atlas-vale-absent-package", "package.json"),
-  });
-  assert.equal(resolution.state, "unavailable");
-  assert.match((resolution as { reason: string }).reason, /could not run\.$/u);
-});
-
-test("the pinned Vale binary resolves beside its platform package manifest", () => {
-  const calls: string[][] = [];
-  const resolution = resolveValeBinary({
-    ...installed,
-    run: (binary, args, cwd) => {
-      calls.push([binary, ...args, cwd]);
-      return { status: 0, stdout: versionOutput };
-    },
+    cacheDirectory: emptyCache(),
+    download: () => releaseArchive,
+    release: testRelease,
   });
   assert.deepEqual(resolution, {
-    path: join("/pkg", "bin", "vale"),
-    state: "resolved",
+    reason: `The installed Vale ${valeVersion} binary could not run.`,
+    state: "unavailable",
   });
-  assert.deepEqual(calls, [[join("/pkg", "bin", "vale"), "--version", "/pkg"]]);
+});
+
+test("resolving Vale re-raises process limits instead of reporting them", () => {
+  assert.throws(
+    () =>
+      resolveValeBinary({
+        cacheDirectory: emptyCache(),
+        download: () => {
+          throw new RangeError("stack");
+        },
+        release: testRelease,
+        run: pinned,
+      }),
+    RangeError,
+  );
+});
+
+test("the default downloader fetches over HTTP and fails on HTTP errors", async () => {
+  const server = spawn(
+    process.execPath,
+    [
+      "--input-type=module",
+      "--eval",
+      `import { createServer } from "node:http";
+const server = createServer((request, response) => {
+  if (request.url === "/asset") response.end("asset bytes");
+  else { response.statusCode = 404; response.end(); }
+});
+server.listen(0, "127.0.0.1", () => console.log(server.address().port));`,
+    ],
+    { stdio: ["ignore", "pipe", "inherit"] },
+  );
+  try {
+    const port = await new Promise<string>((resolvePort) => {
+      server.stdout.once("data", (data: Buffer) => {
+        resolvePort(data.toString("utf8").trim());
+      });
+    });
+    assert.equal(
+      new TextDecoder().decode(downloadValeAsset(`http://127.0.0.1:${port}/asset`)),
+      "asset bytes",
+    );
+    assert.throws(
+      () => downloadValeAsset(`http://127.0.0.1:${port}/missing`),
+      /^Error: Downloading http:\/\/127\.0\.0\.1:\d+\/missing failed\.$/u,
+    );
+  } finally {
+    server.kill();
+  }
 });
 
 test("the prose linter reports an unavailable Vale and resolves it once", () => {
-  let resolves = 0;
+  let downloads = 0;
   const linter = createValeProseLinter({
-    ...installed,
-    resolveModule: () => {
-      resolves += 1;
-      throw new Error("missing");
+    cacheDirectory: emptyCache(),
+    download: () => {
+      downloads += 1;
+      throw new Error("offline");
     },
+    release: testRelease,
+    run: pinned,
   });
   for (let index = 0; index < 2; index += 1) {
     assert.equal(
@@ -163,7 +333,7 @@ test("the prose linter reports an unavailable Vale and resolves it once", () => 
       "unavailable",
     );
   }
-  assert.equal(resolves, 1);
+  assert.equal(downloads, 1);
 });
 
 test("the prose linter runs Vale over a private copy of exactly the loaded text", () => {
@@ -175,10 +345,10 @@ test("the prose linter runs Vale over a private copy of exactly the loaded text"
   }[] = [];
   const pages = [page(".atlas/index.md", "Root."), page(".atlas/concepts/a.md", "A.")];
   const linter = createValeProseLinter({
-    ...installed,
+    ...installed(),
     run: (binary, args, cwd) => {
       if (args[0] === "--version") return { status: 0, stdout: versionOutput };
-      assert.equal(binary, join("/pkg", "bin", "vale"));
+      assert.ok(binary.endsWith(join("linux-x64", "vale")));
       const files: Record<string, string> = {};
       for (const file of request(pages).files) {
         files[file.path] = readFileSync(join(cwd, ...file.path.split("/")), "utf8");
@@ -223,7 +393,7 @@ test("the prose linter runs Vale over a private copy of exactly the loaded text"
 test("the prose linter skips Vale when the Atlas has no pages", () => {
   const runs: string[] = [];
   const linter = createValeProseLinter({
-    ...installed,
+    ...installed(),
     run: (_binary, args) => {
       runs.push(args[0] as string);
       return { status: 0, stdout: versionOutput };
@@ -239,7 +409,7 @@ test("the prose linter skips Vale when the Atlas has no pages", () => {
 test("the prose linter reports workspace and process failures as unavailable", () => {
   const working: ValeRunner = () => ({ status: 0, stdout: versionOutput });
   const noWorkspace = createValeProseLinter({
-    ...installed,
+    ...installed(),
     run: working,
     temporaryRoot: () => {
       throw new Error("ENOSPC");
@@ -253,7 +423,7 @@ test("the prose linter reports workspace and process failures as unavailable", (
   const blocked = mkdtempSync(join(tmpdir(), "atlas-vale-test-"));
   writeFileSync(join(blocked, ".atlas"), "a file where a directory must go");
   const unwritable = createValeProseLinter({
-    ...installed,
+    ...installed(),
     run: working,
     temporaryRoot: () => blocked,
   });
@@ -264,14 +434,14 @@ test("the prose linter reports workspace and process failures as unavailable", (
   assert.equal(existsSync(blocked), false);
 
   const crashing = createValeProseLinter({
-    ...installed,
+    ...installed(),
     run: (_binary, args) =>
       args[0] === "--version"
         ? { status: 0, stdout: versionOutput }
         : { error: new Error("killed"), status: null, stdout: "" },
   });
   assert.deepEqual(crashing.lint(request([page(".atlas/index.md", "Hi.")])), {
-    reason: "The bundled Vale binary could not run.",
+    reason: "The pinned Vale binary could not run.",
     state: "unavailable",
   });
 });
@@ -281,7 +451,7 @@ test("the prose linter re-raises process limits instead of reporting them", () =
   assert.throws(
     () =>
       createValeProseLinter({
-        ...installed,
+        ...installed(),
         run: working,
         temporaryRoot: () => {
           throw new RangeError("stack");
@@ -292,7 +462,7 @@ test("the prose linter re-raises process limits instead of reporting them", () =
   assert.throws(
     () =>
       createValeProseLinter({
-        ...installed,
+        ...installed(),
         run: (_binary, args) => {
           if (args[0] === "--version") return working("", [], "");
           throw new RangeError("stack");
@@ -302,7 +472,7 @@ test("the prose linter re-raises process limits instead of reporting them", () =
   );
 });
 
-test("the bundled Vale binary enforces the default page-length rule", () => {
+test("the pinned Vale binary enforces the default page-length rule", () => {
   const linter = createValeProseLinter();
   const words = Array.from({ length: 1001 }, (_, index) => `word${String(index)}`).join(
     " ",
@@ -321,7 +491,7 @@ test("the bundled Vale binary enforces the default page-length rule", () => {
   assert.match(at(outcome.findings, 0).message, /^Page prose runs to 1001 words\./u);
 });
 
-test("the bundled Vale binary reports an Atlas configuration error", () => {
+test("the pinned Vale binary reports an Atlas configuration error", () => {
   const outcome = createValeProseLinter().lint(
     Object.freeze({
       files: Object.freeze([

@@ -9,7 +9,7 @@ export interface AtlasSdkProseStyleFile {
 /** The maximum prose words one Atlas page may carry under the default style. */
 export const atlasSdkPageWordLimit = 1000;
 
-const valeConfig = `# Vale prose Lint for this Atlas. Atlas SDK runs its bundled Vale with this
+const valeConfig = `# Vale prose Lint for this Atlas. Atlas SDK runs its pinned Vale with this
 # file on every Lint; an error-level alert fails Lint. This Atlas owns this
 # configuration and may change, disable, or extend any rule.
 StylesPath = vale/styles

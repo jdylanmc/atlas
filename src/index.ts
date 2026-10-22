@@ -156,6 +156,7 @@ export type { AtlasSdkProseStyleFile } from "./lint/atlas_sdk_prose_style.ts";
 export {
   createValeProseLinter,
   resolveValeBinary,
+  valeCacheDirectory,
 } from "./platform/vale_prose_linter.ts";
 export type {
   ValeBinaryResolution,

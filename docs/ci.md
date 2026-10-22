@@ -76,10 +76,10 @@ carry into the package. Use `npm run package:publish` for publishing for the
 same reason; bare `npm publish` is not the supported release path because the
 repository `.npmrc` suppresses lifecycle scripts by default.
 
-`npm run ci` first runs `npm run vale:install`, which downloads the pinned Vale
-release for the current platform, verifies its SHA-256 against
-`src/platform/vale_release.ts`, and installs it into `node_modules` as the same
-`@jdylanmc/atlas-vale-<os>-<cpu>` package an installed Atlas SDK resolves. It then
+`npm run ci` first runs `npm run vale:install`, which prepares the machine-scoped
+Vale cache exactly as Atlas Initialization does: it downloads the pinned official
+Vale release, verifies its SHA-256 against `src/platform/vale_release.ts`, and
+caches the binary, doing nothing when the pinned binary is already cached. It then
 performs deterministic Prettier checks, type-aware ESLint flat
 configuration, strict TypeScript checking with `erasableSyntaxOnly`, fail-closed
 Node.js test-runner coverage, a committed SDK Atlas Lint gate, glossary and
@@ -90,13 +90,6 @@ with no error Findings, including the repository Atlas's own Vale prose rules.
 This confirms only the deterministic Lint rules that exist today; the Atlas
 Manifest is still carried as an opaque record, and rules that would validate its
 declared schema against the rest of the Atlas remain deferred.
-
-Publishing a release also publishes the six platform packages:
-`npm run vale:pack` downloads and verifies every pinned Vale asset and writes one
-`@jdylanmc/atlas-vale-<os>-<cpu>@<vale version>` tarball per platform into
-`dist/vale-packages/`. Publish those before `@jdylanmc/atlas`, whose exact-version
-`optionalDependencies` resolve them; refresh `package-lock.json` after they are
-published.
 
 Structural Lint compares `created-at` and `updated-at` through the shared
 `dateTimeMilliseconds` contract. A schema-valid but unrepresentable instant

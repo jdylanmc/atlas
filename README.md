@@ -56,10 +56,9 @@ Atlas SDK is intended to be consumed as the public scoped npm package `@jdylanmc
 npm install @jdylanmc/atlas
 ```
 
-Atlas SDK currently supports Node.js 24.x and npm 11.6.2. Installing it also
-installs the pinned Vale binary for the current platform through an optional
-dependency; do not install with `--omit=optional` or `--no-optional`, or Lint
-cannot complete. See [Prose Lint with Vale](#prose-lint-with-vale).
+Atlas SDK currently supports Node.js 24.x and npm 11.6.2. Atlas Initialization,
+or the first Lint on a machine, downloads the pinned Vale release; see
+[Prose Lint with Vale](#prose-lint-with-vale).
 
 ## Command-line usage
 
@@ -282,11 +281,16 @@ pages. Prose Lint is not optional:
 - **Configuration is required.** An Atlas without `.atlas/.vale.ini` fails with
   `ATLAS_VALE_CONFIG_MISSING`; a configuration Vale rejects fails with
   `ATLAS_VALE_CONFIG_INVALID` at the file Vale names.
-- **Vale must run.** Atlas SDK bundles one pinned Vale release (3.24.0) through
-  exact-version optional dependencies, `@jdylanmc/atlas-vale-<os>-<cpu>`, for
-  `darwin`, `linux`, and `win32` on `arm64` and `x64`. A missing, unrunnable, or
-  wrong-version binary, or an unsupported platform, leaves Lint not completed
-  with `ATLAS_VALE_UNAVAILABLE` (exit 2) rather than skipping prose rules.
+- **Vale must run.** Atlas SDK runs one pinned Vale release (3.24.0) for
+  `darwin`, `linux`, and `win32` on `arm64` and `x64`. It does not redistribute
+  Vale: Atlas Initialization (or the first Lint on a machine) downloads the
+  official release asset from GitHub, verifies its pinned SHA-256, and caches
+  the binary in `${XDG_CACHE_HOME:-~/.cache}/atlas/tool-runtimes/vale/3.24.0/<os>-<cpu>/`
+  for every later Lint. Initialization stops with
+  `ATLAS_INITIALIZATION_VALE_UNAVAILABLE` before writing anything when Vale
+  cannot be prepared. A failed download, digest mismatch, unrunnable or
+  wrong-version binary, or unsupported platform leaves Lint not completed with
+  `ATLAS_VALE_UNAVAILABLE` (exit 2) rather than skipping prose rules.
 - **Deterministic.** Vale lints a private copy of exactly the text Lint loaded,
   with an empty environment and no global configuration, so an Atlas's verdict
   does not depend on the caller's Vale setup or uncommitted files elsewhere.
@@ -345,7 +349,7 @@ Internal source paths are not exported. Treat anything absent from the
 `exports` map as private implementation detail.
 
 `runLintOperation(capturedFiles, proseLinter)` requires a `ProseLinter`; pass
-`createValeProseLinter()` to run the bundled Vale, as the CLI does. A custom
+`createValeProseLinter()` to run the pinned Vale, as the CLI does. A custom
 `ProseLinter` replaces Vale only for that caller and is not what `atlas lint`
 runs.
 
@@ -383,4 +387,4 @@ later caller mutations cannot change the reported identity.
 
 ## Package contents
 
-The npm artifact ships only the compiled runtime, declaration files, `package.json`, and this README. The Vale binary ships separately in the per-platform `@jdylanmc/atlas-vale-<os>-<cpu>` packages, each carrying the unmodified Vale release binary and its MIT license. Development fixtures, tests, local workspaces, and source-tree automation are not part of the package artifact.
+The npm artifact ships only the compiled runtime, declaration files, `package.json`, and this README. Vale is not included; Atlas SDK downloads and verifies the official release on first use. Development fixtures, tests, local workspaces, and source-tree automation are not part of the package artifact.

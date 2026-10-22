@@ -804,6 +804,30 @@ test("atlas initialize --machine reports ordinary bad inputs as machine JSON", (
   );
 });
 
+test("Local Atlas Initialization prepares Vale before writing a proposal", () => {
+  const repository = resolve(WORKSPACE, "offline-vale");
+  initRepository(repository);
+  const branchesBefore = git(repository, ["branch", "--list"]);
+
+  const result = runLocalAtlasInitialization(repository, undefined, {
+    arch: "x64",
+    cacheDirectory: resolve(WORKSPACE, "offline-vale-cache"),
+    download: () => {
+      throw new Error("offline");
+    },
+    platform: "linux",
+  });
+
+  assert.equal(result.completion, "not-completed");
+  const [finding] = result.handoff.validationState.findings;
+  assert.equal(finding?.code, "ATLAS_INITIALIZATION_VALE_UNAVAILABLE");
+  assert.match(
+    finding.message,
+    /^Atlas Initialization could not prepare Vale, which every Atlas Lint runs: Vale 3\.24\.0 could not be downloaded from https:\/\/github\.com\/vale-cli\/vale\/releases\/download\/v3\.24\.0\/vale_3\.24\.0_Linux_64-bit\.tar\.gz; connect to the network and run Lint again\.$/u,
+  );
+  assert.equal(git(repository, ["branch", "--list"]), branchesBefore);
+});
+
 test("Local Atlas Initialization reports unreadable snapshot failures as values", () => {
   const repository = resolve(WORKSPACE, "unreadable-atlas");
   initRepository(repository);

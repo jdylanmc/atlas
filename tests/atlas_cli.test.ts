@@ -45,7 +45,7 @@ test.after(() => {
 
 /**
  * Copies a committed fixture Atlas into its own Atlas Host Directory. The CLI
- * runs the real bundled Vale, so a host meant to lint as its fixture does
+ * runs the real pinned Vale, so a host meant to lint as its fixture does
  * carries the Atlas SDK default prose style unless a test omits it.
  */
 function fixtureHost(

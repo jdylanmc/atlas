@@ -1,12 +1,13 @@
-# Prose Lint is a bundled, mandatory Vale run configured inside each Atlas
+# Prose Lint is a mandatory, pinned Vale run configured inside each Atlas
 
 Atlas SDK's Lint checked an Atlas's structure but nothing about how its pages read,
 and the closest thing it had to an editorial rule was an accident: a 1 MiB per-file
 and 16 MiB total byte budget that capped page size as a side effect of bounding
 capture. We decided every Lint runs the Atlas's own [Vale](https://vale.sh) prose
-rules, that Vale is bundled rather than optional, that its configuration lives
-entirely inside `.atlas/`, and that the byte budgets are removed in favor of an
-Atlas-owned page-length rule.
+rules, that Vale is required rather than optional, that Atlas SDK downloads one
+pinned official Vale release per machine rather than redistributing it, that Vale's
+configuration lives entirely inside `.atlas/`, and that the byte budgets are removed
+in favor of an Atlas-owned page-length rule.
 
 ## Considered options
 
@@ -14,6 +15,14 @@ Atlas-owned page-length rule.
 configured, skipped otherwise. Rejected because a prose rule that silently does not
 run is indistinguishable from one that passed. An error-level Vale alert must stop an
 Atlas from being pushed, so a Lint whose prose rules did not run is not completed.
+
+**Redistributing Vale** as per-platform npm packages under the Atlas SDK scope.
+Rejected: it makes Atlas SDK a Vale distributor that must republish six packages for
+every Vale release, for no benefit over fetching the identical official asset.
+
+**The community `@vvago/vale` npm wrapper.** Rejected: it installs the binary from a
+`postinstall` script, so any install that skips lifecycle scripts — this repository's
+own `.npmrc` and CI, and pnpm's default — silently has no Vale.
 
 **Vale from the operator's `PATH`.** Rejected because Vale's output depends on its
 version, so one Atlas could pass on one machine and fail on another, and because an
@@ -30,15 +39,17 @@ carriage return as a line break, so it cannot report one).
 
 ## Consequences
 
-**Vale is a pinned native dependency.** Atlas SDK pins one Vale release and verifies
-every downloaded asset against its SHA-256. Each supported platform receives the
-binary through an exact-version optional dependency, `@jdylanmc/atlas-vale-<os>-<cpu>`,
-the pattern native-tool npm packages use; Atlas SDK refuses a binary that reports a
-different version. This is the first native executable Atlas SDK runs. It does not
+**Vale is a pinned, machine-scoped tool runtime.** Atlas SDK pins one Vale release
+and the SHA-256 of each platform's official asset. On first need it downloads the
+asset, verifies the digest, and atomically places the binary under
+`${XDG_CACHE_HOME:-~/.cache}/atlas/tool-runtimes/vale/<version>/<os>-<cpu>/`, beside
+the other Atlas SDK tool runtimes; it refuses a binary reporting another version.
+Atlas Initialization prepares it before writing anything, because the proposal's
+own Lint and the first Ingest's Lint both run Vale. This is the first native
+executable Atlas SDK runs and its first network fetch outside Git. It does not
 contradict ADR-0001: Vale is deterministic, invokes no model, and runs with an empty
-environment over a private copy of exactly the text Lint loaded. Unsupported
-platforms cannot complete Lint, and installing with optional dependencies omitted
-leaves Lint incomplete.
+environment over a private copy of exactly the text Lint loaded. Offline first use
+and unsupported platforms cannot complete Lint.
 
 **Every Atlas carries `.atlas/.vale.ini` and `.atlas/vale/`.** Initialization seeds
 the Atlas SDK default prose style; the Atlas owns it from then on and Atlas SDK does

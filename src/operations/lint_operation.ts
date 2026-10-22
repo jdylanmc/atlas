@@ -244,7 +244,7 @@ function runtimeFailureResult(lint: AtlasLintResult): LintOperationResult {
     homeAtlasReason: "Lint could not complete against the captured Atlas files.",
     message: finding.message,
     recommendedNextAction: prose
-      ? "Reinstall Atlas SDK so its bundled Vale binary for this platform is present, then run Lint again."
+      ? "Connect to the network so Atlas SDK can download and verify its pinned Vale release, then run Lint again."
       : "Retry Lint in a healthy runtime; if it repeats, escalate the operation failure.",
     subject: "captured-home-atlas",
     summary: "Lint did not complete.",
@@ -253,7 +253,7 @@ function runtimeFailureResult(lint: AtlasLintResult): LintOperationResult {
 
 /**
  * Lints one captured Home Atlas with the given prose linter. Prose Lint is
- * required, so callers supply the bundled Vale linter rather than opting in.
+ * required, so callers supply the pinned Vale linter rather than opting in.
  */
 export function runLintOperation(
   capturedFiles: readonly CapturedAtlasFile[],

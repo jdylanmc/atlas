@@ -1,20 +1,18 @@
 /**
  * The one Vale release Atlas SDK runs. Prose Lint results depend on the Vale
- * version, so Atlas SDK pins it exactly: each supported platform receives this
- * release's binary through an exact-version optional npm dependency, and the
- * linter refuses any binary that reports a different version.
+ * version, so Atlas SDK pins it exactly: it downloads this official release
+ * asset once per machine, verifies its SHA-256, and refuses any binary that
+ * reports a different version. Atlas SDK does not redistribute Vale.
  */
 export const valeVersion = "3.24.0";
 
 export interface ValePlatformRelease {
   /** The GitHub release asset carrying the binary. */
   readonly asset: string;
-  /** The executable's name inside the asset and the platform package. */
+  /** The executable's name inside the asset and the machine cache. */
   readonly binary: "vale" | "vale.exe";
   readonly cpu: "arm64" | "x64";
   readonly os: "darwin" | "linux" | "win32";
-  /** The optional npm dependency that installs this platform's binary. */
-  readonly packageName: string;
   /** SHA-256 of the release asset, from Vale's published checksums. */
   readonly sha256: string;
 }
@@ -30,7 +28,6 @@ function release(
     binary: os === "win32" ? ("vale.exe" as const) : ("vale" as const),
     cpu,
     os,
-    packageName: `@jdylanmc/atlas-vale-${os}-${cpu}`,
     sha256,
   });
 }

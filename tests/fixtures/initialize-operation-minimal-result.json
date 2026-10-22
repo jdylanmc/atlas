@@ -80,7 +80,7 @@
           "path": ".atlas/index.md"
         },
         {
-          "content": "# Vale prose Lint for this Atlas. Atlas SDK runs its bundled Vale with this\n# file on every Lint; an error-level alert fails Lint. This Atlas owns this\n# configuration and may change, disable, or extend any rule.\nStylesPath = vale/styles\nMinAlertLevel = suggestion\n\n[*.md]\nBasedOnStyles = AtlasSDK\n",
+          "content": "# Vale prose Lint for this Atlas. Atlas SDK runs its pinned Vale with this\n# file on every Lint; an error-level alert fails Lint. This Atlas owns this\n# configuration and may change, disable, or extend any rule.\nStylesPath = vale/styles\nMinAlertLevel = suggestion\n\n[*.md]\nBasedOnStyles = AtlasSDK\n",
           "path": ".atlas/.vale.ini"
         },
         {
@@ -143,7 +143,7 @@
           "findings": [],
           "opaque": [
             {
-              "content": "# Vale prose Lint for this Atlas. Atlas SDK runs its bundled Vale with this\n# file on every Lint; an error-level alert fails Lint. This Atlas owns this\n# configuration and may change, disable, or extend any rule.\nStylesPath = vale/styles\nMinAlertLevel = suggestion\n\n[*.md]\nBasedOnStyles = AtlasSDK\n",
+              "content": "# Vale prose Lint for this Atlas. Atlas SDK runs its pinned Vale with this\n# file on every Lint; an error-level alert fails Lint. This Atlas owns this\n# configuration and may change, disable, or extend any rule.\nStylesPath = vale/styles\nMinAlertLevel = suggestion\n\n[*.md]\nBasedOnStyles = AtlasSDK\n",
               "path": ".atlas/.vale.ini"
             },
             {

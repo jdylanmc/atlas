@@ -21,8 +21,7 @@
     "test:coverage:product": "c8 --all --include \"src/**/*.ts\" --check-coverage --100 node --test tests/*.test.ts",
     "test:unit": "node --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "vale:install": "node scripts/vale_packages.ts install",
-    "vale:pack": "node scripts/vale_packages.ts pack --out dist/vale-packages",
+    "vale:install": "node scripts/vale_install.ts",
     "vocabulary:validate": "node scripts/vocabulary_agreement.ts validate",
     "workflow:lint": "node scripts/run_actionlint.ts",
     "build": "node --eval \"require('node:fs').rmSync('dist', { force: true, recursive: true })\" && tsc -p tsconfig.build.json",
@@ -49,14 +48,6 @@
     "micromark-extension-gfm-footnote": "2.1.0",
     "typescript": "6.0.3",
     "yaml": "2.9.0"
-  },
-  "optionalDependencies": {
-    "@jdylanmc/atlas-vale-darwin-arm64": "3.24.0",
-    "@jdylanmc/atlas-vale-darwin-x64": "3.24.0",
-    "@jdylanmc/atlas-vale-linux-arm64": "3.24.0",
-    "@jdylanmc/atlas-vale-linux-x64": "3.24.0",
-    "@jdylanmc/atlas-vale-win32-arm64": "3.24.0",
-    "@jdylanmc/atlas-vale-win32-x64": "3.24.0"
   },
   "bin": {
     "atlas": "./dist/scripts/atlas_bin.js"

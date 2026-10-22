@@ -2430,7 +2430,7 @@ for (const entry of proseLintCorpus.cases) {
     }
     // A deterministic stand-in for the Vale binary: it replays the case's
     // recorded Vale process result through the same alert translation the
-    // bundled Vale adapter uses.
+    // pinned Vale adapter uses.
     const requests: ProseLintRequest[] = [];
     const proseLinter: ProseLinter = {
       lint(request) {
