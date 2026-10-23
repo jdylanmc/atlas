@@ -3,26 +3,34 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
 import { checkFinding, type Finding } from "../src/domain/finding.ts";
-import type {
-  AtlasTextBudgets,
-  CapturedAtlasFile,
-} from "../src/atlas/load_atlas_text.ts";
+import type { CapturedAtlasFile } from "../src/atlas/load_atlas_text.ts";
 import { maxFrontmatterDepth } from "../src/atlas/parse_atlas_pages.ts";
+import type { ProseLinter } from "../src/lint/prose_lint.ts";
 import {
   deniesAtlasValidity,
   lintAtlas,
   type AtlasLintResult,
 } from "../src/lint/lint_atlas.ts";
 import { assertGrowthRatio, assertWallClockUnder } from "./growth.ts";
+import {
+  passingProseLinter,
+  proseStyleCapturedFiles,
+  recordingProseLinter,
+  withProseStyle,
+} from "./prose_lint_fixtures.ts";
+
+import { googleValeStyleFiles } from "../src/lint/google_vale_style.ts";
 
 const encoder = new TextEncoder();
 const fixturesRoot = resolve(import.meta.dirname, "fixtures", "complete-atlas");
-const opaquePaths = [".atlas/CHANGELOG.md", ".atlas/manifest.json"] as const;
-
-const generousBudgets: AtlasTextBudgets = Object.freeze({
-  maxFileBytes: 4096,
-  maxTotalBytes: 65536,
-});
+const decoder = new TextDecoder();
+const opaquePaths = [
+  ".atlas/.vale.ini",
+  ".atlas/CHANGELOG.md",
+  ".atlas/manifest.json",
+  ".atlas/vale/styles/AtlasSDK/PageLength.yml",
+  ...googleValeStyleFiles.map(([name]) => `.atlas/vale/styles/Google/${name}`).sort(),
+];
 
 // Captured in an order no canonical result may depend on: opaque records first,
 // pages neither in code point order nor in directory order.
@@ -81,7 +89,11 @@ function fixtureBytes(variant: "invalid" | "valid", path: string): Uint8Array {
 }
 
 function completeAtlas(variant: "invalid" | "valid"): CapturedAtlasFile[] {
-  return atlasPaths.map((path) => ({ bytes: fixtureBytes(variant, path), path }));
+  return [
+    ...withProseStyle(
+      atlasPaths.map((path) => ({ bytes: fixtureBytes(variant, path), path })),
+    ),
+  ];
 }
 
 // The nested key sits two columns in and its own line counts as one level, so
@@ -89,7 +101,7 @@ function completeAtlas(variant: "invalid" | "valid"): CapturedAtlasFile[] {
 const insideBoundDepth = maxFrontmatterDepth - 3;
 
 // One Atlas-owned key nests as deeply as asked, in flow style so the nesting
-// costs bytes rather than columns: byte budgets alone cannot bound it.
+// costs bytes rather than columns: byte counts alone cannot bound it.
 function deepAtlas(depth: number): CapturedAtlasFile[] {
   const nested = `${"[".repeat(depth)}${"]".repeat(depth)}`;
   const page = fixtureText(".atlas/concepts/canonical-serialization.md").replace(
@@ -112,7 +124,7 @@ function lintedPages(result: AtlasLintResult): readonly CapturedAtlasFile[] {
 }
 
 test("lints the complete valid Atlas to canonical byte-identical pages", () => {
-  const result = lintAtlas(completeAtlas("valid"), generousBudgets);
+  const result = lintAtlas(completeAtlas("valid"), passingProseLinter);
 
   assert.ok(result.outcome === "valid", JSON.stringify(result));
   assert.deepEqual(result.findings, []);
@@ -135,8 +147,11 @@ test("lints the complete valid Atlas to canonical byte-identical pages", () => {
     result.opaque.map((record) => record.path),
     opaquePaths,
   );
+  const captured = new Map(
+    completeAtlas("valid").map((file) => [file.path, decoder.decode(file.bytes)]),
+  );
   for (const record of result.opaque) {
-    assert.equal(record.content, fixtureText(record.path), record.path);
+    assert.equal(record.content, captured.get(record.path), record.path);
   }
   assert.deepEqual(
     result.pages.filter((page) => opaquePaths.some((path) => path === page.path)),
@@ -145,7 +160,7 @@ test("lints the complete valid Atlas to canonical byte-identical pages", () => {
 });
 
 test("returns stable Findings without partial or success-shaped output", () => {
-  const result = lintAtlas(completeAtlas("invalid"), generousBudgets);
+  const result = lintAtlas(completeAtlas("invalid"), passingProseLinter);
 
   assert.ok(result.outcome === "invalid", JSON.stringify(result));
   assert.equal("pages" in result, false);
@@ -182,10 +197,9 @@ test("returns stable Findings without partial or success-shaped output", () => {
 });
 
 test("reports a whole-Atlas loading failure without serializing any page", () => {
-  const result = lintAtlas(completeAtlas("valid"), {
-    maxFileBytes: 4096,
-    maxTotalBytes: 200,
-  });
+  const atlas = completeAtlas("valid");
+  const linter = recordingProseLinter();
+  const result = lintAtlas([...atlas, atlas[0] as CapturedAtlasFile], linter);
 
   assert.ok(result.outcome === "invalid", JSON.stringify(result));
   assert.equal("pages" in result, false);
@@ -202,37 +216,39 @@ test("reports a whole-Atlas loading failure without serializing any page", () =>
           kind: "sdk-core",
           trusted: true,
         },
-        code: "ATLAS_LOAD_TOTAL_TOO_LARGE",
+        code: "ATLAS_LOAD_DUPLICATE_PATH",
         path: ".atlas",
       },
     ],
   );
+  // An Atlas that did not load has no text for its prose rules to read.
+  assert.equal(linter.requests.length, 0);
 });
 
 test("produces identical ordered Findings and canonical pages across runs", () => {
   for (const variant of ["invalid", "valid"] as const) {
-    const first = lintAtlas(completeAtlas(variant), generousBudgets);
-    assert.deepEqual(lintAtlas(completeAtlas(variant), generousBudgets), first);
+    const first = lintAtlas(completeAtlas(variant), passingProseLinter);
+    assert.deepEqual(lintAtlas(completeAtlas(variant), passingProseLinter), first);
     // Capture order carries no meaning, so reversing it changes nothing.
     assert.deepEqual(
-      lintAtlas(completeAtlas(variant).toReversed(), generousBudgets),
+      lintAtlas(completeAtlas(variant).toReversed(), passingProseLinter),
       first,
     );
   }
 });
 
 test("lints its own canonical pages to the same canonical bytes", () => {
-  const pages = lintedPages(lintAtlas(completeAtlas("valid"), generousBudgets));
-  const relinted = lintAtlas(pages.toReversed(), generousBudgets);
+  const pages = lintedPages(lintAtlas(completeAtlas("valid"), passingProseLinter));
+  const relinted = lintAtlas(withProseStyle(pages).toReversed(), passingProseLinter);
 
   assert.deepEqual(lintedPages(relinted), pages);
 });
 
 test("decides one whole-Atlas Lint from one reading of every input", () => {
-  const honest = lintAtlas(completeAtlas("valid"), generousBudgets);
+  const honest = lintAtlas(completeAtlas("valid"), passingProseLinter);
 
-  // Each captured file and each budget answers honestly once and sabotages every
-  // later read, so a second reading of any caller-owned value changes the result.
+  // Each captured file answers honestly once and sabotages every later read,
+  // so a second reading of any caller-owned value changes the result.
   const hostileFiles = completeAtlas("valid").map((file) => {
     let bytesRead = false;
     let pathRead = false;
@@ -249,53 +265,38 @@ test("decides one whole-Atlas Lint from one reading of every input", () => {
       },
     };
   });
-  let budgetReads = 0;
-  const hostileBudgets: AtlasTextBudgets = {
-    get maxFileBytes(): number {
-      budgetReads += 1;
-      return budgetReads > 2 ? 0 : generousBudgets.maxFileBytes;
-    },
-    get maxTotalBytes(): number {
-      budgetReads += 1;
-      return budgetReads > 2 ? 0 : generousBudgets.maxTotalBytes;
-    },
-  };
-
-  assert.deepEqual(lintAtlas(hostileFiles, hostileBudgets), honest);
-  assert.equal(budgetReads, 2);
+  assert.deepEqual(lintAtlas(hostileFiles, passingProseLinter), honest);
 });
 
 test("decides the Lint from one loading of the captured bytes", () => {
-  const honest = lintAtlas(completeAtlas("valid"), generousBudgets);
+  const honest = lintAtlas(completeAtlas("valid"), passingProseLinter);
 
-  // A second measurement rewrites the bytes, so reloading cannot silently
-  // decide a different Atlas from the same captured input.
-  let measurements = 0;
-  const atlas = completeAtlas("valid").map((file) => {
-    if (file.path !== ".atlas/index.md") return file;
-    const bytes = file.bytes;
-    Object.defineProperty(bytes, "byteLength", {
-      get(): number {
-        measurements += 1;
-        if (measurements > 1) bytes.fill(0x20);
-        return bytes.length;
-      },
-    });
-    return { bytes, path: file.path };
-  });
+  // The captured bytes are overwritten while the prose rules run, after
+  // loading, so any later stage that read them again would decide a
+  // different Atlas from the same captured input.
+  const atlas = completeAtlas("valid");
+  const sabotage: ProseLinter = {
+    lint() {
+      for (const file of atlas) file.bytes.fill(0x20);
+      return { findings: [], state: "completed" };
+    },
+  };
 
-  assert.deepEqual(lintAtlas(atlas, generousBudgets), honest);
-  assert.equal(measurements, 1);
+  assert.deepEqual(lintAtlas(atlas, sabotage), honest);
+  assert.equal(
+    atlas.every((file) => file.bytes.every((byte) => byte === 0x20)),
+    true,
+  );
 });
 
 test("returns a deeply frozen result", () => {
-  const valid = lintAtlas(completeAtlas("valid"), generousBudgets);
+  const valid = lintAtlas(completeAtlas("valid"), passingProseLinter);
   assert.ok(valid.outcome === "valid", JSON.stringify(valid));
   assert.equal(Object.isFrozen(valid), true);
   assert.equal(Object.isFrozen(valid.pages), true);
   assert.equal(Object.isFrozen(valid.pages[0]), true);
 
-  const invalid = lintAtlas(completeAtlas("invalid"), generousBudgets);
+  const invalid = lintAtlas(completeAtlas("invalid"), passingProseLinter);
   assert.ok(invalid.outcome === "invalid", JSON.stringify(invalid));
   assert.equal(Object.isFrozen(invalid), true);
   assert.equal(Object.isFrozen(invalid.findings), true);
@@ -303,7 +304,7 @@ test("returns a deeply frozen result", () => {
 });
 
 test("refuses frontmatter nesting deeper than it reads, on every run", () => {
-  const first = lintAtlas(deepAtlas(maxFrontmatterDepth + 1), generousBudgets);
+  const first = lintAtlas(deepAtlas(maxFrontmatterDepth + 1), passingProseLinter);
 
   assert.ok(first.outcome === "invalid", JSON.stringify(first));
   assert.equal("pages" in first, false);
@@ -321,14 +322,17 @@ test("refuses frontmatter nesting deeper than it reads, on every run", () => {
   for (const finding of first.findings) assert.equal(checkFinding(finding), true);
 
   // Nesting just inside the bound is read, and both answers hold across runs.
-  const inside = lintAtlas(deepAtlas(insideBoundDepth), generousBudgets);
+  const inside = lintAtlas(deepAtlas(insideBoundDepth), passingProseLinter);
   assert.ok(inside.outcome === "valid", JSON.stringify(inside));
   for (let run = 0; run < 10; run += 1) {
     assert.deepEqual(
-      lintAtlas(deepAtlas(maxFrontmatterDepth + 1), generousBudgets),
+      lintAtlas(deepAtlas(maxFrontmatterDepth + 1), passingProseLinter),
       first,
     );
-    assert.deepEqual(lintAtlas(deepAtlas(insideBoundDepth), generousBudgets), inside);
+    assert.deepEqual(
+      lintAtlas(deepAtlas(insideBoundDepth), passingProseLinter),
+      inside,
+    );
   }
 });
 
@@ -338,7 +342,7 @@ test("answers every nesting depth with a verdict rather than an exception", () =
   const depths = [1, 2, 8, insideBoundDepth, maxFrontmatterDepth, 500, 5000];
   for (let run = 0; run < 10; run += 1) {
     for (const depth of depths) {
-      const result = lintAtlas(deepAtlas(depth), generousBudgets);
+      const result = lintAtlas(deepAtlas(depth), passingProseLinter);
       assert.equal(
         result.outcome,
         depth <= insideBoundDepth ? "valid" : "invalid",
@@ -359,7 +363,7 @@ test("refuses a body nesting deeper than it reads, without reading it", () => {
       : file,
   );
 
-  const result = lintAtlas(atlas, generousBudgets);
+  const result = lintAtlas(atlas, passingProseLinter);
 
   assert.ok(result.outcome === "invalid", JSON.stringify(result));
   assert.deepEqual(
@@ -392,10 +396,7 @@ test("reads every large pathological body in bounded time", () => {
 
     let result: AtlasLintResult | undefined;
     assertWallClockUnder(`linting ${code}`, 2000, () => {
-      result = lintAtlas(atlas, {
-        maxFileBytes: 4 * megabyte,
-        maxTotalBytes: 8 * megabyte,
-      });
+      result = lintAtlas(atlas, passingProseLinter);
     });
 
     assert.ok(result !== undefined);
@@ -408,8 +409,8 @@ test("reads every large pathological body in bounded time", () => {
 });
 
 test("refuses every shape of Markdown that costs more than its bytes", () => {
-  // Each of these was measured taking seconds to minutes, and hours at the
-  // sizes a caller's own byte budget still admits.
+  // Each of these was measured taking seconds to minutes, and hours at
+  // larger sizes.
   const megabyte = 1024 * 1024;
   const shapes: Readonly<Record<string, string>> = {
     "nested brackets": `${"[".repeat(megabyte)}x`,
@@ -452,10 +453,7 @@ test("refuses every shape of Markdown that costs more than its bytes", () => {
 
     let result: AtlasLintResult | undefined;
     assertWallClockUnder(`linting ${shape}`, 2000, () => {
-      result = lintAtlas(atlas, {
-        maxFileBytes: 4 * megabyte,
-        maxTotalBytes: 8 * megabyte,
-      });
+      result = lintAtlas(atlas, passingProseLinter);
     });
 
     assert.ok(result !== undefined);
@@ -473,15 +471,13 @@ test("applies the markup gate when a caller admits the high-delimiter page", () 
   const original = fixtureText(path);
   const frontmatterEnd = original.lastIndexOf("\n---\n") + "\n---\n".length;
   const highDelimiterPage = `${original.slice(0, frontmatterEnd)}\n# Lint\n\n${"x*\n".repeat(8191)}`;
-  const budgets = { maxFileBytes: 64 * 1024, maxTotalBytes: 128 * 1024 };
-  assert.ok(encoder.encode(highDelimiterPage).byteLength < budgets.maxFileBytes);
   const atlas = completeAtlas("valid").map((file) =>
     file.path === path
       ? { bytes: encoder.encode(highDelimiterPage), path: file.path }
       : file,
   );
 
-  const result = lintAtlas(atlas, budgets);
+  const result = lintAtlas(atlas, passingProseLinter);
 
   assert.equal(result.outcome, "invalid");
   assert.deepEqual(
@@ -506,11 +502,10 @@ test("refuses frontmatter larger than it reads, and reads plain prose whole", ()
         }
       : file,
   );
-  const budgets = { maxFileBytes: 4 * megabyte, maxTotalBytes: 8 * megabyte };
 
   let result: AtlasLintResult | undefined;
   assertWallClockUnder("linting oversized frontmatter", 2000, () => {
-    result = lintAtlas(oversized, budgets);
+    result = lintAtlas(oversized, passingProseLinter);
   });
 
   assert.ok(result !== undefined);
@@ -532,13 +527,13 @@ test("refuses frontmatter larger than it reads, and reads plain prose whole", ()
       : file,
   );
 
-  assert.equal(lintAtlas(large, budgets).outcome, "valid");
+  assert.equal(lintAtlas(large, passingProseLinter).outcome, "valid");
 });
 
 // A body twice the size should stay below the empirical 2.5x doubling bound.
 // This ratio guard survives a slower machine, where a fixed millisecond budget
 // would only report the machine.
-function lintBody(body: string, budgets: AtlasTextBudgets): void {
+function lintBody(body: string): void {
   const atlas = completeAtlas("valid").map((file) =>
     file.path === ".atlas/anchors/lint.md"
       ? {
@@ -547,12 +542,10 @@ function lintBody(body: string, budgets: AtlasTextBudgets): void {
         }
       : file,
   );
-  lintAtlas(atlas, budgets);
+  lintAtlas(atlas, passingProseLinter);
 }
 
 test("keeps doubling cost below 2.5x as Atlas body bytes double", () => {
-  const megabyte = 1024 * 1024;
-  const budgets = { maxFileBytes: 16 * megabyte, maxTotalBytes: 32 * megabyte };
   // Each shape was measured exceeding this bound before it was capped, so each
   // is read at one size and at twice that size and the two costs compared.
   const shapes: Readonly<Record<string, (count: number) => string>> = {
@@ -566,9 +559,9 @@ test("keeps doubling cost below 2.5x as Atlas body bytes double", () => {
   for (const [shape, make] of Object.entries(shapes)) {
     const count = 64 * 1024;
     assertGrowthRatio({
-      large: () => lintBody(make(count * 2), budgets),
+      large: () => lintBody(make(count * 2)),
       name: `refusing ${shape}`,
-      small: () => lintBody(make(count), budgets),
+      small: () => lintBody(make(count)),
     });
   }
 
@@ -576,32 +569,241 @@ test("keeps doubling cost below 2.5x as Atlas body bytes double", () => {
   // below every declared bound at both sizes.
   const prose = (count: number): string => `${"word ".repeat(16)}\n`.repeat(count);
   assertGrowthRatio({
-    large: () => lintBody(prose(16384), budgets),
+    large: () => lintBody(prose(16384)),
     name: "reading prose",
-    small: () => lintBody(prose(8192), budgets),
+    small: () => lintBody(prose(8192)),
   });
 });
 
+const lineTerminatorMessage =
+  "Atlas file contains a non-canonical line terminator: a carriage return without a following line feed, or a Unicode line or paragraph separator. Use LF or CRLF line endings.";
+
+function replaceIn(
+  atlas: readonly CapturedAtlasFile[],
+  path: string,
+  before: string,
+  after: string,
+): CapturedAtlasFile[] {
+  return atlas.map((file) => {
+    if (file.path !== path) return file;
+    const text = fixtureText(path);
+    assert.equal(text.includes(before), true, `${path} no longer holds ${before}`);
+    return { bytes: encoder.encode(text.replace(before, after)), path };
+  });
+}
+
+function lineTerminatorFinding(path: string, line: number, column: number): Finding {
+  return {
+    attribution: {
+      checkId: "sdk-core.atlas-input",
+      kind: "sdk-core",
+      trusted: true,
+    },
+    code: "ATLAS_LOAD_NON_CANONICAL_LINE_TERMINATOR",
+    "finding-schema": "1.0.0",
+    location: { end: { column: column + 1, line }, start: { column, line } },
+    message: lineTerminatorMessage,
+    path,
+    severity: "error",
+  };
+}
+
 test("rejects non-canonical line terminators before readers can disagree", () => {
-  const hostile = fixtureText(".atlas/concepts/canonical-serialization.md").replace(
+  const atlas = replaceIn(
+    completeAtlas("valid"),
+    ".atlas/concepts/canonical-serialization.md",
     "sdk:\n",
     "sdk:\n  # note\r---\r\n",
   );
-  const atlas = completeAtlas("valid").map((file) =>
-    file.path === ".atlas/concepts/canonical-serialization.md"
-      ? { bytes: encoder.encode(hostile), path: file.path }
-      : file,
+  const linter = recordingProseLinter();
+
+  const result = lintAtlas(atlas, linter);
+
+  assert.ok(result.outcome === "invalid", JSON.stringify(result));
+  assert.deepEqual(result.findings, [
+    lineTerminatorFinding(".atlas/concepts/canonical-serialization.md", 3, 9),
+  ]);
+  for (const finding of result.findings) assert.equal(checkFinding(finding), true);
+  assert.equal(linter.requests.length, 0);
+});
+
+test("locates a non-canonical line terminator in every file that carries one", () => {
+  const atlas = replaceIn(
+    replaceIn(
+      completeAtlas("valid"),
+      ".atlas/concepts/canonical-serialization.md",
+      "sdk:\n",
+      "sdk:\n  # note\r---\r\n",
+    ),
+    ".atlas/anchors/lint.md",
+    "  id: anchor:lint\n",
+    "  id: anchor:lint\u2029\u2028\n",
   );
 
-  const result = lintAtlas(atlas, { maxFileBytes: 8192, maxTotalBytes: 65536 });
+  const result = lintAtlas(atlas, passingProseLinter);
+
+  assert.ok(result.outcome === "invalid", JSON.stringify(result));
+  assert.deepEqual(result.findings, [
+    lineTerminatorFinding(".atlas/anchors/lint.md", 8, 18),
+    lineTerminatorFinding(".atlas/concepts/canonical-serialization.md", 3, 9),
+  ]);
+});
+
+const proseAttribution = Object.freeze({
+  checkId: "vale.AtlasSDK.PageLength",
+  kind: "atlas-owned",
+  trusted: false,
+});
+
+function valeFinding(severity: Finding["severity"], path: string): Finding {
+  return Object.freeze({
+    attribution: proseAttribution,
+    code: "VALE_ATLASSDK_PAGELENGTH",
+    "finding-schema": "1.0.0",
+    location: Object.freeze({
+      end: Object.freeze({ column: 2, line: 1 }),
+      start: Object.freeze({ column: 1, line: 1 }),
+    }),
+    message:
+      "Page prose runs to 1001 words. Split it into an overview page and child pages.",
+    path,
+    severity,
+  });
+}
+
+test("fails Lint without running prose rules when the Vale configuration is missing", () => {
+  const linter = recordingProseLinter();
+  const atlas = completeAtlas("valid").filter(
+    (file) => file.path !== ".atlas/.vale.ini",
+  );
+
+  const result = lintAtlas(atlas, linter);
+
+  assert.ok(result.outcome === "invalid", JSON.stringify(result));
+  assert.deepEqual(result.findings, [
+    {
+      attribution: {
+        checkId: "sdk-core.prose-lint",
+        kind: "sdk-core",
+        trusted: true,
+      },
+      code: "ATLAS_VALE_CONFIG_MISSING",
+      "finding-schema": "1.0.0",
+      message:
+        "Every Atlas must carry its Vale configuration at .atlas/.vale.ini; restore the Atlas SDK default prose style or the Atlas's own.",
+      path: ".atlas/.vale.ini",
+      severity: "error",
+    },
+  ]);
+  for (const finding of result.findings) assert.equal(checkFinding(finding), true);
+  assert.equal(linter.requests.length, 0);
+});
+
+test("hands the prose linter every loaded file and only the sorted page paths", () => {
+  const linter = recordingProseLinter();
+
+  const result = lintAtlas(completeAtlas("valid"), linter);
+
+  assert.equal(result.outcome, "valid");
+  assert.equal(linter.requests.length, 1);
+  const [request] = linter.requests;
+  assert.ok(request !== undefined);
+  assert.deepEqual(request.pagePaths, canonicalPagePaths);
+  assert.deepEqual(
+    request.files.map((file) => file.path).toSorted(),
+    [...atlasPaths, ...proseStyleCapturedFiles().map((file) => file.path)].toSorted(),
+  );
+  for (const file of request.files) {
+    const captured = completeAtlas("valid").find(
+      (candidate) => candidate.path === file.path,
+    );
+    assert.ok(captured !== undefined, file.path);
+    assert.equal(file.content, decoder.decode(captured.bytes), file.path);
+  }
+});
+
+test("denies validity for an error-level Vale alert, not a warning", () => {
+  const path = ".atlas/index.md";
+  const error = lintAtlas(
+    completeAtlas("valid"),
+    recordingProseLinter({
+      findings: [valeFinding("error", path)],
+      state: "completed",
+    }),
+  );
+  assert.ok(error.outcome === "invalid", JSON.stringify(error));
+  assert.equal("pages" in error, false);
+  assert.deepEqual(error.findings, [valeFinding("error", path)]);
+
+  const warning = lintAtlas(
+    completeAtlas("valid"),
+    recordingProseLinter({
+      findings: [valeFinding("warning", path)],
+      state: "completed",
+    }),
+  );
+  assert.ok(warning.outcome === "valid", JSON.stringify(warning));
+  assert.deepEqual(warning.findings, [valeFinding("warning", path)]);
+  assert.deepEqual(
+    warning.pages.map((page) => page.path),
+    canonicalPagePaths,
+  );
+});
+
+test("merges prose Findings with structural Findings in one sorted order", () => {
+  const structural = lintAtlas(completeAtlas("invalid"), passingProseLinter);
+  const prose = [
+    valeFinding("error", ".atlas/principles/determinism.md"),
+    valeFinding("warning", ".atlas/anchors/lint.md"),
+  ];
+
+  const result = lintAtlas(
+    completeAtlas("invalid"),
+    recordingProseLinter({ findings: prose, state: "completed" }),
+  );
 
   assert.ok(result.outcome === "invalid", JSON.stringify(result));
   assert.deepEqual(
     result.findings.map(({ code, path }) => ({ code, path })),
     [
+      { code: "VALE_ATLASSDK_PAGELENGTH", path: ".atlas/anchors/lint.md" },
       {
-        code: "ATLAS_LOAD_NON_CANONICAL_LINE_TERMINATOR",
-        path: ".atlas",
+        code: "ATLAS_PAGE_TITLE_H1_MISMATCH",
+        path: ".atlas/concepts/canonical-serialization.md",
+      },
+      {
+        code: "ATLAS_CITATION_TARGET_NOT_SOURCE",
+        path: ".atlas/edges/lint-covers-canonical-serialization.md",
+      },
+      ...result.findings
+        .filter((finding) => finding.path === ".atlas/principles/determinism.md")
+        .map(({ code, path }) => ({ code, path })),
+    ],
+  );
+  assert.equal(result.findings.length, structural.findings.length + prose.length);
+  assert.deepEqual(
+    result.findings
+      .filter((finding) => finding.path === ".atlas/principles/determinism.md")
+      .map((finding) => finding.code)
+      .toSorted(),
+    ["ATLAS_PAGE_TYPE_PATH_MISMATCH", "VALE_ATLASSDK_PAGELENGTH"],
+  );
+});
+
+test("reports unavailable prose rules as a Lint that could not complete", () => {
+  const result = lintAtlas(
+    completeAtlas("valid"),
+    recordingProseLinter({ reason: "Vale is missing", state: "unavailable" }),
+  );
+
+  assert.ok(result.outcome === "invalid", JSON.stringify(result));
+  assert.deepEqual(
+    result.findings.map(({ code, message, path }) => ({ code, message, path })),
+    [
+      {
+        code: "ATLAS_VALE_UNAVAILABLE",
+        message: "Atlas prose Lint could not run: Vale is missing",
+        path: ".atlas/.vale.ini",
       },
     ],
   );
@@ -618,7 +820,7 @@ test("reports a Lint it could not complete as one whole-Atlas Finding", () => {
   let ceiling = 1000;
   for (; ceiling < 1e7; ceiling *= 2) {
     try {
-      atStackDepth(ceiling, () => lintAtlas(atlas, generousBudgets));
+      atStackDepth(ceiling, () => lintAtlas(atlas, passingProseLinter));
     } catch {
       break;
     }
@@ -631,7 +833,7 @@ test("reports a Lint it could not complete as one whole-Atlas Finding", () => {
     depth += 2
   ) {
     try {
-      const result = atStackDepth(depth, () => lintAtlas(atlas, generousBudgets));
+      const result = atStackDepth(depth, () => lintAtlas(atlas, passingProseLinter));
       if (
         result.outcome === "invalid" &&
         result.findings[0]?.code === "ATLAS_LINT_FAILED"

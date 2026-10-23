@@ -10,7 +10,7 @@ sdk:
   tags: []
   title: A Detector Must Prove Derivation, Not Plausibility
   type: principle
-  updated-at: "2026-08-24T21:40:00Z"
+  updated-at: "2026-10-23T17:11:56Z"
   updated-by:
     kind: human
     name: Dylan McCurry
@@ -27,4 +27,11 @@ atlas: {}
 
 ### 1 - 2026-08-24
 
-Added `truth:derived-not-plausible` under Maintainer approval. Established after fabricated stamp revisions resembling real SHA-256 digests survived five review rounds while obviously-fake values were caught immediately.
+Added `truth:derived-not-plausible` under Maintainer approval. Established after fabricated stamp revisions resembling real SHA-256 digests survived five review rounds while obviously fake values were caught immediately.
+
+### 2 - 2026-10-23
+
+Editorial: removed the hyphen after "obviously" in Amendment 1's rationale under the `Google.LyHyphens` prose rule. No truth changed.
+Maintainer: Dylan McCurry
+Rationale: Adopting the Google Vale style as the Atlas default made that wording a Lint error.
+Change reference: https://github.com/jdylanmc/atlas/pull/269

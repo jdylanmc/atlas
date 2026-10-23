@@ -76,16 +76,20 @@ carry into the package. Use `npm run package:publish` for publishing for the
 same reason; bare `npm publish` is not the supported release path because the
 repository `.npmrc` suppresses lifecycle scripts by default.
 
-`npm run ci` performs deterministic Prettier checks, type-aware ESLint flat
+`npm run ci` first runs `npm run vale:install`, which prepares the machine-scoped
+Vale cache exactly as Atlas Initialization does: it downloads the pinned official
+Vale release, verifies its SHA-256 against `src/platform/vale_release.ts`, and
+caches the binary, doing nothing when the pinned binary is already cached. It then
+performs deterministic Prettier checks, type-aware ESLint flat
 configuration, strict TypeScript checking with `erasableSyntaxOnly`, fail-closed
 Node.js test-runner coverage, a committed SDK Atlas Lint gate, glossary and
 contract vocabulary agreement, byte-exact Cacophony prompt validation, and
 Actionlint `1.7.7`. The SDK Atlas gate runs `atlas lint --machine` against the
 repository Atlas Host Directory and requires a completed Valid Atlas Lint Result
-with no error Findings. This confirms only the deterministic Lint rules that
-exist today; the Atlas Manifest is still carried as an opaque record, and rules
-that would validate its declared schema against the rest of the Atlas remain
-deferred.
+with no error Findings, including the repository Atlas's own Vale prose rules.
+This confirms only the deterministic Lint rules that exist today; the Atlas
+Manifest is still carried as an opaque record, and rules that would validate its
+declared schema against the rest of the Atlas remain deferred.
 
 Structural Lint compares `created-at` and `updated-at` through the shared
 `dateTimeMilliseconds` contract. A schema-valid but unrepresentable instant
@@ -96,8 +100,8 @@ does not change the page-envelope schema.
 
 Structural Lint caps each page body at 2,048 lexically counted Markdown markup
 marks, down from 8,192 to bound delimiter-heavy input before the Markdown reader
-runs. The markup guard reports `ATLAS_PAGE_BODY_TOO_MARKED` even when the caller's
-byte budget admits the page. Exactly 2,048 marks remain permitted when the other
+runs. The markup guard reports `ATLAS_PAGE_BODY_TOO_MARKED` even when no other
+check rejects the page; Atlas SDK imposes no byte budget on Atlas files. Exactly 2,048 marks remain permitted when the other
 checks pass; plain prose is not charged as markup. The existing nesting-depth
 limit of 64, body-line limit of 16,384, and frontmatter limit of 32,768 characters
 are unchanged.
@@ -162,7 +166,7 @@ ordering by object ID. Scores depend on the indexed corpus, not a model.
 
 Repository-backed regression cases check useful answers with their real routes
 and Citations. Ranking does not grant reachability, change Re-anchoring, or alter
-the result shape, evidence, degradation, or capture budgets.
+the result shape, evidence, degradation, or capture file-count budgets.
 
 ## Glossary and contract vocabulary agreement
 
@@ -232,7 +236,8 @@ read where that surface can actually occur:
 
 A directory name or page-ID prefix must resolve to a glossary term or to a
 directory Atlas SDK reserves without one. The directory exceptions are exactly
-`types` and `atlas-cache`; invented fallback directories are not exceptions.
+`types`, `atlas-cache`, and `vale`; invented fallback directories are not
+exceptions.
 Structural parse failures without a readable record path use `.atlas` as their
 diagnostic scope.
 A term listed in an unqualified

@@ -64,9 +64,7 @@ export interface AtlasCacheResolverOptions {
 }
 
 const atlasCacheCaptureBudgets = Object.freeze({
-  maxFileBytes: 1024 * 1024,
   maxFiles: 4096,
-  maxTotalBytes: 16 * 1024 * 1024,
 }) satisfies AtlasTreeCaptureBudgets;
 
 const attribution = Object.freeze({

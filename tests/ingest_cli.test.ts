@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
+import { writeProseStyle } from "./prose_lint_fixtures.ts";
 import { parseMachineOperationResult } from "./machine_operation_result.ts";
 import {
   correspondenceRefusalResult,
@@ -99,6 +100,7 @@ function initAtlasRepository(repository: string): string {
     resolve(repository, ".atlas"),
     { recursive: true },
   );
+  writeProseStyle(repository);
   writeFileSync(resolve(repository, "README.md"), "# host\n", "utf8");
   // Committed at the exact instant the ingest fixtures assert as this Source's
   // revisionTime, so Ingest's independent Git capture at "docs/readme.md"
@@ -480,27 +482,28 @@ test("Local Atlas Ingest refuses capture failures and unsafe workspace paths as 
     createLocalAtlasIngestState(resolve(WORKSPACE, "missing-repository"), request),
   );
 
-  const largeRepository = resolve(WORKSPACE, "large-atlas");
-  initAtlasRepository(largeRepository);
-  writeFileSync(
-    resolve(largeRepository, ".atlas", "large.md"),
-    "x".repeat(1024 * 1024 + 1),
-    "utf8",
-  );
-  git(largeRepository, ["add", ".atlas/large.md"]);
-  git(largeRepository, [
+  const unreadableRepository = resolve(WORKSPACE, "unreadable-atlas");
+  initAtlasRepository(unreadableRepository);
+  // A gitlink to a missing commit is listed under .atlas/ but cannot be read.
+  git(unreadableRepository, [
+    "update-index",
+    "--add",
+    "--cacheinfo",
+    "160000,1111111111111111111111111111111111111111,.atlas/missing",
+  ]);
+  git(unreadableRepository, [
     "-c",
     "user.name=Fixture",
     "-c",
     "user.email=fixture@example.invalid",
     "commit",
     "-m",
-    "Add large Atlas file",
+    "Add unreadable Atlas entry",
   ]);
-  assert.throws(() => createLocalAtlasIngestState(largeRepository, request));
+  assert.throws(() => createLocalAtlasIngestState(unreadableRepository, request));
   assert.equal(
-    runLocalAtlasIngest(largeRepository, request).handoff.validationState.findings[0]
-      ?.code,
+    runLocalAtlasIngest(unreadableRepository, request).handoff.validationState
+      .findings[0]?.code,
     "ATLAS_INGEST_CAPTURE_FAILED",
   );
 

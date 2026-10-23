@@ -18,7 +18,10 @@ import {
   type AtlasInitializationEffectReceipt,
   type AtlasInitializationWorkflowState,
 } from "../src/operations/initialize_operation.ts";
+import { googleValeStyleFiles } from "../src/lint/google_vale_style.ts";
+import { atlasSdkProseStyleFiles } from "../src/lint/atlas_sdk_prose_style.ts";
 import { runLintOperation } from "../src/operations/lint_operation.ts";
+import { passingProseLinter } from "./prose_lint_fixtures.ts";
 import {
   createLocalAtlasInitializationState,
   readLocalAtlasInitializationState,
@@ -113,6 +116,34 @@ test("Atlas Initialization writes a valid proposal while the target branch commi
     reason: "Forge publication was not requested; the Atlas Proposal remains local.",
     state: "not-applicable",
   });
+});
+
+test("Atlas Initialization writes the Atlas SDK default prose style after the root page", () => {
+  const decoder = new TextDecoder();
+  const files = atlasInitializationFiles(state()).map((file) => ({
+    content: decoder.decode(file.bytes),
+    path: file.path,
+  }));
+  const paths = files.map((file) => file.path);
+  const stylePaths = atlasSdkProseStyleFiles.map((file) => file.path);
+
+  assert.deepEqual(stylePaths, [
+    ".atlas/.vale.ini",
+    ".atlas/vale/styles/AtlasSDK/PageLength.yml",
+    ...googleValeStyleFiles.map(([name]) => `.atlas/vale/styles/Google/${name}`),
+  ]);
+  assert.ok(stylePaths.includes(".atlas/vale/styles/Google/LICENSE"));
+  assert.deepEqual(
+    paths.slice(
+      paths.indexOf(".atlas/index.md") + 1,
+      paths.indexOf(".atlas/index.md") + 1 + stylePaths.length,
+    ),
+    stylePaths,
+  );
+  assert.deepEqual(
+    files.filter((file) => stylePaths.includes(file.path)),
+    atlasSdkProseStyleFiles.map((file) => ({ content: file.content, path: file.path })),
+  );
 });
 
 test("atlas initialize --machine emits only the narrowed Lint Stamp keys", () => {
@@ -232,10 +263,7 @@ test("Atlas Initialization resumes from effect receipts without replaying comple
     currentTargetHead: () => interrupted.targetHead,
     currentBaseSnapshotDigest: () => interrupted.baseSnapshotDigest,
     lintProposal: () => ({
-      lint: runLintOperation(atlasInitializationFiles(interrupted), {
-        maxFileBytes: 4096,
-        maxTotalBytes: 65536,
-      }),
+      lint: runLintOperation(atlasInitializationFiles(interrupted), passingProseLinter),
       receipt: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     }),
     writeChangeSet: () => {
@@ -374,7 +402,7 @@ test("Atlas Initialization reports invalid Change Sets and failed Lint as values
     currentTargetHead: () => initial.targetHead,
     currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
     lintProposal: () => ({
-      lint: runLintOperation([], { maxFileBytes: 4096, maxTotalBytes: 65536 }),
+      lint: runLintOperation([], passingProseLinter),
       receipt: "cccccccccccccccccccccccccccccccccccccccc",
     }),
     writeChangeSet: () => ({ receipt: "written" }),
@@ -407,10 +435,7 @@ test("Atlas Initialization preserves produced receipts when an effect after them
       lintProposal: () => {
         if (failAt === "lint") throw new Error("lint failed");
         return {
-          lint: runLintOperation(atlasInitializationFiles(initial), {
-            maxFileBytes: 4096,
-            maxTotalBytes: 65536,
-          }),
+          lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
           receipt: "ffffffffffffffffffffffffffffffffffffffff",
         };
       },
@@ -446,10 +471,7 @@ test("Atlas Initialization refuses a Lint Stamp when Lint evidence names another
     currentBaseSnapshotDigest: () => initial.baseSnapshotDigest,
     currentTargetHead: () => initial.targetHead,
     lintProposal: () => ({
-      lint: runLintOperation(atlasInitializationFiles(initial), {
-        maxFileBytes: 4096,
-        maxTotalBytes: 65536,
-      }),
+      lint: runLintOperation(atlasInitializationFiles(initial), passingProseLinter),
       receipt: "2222222222222222222222222222222222222222",
     }),
     writeChangeSet: () => ({ receipt: "written" }),
@@ -493,10 +515,7 @@ test("Atlas Initialization can resume after an already recorded Lint receipt", (
     lintProposal: () => {
       linted += 1;
       return {
-        lint: runLintOperation(atlasInitializationFiles(resumed), {
-          maxFileBytes: 4096,
-          maxTotalBytes: 65536,
-        }),
+        lint: runLintOperation(atlasInitializationFiles(resumed), passingProseLinter),
         receipt: "dddddddddddddddddddddddddddddddddddddddd",
       };
     },
@@ -788,12 +807,40 @@ test("atlas initialize --machine reports ordinary bad inputs as machine JSON", (
   );
 });
 
-test("Local Atlas Initialization reports snapshot budget failures as values", () => {
-  const repository = resolve(WORKSPACE, "large-atlas");
+test("Local Atlas Initialization prepares Vale before writing a proposal", () => {
+  const repository = resolve(WORKSPACE, "offline-vale");
   initRepository(repository);
-  mkdirSync(resolve(repository, ".atlas"), { recursive: true });
-  writeFileSync(resolve(repository, ".atlas", "large.md"), "x".repeat(1024 * 1024 + 1));
-  git(repository, ["add", ".atlas/large.md"]);
+  const branchesBefore = git(repository, ["branch", "--list"]);
+
+  const result = runLocalAtlasInitialization(repository, undefined, {
+    arch: "x64",
+    cacheDirectory: resolve(WORKSPACE, "offline-vale-cache"),
+    download: () => {
+      throw new Error("offline");
+    },
+    platform: "linux",
+  });
+
+  assert.equal(result.completion, "not-completed");
+  const [finding] = result.handoff.validationState.findings;
+  assert.equal(finding?.code, "ATLAS_INITIALIZATION_VALE_UNAVAILABLE");
+  assert.match(
+    finding.message,
+    /^Atlas Initialization could not prepare Vale, which every Atlas Lint runs: Vale 3\.24\.0 could not be downloaded from https:\/\/github\.com\/vale-cli\/vale\/releases\/download\/v3\.24\.0\/vale_3\.24\.0_Linux_64-bit\.tar\.gz; connect to the network and run Lint again\.$/u,
+  );
+  assert.equal(git(repository, ["branch", "--list"]), branchesBefore);
+});
+
+test("Local Atlas Initialization reports unreadable snapshot failures as values", () => {
+  const repository = resolve(WORKSPACE, "unreadable-atlas");
+  initRepository(repository);
+  // A gitlink to a missing commit is listed under .atlas/ but cannot be read.
+  git(repository, [
+    "update-index",
+    "--add",
+    "--cacheinfo",
+    "160000,1111111111111111111111111111111111111111,.atlas/missing",
+  ]);
   git(repository, [
     "-c",
     "user.name=Fixture",
@@ -801,7 +848,7 @@ test("Local Atlas Initialization reports snapshot budget failures as values", ()
     "user.email=fixture@example.invalid",
     "commit",
     "-m",
-    "Add large atlas file",
+    "Add unreadable Atlas entry",
   ]);
 
   const result = runLocalAtlasInitialization(repository);
@@ -813,7 +860,7 @@ test("Local Atlas Initialization reports snapshot budget failures as values", ()
   );
 });
 
-test("Local Atlas Snapshot enforces file count and total byte budgets", () => {
+test("Local Atlas Snapshot enforces file count budgets", () => {
   const repository = resolve(WORKSPACE, "snapshot-budget");
   initRepository(repository);
   mkdirSync(resolve(repository, ".atlas"), { recursive: true });
@@ -830,22 +877,8 @@ test("Local Atlas Snapshot enforces file count and total byte budgets", () => {
     "Add atlas files",
   ]);
 
-  assert.equal(
-    captureSnapshot(repository, {
-      maxFileBytes: 1024,
-      maxFiles: 1,
-      maxTotalBytes: 1024,
-    }).state,
-    "failed",
-  );
-  assert.equal(
-    captureSnapshot(repository, {
-      maxFileBytes: 1024,
-      maxFiles: 2,
-      maxTotalBytes: 5,
-    }).state,
-    "failed",
-  );
+  assert.equal(captureSnapshot(repository, { maxFiles: 1 }).state, "failed");
+  assert.equal(captureSnapshot(repository, { maxFiles: 2 }).state, "captured");
 });
 
 test("Local Atlas Initialization reports write adapter failures as values", () => {

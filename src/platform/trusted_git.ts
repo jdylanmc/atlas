@@ -22,7 +22,9 @@ const trustedGitConfig = Object.freeze({
   "core.fsmonitor": "false",
   "core.hooksPath": "/dev/null",
 } as const);
-const defaultTrustedGitMaxBuffer = 16 * 1024 * 1024;
+// Atlas SDK imposes no byte budget on an Atlas, so Git output is not truncated
+// at an arbitrary size: a large committed file is read whole.
+const defaultTrustedGitMaxBuffer = Number.POSITIVE_INFINITY;
 const trustedGitResolutionFailurePrefix = "Could not resolve a trusted Git executable:";
 
 export interface ResolveTrustedGitExecutableOptions {

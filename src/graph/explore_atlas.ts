@@ -1,4 +1,4 @@
-import type { AtlasTextBudgets, AtlasTextFile } from "../atlas/load_atlas_text.ts";
+import type { AtlasTextFile } from "../atlas/load_atlas_text.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import type { AtlasView, AtlasViewEdge } from "../atlas/atlas_view.ts";
 import { resolvedCitationSourcePaths } from "../atlas/resolve_citations.ts";
@@ -25,7 +25,7 @@ const attribution = Object.freeze({
   trusted: true as const,
 });
 
-export interface ExploreBudgets extends AtlasTextBudgets {
+export interface ExploreBudgets {
   readonly maxContextCharacters: number;
   readonly maxEdges: number;
   readonly maxObjects: number;
@@ -140,13 +140,11 @@ function assertBudgets(budgets: ExploreBudgets): void {
   for (const value of [
     budgets.maxContextCharacters,
     budgets.maxEdges,
-    budgets.maxFileBytes,
     budgets.maxObjects,
     budgets.maxQueryCharacters,
     budgets.maxResults,
     budgets.maxRouteEdges,
     budgets.maxTerms,
-    budgets.maxTotalBytes,
   ]) {
     if (!Number.isSafeInteger(value) || value < 0) {
       throw new TypeError("Explore budgets must be non-negative safe integers.");

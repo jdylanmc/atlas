@@ -18,9 +18,7 @@ import { toString } from "mdast-util-to-string";
 import { gfmFootnote } from "micromark-extension-gfm-footnote";
 import ts from "typescript";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
-import { parseMachineOperationResult } from "./machine_operation_result.ts";
-import { captureAtlasHostDirectory, CaptureBudgetError } from "../scripts/atlas.ts";
-import { captureLocalAtlasSnapshot } from "../src/platform/local_atlas_snapshot.ts";
+import { captureAtlasHostDirectory } from "../scripts/atlas.ts";
 import { lintCommandCaptureBudgets } from "../src/interfaces/lint_command.ts";
 import {
   AgentContract,
@@ -55,6 +53,9 @@ import {
   validateNoChangePathCollisions,
 } from "../src/operations/initialize_operation.ts";
 import { runLintOperation } from "../src/operations/lint_operation.ts";
+import type { ProseLinter, ProseLintRequest } from "../src/lint/prose_lint.ts";
+import { valeProseLintOutcome } from "../src/lint/vale_alerts.ts";
+import { passingProseLinter, withProseStyle } from "./prose_lint_fixtures.ts";
 import {
   ingestScopeAttestationOperation,
   ingestScopeAttestationPayload,
@@ -335,8 +336,6 @@ interface AtlasCliCommandCase {
   readonly generatedExploreAtlasOverFileBudget?: true;
   readonly generatedOversizedExploreQuery?: true;
   readonly generatedOversizedIngestRequest?: true;
-  readonly generatedChangelogByteLength?: number;
-  readonly expectedExploreResultId?: string;
   readonly kind: "command";
   readonly name: string;
   readonly recommendedNextActionExcludes?: string;
@@ -367,24 +366,6 @@ interface AtlasCliAtlasViewMutationCase {
   readonly kind: "atlas-view-mutation";
   readonly mutatedSlug: string;
   readonly mutatedSnapshot: string;
-  readonly name: string;
-}
-
-interface AtlasCliCaptureBudgetCase {
-  readonly budgets: {
-    readonly maxFileBytes: number;
-    readonly maxFiles: number;
-    readonly maxTotalBytes: number;
-    readonly maxTraversalDepth: number;
-  };
-  readonly expectedCode: string;
-  readonly files: readonly {
-    readonly path: string;
-    readonly text: string;
-  }[];
-  readonly gate: "atlas-cli";
-  readonly kind: "capture-budget";
-  readonly maxBytesRead: number;
   readonly name: string;
 }
 
@@ -419,7 +400,6 @@ type AtlasCliCaptureSecurityCase =
 
 type AtlasCliCase =
   | AtlasCliAtlasViewMutationCase
-  | AtlasCliCaptureBudgetCase
   | AtlasCliCaptureSecurityCase
   | AtlasCliCommandCase
   | AtlasCliSourceBoundaryCase
@@ -932,8 +912,6 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
           generatedExploreAtlasOverFileBudget?: true;
           generatedOversizedExploreQuery?: true;
           generatedOversizedIngestRequest?: true;
-          generatedChangelogByteLength?: number;
-          expectedExploreResultId?: string;
           recommendedNextActionExcludes?: string;
           stderrIncludes?: string;
         } = {};
@@ -975,22 +953,6 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
           );
           optional.generatedOversizedIngestRequest = true;
         }
-        if (entry["generatedChangelogByteLength"] !== undefined) {
-          assert.equal(entry["fixtureAtlasHostRepository"], true);
-          const bytes = assertNumber(
-            entry["generatedChangelogByteLength"],
-            `${path}.generatedChangelogByteLength`,
-          );
-          assert.ok(Number.isInteger(bytes) && bytes >= 3 && bytes <= 2097152);
-          optional.generatedChangelogByteLength = bytes;
-        }
-        if (entry["expectedExploreResultId"] !== undefined) {
-          assert.ok(optional.generatedChangelogByteLength !== undefined);
-          optional.expectedExploreResultId = assertString(
-            entry["expectedExploreResultId"],
-            `${path}.expectedExploreResultId`,
-          );
-        }
         if (entry["recommendedNextActionExcludes"] !== undefined) {
           optional.recommendedNextActionExcludes = assertString(
             entry["recommendedNextActionExcludes"],
@@ -1004,49 +966,6 @@ function parseAtlasCliCorpus(value: unknown): AtlasCliCorpus {
           );
         }
         return { ...parsed, ...optional };
-      }
-      if (entry["kind"] === "capture-budget") {
-        assert.ok(Array.isArray(entry["files"]), `${path}.files must be an array`);
-        return {
-          budgets: {
-            maxFileBytes: assertNumber(
-              (entry["budgets"] as Readonly<Record<string, unknown>> | undefined)?.[
-                "maxFileBytes"
-              ],
-              `${path}.budgets.maxFileBytes`,
-            ),
-            maxFiles: assertNumber(
-              (entry["budgets"] as Readonly<Record<string, unknown>> | undefined)?.[
-                "maxFiles"
-              ],
-              `${path}.budgets.maxFiles`,
-            ),
-            maxTotalBytes: assertNumber(
-              (entry["budgets"] as Readonly<Record<string, unknown>> | undefined)?.[
-                "maxTotalBytes"
-              ],
-              `${path}.budgets.maxTotalBytes`,
-            ),
-            maxTraversalDepth: assertNumber(
-              (entry["budgets"] as Readonly<Record<string, unknown>> | undefined)?.[
-                "maxTraversalDepth"
-              ],
-              `${path}.budgets.maxTraversalDepth`,
-            ),
-          },
-          expectedCode: assertString(entry["expectedCode"], `${path}.expectedCode`),
-          files: (entry["files"] as readonly unknown[]).map((file, fileIndex) => {
-            assert.ok(isRecord(file), `${path}.files[${String(fileIndex)}]`);
-            return {
-              path: assertString(file["path"], `${path}.files.path`),
-              text: assertString(file["text"], `${path}.files.text`),
-            };
-          }),
-          gate: "atlas-cli",
-          kind: "capture-budget",
-          maxBytesRead: assertNumber(entry["maxBytesRead"], `${path}.maxBytesRead`),
-          name,
-        };
       }
       if (entry["kind"] === "source-contract") {
         return {
@@ -1681,7 +1600,8 @@ after(() => {
       structuralValidationCorpus.cases.length +
       ingestCorpus.cases.length +
       initializationCorpus.cases.length +
-      cacophonyRoasterCorpus.cases.length,
+      cacophonyRoasterCorpus.cases.length +
+      proseLintCorpus.cases.length,
   );
 });
 
@@ -1749,7 +1669,6 @@ test("the adversarial atlas-cli corpus is structurally valid", () => {
     atlasCliCorpus.cases.length,
   );
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "command"));
-  assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "capture-budget"));
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "source-boundary"));
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "source-contract"));
   assert.ok(atlasCliCorpus.cases.some((entry) => entry.kind === "atlas-view-mutation"));
@@ -2008,10 +1927,7 @@ function adversarialPage(): CapturedAtlasFile {
 }
 
 function exerciseAtlasViewMutation(entry: AtlasCliAtlasViewMutationCase): void {
-  const validation = loadAndValidateAtlasInput([adversarialPage()], {
-    maxFileBytes: 8192,
-    maxTotalBytes: 65536,
-  });
+  const validation = loadAndValidateAtlasInput([adversarialPage()]);
   const identity = {
     atlas: { reference: "local-home-atlas", state: "known" as const },
     role: "home" as const,
@@ -2311,35 +2227,253 @@ for (const entry of structuralValidationCorpus.cases) {
   });
 }
 
+interface ProseLintCorpusFile {
+  readonly padding?: { readonly count: number; readonly text: string };
+  readonly path: string;
+  readonly text: string;
+}
+
+interface ProseLintCorpusFinding {
+  readonly code: string;
+  readonly column?: number;
+  readonly line?: number;
+  readonly path: string;
+  readonly severity: string;
+}
+
+interface ProseLintCorpusCase {
+  readonly expectProseLinterCalled: boolean;
+  readonly expectation: "accept" | "not-completed" | "reject";
+  readonly expectedFindings: readonly ProseLintCorpusFinding[];
+  readonly files: readonly ProseLintCorpusFile[];
+  readonly gate: "prose-lint";
+  readonly minimumFileBytes?: number;
+  readonly name: string;
+  readonly proseStyle: boolean;
+  readonly vale?: { readonly status: number | null; readonly stdout: string };
+}
+
+interface ProseLintCorpus {
+  readonly cases: readonly ProseLintCorpusCase[];
+  readonly reviewResolutionRule: string;
+  readonly schema: 1;
+}
+
+function assertText(value: unknown, path: string): string {
+  if (typeof value !== "string") assert.fail(`${path} must be a string`);
+  return value;
+}
+
+function assertPosition(value: unknown, path: string): number | undefined {
+  if (value === undefined) return undefined;
+  const position = assertNumber(value, path);
+  assert.ok(Number.isSafeInteger(position) && position > 0, `${path} must be positive`);
+  return position;
+}
+
+function parseProseLintCorpus(value: unknown): ProseLintCorpus {
+  assert.ok(isRecord(value), "prose-lint corpus must be an object");
+  assert.equal(value["schema"], 1, "prose-lint corpus schema must be 1");
+  const reviewResolutionRule = assertString(
+    value["reviewResolutionRule"],
+    "prose-lint.reviewResolutionRule",
+  );
+  assert.ok(Array.isArray(value["cases"]), "prose-lint cases must be an array");
+  assert.notEqual(value["cases"].length, 0, "prose-lint cases must not be empty");
+  const names = new Set<string>();
+  const cases = (value["cases"] as readonly unknown[]).map(
+    (entry, index): ProseLintCorpusCase => {
+      const path = `prose-lint.cases[${String(index)}]`;
+      assert.ok(isRecord(entry), `${path} must be an object`);
+      const name = assertString(entry["name"], `${path}.name`);
+      assert.equal(names.has(name), false, `${path}.name must be unique`);
+      names.add(name);
+      assert.equal(entry["gate"], "prose-lint", `${path}.gate is unsupported`);
+      const expectation = entry["expectation"];
+      assert.ok(
+        expectation === "accept" ||
+          expectation === "not-completed" ||
+          expectation === "reject",
+        `${path}.expectation is unsupported`,
+      );
+      assert.equal(typeof entry["proseStyle"], "boolean", `${path}.proseStyle`);
+      assert.equal(
+        typeof entry["expectProseLinterCalled"],
+        "boolean",
+        `${path}.expectProseLinterCalled`,
+      );
+      assert.ok(Array.isArray(entry["files"]), `${path}.files must be an array`);
+      const files = (entry["files"] as readonly unknown[]).map(
+        (file, fileIndex): ProseLintCorpusFile => {
+          const filePath = `${path}.files[${String(fileIndex)}]`;
+          assert.ok(isRecord(file), `${filePath} must be an object`);
+          const padding = file["padding"];
+          const parsed = {
+            path: assertString(file["path"], `${filePath}.path`),
+            text: assertText(file["text"], `${filePath}.text`),
+          };
+          if (padding === undefined) return parsed;
+          assert.ok(isRecord(padding), `${filePath}.padding must be an object`);
+          const count = assertPosition(padding["count"], `${filePath}.padding.count`);
+          assert.ok(count !== undefined, `${filePath}.padding.count`);
+          return {
+            ...parsed,
+            padding: {
+              count,
+              text: assertString(padding["text"], `${filePath}.padding.text`),
+            },
+          };
+        },
+      );
+      assert.ok(
+        Array.isArray(entry["expectedFindings"]),
+        `${path}.expectedFindings must be an array`,
+      );
+      const expectedFindings = (entry["expectedFindings"] as readonly unknown[]).map(
+        (finding, findingIndex): ProseLintCorpusFinding => {
+          const findingPath = `${path}.expectedFindings[${String(findingIndex)}]`;
+          assert.ok(isRecord(finding), `${findingPath} must be an object`);
+          const line = assertPosition(finding["line"], `${findingPath}.line`);
+          const column = assertPosition(finding["column"], `${findingPath}.column`);
+          assert.equal(line === undefined, column === undefined, findingPath);
+          return {
+            code: assertString(finding["code"], `${findingPath}.code`),
+            path: assertString(finding["path"], `${findingPath}.path`),
+            severity: assertString(finding["severity"], `${findingPath}.severity`),
+            ...(line === undefined || column === undefined ? {} : { column, line }),
+          };
+        },
+      );
+      if (expectation !== "accept") {
+        assert.notEqual(expectedFindings.length, 0, `${path}.expectedFindings`);
+      }
+      const vale = entry["vale"];
+      const minimumFileBytes = assertPosition(
+        entry["minimumFileBytes"],
+        `${path}.minimumFileBytes`,
+      );
+      return {
+        expectProseLinterCalled: entry["expectProseLinterCalled"] as boolean,
+        expectation,
+        expectedFindings,
+        files,
+        gate: "prose-lint",
+        name,
+        proseStyle: entry["proseStyle"] as boolean,
+        ...(minimumFileBytes === undefined ? {} : { minimumFileBytes }),
+        ...(vale === undefined
+          ? {}
+          : (() => {
+              assert.ok(isRecord(vale), `${path}.vale must be an object`);
+              const status = vale["status"];
+              assert.ok(
+                status === null || Number.isSafeInteger(status),
+                `${path}.vale.status`,
+              );
+              return {
+                vale: {
+                  status: status as number | null,
+                  stdout: assertText(vale["stdout"], `${path}.vale.stdout`),
+                },
+              };
+            })()),
+      };
+    },
+  );
+  assert.ok(cases.some((entry) => entry.expectation === "accept"));
+  assert.ok(cases.some((entry) => entry.expectation === "reject"));
+  return { cases, reviewResolutionRule, schema: 1 };
+}
+
+const proseLintCorpus = parseProseLintCorpus(
+  JSON.parse(
+    readFileSync(resolve(ROOT, "tests", "adversarial", "prose-lint.json"), "utf8"),
+  ),
+);
+
+test("the adversarial prose-lint corpus is structurally valid", () => {
+  assert.match(proseLintCorpus.reviewResolutionRule, /review finding/u);
+  assert.equal(proseLintCorpus.schema, 1);
+  assert.ok(
+    proseLintCorpus.cases.some((entry) => entry.expectation === "not-completed"),
+  );
+});
+
+function proseLintCorpusFindings(
+  findings: readonly Finding[],
+): readonly ProseLintCorpusFinding[] {
+  return findings.map(({ code, location, path, severity }) => ({
+    code,
+    path,
+    severity,
+    ...(location === undefined
+      ? {}
+      : { column: location.start.column, line: location.start.line }),
+  }));
+}
+
+for (const entry of proseLintCorpus.cases) {
+  test(`adversarial prose-lint corpus: ${entry.name}`, () => {
+    executedCases += 1;
+    const captured = entry.files.map((file) =>
+      adversarialCaptured(
+        file.path,
+        file.text +
+          (file.padding === undefined
+            ? ""
+            : file.padding.text.repeat(file.padding.count)),
+      ),
+    );
+    if (entry.minimumFileBytes !== undefined) {
+      const minimum = entry.minimumFileBytes;
+      assert.ok(captured.some(({ bytes }) => bytes.byteLength > minimum));
+    }
+    // A deterministic stand-in for the Vale binary: it replays the case's
+    // recorded Vale process result through the same alert translation the
+    // pinned Vale adapter uses.
+    const requests: ProseLintRequest[] = [];
+    const proseLinter: ProseLinter = {
+      lint(request) {
+        requests.push(request);
+        if (entry.vale === undefined) assert.fail("prose linter must not run");
+        return valeProseLintOutcome(entry.vale, request, "/adversarial-vale-workspace");
+      },
+    };
+    const result = runLintOperation(
+      entry.proseStyle ? withProseStyle(captured) : captured,
+      proseLinter,
+    );
+    assert.equal(requests.length, entry.expectProseLinterCalled ? 1 : 0);
+    for (const request of requests) {
+      assert.deepEqual(
+        request.pagePaths,
+        captured
+          .map(({ path }) => path)
+          .filter((path) => path.endsWith(".md"))
+          .toSorted(),
+      );
+    }
+    if (entry.expectation === "not-completed") {
+      assert.equal(result.payload.state, "not-completed");
+      assert.equal(result.completion, "not-completed");
+      assert.equal(result.handoff.validationState.state, "not-completed");
+      assert.deepEqual(
+        proseLintCorpusFindings(result.payload.findings),
+        entry.expectedFindings,
+      );
+      return;
+    }
+    assert.equal(result.payload.state, "completed");
+    const { lint } = result.payload;
+    assert.equal(lint.outcome, entry.expectation === "accept" ? "valid" : "invalid");
+    assert.equal(lint.findings.every(checkFinding), true);
+    assert.deepEqual(proseLintCorpusFindings(lint.findings), entry.expectedFindings);
+  });
+}
+
 for (const entry of atlasCliCorpus.cases) {
   test(`adversarial atlas-cli corpus: ${entry.name}`, () => {
     executedCases += 1;
-    if (entry.kind === "capture-budget") {
-      const workspace = resolve(ROOT, ".test-workspaces", "adversarial-atlas-cli");
-      rmSync(workspace, { force: true, recursive: true });
-      mkdirSync(resolve(workspace, ".atlas"), { recursive: true });
-      for (const file of entry.files) {
-        writeFileSync(resolve(workspace, file.path), file.text);
-      }
-      let bytesRead = 0;
-      try {
-        captureAtlasHostDirectory(workspace, entry.budgets, (fd) => {
-          const bytes = readFileSync(fd);
-          bytesRead += bytes.byteLength;
-          return bytes;
-        });
-        assert.fail("expected capture budget failure");
-      } catch (error: unknown) {
-        assert.ok(error instanceof CaptureBudgetError);
-        assert.ok(bytesRead <= entry.maxBytesRead, String(bytesRead));
-        const result = runLintOperation(error.capturedFiles, entry.budgets);
-        assert.equal(result.payload.state, "completed");
-        assert.equal(result.payload.lint.findings[0]?.code, entry.expectedCode);
-      } finally {
-        rmSync(workspace, { force: true, recursive: true });
-      }
-      return;
-    }
     if (entry.kind === "capture-security") {
       const workspace = resolve(
         ROOT,
@@ -2421,58 +2555,6 @@ for (const entry of atlasCliCorpus.cases) {
         if (argument === "{atlasHostDirectory}") arguments_[index] = repository;
       }
     }
-    let changelogBefore: Uint8Array | undefined;
-    let changelogHead: string | undefined;
-    const runExplore = () => {
-      const command = spawnSync(
-        process.execPath,
-        [
-          resolve(ROOT, "scripts", "atlas.ts"),
-          "explore",
-          "--machine",
-          "serialization",
-          "--atlas-host-directory",
-          resolve(workspace, "repository"),
-        ],
-        { cwd: ROOT, encoding: "utf8" },
-      );
-      assert.equal(command.error, undefined);
-      assert.equal(command.stderr, "");
-      return {
-        result: parseMachineOperationResult(command.stdout) as ExploreOperationResult,
-        status: command.status,
-      };
-    };
-    const reachableResults = (result: ExploreOperationResult) =>
-      result.payload.results.map((entry) => ({
-        id: entry.result.id,
-        route: entry.route.map(({ objectId, edgeId }) => ({ objectId, edgeId })),
-      }));
-    const exploreBefore =
-      entry.expectedExploreResultId === undefined ? undefined : runExplore();
-    if (exploreBefore !== undefined) {
-      assert.equal(exploreBefore.status, 0);
-      assert.equal(exploreBefore.result.payload.degradation.level, "valid-structured");
-      assert.ok(
-        reachableResults(exploreBefore.result).some(
-          ({ id }) => id === entry.expectedExploreResultId,
-        ),
-      );
-    }
-    if (entry.generatedChangelogByteLength !== undefined) {
-      const remaining = entry.generatedChangelogByteLength - 3;
-      changelogBefore = new TextEncoder().encode(
-        "\uFEFF" +
-          "\u00E9".repeat(Math.floor(remaining / 2)) +
-          "x".repeat(remaining % 2),
-      );
-      assert.equal(changelogBefore.byteLength, entry.generatedChangelogByteLength);
-      const repository = resolve(workspace, "repository");
-      writeFileSync(resolve(repository, ".atlas", "CHANGELOG.md"), changelogBefore);
-      adversarialGit(repository, ["add", ".atlas/CHANGELOG.md"]);
-      adversarialGit(repository, ["commit", "-m", "Capacity fixture"]);
-      changelogHead = adversarialGit(repository, ["rev-parse", "HEAD"]);
-    }
     if (entry.generatedExploreAtlasOverFileBudget === true) {
       const repository = resolve(workspace, "repository");
       createAdversarialAtlasRepository(repository);
@@ -2524,45 +2606,6 @@ for (const entry of atlasCliCorpus.cases) {
     >[];
     assert.equal(findings[0]?.["code"], entry.expectedCode ?? undefined);
     if (entry.expectedCode === null) assert.deepEqual(findings, []);
-    if (entry.generatedChangelogByteLength !== undefined) {
-      assert.equal(result["operation-result-schema"], "1.0.0");
-      assert.equal(result["completion"], "completed");
-      assert.equal(result["disposition"], "success");
-      assert.equal(validationState["state"], "passed");
-      if (entry.expectedCode !== null) {
-        assert.equal(findings.length, 1);
-        const [warning] = findings;
-        assert.ok(warning !== undefined);
-        assert.equal(warning["severity"], "warning");
-        assert.equal(warning["path"], ".atlas/CHANGELOG.md");
-        assert.match(String(warning["message"]), /786432.*1048576/u);
-      }
-      const repository = resolve(workspace, "repository");
-      const snapshot = captureLocalAtlasSnapshot(repository);
-      assert.ok(snapshot.state === "captured");
-      const capturedChangelog = snapshot.snapshot.capturedFiles.find(
-        ({ path }) => path === ".atlas/CHANGELOG.md",
-      );
-      assert.ok(capturedChangelog !== undefined);
-      assert.deepEqual(new Uint8Array(capturedChangelog.bytes), changelogBefore);
-      assert.deepEqual(
-        new Uint8Array(readFileSync(resolve(repository, ".atlas", "CHANGELOG.md"))),
-        changelogBefore,
-      );
-      assert.equal(adversarialGit(repository, ["rev-parse", "HEAD"]), changelogHead);
-      assert.equal(adversarialGit(repository, ["status", "--porcelain"]), "");
-    }
-    if (exploreBefore !== undefined) {
-      const explored = runExplore();
-      assert.equal(explored.result.payload.degradation.level, "valid-structured");
-      assert.equal(explored.result.handoff.validationState.state, "passed");
-      assert.deepEqual(explored.result.payload.degradation.diagnostics, []);
-      assert.equal(explored.status, 0);
-      assert.deepEqual(
-        reachableResults(explored.result),
-        reachableResults(exploreBefore.result),
-      );
-    }
     if (entry.forbidPayloadLint === true) {
       const payload = result["payload"] as Readonly<Record<string, unknown>>;
       assert.equal(payload["state"], "not-completed");
@@ -2670,10 +2713,7 @@ function actualLintStamp(): Readonly<Record<string, unknown>> {
     currentBaseSnapshotDigest: () => state.baseSnapshotDigest,
     currentTargetHead: () => state.targetHead,
     lintProposal: () => ({
-      lint: runLintOperation(atlasInitializationFiles(state), {
-        maxFileBytes: 4096,
-        maxTotalBytes: 65536,
-      }),
+      lint: runLintOperation(atlasInitializationFiles(state), passingProseLinter),
       receipt: commit,
     }),
     writeChangeSet: () => ({ receipt: "written" }),
@@ -3529,10 +3569,10 @@ function ingestRuntime(scenario: IngestScenario): AtlasIngestRuntime {
         });
       }
       return {
-        lint: runLintOperation([...byPath.values()], {
-          maxFileBytes: 8192,
-          maxTotalBytes: 262_144,
-        }),
+        lint: runLintOperation(
+          withProseStyle([...byPath.values()]),
+          passingProseLinter,
+        ),
         receipt: commit,
       };
     },

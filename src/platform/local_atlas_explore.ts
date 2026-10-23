@@ -27,14 +27,12 @@ import {
 interface LocalAtlasExploreBudgets {
   readonly maxContextCharacters: number;
   readonly maxEdges: number;
-  readonly maxFileBytes: number;
   readonly maxFiles: number;
   readonly maxObjects: number;
   readonly maxQueryCharacters: number;
   readonly maxResults: number;
   readonly maxRouteEdges: number;
   readonly maxTerms: number;
-  readonly maxTotalBytes: number;
 }
 
 export type LocalExploreTextGitRunner = typeof runTrustedGit;
@@ -60,7 +58,7 @@ export type LocalExploreCaptureResult =
     }
   | {
       readonly reason: string;
-      readonly state: "missing" | "oversized" | "too-many-files" | "unreadable";
+      readonly state: "missing" | "too-many-files" | "unreadable";
     };
 
 const exploreOperationIdentity = Object.freeze({
@@ -160,20 +158,6 @@ function missingAtlasResult(message: string): ExploreOperationResult {
       degraded: false,
       homeAtlasReason:
         "Explore command selected an Atlas Host Directory with no .atlas directory.",
-    },
-  );
-}
-
-function oversizedAtlasResult(message: string): ExploreOperationResult {
-  return notCompletedLocalExploreResult(
-    "ATLAS_EXPLORE_ATLAS_TOO_LARGE",
-    message,
-    "Explore command input exceeded its byte budget before it could be read.",
-    "Reduce the committed Atlas Snapshot to the supported byte budget, then retry Explore.",
-    {
-      baseSnapshotReason: "Explore refused an oversized Git-backed Atlas Snapshot.",
-      degraded: false,
-      homeAtlasReason: "Explore refused an oversized Atlas Host Directory.",
     },
   );
 }
@@ -324,8 +308,6 @@ export function runLocalAtlasExplore(
       });
     case "missing":
       return missingAtlasResult(capture.reason);
-    case "oversized":
-      return oversizedAtlasResult(capture.reason);
     case "too-many-files":
       return tooManyAtlasFilesResult(capture.reason);
     case "unreadable":

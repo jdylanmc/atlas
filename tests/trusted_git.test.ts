@@ -243,7 +243,7 @@ test("trusted git command helpers preserve containment and surface resolution or
   assert.equal(firstInvocation.executable, "/usr/bin/git");
   assert.equal(firstInvocation.options.cwd, undefined);
   assert.equal(firstInvocation.options.env?.["PATH"], "/usr/bin:/bin");
-  assert.equal(firstInvocation.options.maxBuffer, 16 * 1024 * 1024);
+  assert.equal(firstInvocation.options.maxBuffer, Number.POSITIVE_INFINITY);
 
   const bytes = Buffer.from([1, 2, 3]);
   const bytesSpawn = ((

@@ -78,6 +78,162 @@
         {
           "content": "---\nsdk:\n  atlas-sdk-schema: 1.0.0\n  created-at: \"2026-01-01T00:00:00Z\"\n  created-by:\n    kind: agent\n    name: Atlas SDK\n  id: anchor:root\n  local-atlas-schema: 1.0.0\n  originating-operation: atlas-initialization\n  tags: []\n  title: Home Atlas\n  type: anchor\n  updated-at: \"2026-01-01T00:00:00Z\"\n  updated-by:\n    kind: agent\n    name: Atlas SDK\natlas: {}\n---\n\n# Home Atlas\n\nThis Root Anchor starts a minimal Home Atlas with no Guide Persona, founding knowledge, or Atlas Site.\n",
           "path": ".atlas/index.md"
+        },
+        {
+          "content": "# Vale prose Lint for this Atlas. Atlas SDK runs its pinned Vale with this\n# file on every Lint; an error-level alert fails Lint. This Atlas owns this\n# configuration and may change, disable, or extend any rule.\nStylesPath = vale/styles\nMinAlertLevel = suggestion\n\n[*.md]\nBasedOnStyles = AtlasSDK, Google\n# Ingest writes verbatim source quotations as `Quoted span \"exact text\".`,\n# which Google.Quotes would reject; keep it advisory.\nGoogle.Quotes = warning\n",
+          "path": ".atlas/.vale.ini"
+        },
+        {
+          "content": "# Counts prose words only: headings, code, table cells, and frontmatter are\n# excluded by Vale's summary scope.\nextends: occurrence\nmessage: \"Page prose runs to %d words. Split it into an overview page and child pages.\"\ndescription: Long pages are hard to read and route; split one topic per page.\nlevel: error\nscope: summary\nmax: 1000\ntoken: \"[\\\\p{L}\\\\p{N}]+(?:['’-][\\\\p{L}\\\\p{N}]+)*\"\n",
+          "path": ".atlas/vale/styles/AtlasSDK/PageLength.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Use 'AM' or 'PM' (preceded by a space).\"\nlink: \"https://developers.google.com/style/word-list\"\nlevel: error\nnonword: true\ntokens:\n  - '\\d{1,2}[AP]M\\b'\n  - '\\d{1,2} ?[ap]m\\b'\n  - '\\d{1,2} ?[aApP]\\.[mM]\\.'\n",
+          "path": ".atlas/vale/styles/Google/AMPM.yml"
+        },
+        {
+          "content": "extends: conditional\nmessage: \"Spell out '%s', if it's unfamiliar to the audience.\"\nlink: 'https://developers.google.com/style/abbreviations'\nlevel: suggestion\nignorecase: false\n# Ensures that the existence of 'first' implies the existence of 'second'.\nfirst: '\\b([A-Z]{3,5})\\b'\nsecond: '(?:\\b[A-Z][a-z]+ )+\\(([A-Z]{3,5})\\)'\n# ... with the exception of these:\nexceptions:\n  - API\n  - ASP\n  - CLI\n  - CPU\n  - CSS\n  - CSV\n  - DEBUG\n  - DOM\n  - DPI\n  - FAQ\n  - GCC\n  - GDB\n  - GET\n  - GPU\n  - GTK\n  - GUI\n  - HTML\n  - HTTP\n  - HTTPS\n  - IDE\n  - JAR\n  - JSON\n  - JSX\n  - LESS\n  - LLDB\n  - NET\n  - NOTE\n  - NVDA\n  - OSS\n  - PATH\n  - PDF\n  - PHP\n  - POST\n  - RAM\n  - REPL\n  - RSA\n  - SCM\n  - SCSS\n  - SDK\n  - SQL\n  - SSH\n  - SSL\n  - SVG\n  - TBD\n  - TCP\n  - TODO\n  - URI\n  - URL\n  - USB\n  - UTF\n  - XML\n  - XSS\n  - YAML\n  - ZIP\n",
+          "path": ".atlas/vale/styles/Google/Acronyms.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Don't attribute human qualities to software or hardware ('%s').\"\nlink: https://developers.google.com/style/anthropomorphism\nlevel: suggestion\nignorecase: true\n# Limited to the two verbs the guide itself names. Broader lists (wants, knows,\n# thinks) can't tell a software subject from a human one: on a 950-file corpus\n# they produced 8 false positives ('the customer wants', 'your audience knows')\n# for every 2 real ones.\ntokens:\n  - sees\n  - tells\n",
+          "path": ".atlas/vale/styles/Google/Anthropomorphism.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"'%s' should be in lowercase.\"\nlink: 'https://developers.google.com/style/colons'\nlevel: warning\nscope: sentence\n# The match is the word itself, not ': X', and `nonword` is off. Both are\n# required for a project Vocab to work: Vale compares accept.txt entries\n# against the matched text, and `nonword: true` opts out of that entirely.\n# So a proper noun after a colon can be exempted by adding it to accept.txt.\n# The guide's other exemption, notice labels, is handled by the lookbehinds;\n# headings are already excluded by `scope: sentence`. See issue #20.\ntokens:\n  - '(?<!Note: )(?<!Caution: )(?<!Warning: )(?<!Success: )(?<=:\\s)[A-Z]\\w+'\n",
+          "path": ".atlas/vale/styles/Google/Colons.yml"
+        },
+        {
+          "content": "extends: substitution\nmessage: \"Use '%s' instead of '%s'.\"\nlink: 'https://developers.google.com/style/contractions'\nlevel: suggestion\nignorecase: true\naction:\n  name: replace\nswap:\n  are not: aren't\n  cannot: can't\n  could not: couldn't\n  did not: didn't\n  do not: don't\n  does not: doesn't\n  has not: hasn't\n  have not: haven't\n  how is: how's\n  is not: isn't\n  it is: it's\n  should not: shouldn't\n  that is: that's\n  they are: they're\n  was not: wasn't\n  we are: we're\n  we have: we've\n  were not: weren't\n  what is: what's\n  when is: when's\n  where is: where's\n  will not: won't\n",
+          "path": ".atlas/vale/styles/Google/Contractions.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Use 'July 31, 2016' format, not '%s'.\"\nlink: 'https://developers.google.com/style/dates-times'\nignorecase: true\nlevel: error\nnonword: true\ntokens:\n  - '\\d{1,2}(?:\\.|/)\\d{1,2}(?:\\.|/)\\d{4}'\n  - '\\d{1,2} (?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?) \\d{4}'\n",
+          "path": ".atlas/vale/styles/Google/DateFormat.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"In general, don't use an ellipsis.\"\nlink: 'https://developers.google.com/style/ellipses'\nnonword: true\nlevel: warning\naction:\n  name: remove\ntokens:\n  - '\\.\\.\\.'\n",
+          "path": ".atlas/vale/styles/Google/Ellipses.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Don't put a space before or after a dash.\"\nlink: \"https://developers.google.com/style/dashes\"\nnonword: true\nlevel: error\naction:\n  name: edit\n  params:\n    - trim\n    - \" \"\ntokens:\n  - '\\s[—–]\\s'\n\n",
+          "path": ".atlas/vale/styles/Google/EmDash.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Avoid the unverifiable claim '%s'.\"\nlink: https://developers.google.com/style/excessive-claims\nlevel: suggestion\nignorecase: true\n# The guide also names 'never', 'always', and 'ensure', but in technical writing\n# those are usually legitimate instructions ('never commit secrets') rather than\n# product claims: they accounted for 125 of 142 hits on a 950-file corpus.\n# 'best practices' is a fixed term, not a superlative.\ntokens:\n  - 'best(?! practices?)'\n  - simplest\n  - fastest\n  - guarantees?\n",
+          "path": ".atlas/vale/styles/Google/ExcessiveClaims.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Don't use exclamation points in text.\"\nlink: \"https://developers.google.com/style/exclamation-points\"\nnonword: true\nlevel: error\naction:\n  name: edit\n  params:\n    - trim_right\n    - \"!\"\ntokens:\n  - '\\w+!(?:\\s|$)'\n",
+          "path": ".atlas/vale/styles/Google/Exclamation.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Avoid first-person pronouns such as '%s'.\"\nlink: 'https://developers.google.com/style/pronouns#personal-pronouns'\nignorecase: true\nlevel: warning\n# The 'I' tokens use lookaround rather than consuming the surrounding\n# whitespace. Matching ' I ' made the alert span cover both spaces, which shows\n# up as a too-wide underline in editors, and read as \"such as ' I '\". Dropping\n# `nonword` also lets a project Vocab apply, which it can't when set. See PR #50.\ntokens:\n  - '(?<=^|\\s)I(?=[\\s,])'\n  - \"\\\\bI'm\\\\b\"\n  - \\bme\\b\n  - \\bmy\\b\n  - \\bmine\\b\n",
+          "path": ".atlas/vale/styles/Google/FirstPerson.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Don't use '%s' as a gender-neutral pronoun.\"\nlink: 'https://developers.google.com/style/pronouns#gender-neutral-pronouns'\nlevel: error\nignorecase: true\ntokens:\n  - he/she\n  - s/he\n  - \\(s\\)he\n",
+          "path": ".atlas/vale/styles/Google/Gender.yml"
+        },
+        {
+          "content": "extends: substitution\nmessage: \"Consider using '%s' instead of '%s'.\"\nignorecase: true\nlink: \"https://developers.google.com/style/inclusive-documentation\"\nlevel: error\naction:\n  name: replace\nswap:\n  (?:alumna|alumnus): graduate\n  (?:alumnae|alumni): graduates\n  air(?:m[ae]n|wom[ae]n): pilot(s)\n  anchor(?:m[ae]n|wom[ae]n): anchor(s)\n  authoress: author\n  camera(?:m[ae]n|wom[ae]n): camera operator(s)\n  door(?:m[ae]|wom[ae]n): concierge(s)\n  draft(?:m[ae]n|wom[ae]n): drafter(s)\n  fire(?:m[ae]n|wom[ae]n): firefighter(s)\n  fisher(?:m[ae]n|wom[ae]n): fisher(s)\n  fresh(?:m[ae]n|wom[ae]n): first-year student(s)\n  garbage(?:m[ae]n|wom[ae]n): waste collector(s)\n  lady lawyer: lawyer\n  ladylike: courteous\n  mail(?:m[ae]n|wom[ae]n): mail carriers\n  man and wife: husband and wife\n  man enough: strong enough\n  mankind: human kind|humanity\n  manmade: manufactured\n  manpower: personnel\n  middle(?:m[ae]n|wom[ae]n): intermediary\n  news(?:m[ae]n|wom[ae]n): journalist(s)\n  ombuds(?:man|woman): ombuds\n  oneupmanship: upstaging\n  poetess: poet\n  police(?:m[ae]n|wom[ae]n): police officer(s)\n  repair(?:m[ae]n|wom[ae]n): technician(s)\n  sales(?:m[ae]n|wom[ae]n): salesperson or sales people\n  service(?:m[ae]n|wom[ae]n): soldier(s)\n  steward(?:ess)?: flight attendant\n  tribes(?:m[ae]n|wom[ae]n): tribe member(s)\n  waitress: waiter\n  woman doctor: doctor\n  woman scientist[s]?: scientist(s)\n  work(?:m[ae]n|wom[ae]n): worker(s)\n",
+          "path": ".atlas/vale/styles/Google/GenderBias.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Don't put a period at the end of a heading.\"\nlink: \"https://developers.google.com/style/capitalization#capitalization-in-titles-and-headings\"\nnonword: true\nlevel: warning\nscope: heading\naction:\n  name: edit\n  params:\n    - trim_right\n    - \".\"\ntokens:\n  - '[a-z0-9][.]\\s*$'\n",
+          "path": ".atlas/vale/styles/Google/HeadingPunctuation.yml"
+        },
+        {
+          "content": "extends: capitalization\nmessage: \"'%s' should use sentence-style capitalization.\"\nlink: \"https://developers.google.com/style/capitalization#capitalization-in-titles-and-headings\"\nlevel: warning\nscope: heading\nmatch: $sentence\n# No `indicators: [\":\"]` here. That makes Vale require a capital after a colon,\n# which is the Microsoft convention this rule was originally copied from. This\n# guide says the opposite: \"the first word after a colon is generally\n# lowercase\" (developers.google.com/style/colons), and Colons.yml enforces\n# exactly that. See issue #58.\nexceptions:\n  - Azure\n  - CLI\n  - Cosmos\n  - Docker\n  - Emmet\n  - gRPC\n  - I\n  - Kubernetes\n  - Linux\n  - macOS\n  - Marketplace\n  - MongoDB\n  - REPL\n  - Studio\n  - TypeScript\n  - URLs\n  - Visual\n  - VS\n  - Windows\n  - JSON\n",
+          "path": ".atlas/vale/styles/Google/Headings.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Avoid the jargon '%s'.\"\nlink: https://developers.google.com/style/jargon\nlevel: suggestion\nignorecase: true\n# The guide also cites 'solution', 'support', and 'workload' as overloaded\n# terms, but those have ordinary technical meanings and accounted for every hit\n# on a 950-file corpus, so only the unambiguous figurative terms are listed.\ntokens:\n  - break-glass\n  - camel ?case\n  - out-of-the-box\n  - swim ?lane\n",
+          "path": ".atlas/vale/styles/Google/Jargon.yml"
+        },
+        {
+          "content": "extends: substitution\nmessage: \"Use '%s' instead of '%s'.\"\nlink: 'https://developers.google.com/style/abbreviations'\nignorecase: true\nlevel: error\nnonword: true\naction:\n  name: replace\n# The delimiter is a lookahead so the replacement doesn't swallow the comma or\n# space that follows (issue #18). `$` is included so the abbreviation is still\n# caught at the end of a heading, table cell, or block, which accounted for 8\n# of 10 occurrences on a 950-file corpus.\nswap:\n  '\\b(?:eg|e\\.g\\.)(?=[\\s,;]|$)': for example\n  '\\b(?:ie|i\\.e\\.)(?=[\\s,;]|$)': that is\n",
+          "path": ".atlas/vale/styles/Google/Latin.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"'%s' doesn't need a hyphen.\"\nlink: \"https://developers.google.com/style/hyphens\"\nlevel: error\nignorecase: false\nnonword: true\naction:\n  name: edit\n  params:\n    - regex\n    - \"-\"\n    - \" \"\ntokens:\n  - '\\b[^\\s-]+ly-\\w+\\b'\n",
+          "path": ".atlas/vale/styles/Google/LyHyphens.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Don't use plurals in parentheses such as in '%s'.\"\nlink: \"https://developers.google.com/style/plurals-parentheses\"\nlevel: error\nnonword: true\naction:\n  name: edit\n  params:\n    - trim_right\n    - \"(s)\"\ntokens:\n  - '\\b\\w+\\(s\\)'\n",
+          "path": ".atlas/vale/styles/Google/OptionalPlurals.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Spell out all ordinal numbers ('%s') in text.\"\nlink: 'https://developers.google.com/style/numbers'\nlevel: error\nnonword: true\ntokens:\n  - \\d+(?:st|nd|rd|th)\n",
+          "path": ".atlas/vale/styles/Google/Ordinal.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Use the Oxford comma in '%s'.\"\nlink: 'https://developers.google.com/style/commas'\nscope: sentence\nlevel: warning\nnonword: true\n# List items may be several words long, not just one. Four guards keep the\n# false-positive rate down:\n#\n#   1. The comma can't be the one closing a fronted subordinate clause\n#      ('When your alarm rings, you turn it off and tumble out of bed.') --\n#      that comma separates clauses, not list items. Only the first comma of\n#      such a sentence is exempt, so 'When it rains, apples, pears or bananas\n#      get wet.' is still caught.\n#   2. The item can't open with a clause-introducer (', which ...',\n#      ', specifically ...').\n#   3. The item can't open with a subject pronoun followed by a verb, which\n#      marks a compound predicate rather than a list ('..., you walk to the\n#      fridge and get a snack.'). A pronoun directly followed by 'and'/'or'\n#      is a real list item, so ', you and me.' still matches.\n#   4. Neither item may contain an auxiliary verb, which is another compound\n#      predicate signal (', it has some downsides and is officially\n#      discouraged.').\n#\n# The trailing anchor allows end-of-scope so list fragments ('Apples, pears\n# or bananas') are still caught.\ntokens:\n  - '(?<!^(?i:when|whenever|while|if|unless|until|although|though|because|since|after|before|once|whereas|whether|as)\\b[^,]{0,80}),\\s(?!(?:which|who|whom|whose|that|where|when|while|because|since|although|though|if|unless|so|but|and|or|however|therefore|thus|specifically|especially|namely|then|take|see|note|consider|make|use|either|neither)\\b)(?!(?i:i|you|we|they|he|she|it)\\s+(?!(?:and|or)\\b))(?:(?!\\b(?:is|are|was|were|has|have|had|be|been|being|will|would|can|could|should|may|might|must|do|does|did)\\b)\\w+ ){0,4}\\w+ (?:and|or) (?:(?!\\b(?:is|are|was|were|has|have|had|be|been|being|will|would|can|could|should|may|might|must|do|does|did)\\b)\\w+ ){0,4}\\w+(?:[.?!]|$)'\n",
+          "path": ".atlas/vale/styles/Google/OxfordComma.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Use parentheses judiciously.\"\nlink: 'https://developers.google.com/style/parentheses'\nnonword: true\nlevel: suggestion\n# `[^)]` rather than `.+`: a greedy match ran from the first '(' on a line to\n# the last ')', so 'Text (one) and more (two).' produced a single alert\n# covering everything between them. See issue #30.\n# A bare 3-5 letter acronym is skipped: Acronyms.yml requires acronyms to be\n# defined as 'Spelled Out Term (ACRONYM)', so flagging those parentheses would\n# put the two rules in direct conflict. The acronym has to be the whole\n# parenthetical — '(NASA rocket program)' is an ordinary aside and still\n# flags. Length matches the {3,5} in Acronyms.yml. See PR #59.\ntokens:\n  - '\\((?![A-Z]{3,5}\\))[^)]+\\)'\n",
+          "path": ".atlas/vale/styles/Google/Parens.yml"
+        },
+        {
+          "content": "extends: existence\nlink: 'https://developers.google.com/style/voice'\nmessage: \"In general, use active voice instead of passive voice ('%s').\"\nignorecase: true\nlevel: suggestion\nraw:\n  - \\b(am|are|were|being|is|been|was|be)\\b\\s*\ntokens:\n  - '[\\w]+ed'\n  - awoken\n  - beat\n  - become\n  - been\n  - begun\n  - bent\n  - beset\n  - bet\n  - bid\n  - bidden\n  - bitten\n  - bled\n  - blown\n  - born\n  - bought\n  - bound\n  - bred\n  - broadcast\n  - broken\n  - brought\n  - built\n  - burnt\n  - burst\n  - cast\n  - caught\n  - chosen\n  - clung\n  - come\n  - cost\n  - crept\n  - cut\n  - dealt\n  - dived\n  - done\n  - drawn\n  - dreamt\n  - driven\n  - drunk\n  - dug\n  - eaten\n  - fallen\n  - fed\n  - felt\n  - fit\n  - fled\n  - flown\n  - flung\n  - forbidden\n  - foregone\n  - forgiven\n  - forgotten\n  - forsaken\n  - fought\n  - found\n  - frozen\n  - given\n  - gone\n  - gotten\n  - ground\n  - grown\n  - heard\n  - held\n  - hidden\n  - hit\n  - hung\n  - hurt\n  - kept\n  - knelt\n  - knit\n  - known\n  - laid\n  - lain\n  - leapt\n  - learnt\n  - led\n  - left\n  - lent\n  - let\n  - lighted\n  - lost\n  - made\n  - meant\n  - met\n  - misspelt\n  - mistaken\n  - mown\n  - overcome\n  - overdone\n  - overtaken\n  - overthrown\n  - paid\n  - pled\n  - proven\n  - put\n  - quit\n  - read\n  - rid\n  - ridden\n  - risen\n  - run\n  - rung\n  - said\n  - sat\n  - sawn\n  - seen\n  - sent\n  - set\n  - sewn\n  - shaken\n  - shaven\n  - shed\n  - shod\n  - shone\n  - shorn\n  - shot\n  - shown\n  - shrunk\n  - shut\n  - slain\n  - slept\n  - slid\n  - slit\n  - slung\n  - smitten\n  - sold\n  - sought\n  - sown\n  - sped\n  - spent\n  - spilt\n  - spit\n  - split\n  - spoken\n  - spread\n  - sprung\n  - spun\n  - stolen\n  - stood\n  - stridden\n  - striven\n  - struck\n  - strung\n  - stuck\n  - stung\n  - stunk\n  - sung\n  - sunk\n  - swept\n  - swollen\n  - sworn\n  - swum\n  - swung\n  - taken\n  - taught\n  - thought\n  - thrived\n  - thrown\n  - thrust\n  - told\n  - torn\n  - trodden\n  - understood\n  - upheld\n  - upset\n  - wed\n  - wept\n  - withheld\n  - withstood\n  - woken\n  - won\n  - worn\n  - wound\n  - woven\n  - written\n  - wrung\n",
+          "path": ".atlas/vale/styles/Google/Passive.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Don't use periods with acronyms or initialisms such as '%s'.\"\nlink: 'https://developers.google.com/style/abbreviations'\nlevel: error\nnonword: true\ntokens:\n  - '\\b(?:[A-Z]\\.){3,}'\n",
+          "path": ".atlas/vale/styles/Google/Periods.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Commas and periods go inside quotation marks.\"\nlink: 'https://developers.google.com/style/quotation-marks'\nlevel: error\nnonword: true\ntokens:\n  - '\"[^\"]+\"[.,?]'\n",
+          "path": ".atlas/vale/styles/Google/Quotes.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Don't add words such as 'from' or 'between' to describe a range of numbers.\"\nlink: 'https://developers.google.com/style/hyphens'\nnonword: true\nlevel: warning\ntokens:\n  - '(?:from|between)\\s\\d+\\s?-\\s?\\d+'\n",
+          "path": ".atlas/vale/styles/Google/Ranges.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Use semicolons judiciously.\"\nlink: 'https://developers.google.com/style/semicolons'\nnonword: true\nscope: sentence\nlevel: suggestion\ntokens:\n  - ';'\n",
+          "path": ".atlas/vale/styles/Google/Semicolons.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Don't use internet slang abbreviations such as '%s'.\"\nlink: 'https://developers.google.com/style/abbreviations'\nignorecase: true\nlevel: error\ntokens:\n  - 'tl;dr'\n  - ymmv\n  - rtfm\n  - imo\n  - fwiw\n",
+          "path": ".atlas/vale/styles/Google/Slang.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"'%s' should have one space.\"\nlink: 'https://developers.google.com/style/sentence-spacing'\nlevel: error\nnonword: true\naction:\n  name: remove\ntokens:\n  - '[a-z][.?!] {2,}[A-Z]'\n  - '[a-z][.?!][A-Z]'\n",
+          "path": ".atlas/vale/styles/Google/Spacing.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"In general, use American spelling instead of '%s'.\"\nlink: 'https://developers.google.com/style/spelling'\nignorecase: true\nlevel: warning\ntokens:\n  - '(?:\\w+)nised?'\n  - 'colour'\n  - 'labour'\n  - 'centre'\n",
+          "path": ".atlas/vale/styles/Google/Spelling.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Avoid time-based words like '%s' in product documentation.\"\nlink: https://developers.google.com/style/timeless-documentation\nlevel: suggestion\nignorecase: true\n# The guide also names 'now' and 'new', but both have common senses that aren't\n# time-anchored ('create a new project'): adding them took a 950-file corpus of\n# technical documentation from 14 hits to 117. 'recently' is left out too — every\n# hit in that corpus was the UI idiom 'recently used'.\ntokens:\n  - currently\n  - latest\n  - soon\n",
+          "path": ".atlas/vale/styles/Google/Timeless.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Put a nonbreaking space between the number and the unit in '%s'.\"\nlink: \"https://developers.google.com/style/units-of-measure\"\nnonword: true\nlevel: error\ntokens:\n  - '\\b\\d+(?:B|kB|MB|GB|TB)\\b'\n  - '\\b\\d+(?:ns|ms|min|h|d)\\b'\n  # Seconds are split out so a decade ('1990s') isn't read as a unit.\n  - '\\b\\d+s\\b(?<!\\b(?:19|20)\\d\\ds\\b)'\n",
+          "path": ".atlas/vale/styles/Google/Units.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Try to avoid using first-person plural like '%s'.\"\nlink: 'https://developers.google.com/style/pronouns#personal-pronouns'\nlevel: warning\nignorecase: true\ntokens:\n  - we\n  - we'(?:ve|re)\n  - ours?\n  - us\n  - let's\n",
+          "path": ".atlas/vale/styles/Google/We.yml"
+        },
+        {
+          "content": "extends: existence\nmessage: \"Avoid using '%s'.\"\nlink: 'https://developers.google.com/style/tense'\nignorecase: true\nlevel: warning\ntokens:\n  - will\n",
+          "path": ".atlas/vale/styles/Google/Will.yml"
+        },
+        {
+          "content": "extends: substitution\nmessage: \"Use '%s' instead of '%s'.\"\nlink: \"https://developers.google.com/style/word-list\"\nlevel: warning\n# Case matters here: each key's own capitalization is what's being corrected,\n# so ignorecase would make these match their own replacements. The rest of the\n# word list lives in WordListCase.yml.\nignorecase: false\naction:\n  name: replace\nswap:\n  Ajax: AJAX\n  Android device: Android-powered device\n  android: Android\n  API explorer: APIs Explorer\n  authN: authentication\n  authZ: authorization\n  CLI: command-line tool\n  Cloud: Google Cloud Platform|GCP\n  Container Engine: Kubernetes Engine\n  Developers Console: Google API Console|API Console\n  Google account: Google Account\n  Google accounts: Google Accounts\n  Googling: search with Google\n  HTTPs: HTTPS\n  k8s: Kubernetes\n  SHA1: SHA-1|HAS-SHA1\n  url: URL\n  World Wide Web: web\n",
+          "path": ".atlas/vale/styles/Google/WordList.yml"
+        },
+        {
+          "content": "extends: substitution\nmessage: \"Use '%s' instead of '%s'.\"\nlink: \"https://developers.google.com/style/word-list\"\nlevel: warning\n# The case-insensitive half of the word list, so sentence-initial use is caught\n# ('Touch the screen', not only 'touch the screen'). Entries that must stay\n# case-sensitive are in WordList.yml.\nignorecase: true\naction:\n  name: replace\nswap:\n  \"(?:API Console|dev|developer) key\": API key\n  \"(?:cell ?phone|smart ?phone)\": phone|mobile phone\n  \"(?:dev|developer|APIs) console\": API console\n  \"(?:e-mail|Email|E-mail)\": email\n  \"(?:file ?path|path ?name)\": path\n  \"(?:kill|terminate|abort)\": stop|exit|cancel|end\n  # Longest form first: with the shortest alternative leading, 'OAuth 2' matched\n  # only 'OAuth', so applying the suggestion produced 'OAuth 2.0 2'. The rule is\n  # already case-insensitive, so the inline (?i) is redundant. See issue #41.\n  '\\bOauth2\\.0\\b|\\bOAuth ?2\\b(?!\\.0)|\\bOauth\\b(?! ?2)': OAuth 2.0\n  \"(?:ok|Okay)\": OK|okay\n  \"(?:WiFi|wifi)\": Wi-Fi\n  '[\\.]+apk': APK\n  '3\\-D': 3D\n  'Google (?:I\\-O|IO)': Google I/O\n  \"tap (?:&|and) hold\": touch & hold\n  \"un(?:check|select)\": clear\n  above: preceding\n  account name: username\n  action bar: app bar\n  admin: administrator\n  a\\.k\\.a|aka: or|also known as\n  application: app\n  approx\\.: approximately\n  autoupdate: automatically update\n  cellular data: mobile data\n  cellular network: mobile network\n  chapter: documents|pages|sections\n  check box: checkbox\n  click on: click|click in\n  content type: media type\n  curated roles: predefined roles\n  data are: data is\n  disabled?: turn off|off\n  ephemeral IP address: ephemeral external IP address\n  fewer data: less data\n  file name: filename\n  firewalls: firewall rules\n  functionality: capability|feature\n  grayed-out: unavailable\n  in order to: to\n  ingest: import|load\n  long press: touch & hold\n  network IP address: internal IP address\n  omnibox: address bar\n  open-source: open source\n  overview screen: recents screen\n  regex: regular expression\n  sign into: sign in to\n  '(?<!single )sign-?on': single sign-on\n  static IP address: static external IP address\n  stylesheet: style sheet\n  synch: sync\n  tablename: table name\n  tablet: device\n  'touch(?! ?(?:&|and) hold)': tap\n  vs\\.: versus\n",
+          "path": ".atlas/vale/styles/Google/WordListCase.yml"
+        },
+        {
+          "content": "MIT License\n\nCopyright (c) 2018 - 2019 Joseph Kato\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n",
+          "path": ".atlas/vale/styles/Google/LICENSE"
         }
       ],
       "targetHead": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -135,12 +291,168 @@
           "findings": [],
           "opaque": [
             {
+              "content": "# Vale prose Lint for this Atlas. Atlas SDK runs its pinned Vale with this\n# file on every Lint; an error-level alert fails Lint. This Atlas owns this\n# configuration and may change, disable, or extend any rule.\nStylesPath = vale/styles\nMinAlertLevel = suggestion\n\n[*.md]\nBasedOnStyles = AtlasSDK, Google\n# Ingest writes verbatim source quotations as `Quoted span \"exact text\".`,\n# which Google.Quotes would reject; keep it advisory.\nGoogle.Quotes = warning\n",
+              "path": ".atlas/.vale.ini"
+            },
+            {
               "content": "# Changelog\n\n## 2026-01-01\n\n- atlas-initialization: Initialized minimal Home Atlas.\n",
               "path": ".atlas/CHANGELOG.md"
             },
             {
               "content": "{\n  \"atlas-manifest-schema\": \"1.0.0\",\n  \"atlas-sdk-schema\": \"1.0.0\",\n  \"local-atlas-schema\": \"1.0.0\"\n}\n",
               "path": ".atlas/manifest.json"
+            },
+            {
+              "content": "# Counts prose words only: headings, code, table cells, and frontmatter are\n# excluded by Vale's summary scope.\nextends: occurrence\nmessage: \"Page prose runs to %d words. Split it into an overview page and child pages.\"\ndescription: Long pages are hard to read and route; split one topic per page.\nlevel: error\nscope: summary\nmax: 1000\ntoken: \"[\\\\p{L}\\\\p{N}]+(?:['’-][\\\\p{L}\\\\p{N}]+)*\"\n",
+              "path": ".atlas/vale/styles/AtlasSDK/PageLength.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Use 'AM' or 'PM' (preceded by a space).\"\nlink: \"https://developers.google.com/style/word-list\"\nlevel: error\nnonword: true\ntokens:\n  - '\\d{1,2}[AP]M\\b'\n  - '\\d{1,2} ?[ap]m\\b'\n  - '\\d{1,2} ?[aApP]\\.[mM]\\.'\n",
+              "path": ".atlas/vale/styles/Google/AMPM.yml"
+            },
+            {
+              "content": "extends: conditional\nmessage: \"Spell out '%s', if it's unfamiliar to the audience.\"\nlink: 'https://developers.google.com/style/abbreviations'\nlevel: suggestion\nignorecase: false\n# Ensures that the existence of 'first' implies the existence of 'second'.\nfirst: '\\b([A-Z]{3,5})\\b'\nsecond: '(?:\\b[A-Z][a-z]+ )+\\(([A-Z]{3,5})\\)'\n# ... with the exception of these:\nexceptions:\n  - API\n  - ASP\n  - CLI\n  - CPU\n  - CSS\n  - CSV\n  - DEBUG\n  - DOM\n  - DPI\n  - FAQ\n  - GCC\n  - GDB\n  - GET\n  - GPU\n  - GTK\n  - GUI\n  - HTML\n  - HTTP\n  - HTTPS\n  - IDE\n  - JAR\n  - JSON\n  - JSX\n  - LESS\n  - LLDB\n  - NET\n  - NOTE\n  - NVDA\n  - OSS\n  - PATH\n  - PDF\n  - PHP\n  - POST\n  - RAM\n  - REPL\n  - RSA\n  - SCM\n  - SCSS\n  - SDK\n  - SQL\n  - SSH\n  - SSL\n  - SVG\n  - TBD\n  - TCP\n  - TODO\n  - URI\n  - URL\n  - USB\n  - UTF\n  - XML\n  - XSS\n  - YAML\n  - ZIP\n",
+              "path": ".atlas/vale/styles/Google/Acronyms.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Don't attribute human qualities to software or hardware ('%s').\"\nlink: https://developers.google.com/style/anthropomorphism\nlevel: suggestion\nignorecase: true\n# Limited to the two verbs the guide itself names. Broader lists (wants, knows,\n# thinks) can't tell a software subject from a human one: on a 950-file corpus\n# they produced 8 false positives ('the customer wants', 'your audience knows')\n# for every 2 real ones.\ntokens:\n  - sees\n  - tells\n",
+              "path": ".atlas/vale/styles/Google/Anthropomorphism.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"'%s' should be in lowercase.\"\nlink: 'https://developers.google.com/style/colons'\nlevel: warning\nscope: sentence\n# The match is the word itself, not ': X', and `nonword` is off. Both are\n# required for a project Vocab to work: Vale compares accept.txt entries\n# against the matched text, and `nonword: true` opts out of that entirely.\n# So a proper noun after a colon can be exempted by adding it to accept.txt.\n# The guide's other exemption, notice labels, is handled by the lookbehinds;\n# headings are already excluded by `scope: sentence`. See issue #20.\ntokens:\n  - '(?<!Note: )(?<!Caution: )(?<!Warning: )(?<!Success: )(?<=:\\s)[A-Z]\\w+'\n",
+              "path": ".atlas/vale/styles/Google/Colons.yml"
+            },
+            {
+              "content": "extends: substitution\nmessage: \"Use '%s' instead of '%s'.\"\nlink: 'https://developers.google.com/style/contractions'\nlevel: suggestion\nignorecase: true\naction:\n  name: replace\nswap:\n  are not: aren't\n  cannot: can't\n  could not: couldn't\n  did not: didn't\n  do not: don't\n  does not: doesn't\n  has not: hasn't\n  have not: haven't\n  how is: how's\n  is not: isn't\n  it is: it's\n  should not: shouldn't\n  that is: that's\n  they are: they're\n  was not: wasn't\n  we are: we're\n  we have: we've\n  were not: weren't\n  what is: what's\n  when is: when's\n  where is: where's\n  will not: won't\n",
+              "path": ".atlas/vale/styles/Google/Contractions.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Use 'July 31, 2016' format, not '%s'.\"\nlink: 'https://developers.google.com/style/dates-times'\nignorecase: true\nlevel: error\nnonword: true\ntokens:\n  - '\\d{1,2}(?:\\.|/)\\d{1,2}(?:\\.|/)\\d{4}'\n  - '\\d{1,2} (?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?) \\d{4}'\n",
+              "path": ".atlas/vale/styles/Google/DateFormat.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"In general, don't use an ellipsis.\"\nlink: 'https://developers.google.com/style/ellipses'\nnonword: true\nlevel: warning\naction:\n  name: remove\ntokens:\n  - '\\.\\.\\.'\n",
+              "path": ".atlas/vale/styles/Google/Ellipses.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Don't put a space before or after a dash.\"\nlink: \"https://developers.google.com/style/dashes\"\nnonword: true\nlevel: error\naction:\n  name: edit\n  params:\n    - trim\n    - \" \"\ntokens:\n  - '\\s[—–]\\s'\n\n",
+              "path": ".atlas/vale/styles/Google/EmDash.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Avoid the unverifiable claim '%s'.\"\nlink: https://developers.google.com/style/excessive-claims\nlevel: suggestion\nignorecase: true\n# The guide also names 'never', 'always', and 'ensure', but in technical writing\n# those are usually legitimate instructions ('never commit secrets') rather than\n# product claims: they accounted for 125 of 142 hits on a 950-file corpus.\n# 'best practices' is a fixed term, not a superlative.\ntokens:\n  - 'best(?! practices?)'\n  - simplest\n  - fastest\n  - guarantees?\n",
+              "path": ".atlas/vale/styles/Google/ExcessiveClaims.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Don't use exclamation points in text.\"\nlink: \"https://developers.google.com/style/exclamation-points\"\nnonword: true\nlevel: error\naction:\n  name: edit\n  params:\n    - trim_right\n    - \"!\"\ntokens:\n  - '\\w+!(?:\\s|$)'\n",
+              "path": ".atlas/vale/styles/Google/Exclamation.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Avoid first-person pronouns such as '%s'.\"\nlink: 'https://developers.google.com/style/pronouns#personal-pronouns'\nignorecase: true\nlevel: warning\n# The 'I' tokens use lookaround rather than consuming the surrounding\n# whitespace. Matching ' I ' made the alert span cover both spaces, which shows\n# up as a too-wide underline in editors, and read as \"such as ' I '\". Dropping\n# `nonword` also lets a project Vocab apply, which it can't when set. See PR #50.\ntokens:\n  - '(?<=^|\\s)I(?=[\\s,])'\n  - \"\\\\bI'm\\\\b\"\n  - \\bme\\b\n  - \\bmy\\b\n  - \\bmine\\b\n",
+              "path": ".atlas/vale/styles/Google/FirstPerson.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Don't use '%s' as a gender-neutral pronoun.\"\nlink: 'https://developers.google.com/style/pronouns#gender-neutral-pronouns'\nlevel: error\nignorecase: true\ntokens:\n  - he/she\n  - s/he\n  - \\(s\\)he\n",
+              "path": ".atlas/vale/styles/Google/Gender.yml"
+            },
+            {
+              "content": "extends: substitution\nmessage: \"Consider using '%s' instead of '%s'.\"\nignorecase: true\nlink: \"https://developers.google.com/style/inclusive-documentation\"\nlevel: error\naction:\n  name: replace\nswap:\n  (?:alumna|alumnus): graduate\n  (?:alumnae|alumni): graduates\n  air(?:m[ae]n|wom[ae]n): pilot(s)\n  anchor(?:m[ae]n|wom[ae]n): anchor(s)\n  authoress: author\n  camera(?:m[ae]n|wom[ae]n): camera operator(s)\n  door(?:m[ae]|wom[ae]n): concierge(s)\n  draft(?:m[ae]n|wom[ae]n): drafter(s)\n  fire(?:m[ae]n|wom[ae]n): firefighter(s)\n  fisher(?:m[ae]n|wom[ae]n): fisher(s)\n  fresh(?:m[ae]n|wom[ae]n): first-year student(s)\n  garbage(?:m[ae]n|wom[ae]n): waste collector(s)\n  lady lawyer: lawyer\n  ladylike: courteous\n  mail(?:m[ae]n|wom[ae]n): mail carriers\n  man and wife: husband and wife\n  man enough: strong enough\n  mankind: human kind|humanity\n  manmade: manufactured\n  manpower: personnel\n  middle(?:m[ae]n|wom[ae]n): intermediary\n  news(?:m[ae]n|wom[ae]n): journalist(s)\n  ombuds(?:man|woman): ombuds\n  oneupmanship: upstaging\n  poetess: poet\n  police(?:m[ae]n|wom[ae]n): police officer(s)\n  repair(?:m[ae]n|wom[ae]n): technician(s)\n  sales(?:m[ae]n|wom[ae]n): salesperson or sales people\n  service(?:m[ae]n|wom[ae]n): soldier(s)\n  steward(?:ess)?: flight attendant\n  tribes(?:m[ae]n|wom[ae]n): tribe member(s)\n  waitress: waiter\n  woman doctor: doctor\n  woman scientist[s]?: scientist(s)\n  work(?:m[ae]n|wom[ae]n): worker(s)\n",
+              "path": ".atlas/vale/styles/Google/GenderBias.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Don't put a period at the end of a heading.\"\nlink: \"https://developers.google.com/style/capitalization#capitalization-in-titles-and-headings\"\nnonword: true\nlevel: warning\nscope: heading\naction:\n  name: edit\n  params:\n    - trim_right\n    - \".\"\ntokens:\n  - '[a-z0-9][.]\\s*$'\n",
+              "path": ".atlas/vale/styles/Google/HeadingPunctuation.yml"
+            },
+            {
+              "content": "extends: capitalization\nmessage: \"'%s' should use sentence-style capitalization.\"\nlink: \"https://developers.google.com/style/capitalization#capitalization-in-titles-and-headings\"\nlevel: warning\nscope: heading\nmatch: $sentence\n# No `indicators: [\":\"]` here. That makes Vale require a capital after a colon,\n# which is the Microsoft convention this rule was originally copied from. This\n# guide says the opposite: \"the first word after a colon is generally\n# lowercase\" (developers.google.com/style/colons), and Colons.yml enforces\n# exactly that. See issue #58.\nexceptions:\n  - Azure\n  - CLI\n  - Cosmos\n  - Docker\n  - Emmet\n  - gRPC\n  - I\n  - Kubernetes\n  - Linux\n  - macOS\n  - Marketplace\n  - MongoDB\n  - REPL\n  - Studio\n  - TypeScript\n  - URLs\n  - Visual\n  - VS\n  - Windows\n  - JSON\n",
+              "path": ".atlas/vale/styles/Google/Headings.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Avoid the jargon '%s'.\"\nlink: https://developers.google.com/style/jargon\nlevel: suggestion\nignorecase: true\n# The guide also cites 'solution', 'support', and 'workload' as overloaded\n# terms, but those have ordinary technical meanings and accounted for every hit\n# on a 950-file corpus, so only the unambiguous figurative terms are listed.\ntokens:\n  - break-glass\n  - camel ?case\n  - out-of-the-box\n  - swim ?lane\n",
+              "path": ".atlas/vale/styles/Google/Jargon.yml"
+            },
+            {
+              "content": "MIT License\n\nCopyright (c) 2018 - 2019 Joseph Kato\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n",
+              "path": ".atlas/vale/styles/Google/LICENSE"
+            },
+            {
+              "content": "extends: substitution\nmessage: \"Use '%s' instead of '%s'.\"\nlink: 'https://developers.google.com/style/abbreviations'\nignorecase: true\nlevel: error\nnonword: true\naction:\n  name: replace\n# The delimiter is a lookahead so the replacement doesn't swallow the comma or\n# space that follows (issue #18). `$` is included so the abbreviation is still\n# caught at the end of a heading, table cell, or block, which accounted for 8\n# of 10 occurrences on a 950-file corpus.\nswap:\n  '\\b(?:eg|e\\.g\\.)(?=[\\s,;]|$)': for example\n  '\\b(?:ie|i\\.e\\.)(?=[\\s,;]|$)': that is\n",
+              "path": ".atlas/vale/styles/Google/Latin.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"'%s' doesn't need a hyphen.\"\nlink: \"https://developers.google.com/style/hyphens\"\nlevel: error\nignorecase: false\nnonword: true\naction:\n  name: edit\n  params:\n    - regex\n    - \"-\"\n    - \" \"\ntokens:\n  - '\\b[^\\s-]+ly-\\w+\\b'\n",
+              "path": ".atlas/vale/styles/Google/LyHyphens.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Don't use plurals in parentheses such as in '%s'.\"\nlink: \"https://developers.google.com/style/plurals-parentheses\"\nlevel: error\nnonword: true\naction:\n  name: edit\n  params:\n    - trim_right\n    - \"(s)\"\ntokens:\n  - '\\b\\w+\\(s\\)'\n",
+              "path": ".atlas/vale/styles/Google/OptionalPlurals.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Spell out all ordinal numbers ('%s') in text.\"\nlink: 'https://developers.google.com/style/numbers'\nlevel: error\nnonword: true\ntokens:\n  - \\d+(?:st|nd|rd|th)\n",
+              "path": ".atlas/vale/styles/Google/Ordinal.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Use the Oxford comma in '%s'.\"\nlink: 'https://developers.google.com/style/commas'\nscope: sentence\nlevel: warning\nnonword: true\n# List items may be several words long, not just one. Four guards keep the\n# false-positive rate down:\n#\n#   1. The comma can't be the one closing a fronted subordinate clause\n#      ('When your alarm rings, you turn it off and tumble out of bed.') --\n#      that comma separates clauses, not list items. Only the first comma of\n#      such a sentence is exempt, so 'When it rains, apples, pears or bananas\n#      get wet.' is still caught.\n#   2. The item can't open with a clause-introducer (', which ...',\n#      ', specifically ...').\n#   3. The item can't open with a subject pronoun followed by a verb, which\n#      marks a compound predicate rather than a list ('..., you walk to the\n#      fridge and get a snack.'). A pronoun directly followed by 'and'/'or'\n#      is a real list item, so ', you and me.' still matches.\n#   4. Neither item may contain an auxiliary verb, which is another compound\n#      predicate signal (', it has some downsides and is officially\n#      discouraged.').\n#\n# The trailing anchor allows end-of-scope so list fragments ('Apples, pears\n# or bananas') are still caught.\ntokens:\n  - '(?<!^(?i:when|whenever|while|if|unless|until|although|though|because|since|after|before|once|whereas|whether|as)\\b[^,]{0,80}),\\s(?!(?:which|who|whom|whose|that|where|when|while|because|since|although|though|if|unless|so|but|and|or|however|therefore|thus|specifically|especially|namely|then|take|see|note|consider|make|use|either|neither)\\b)(?!(?i:i|you|we|they|he|she|it)\\s+(?!(?:and|or)\\b))(?:(?!\\b(?:is|are|was|were|has|have|had|be|been|being|will|would|can|could|should|may|might|must|do|does|did)\\b)\\w+ ){0,4}\\w+ (?:and|or) (?:(?!\\b(?:is|are|was|were|has|have|had|be|been|being|will|would|can|could|should|may|might|must|do|does|did)\\b)\\w+ ){0,4}\\w+(?:[.?!]|$)'\n",
+              "path": ".atlas/vale/styles/Google/OxfordComma.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Use parentheses judiciously.\"\nlink: 'https://developers.google.com/style/parentheses'\nnonword: true\nlevel: suggestion\n# `[^)]` rather than `.+`: a greedy match ran from the first '(' on a line to\n# the last ')', so 'Text (one) and more (two).' produced a single alert\n# covering everything between them. See issue #30.\n# A bare 3-5 letter acronym is skipped: Acronyms.yml requires acronyms to be\n# defined as 'Spelled Out Term (ACRONYM)', so flagging those parentheses would\n# put the two rules in direct conflict. The acronym has to be the whole\n# parenthetical — '(NASA rocket program)' is an ordinary aside and still\n# flags. Length matches the {3,5} in Acronyms.yml. See PR #59.\ntokens:\n  - '\\((?![A-Z]{3,5}\\))[^)]+\\)'\n",
+              "path": ".atlas/vale/styles/Google/Parens.yml"
+            },
+            {
+              "content": "extends: existence\nlink: 'https://developers.google.com/style/voice'\nmessage: \"In general, use active voice instead of passive voice ('%s').\"\nignorecase: true\nlevel: suggestion\nraw:\n  - \\b(am|are|were|being|is|been|was|be)\\b\\s*\ntokens:\n  - '[\\w]+ed'\n  - awoken\n  - beat\n  - become\n  - been\n  - begun\n  - bent\n  - beset\n  - bet\n  - bid\n  - bidden\n  - bitten\n  - bled\n  - blown\n  - born\n  - bought\n  - bound\n  - bred\n  - broadcast\n  - broken\n  - brought\n  - built\n  - burnt\n  - burst\n  - cast\n  - caught\n  - chosen\n  - clung\n  - come\n  - cost\n  - crept\n  - cut\n  - dealt\n  - dived\n  - done\n  - drawn\n  - dreamt\n  - driven\n  - drunk\n  - dug\n  - eaten\n  - fallen\n  - fed\n  - felt\n  - fit\n  - fled\n  - flown\n  - flung\n  - forbidden\n  - foregone\n  - forgiven\n  - forgotten\n  - forsaken\n  - fought\n  - found\n  - frozen\n  - given\n  - gone\n  - gotten\n  - ground\n  - grown\n  - heard\n  - held\n  - hidden\n  - hit\n  - hung\n  - hurt\n  - kept\n  - knelt\n  - knit\n  - known\n  - laid\n  - lain\n  - leapt\n  - learnt\n  - led\n  - left\n  - lent\n  - let\n  - lighted\n  - lost\n  - made\n  - meant\n  - met\n  - misspelt\n  - mistaken\n  - mown\n  - overcome\n  - overdone\n  - overtaken\n  - overthrown\n  - paid\n  - pled\n  - proven\n  - put\n  - quit\n  - read\n  - rid\n  - ridden\n  - risen\n  - run\n  - rung\n  - said\n  - sat\n  - sawn\n  - seen\n  - sent\n  - set\n  - sewn\n  - shaken\n  - shaven\n  - shed\n  - shod\n  - shone\n  - shorn\n  - shot\n  - shown\n  - shrunk\n  - shut\n  - slain\n  - slept\n  - slid\n  - slit\n  - slung\n  - smitten\n  - sold\n  - sought\n  - sown\n  - sped\n  - spent\n  - spilt\n  - spit\n  - split\n  - spoken\n  - spread\n  - sprung\n  - spun\n  - stolen\n  - stood\n  - stridden\n  - striven\n  - struck\n  - strung\n  - stuck\n  - stung\n  - stunk\n  - sung\n  - sunk\n  - swept\n  - swollen\n  - sworn\n  - swum\n  - swung\n  - taken\n  - taught\n  - thought\n  - thrived\n  - thrown\n  - thrust\n  - told\n  - torn\n  - trodden\n  - understood\n  - upheld\n  - upset\n  - wed\n  - wept\n  - withheld\n  - withstood\n  - woken\n  - won\n  - worn\n  - wound\n  - woven\n  - written\n  - wrung\n",
+              "path": ".atlas/vale/styles/Google/Passive.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Don't use periods with acronyms or initialisms such as '%s'.\"\nlink: 'https://developers.google.com/style/abbreviations'\nlevel: error\nnonword: true\ntokens:\n  - '\\b(?:[A-Z]\\.){3,}'\n",
+              "path": ".atlas/vale/styles/Google/Periods.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Commas and periods go inside quotation marks.\"\nlink: 'https://developers.google.com/style/quotation-marks'\nlevel: error\nnonword: true\ntokens:\n  - '\"[^\"]+\"[.,?]'\n",
+              "path": ".atlas/vale/styles/Google/Quotes.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Don't add words such as 'from' or 'between' to describe a range of numbers.\"\nlink: 'https://developers.google.com/style/hyphens'\nnonword: true\nlevel: warning\ntokens:\n  - '(?:from|between)\\s\\d+\\s?-\\s?\\d+'\n",
+              "path": ".atlas/vale/styles/Google/Ranges.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Use semicolons judiciously.\"\nlink: 'https://developers.google.com/style/semicolons'\nnonword: true\nscope: sentence\nlevel: suggestion\ntokens:\n  - ';'\n",
+              "path": ".atlas/vale/styles/Google/Semicolons.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Don't use internet slang abbreviations such as '%s'.\"\nlink: 'https://developers.google.com/style/abbreviations'\nignorecase: true\nlevel: error\ntokens:\n  - 'tl;dr'\n  - ymmv\n  - rtfm\n  - imo\n  - fwiw\n",
+              "path": ".atlas/vale/styles/Google/Slang.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"'%s' should have one space.\"\nlink: 'https://developers.google.com/style/sentence-spacing'\nlevel: error\nnonword: true\naction:\n  name: remove\ntokens:\n  - '[a-z][.?!] {2,}[A-Z]'\n  - '[a-z][.?!][A-Z]'\n",
+              "path": ".atlas/vale/styles/Google/Spacing.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"In general, use American spelling instead of '%s'.\"\nlink: 'https://developers.google.com/style/spelling'\nignorecase: true\nlevel: warning\ntokens:\n  - '(?:\\w+)nised?'\n  - 'colour'\n  - 'labour'\n  - 'centre'\n",
+              "path": ".atlas/vale/styles/Google/Spelling.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Avoid time-based words like '%s' in product documentation.\"\nlink: https://developers.google.com/style/timeless-documentation\nlevel: suggestion\nignorecase: true\n# The guide also names 'now' and 'new', but both have common senses that aren't\n# time-anchored ('create a new project'): adding them took a 950-file corpus of\n# technical documentation from 14 hits to 117. 'recently' is left out too — every\n# hit in that corpus was the UI idiom 'recently used'.\ntokens:\n  - currently\n  - latest\n  - soon\n",
+              "path": ".atlas/vale/styles/Google/Timeless.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Put a nonbreaking space between the number and the unit in '%s'.\"\nlink: \"https://developers.google.com/style/units-of-measure\"\nnonword: true\nlevel: error\ntokens:\n  - '\\b\\d+(?:B|kB|MB|GB|TB)\\b'\n  - '\\b\\d+(?:ns|ms|min|h|d)\\b'\n  # Seconds are split out so a decade ('1990s') isn't read as a unit.\n  - '\\b\\d+s\\b(?<!\\b(?:19|20)\\d\\ds\\b)'\n",
+              "path": ".atlas/vale/styles/Google/Units.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Try to avoid using first-person plural like '%s'.\"\nlink: 'https://developers.google.com/style/pronouns#personal-pronouns'\nlevel: warning\nignorecase: true\ntokens:\n  - we\n  - we'(?:ve|re)\n  - ours?\n  - us\n  - let's\n",
+              "path": ".atlas/vale/styles/Google/We.yml"
+            },
+            {
+              "content": "extends: existence\nmessage: \"Avoid using '%s'.\"\nlink: 'https://developers.google.com/style/tense'\nignorecase: true\nlevel: warning\ntokens:\n  - will\n",
+              "path": ".atlas/vale/styles/Google/Will.yml"
+            },
+            {
+              "content": "extends: substitution\nmessage: \"Use '%s' instead of '%s'.\"\nlink: \"https://developers.google.com/style/word-list\"\nlevel: warning\n# Case matters here: each key's own capitalization is what's being corrected,\n# so ignorecase would make these match their own replacements. The rest of the\n# word list lives in WordListCase.yml.\nignorecase: false\naction:\n  name: replace\nswap:\n  Ajax: AJAX\n  Android device: Android-powered device\n  android: Android\n  API explorer: APIs Explorer\n  authN: authentication\n  authZ: authorization\n  CLI: command-line tool\n  Cloud: Google Cloud Platform|GCP\n  Container Engine: Kubernetes Engine\n  Developers Console: Google API Console|API Console\n  Google account: Google Account\n  Google accounts: Google Accounts\n  Googling: search with Google\n  HTTPs: HTTPS\n  k8s: Kubernetes\n  SHA1: SHA-1|HAS-SHA1\n  url: URL\n  World Wide Web: web\n",
+              "path": ".atlas/vale/styles/Google/WordList.yml"
+            },
+            {
+              "content": "extends: substitution\nmessage: \"Use '%s' instead of '%s'.\"\nlink: \"https://developers.google.com/style/word-list\"\nlevel: warning\n# The case-insensitive half of the word list, so sentence-initial use is caught\n# ('Touch the screen', not only 'touch the screen'). Entries that must stay\n# case-sensitive are in WordList.yml.\nignorecase: true\naction:\n  name: replace\nswap:\n  \"(?:API Console|dev|developer) key\": API key\n  \"(?:cell ?phone|smart ?phone)\": phone|mobile phone\n  \"(?:dev|developer|APIs) console\": API console\n  \"(?:e-mail|Email|E-mail)\": email\n  \"(?:file ?path|path ?name)\": path\n  \"(?:kill|terminate|abort)\": stop|exit|cancel|end\n  # Longest form first: with the shortest alternative leading, 'OAuth 2' matched\n  # only 'OAuth', so applying the suggestion produced 'OAuth 2.0 2'. The rule is\n  # already case-insensitive, so the inline (?i) is redundant. See issue #41.\n  '\\bOauth2\\.0\\b|\\bOAuth ?2\\b(?!\\.0)|\\bOauth\\b(?! ?2)': OAuth 2.0\n  \"(?:ok|Okay)\": OK|okay\n  \"(?:WiFi|wifi)\": Wi-Fi\n  '[\\.]+apk': APK\n  '3\\-D': 3D\n  'Google (?:I\\-O|IO)': Google I/O\n  \"tap (?:&|and) hold\": touch & hold\n  \"un(?:check|select)\": clear\n  above: preceding\n  account name: username\n  action bar: app bar\n  admin: administrator\n  a\\.k\\.a|aka: or|also known as\n  application: app\n  approx\\.: approximately\n  autoupdate: automatically update\n  cellular data: mobile data\n  cellular network: mobile network\n  chapter: documents|pages|sections\n  check box: checkbox\n  click on: click|click in\n  content type: media type\n  curated roles: predefined roles\n  data are: data is\n  disabled?: turn off|off\n  ephemeral IP address: ephemeral external IP address\n  fewer data: less data\n  file name: filename\n  firewalls: firewall rules\n  functionality: capability|feature\n  grayed-out: unavailable\n  in order to: to\n  ingest: import|load\n  long press: touch & hold\n  network IP address: internal IP address\n  omnibox: address bar\n  open-source: open source\n  overview screen: recents screen\n  regex: regular expression\n  sign into: sign in to\n  '(?<!single )sign-?on': single sign-on\n  static IP address: static external IP address\n  stylesheet: style sheet\n  synch: sync\n  tablename: table name\n  tablet: device\n  'touch(?! ?(?:&|and) hold)': tap\n  vs\\.: versus\n",
+              "path": ".atlas/vale/styles/Google/WordListCase.yml"
             }
           ],
           "outcome": "valid",

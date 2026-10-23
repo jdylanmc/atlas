@@ -31,6 +31,7 @@ import {
 import { runLintOperation } from "../src/operations/lint_operation.ts";
 import { captureLocalAtlasSnapshot } from "../src/platform/local_atlas_snapshot.ts";
 import { assertGrowthRatio } from "./growth.ts";
+import { passingProseLinter, withProseStyle } from "./prose_lint_fixtures.ts";
 import {
   malformedProviderEnvelope,
   readSearchProviderEnvelopeCorpus,
@@ -55,13 +56,11 @@ const workspaceRoot = resolve(import.meta.dirname, "..", ".test-workspaces");
 const budgets: ExploreBudgets = Object.freeze({
   maxContextCharacters: 4096,
   maxEdges: 128,
-  maxFileBytes: 8192,
   maxObjects: 128,
   maxQueryCharacters: 256,
   maxResults: 5,
   maxRouteEdges: 16,
   maxTerms: 256,
-  maxTotalBytes: 65536,
 });
 
 const paths = [
@@ -103,7 +102,7 @@ function exploreCaptured(
   provider: SearchProvider = lexicalSearchProvider,
   exploreBudgets: ExploreBudgets = budgets,
 ): ReturnType<typeof exploreAtlas> {
-  const validated = loadAndValidateAtlasInput(files, exploreBudgets);
+  const validated = loadAndValidateAtlasInput(files);
   const atlasView = buildAtlasView({
     identity: {
       atlas: { reference: "fixture", state: "known" },
@@ -866,10 +865,11 @@ test("all accepted invalid Atlas variants preserve Explore degradation levels", 
   ] as const;
 
   for (const entry of cases) {
-    const lint = runLintOperation(entry.files, budgets);
+    const files = withProseStyle(entry.files);
+    const lint = runLintOperation(files, passingProseLinter);
     const explore = runExploreOperation({
       baseSnapshot: { reference: `${entry.name}-base`, state: "known" },
-      capturedFiles: entry.files,
+      capturedFiles: files,
       homeAtlas: { reference: "fixture", state: "known" },
       query: "needle",
       budgets,

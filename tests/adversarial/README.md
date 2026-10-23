@@ -27,14 +27,16 @@ explicit spelling and a corresponding acceptance case. This is a bounded SDK
 naming capability, not a general English inflector. Existing mechanical
 avoidance aliases remain separate from authoritative directory prescriptions.
 
-Changelog-capacity cases in `atlas-cli.json` generate committed UTF-8 history
-with a byte-order mark at and one byte below the default warning threshold.
-They require a visible warning without invalidity at the threshold, no warning
-below it, unchanged history bytes and Git state after the actual CLI runs, and
-successful default Git snapshot capture of the same history.
-Explore runs before and after the capacity fixture is committed, requiring
-unchanged reachable IDs/routes, complete structure and passed validation while
-Lint retains its maintenance warning.
+`prose-lint.json` exercises the mandatory Vale prose Lint through
+`runLintOperation` with a deterministic stand-in for the Vale binary: each case
+replays a recorded Vale process result (`status`, `stdout`) through the same
+alert translation the bundled adapter uses. An Atlas without `.atlas/.vale.ini`
+is rejected with `ATLAS_VALE_CONFIG_MISSING` before Vale runs; an unrunnable
+Vale or unreadable report leaves Lint not completed with
+`ATLAS_VALE_UNAVAILABLE`; error-level alerts reject while warning-level alerts
+accept. Lone carriage returns and Unicode line/paragraph separators produce one
+located Finding per offending file, without running Vale, and a page over one
+mebibyte is accepted because Lint enforces no Atlas byte budget.
 
 The `explore-ranking` cases also resolve route `reanchorIndex` references
 against the emitted checkpoint table. Literal expected Anchor IDs cover the

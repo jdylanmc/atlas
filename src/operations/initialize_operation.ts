@@ -1,3 +1,4 @@
+import { atlasSdkProseStyleFiles } from "../lint/atlas_sdk_prose_style.ts";
 import { compareCodePoints } from "../atlas/compare_code_points.ts";
 import {
   atlasPathCollisionKey,
@@ -1300,6 +1301,9 @@ function minimalAtlasChangeSet(
         path: atlasManifestPath,
       }),
       root,
+      // Every Atlas carries its own prose Lint configuration, seeded from the
+      // Atlas SDK default style and owned by the Atlas from then on.
+      ...atlasSdkProseStyleFiles,
     ]),
     targetHead: state.targetHead,
   });

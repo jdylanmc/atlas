@@ -2,24 +2,21 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
-import type {
-  AtlasTextBudgets,
-  CapturedAtlasFile,
-} from "../src/atlas/load_atlas_text.ts";
+import type { CapturedAtlasFile } from "../src/atlas/load_atlas_text.ts";
 import type {
   OperationHandoff,
   OperationIdentity,
   OperationResult,
 } from "../src/operations/operation_result.ts";
 import { runLintOperation } from "../src/operations/lint_operation.ts";
+import {
+  passingProseLinter,
+  recordingProseLinter,
+  withProseStyle,
+} from "./prose_lint_fixtures.ts";
 
 const encoder = new TextEncoder();
 const fixturesRoot = resolve(import.meta.dirname, "fixtures", "complete-atlas");
-
-const generousBudgets: AtlasTextBudgets = Object.freeze({
-  maxFileBytes: 4096,
-  maxTotalBytes: 65536,
-});
 
 const atlasPaths = [
   ".atlas/manifest.json",
@@ -58,114 +55,15 @@ function fixtureBytes(variant: "invalid" | "valid", path: string): Uint8Array {
 }
 
 function completeAtlas(variant: "invalid" | "valid"): CapturedAtlasFile[] {
-  return atlasPaths.map((path) => ({ bytes: fixtureBytes(variant, path), path }));
-}
-
-test("Lint warns at the Changelog byte threshold without invalidating history", () => {
-  const bytes = encoder.encode("\uFEFF" + "\u00E9".repeat(393214) + "x");
-  assert.equal(bytes.byteLength, 786432);
-  let measurements = 0;
-  Object.defineProperty(bytes, "byteLength", {
-    get(): number {
-      measurements += 1;
-      assert.equal(measurements, 1, "capacity must reuse the loader's measurement");
-      return bytes.length;
-    },
-  });
-  const files = completeAtlas("valid").map((file) =>
-    file.path === ".atlas/CHANGELOG.md" ? { ...file, bytes } : file,
-  );
-  const result = runLintOperation(files, {
-    maxFileBytes: 1048576,
-    maxTotalBytes: 16777216,
-  });
-  assert.equal(result.completion, "completed");
-  assert.equal(result.disposition, "success");
-  assert.equal(result.handoff.validationState.state, "passed");
-  assert.deepEqual(
-    result.handoff.validationState.findings.map(({ code, path, severity }) => ({
-      code,
-      path,
-      severity,
-    })),
-    [
-      {
-        code: "ATLAS_CHANGELOG_NEAR_CAPACITY",
-        path: ".atlas/CHANGELOG.md",
-        severity: "warning",
-      },
-    ],
-  );
-  assert.match(
-    result.handoff.validationState.findings[0]?.message ?? "",
-    /786432.*1048576/u,
-  );
-  assert.equal(measurements, 1);
-  assert.equal(bytes.length, 786432);
-  assert.deepEqual(
-    new Uint8Array(bytes),
-    encoder.encode("\uFEFF" + "\u00E9".repeat(393214) + "x"),
-  );
-});
-
-for (const entry of [
-  {
-    name: "below the default threshold",
-    size: 786431,
-    limit: 1048576,
-    code: undefined,
-  },
-  {
-    name: "at a tighter caller threshold",
-    size: 3072,
-    limit: 4096,
-    code: "ATLAS_CHANGELOG_NEAR_CAPACITY",
-  },
-  {
-    name: "below a tighter caller threshold",
-    size: 3071,
-    limit: 4096,
-    code: undefined,
-  },
-  {
-    name: "before the default cap with a looser caller budget",
-    size: 786432,
-    limit: 2097152,
-    code: "ATLAS_CHANGELOG_NEAR_CAPACITY",
-  },
-  {
-    name: "at the unchanged capture limit",
-    size: 1048576,
-    limit: 1048576,
-    code: "ATLAS_CHANGELOG_NEAR_CAPACITY",
-  },
-  {
-    name: "above the unchanged capture limit",
-    size: 1048577,
-    limit: 1048576,
-    code: "ATLAS_LOAD_FILE_TOO_LARGE",
-  },
-]) {
-  test(`Changelog capacity ${entry.name}`, () => {
-    const files = completeAtlas("valid").map((file) =>
-      file.path === ".atlas/CHANGELOG.md"
-        ? { ...file, bytes: new Uint8Array(entry.size).fill(0x78) }
-        : file,
-    );
-    const result = runLintOperation(files, {
-      maxFileBytes: entry.limit,
-      maxTotalBytes: 16777216,
-    });
-    assert.equal(result.disposition, entry.size > entry.limit ? "failed" : "success");
-    assert.deepEqual(
-      result.handoff.validationState.findings.map(({ code }) => code),
-      entry.code === undefined ? [] : [entry.code],
-    );
-  });
+  return [
+    ...withProseStyle(
+      atlasPaths.map((path) => ({ bytes: fixtureBytes(variant, path), path })),
+    ),
+  ];
 }
 
 test("Operation Workflow returns a versioned completed Lint result and handoff for a valid Atlas", () => {
-  const result = runLintOperation(completeAtlas("valid"), generousBudgets);
+  const result = runLintOperation(completeAtlas("valid"), passingProseLinter);
 
   assert.equal(result["operation-result-schema"], "1.0.0");
   assert.equal(result.completion, "completed");
@@ -211,7 +109,7 @@ test("Operation Workflow returns a versioned completed Lint result and handoff f
 });
 
 test("Operation Workflow returns a non-success Lint result and handoff for an invalid Atlas", () => {
-  const result = runLintOperation(completeAtlas("invalid"), generousBudgets);
+  const result = runLintOperation(completeAtlas("invalid"), passingProseLinter);
 
   assert.equal(result["operation-result-schema"], "1.0.0");
   assert.equal(result.completion, "completed");
@@ -262,7 +160,7 @@ test("Operation Workflow returns a degraded but valid Lint result when a page ta
       path: file.path,
     };
   });
-  const result = runLintOperation(bumped, generousBudgets);
+  const result = runLintOperation(bumped, passingProseLinter);
 
   assert.equal(result.disposition, "success");
   assert.equal(result.payload.state, "completed");
@@ -300,7 +198,7 @@ test("Operation Workflow reports captured-file runtime failure as degraded non-c
     },
     path: first.path,
   };
-  const result = runLintOperation([hostile, ...rest], generousBudgets);
+  const result = runLintOperation([hostile, ...rest], passingProseLinter);
 
   assert.equal(result.completion, "not-completed");
   assert.equal(result.disposition, "failed");
@@ -324,6 +222,62 @@ test("Operation Workflow reports captured-file runtime failure as degraded non-c
   );
 });
 
+test("Operation Workflow reports unavailable Vale prose Lint as degraded non-completion", () => {
+  const linter = recordingProseLinter({
+    reason: "the pinned Vale binary is missing",
+    state: "unavailable",
+  });
+  const result = runLintOperation(completeAtlas("valid"), linter);
+
+  assert.equal(linter.requests.length, 1);
+  assert.equal(result.completion, "not-completed");
+  assert.equal(result.disposition, "failed");
+  assert.equal(result.payload.state, "not-completed");
+  assert.equal("lint" in result.payload, false);
+  assert.deepEqual(
+    result.payload.findings.map(({ code, path, severity }) => ({
+      code,
+      path,
+      severity,
+    })),
+    [{ code: "ATLAS_VALE_UNAVAILABLE", path: ".atlas", severity: "error" }],
+  );
+  assert.match(
+    result.payload.findings[0]?.message ?? "",
+    /the pinned Vale binary is missing/u,
+  );
+  assert.deepEqual(result.handoff.degradationState, {
+    reason:
+      "Lint could not complete because the Atlas's Vale prose rules could not run.",
+    state: "degraded",
+  });
+  assert.deepEqual(result.handoff.validationState, {
+    findings: result.payload.findings,
+    state: "not-completed",
+  });
+  assert.equal(
+    result.handoff.recommendedNextAction,
+    "Connect to the network so Atlas SDK can download and verify its pinned Vale release, then run Lint again.",
+  );
+});
+
+test("Operation Workflow fails a completed Lint when the Vale configuration is missing", () => {
+  const linter = recordingProseLinter();
+  const atlas = completeAtlas("valid").filter(
+    (file) => file.path !== ".atlas/.vale.ini",
+  );
+  const result = runLintOperation(atlas, linter);
+
+  assert.equal(linter.requests.length, 0);
+  assert.equal(result.completion, "completed");
+  assert.equal(result.disposition, "failed");
+  assert.deepEqual(
+    result.handoff.validationState.findings.map(({ code, path }) => ({ code, path })),
+    [{ code: "ATLAS_VALE_CONFIG_MISSING", path: ".atlas/.vale.ini" }],
+  );
+  assert.equal(result.handoff.validationState.state, "failed");
+});
+
 test("Operation Workflow reports stack exhaustion as degraded non-completion", () => {
   function atStackDepth<T>(depth: number, run: () => T): T {
     return depth <= 0 ? run() : atStackDepth(depth - 1, run);
@@ -333,7 +287,7 @@ test("Operation Workflow reports stack exhaustion as degraded non-completion", (
   let ceiling = 1000;
   for (; ceiling < 1e7; ceiling *= 2) {
     try {
-      atStackDepth(ceiling, () => runLintOperation(atlas, generousBudgets));
+      atStackDepth(ceiling, () => runLintOperation(atlas, passingProseLinter));
     } catch {
       break;
     }
@@ -347,7 +301,7 @@ test("Operation Workflow reports stack exhaustion as degraded non-completion", (
   ) {
     try {
       const result = atStackDepth(depth, () =>
-        runLintOperation(atlas, generousBudgets),
+        runLintOperation(atlas, passingProseLinter),
       );
       if (
         result.payload.state === "not-completed" &&
@@ -430,10 +384,13 @@ test("Operation Handoff contract accepts non-Lint operation states", () => {
 
 test("Lint operation results and handoffs are deterministic and frozen", () => {
   for (const variant of ["invalid", "valid"] as const) {
-    const first = runLintOperation(completeAtlas(variant), generousBudgets);
-    assert.deepEqual(runLintOperation(completeAtlas(variant), generousBudgets), first);
+    const first = runLintOperation(completeAtlas(variant), passingProseLinter);
     assert.deepEqual(
-      runLintOperation(completeAtlas(variant).toReversed(), generousBudgets),
+      runLintOperation(completeAtlas(variant), passingProseLinter),
+      first,
+    );
+    assert.deepEqual(
+      runLintOperation(completeAtlas(variant).toReversed(), passingProseLinter),
       first,
     );
     assert.equal(Object.isFrozen(first), true);

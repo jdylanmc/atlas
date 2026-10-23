@@ -418,12 +418,16 @@ function consumerGitRaw(consumer: string, arguments_: readonly string[]): string
 
 function consumerEnvironment(guard?: string): NodeJS.ProcessEnv {
   // Runtime children receive no API keys, NODE_PATH, or inherited Node loaders.
-  // Keep only process launch, workspace placement, and coverage requirements.
+  // Keep only process launch, workspace placement, coverage requirements, and
+  // the home and cache locations of the machine-scoped Vale binary.
   const environment: NodeJS.ProcessEnv = {
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_CONFIG_NOSYSTEM: "1",
   };
   for (const key of [
+    "HOME",
+    "USERPROFILE",
+    "XDG_CACHE_HOME",
     "PATH",
     "SystemRoot",
     "WINDIR",
@@ -1049,7 +1053,14 @@ for (const entry of readInstalledConsumerCorpus().cases) {
       assert.equal(lintResult.completion, "completed");
       assert.equal(lintResult.disposition, "success");
       assert.ok(lintResult.payload.state === "completed");
-      assert.deepEqual(lintResult.payload.lint.findings, []);
+      // The default Google style may advise on SDK-authored prose; nothing may fail it.
+      assert.deepEqual(
+        lintResult.payload.lint.findings.filter(
+          (finding) =>
+            finding.severity === "error" || finding.attribution.kind === "sdk-core",
+        ),
+        [],
+      );
 
       const explore = runInstalled(consumer, guard, [
         "explore",

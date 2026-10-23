@@ -28,6 +28,11 @@ import { renderAtlasReadinessReportMarkdown } from "../operations/initialize_rea
 import { runLintOperation } from "../operations/lint_operation.ts";
 import { captureLocalAtlasSnapshot } from "./local_atlas_snapshot.ts";
 import { runTrustedGit, runTrustedGitForWrite } from "./trusted_git.ts";
+import {
+  createValeProseLinter,
+  resolveValeBinary,
+  type ValeProseLinterOptions,
+} from "./vale_prose_linter.ts";
 
 function git(repository: string, args: readonly string[]): string {
   const result = runTrustedGit(repository, args);
@@ -327,6 +332,7 @@ export function resumeLocalAtlasInitialization(
 export function runLocalAtlasInitialization(
   repository: string,
   state?: AtlasInitializationWorkflowState,
+  valeOptions: ValeProseLinterOptions = Object.freeze({}),
 ): ReturnType<typeof runAtlasInitializationWorkflow> {
   let workflowState: AtlasInitializationWorkflowState;
   try {
@@ -340,6 +346,20 @@ export function runLocalAtlasInitialization(
       recommendedNextAction:
         "Run Initialization from a Git worktree with an existing commit, then retry.",
       summary: "Initialization could not start from the selected Atlas Host Directory.",
+    });
+  }
+
+  // Every Lint runs Vale, starting with this proposal's own and the first
+  // Ingest's, so Initialization prepares the pinned binary before any write.
+  const vale = resolveValeBinary(valeOptions);
+  if (vale.state === "unavailable") {
+    return notCompletedAtlasInitializationResult({
+      code: "ATLAS_INITIALIZATION_VALE_UNAVAILABLE",
+      message: `Atlas Initialization could not prepare Vale, which every Atlas Lint runs: ${vale.reason}`,
+      recommendedNextAction:
+        "Connect to the network so Atlas SDK can download and verify its pinned Vale release, then retry Initialization.",
+      summary: "Initialization could not prepare Vale before writing a proposal.",
+      workflowState,
     });
   }
 
@@ -393,10 +413,10 @@ export function runLocalAtlasInitialization(
     lintProposal: () => {
       const capture = captureLocalAtlasSnapshot(workspace);
       if (capture.state === "failed") throw new Error(capture.reason);
-      const lint = runLintOperation(capture.snapshot.capturedFiles, {
-        maxFileBytes: 1024 * 1024,
-        maxTotalBytes: 16 * 1024 * 1024,
-      });
+      const lint = runLintOperation(
+        capture.snapshot.capturedFiles,
+        createValeProseLinter(valeOptions),
+      );
       const commit = git(workspace, ["rev-parse", "HEAD"]);
       return { lint, receipt: commit };
     },

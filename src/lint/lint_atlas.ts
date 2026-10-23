@@ -1,35 +1,59 @@
 import type { Finding } from "../domain/finding.ts";
-import { atlasChangelogPath } from "../domain/atlas_changelog.ts";
-import {
-  defaultAtlasTextBudgets,
-  type AtlasTextBudgets,
-  type AtlasTextFile,
-  type CapturedAtlasFile,
-} from "../atlas/load_atlas_text.ts";
+import type { AtlasTextFile, CapturedAtlasFile } from "../atlas/load_atlas_text.ts";
 import { classifyAtlasTextPath, parseAtlasPages } from "../atlas/parse_atlas_pages.ts";
 import { serializeAtlasPages } from "../atlas/serialize_atlas_pages.ts";
+import { compareCodePoints } from "../atlas/compare_code_points.ts";
+import { proseLintConfigPath, type ProseLinter } from "./prose_lint.ts";
 import { loadAndValidateAtlasInput } from "./validate_atlas_input.ts";
 import { compareFindings } from "./validate_atlas_structure.ts";
 import { sdkFindings } from "./sdk_finding.ts";
 
-const capacityFinding = sdkFindings("sdk-core.changelog-capacity");
+const proseFinding = sdkFindings("sdk-core.prose-lint");
 
-function changelogCapacityFindings(
-  byteLength: number | undefined,
-  maxFileBytes: number,
-): readonly Finding[] {
-  const limit = Math.min(maxFileBytes, defaultAtlasTextBudgets.maxFileBytes);
-  const warningAt = Math.ceil(limit * 0.75);
-  if (byteLength === undefined || byteLength < warningAt) return Object.freeze([]);
-  return Object.freeze([
-    capacityFinding(
-      "ATLAS_CHANGELOG_NEAR_CAPACITY",
-      `The Atlas Changelog uses ${String(byteLength)} bytes against a ${String(limit)} byte reference limit: the smaller of this Lint budget and the SDK default snapshot cap (warning at ${String(warningAt)} bytes). Plan human-reviewed history preservation or capacity maintenance before further appends exhaust capture. Atlas SDK does not rotate history automatically.`,
-      atlasChangelogPath,
-      undefined,
-      "warning",
+/** The Finding code Lint reports when the Atlas's prose rules could not run. */
+export const proseLintUnavailableCode = "ATLAS_VALE_UNAVAILABLE";
+
+type ProseLintStage =
+  | { readonly findings: readonly Finding[]; readonly state: "completed" }
+  | { readonly finding: Finding; readonly state: "unavailable" };
+
+/**
+ * Runs the Atlas's own Vale rules over its pages. Every Atlas must carry its
+ * Vale configuration, so its absence is itself an error, and a Lint whose prose
+ * rules could not run is not a completed Lint.
+ */
+function proseLintStage(
+  files: readonly AtlasTextFile[],
+  proseLinter: ProseLinter,
+): ProseLintStage {
+  if (!files.some((file) => file.path === proseLintConfigPath)) {
+    return Object.freeze({
+      findings: Object.freeze([
+        proseFinding(
+          "ATLAS_VALE_CONFIG_MISSING",
+          "Every Atlas must carry its Vale configuration at .atlas/.vale.ini; restore the Atlas SDK default prose style or the Atlas's own.",
+          proseLintConfigPath,
+        ),
+      ]),
+      state: "completed" as const,
+    });
+  }
+  const pagePaths = Object.freeze(
+    files
+      .map((file) => file.path)
+      .filter((path) => classifyAtlasTextPath(path) === "page")
+      .toSorted(compareCodePoints),
+  );
+  const outcome = proseLinter.lint(Object.freeze({ files, pagePaths }));
+  if (outcome.state === "completed") return outcome;
+  return Object.freeze({
+    finding: proseFinding(
+      proseLintUnavailableCode,
+      `Atlas prose Lint could not run: ${outcome.reason}`,
+      proseLintConfigPath,
     ),
-  ]);
+    state: "unavailable" as const,
+  });
 }
 
 export interface ValidAtlasLintResult {
@@ -99,22 +123,26 @@ export function deniesAtlasValidity(findings: readonly Finding[]): boolean {
 
 function decideAtlasLint(
   capturedFiles: readonly CapturedAtlasFile[],
-  budgets: AtlasTextBudgets,
+  proseLinter: ProseLinter,
 ): AtlasLintResult {
-  const validation = loadAndValidateAtlasInput(capturedFiles, budgets);
-  const { files, captureMetadata } = validation;
-  const findings =
-    captureMetadata.state === "loaded"
-      ? Object.freeze(
-          [
-            ...validation.findings,
-            ...changelogCapacityFindings(
-              captureMetadata.byteLengths[atlasChangelogPath],
-              captureMetadata.budgets.maxFileBytes,
-            ),
-          ].toSorted(compareFindings),
-        )
-      : validation.findings;
+  const validation = loadAndValidateAtlasInput(capturedFiles);
+  const { files } = validation;
+  if (!validation.loaded) {
+    return Object.freeze({
+      findings: validation.findings,
+      outcome: "invalid" as const,
+    });
+  }
+  const prose = proseLintStage(files, proseLinter);
+  if (prose.state === "unavailable") {
+    return Object.freeze({
+      findings: Object.freeze([prose.finding]),
+      outcome: "invalid" as const,
+    });
+  }
+  const findings = Object.freeze(
+    [...validation.findings, ...prose.findings].toSorted(compareFindings),
+  );
   if (deniesAtlasValidity(findings)) {
     return Object.freeze({ findings, outcome: "invalid" as const });
   }
@@ -137,9 +165,11 @@ function decideAtlasLint(
 
 /**
  * Lints one complete captured Atlas: immutable loading, canonical page parsing,
- * and trusted structural validation decide the outcome, and a valid Atlas is
- * normalized and reserialized, its pages to their canonical bytes and its
- * opaque records unchanged.
+ * trusted structural validation, and the Atlas's own Vale prose rules decide
+ * the outcome, and a valid Atlas is normalized and reserialized, its pages to
+ * their canonical bytes and its opaque records unchanged. An error-level Vale
+ * alert denies validity exactly as a structural error does; a prose Lint that
+ * could not run leaves the Lint incomplete rather than passing it.
  *
  * An Atlas any check finds an error in returns those Findings alone. No page is
  * serialized in that case, so a partially normalized or success-shaped result
@@ -154,18 +184,18 @@ function decideAtlasLint(
  * one immutable text, so serialization normalizes the content structural
  * validation accepted, and what a caller does to its own bytes afterwards does
  * not change what was judged: "decides one whole-Atlas Lint from one reading of
- * every input" pins the reads. Later stages use loaded text and capture metadata, and
- * declared bounds keep nesting short of the limits of the process, so identical
+ * every input" pins the reads. Later stages use the loaded text, and declared
+ * bounds keep nesting short of the limits of the process, so identical
  * input yields identical ordered Findings and identical canonical pages on every
  * run, pinned by "produces identical ordered Findings and canonical pages across
  * runs" and "costs no more than the bytes it is given as those bytes double".
  */
 export function lintAtlas(
   capturedFiles: readonly CapturedAtlasFile[],
-  budgets: AtlasTextBudgets,
+  proseLinter: ProseLinter,
 ): AtlasLintResult {
   try {
-    return decideAtlasLint(capturedFiles, budgets);
+    return decideAtlasLint(capturedFiles, proseLinter);
   } catch {
     return lintFailedResult;
   }

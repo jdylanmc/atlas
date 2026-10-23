@@ -1,10 +1,9 @@
 import type { Finding } from "../domain/finding.ts";
 import {
-  loadAtlasTextWithByteLengths,
+  loadAtlasText,
   AtlasLoadError,
   type CapturedAtlasFile,
   type AtlasLoadErrorCode,
-  type AtlasTextBudgets,
   type AtlasTextFile,
 } from "../atlas/load_atlas_text.ts";
 import { rethrowProcessLimit } from "../atlas/process_limit.ts";
@@ -13,11 +12,6 @@ import { validateAtlasStructureWithPages } from "./validate_atlas_structure.ts";
 
 interface LoadedInput {
   readonly files: readonly AtlasTextFile[];
-  readonly captureMetadata: {
-    readonly state: "loaded";
-    readonly budgets: AtlasTextBudgets;
-    readonly byteLengths: Readonly<Record<string, number>>;
-  };
 }
 
 const attribution = Object.freeze({
@@ -28,95 +22,99 @@ const attribution = Object.freeze({
 
 const loadCodes: Readonly<Record<AtlasLoadErrorCode, string>> = Object.freeze({
   DUPLICATE_PATH: "ATLAS_LOAD_DUPLICATE_PATH",
-  FILE_TOO_LARGE: "ATLAS_LOAD_FILE_TOO_LARGE",
-  INVALID_BUDGET: "ATLAS_LOAD_INVALID_BUDGET",
   INVALID_PATH: "ATLAS_LOAD_INVALID_PATH",
   INVALID_UTF8: "ATLAS_LOAD_INVALID_UTF8",
   NON_CANONICAL_LINE_TERMINATOR: "ATLAS_LOAD_NON_CANONICAL_LINE_TERMINATOR",
   SHARED_BYTES_NOT_ALLOWED: "ATLAS_LOAD_SHARED_BYTES",
-  TOTAL_TOO_LARGE: "ATLAS_LOAD_TOTAL_TOO_LARGE",
 });
 
 // A loading failure concerns the captured Atlas tree as a whole rather than one
 // resolved page, and AtlasLoadError deliberately withholds the offending raw
 // path so an unsafe caller path does not leak into a sanitized Finding.
 // "sanitizes loading failures without leaking the offending raw path" pins it.
+// A non-canonical line terminator is the exception: it is found only after
+// every path has been normalized, so each offending file is named and located.
 const atlasSubjectPath = ".atlas";
 
-function loadFinding(code: string, message: string): Finding {
+function loadFinding(
+  code: string,
+  message: string,
+  path = atlasSubjectPath,
+  location?: Finding["location"],
+): Finding {
   return Object.freeze({
     attribution,
     code,
     "finding-schema": "1.0.0",
+    ...(location === undefined ? {} : { location }),
     message,
-    path: atlasSubjectPath,
+    path,
     severity: "error",
   });
 }
 
-// Loading consults a captured file's `bytes` and each budget more than once, so
-// every caller-owned value is read once here and answered from a frozen
-// snapshot from then on. The bytes themselves stay the caller's own objects,
-// since only loading may decide whether they use shared memory and copying them
-// first would answer that question for it.
-function captureOnce(
-  capturedFiles: readonly CapturedAtlasFile[],
-  budgets: AtlasTextBudgets,
-): {
-  readonly budgets: AtlasTextBudgets;
-  readonly files: readonly CapturedAtlasFile[];
-} {
-  return {
-    budgets: Object.freeze({
-      maxFileBytes: budgets.maxFileBytes,
-      maxTotalBytes: budgets.maxTotalBytes,
-    }),
-    files: Array.from(capturedFiles, (file) =>
-      Object.freeze({ bytes: file.bytes, path: file.path }),
+function loadErrorFindings(error: AtlasLoadError): readonly Finding[] {
+  if (error.lineTerminators.length === 0) {
+    return Object.freeze([loadFinding(loadCodes[error.code], error.message)]);
+  }
+  return Object.freeze(
+    error.lineTerminators.map(({ column, line, path }) =>
+      loadFinding(
+        loadCodes.NON_CANONICAL_LINE_TERMINATOR,
+        "Atlas file contains a non-canonical line terminator: a carriage return without a following line feed, or a Unicode line or paragraph separator. Use LF or CRLF line endings.",
+        path,
+        Object.freeze({
+          end: Object.freeze({ column: column + 1, line }),
+          start: Object.freeze({ column, line }),
+        }),
+      ),
     ),
-  };
+  );
 }
 
-function loadOrFinding(
+// Loading consults a captured file's `bytes` more than once, so every
+// caller-owned value is read once here and answered from a frozen snapshot from
+// then on. The bytes themselves stay the caller's own objects, since only
+// loading may decide whether they use shared memory and copying them first
+// would answer that question for it.
+function captureOnce(
   capturedFiles: readonly CapturedAtlasFile[],
-  budgets: AtlasTextBudgets,
-): LoadedInput | Finding {
+): readonly CapturedAtlasFile[] {
+  return Array.from(capturedFiles, (file) =>
+    Object.freeze({ bytes: file.bytes, path: file.path }),
+  );
+}
+
+function loadOrFindings(
+  capturedFiles: readonly CapturedAtlasFile[],
+): LoadedInput | readonly Finding[] {
   let captured;
   try {
-    captured = captureOnce(capturedFiles, budgets);
+    captured = captureOnce(capturedFiles);
   } catch (error: unknown) {
     rethrowProcessLimit(error);
     // The program running the Lint failed to hand over what it captured. That
     // is a defect in that program rather than a judgement about the Atlas, and
     // this code says so, but it still becomes a Finding: the Lint boundary
     // answers every caller with a verdict rather than an exception.
-    return loadFinding(
-      "ATLAS_CAPTURE_UNREADABLE",
-      "Captured Atlas files could not be read from the program running the Lint.",
-    );
+    return Object.freeze([
+      loadFinding(
+        "ATLAS_CAPTURE_UNREADABLE",
+        "Captured Atlas files could not be read from the program running the Lint.",
+      ),
+    ]);
   }
 
   try {
-    const loaded = loadAtlasTextWithByteLengths(captured.files, captured.budgets);
-    return Object.freeze({
-      files: loaded.files,
-      captureMetadata: Object.freeze({
-        state: "loaded" as const,
-        budgets: captured.budgets,
-        byteLengths: loaded.byteLengths,
-      }),
-    });
+    return Object.freeze({ files: loadAtlasText(captured) });
   } catch (error: unknown) {
-    if (error instanceof AtlasLoadError) {
-      return loadFinding(loadCodes[error.code], error.message);
-    }
+    if (error instanceof AtlasLoadError) return loadErrorFindings(error);
     rethrowProcessLimit(error);
     // Loading refused the captured files without describing why, which likewise
     // says nothing about Atlas knowledge and everything about what it was given.
-    return loadFinding(
-      "ATLAS_LOAD_FAILED",
-      "Captured Atlas files could not be loaded.",
-    );
+    return Object.freeze([
+      loadFinding("ATLAS_LOAD_FAILED", "Captured Atlas files could not be loaded."),
+    ]);
   }
 }
 
@@ -124,16 +122,14 @@ const atlasInputValidationBrand: unique symbol = Symbol("atlas-input-validation"
 
 export interface AtlasInputValidation {
   readonly [atlasInputValidationBrand]: true;
-  /** Original measurements for operation-specific checks.
-   * tests/lint_operation.test.ts pins reuse without remeasuring decoded text. */
-  readonly captureMetadata:
-    LoadedInput["captureMetadata"] | { readonly state: "unavailable" };
   /**
    * The loaded Atlas text, empty when loading itself failed and otherwise the
    * text these Findings were decided from, whether or not the Atlas is valid.
    */
   readonly files: readonly AtlasTextFile[];
   readonly findings: readonly Finding[];
+  /** Whether loading succeeded, so later stages may read `files`. */
+  readonly loaded: boolean;
   readonly pages: readonly ParsedAtlasPage[];
   readonly validationState: "invalid" | "valid";
 }
@@ -150,11 +146,10 @@ function validationState(findings: readonly Finding[]): "invalid" | "valid" {
  * loading failure, and every parsing failure the parser describes, into a
  * stable, sdk-core attributed Finding so invalid input escapes as neither an
  * uncaught exception nor a success-shaped result. A loading failure
- * short-circuits with one Finding, since the text it would parse is not
- * trustworthy; otherwise the loaded text flows through structural validation.
- * Original byte measurements accompany it for operation-specific checks.
- * Deterministic ordering, sanitization, and source evidence contracts are
- * preserved. Identical input bytes yield identical ordered Findings.
+ * short-circuits, since the text it would parse is not trustworthy; otherwise
+ * the loaded text flows through structural validation. Deterministic ordering,
+ * sanitization, and source evidence contracts are preserved. Identical input
+ * bytes yield identical ordered Findings.
  *
  * A failure that describes the running process rather than the Atlas is raised
  * instead, because reporting it as a property of the input would let one Atlas
@@ -171,16 +166,14 @@ function validationState(findings: readonly Finding[]): "invalid" | "valid" {
  */
 export function loadAndValidateAtlasInput(
   capturedFiles: readonly CapturedAtlasFile[],
-  budgets: AtlasTextBudgets,
 ): AtlasInputValidation {
-  const loaded = loadOrFinding(capturedFiles, budgets);
-  if ("code" in loaded) {
-    const findings = Object.freeze([loaded]);
+  const loaded = loadOrFindings(capturedFiles);
+  if (!("files" in loaded)) {
     return Object.freeze({
       [atlasInputValidationBrand]: true as const,
-      captureMetadata: Object.freeze({ state: "unavailable" as const }),
       files: noFiles,
-      findings,
+      findings: loaded,
+      loaded: false,
       pages: noPages,
       validationState: "invalid" as const,
     });
@@ -188,9 +181,9 @@ export function loadAndValidateAtlasInput(
   const structure = validateAtlasStructureWithPages(loaded.files);
   return Object.freeze({
     [atlasInputValidationBrand]: true as const,
-    captureMetadata: loaded.captureMetadata,
     files: loaded.files,
     findings: structure.findings,
+    loaded: true,
     pages: structure.pages,
     validationState: validationState(structure.findings),
   });

@@ -33,6 +33,7 @@ import {
   governanceAttestationPayload,
 } from "../src/operations/governance_operation.ts";
 import { attestationPayloadDigest } from "../src/operations/operation_support.ts";
+import { writeProseStyle } from "./prose_lint_fixtures.ts";
 import { readInstalledConsumerCorpus } from "./installed_consumer_corpus.ts";
 import { exerciseGovernanceRetirement } from "./governance_retirement_probe.ts";
 import {
@@ -106,6 +107,7 @@ function initAtlasRepository(repository: string): string {
     resolve(repository, ".atlas"),
     { recursive: true },
   );
+  writeProseStyle(repository);
   writeFileSync(resolve(repository, "README.md"), "# host\n", "utf8");
   git(repository, ["add", ".atlas", "README.md"]);
   git(repository, [
@@ -1011,26 +1013,27 @@ test("Local Atlas Governance refuses capture failures and unsafe workspace paths
     createLocalAtlasGovernanceState(resolve(WORKSPACE, "missing-repository"), request),
   );
 
-  const largeRepository = resolve(WORKSPACE, "large-atlas");
-  initAtlasRepository(largeRepository);
-  writeFileSync(
-    resolve(largeRepository, ".atlas", "large.md"),
-    "x".repeat(1024 * 1024 + 1),
-    "utf8",
-  );
-  git(largeRepository, ["add", ".atlas/large.md"]);
-  git(largeRepository, [
+  const unreadableRepository = resolve(WORKSPACE, "unreadable-atlas");
+  initAtlasRepository(unreadableRepository);
+  // A gitlink to a missing commit is listed under .atlas/ but cannot be read.
+  git(unreadableRepository, [
+    "update-index",
+    "--add",
+    "--cacheinfo",
+    "160000,1111111111111111111111111111111111111111,.atlas/missing",
+  ]);
+  git(unreadableRepository, [
     "-c",
     "user.name=Fixture",
     "-c",
     "user.email=fixture@example.invalid",
     "commit",
     "-m",
-    "Add large Atlas file",
+    "Add unreadable Atlas entry",
   ]);
-  assert.throws(() => createLocalAtlasGovernanceState(largeRepository, request));
+  assert.throws(() => createLocalAtlasGovernanceState(unreadableRepository, request));
   assert.equal(
-    runLocalAtlasGovernance(largeRepository, request).handoff.validationState
+    runLocalAtlasGovernance(unreadableRepository, request).handoff.validationState
       .findings[0]?.code,
     "ATLAS_GOVERNANCE_CAPTURE_FAILED",
   );
