@@ -1053,7 +1053,14 @@ for (const entry of readInstalledConsumerCorpus().cases) {
       assert.equal(lintResult.completion, "completed");
       assert.equal(lintResult.disposition, "success");
       assert.ok(lintResult.payload.state === "completed");
-      assert.deepEqual(lintResult.payload.lint.findings, []);
+      // The default Google style may advise on SDK-authored prose; nothing may fail it.
+      assert.deepEqual(
+        lintResult.payload.lint.findings.filter(
+          (finding) =>
+            finding.severity === "error" || finding.attribution.kind === "sdk-core",
+        ),
+        [],
+      );
 
       const explore = runInstalled(consumer, guard, [
         "explore",

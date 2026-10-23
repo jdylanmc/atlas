@@ -295,12 +295,21 @@ pages. Prose Lint is not optional:
   with an empty environment and no global configuration, so an Atlas's verdict
   does not depend on the caller's Vale setup or uncommitted files elsewhere.
 
-The default style has one rule, `AtlasSDK.PageLength`: a page whose prose
-exceeds 1,000 words is an error. It counts words in Vale's `summary` scope, so
-headings, code, table cells, and frontmatter are excluded, and it counts
-Unicode letters and digits, so contractions and hyphenated words count once.
-Atlas SDK imposes no byte budget on Atlas files; page length is this Atlas-owned
-rule instead.
+The default style every Atlas inherits (`BasedOnStyles = AtlasSDK, Google`) has
+two parts:
+
+- **`AtlasSDK.PageLength`:** a page whose prose exceeds 1,000 words is an error.
+  It counts words in Vale's `summary` scope, so headings, code, table cells, and
+  frontmatter are excluded, and it counts Unicode letters and digits, so
+  contractions and hyphenated words count once. Atlas SDK imposes no byte budget
+  on Atlas files; page length is this Atlas-owned rule instead.
+- **The [Google developer documentation style](https://github.com/vale-cli/Google)**
+  (`vale-cli/Google` v0.7.1, MIT, vendored unmodified with its license under
+  `.atlas/vale/styles/Google/`). Its rules keep their own severities, so its 15
+  error-level rules fail Lint, except `Google.Quotes`, which the default
+  configuration lowers to a warning: Ingest writes verbatim citations as
+  `Quoted span "exact text".` and cannot move source punctuation. Other Google
+  error rules still apply inside quoted source text.
 
 Line endings are a trusted Lint check, not a Vale rule: Vale treats a lone
 carriage return as a line break, so it cannot see one. Lint reports every file

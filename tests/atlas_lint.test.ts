@@ -19,6 +19,8 @@ import {
   withProseStyle,
 } from "./prose_lint_fixtures.ts";
 
+import { googleValeStyleFiles } from "../src/lint/google_vale_style.ts";
+
 const encoder = new TextEncoder();
 const fixturesRoot = resolve(import.meta.dirname, "fixtures", "complete-atlas");
 const decoder = new TextDecoder();
@@ -27,7 +29,8 @@ const opaquePaths = [
   ".atlas/CHANGELOG.md",
   ".atlas/manifest.json",
   ".atlas/vale/styles/AtlasSDK/PageLength.yml",
-] as const;
+  ...googleValeStyleFiles.map(([name]) => `.atlas/vale/styles/Google/${name}`).sort(),
+];
 
 // Captured in an order no canonical result may depend on: opaque records first,
 // pages neither in code point order nor in directory order.

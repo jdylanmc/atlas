@@ -52,8 +52,10 @@ environment over a private copy of exactly the text Lint loaded. Offline first u
 and unsupported platforms cannot complete Lint.
 
 **Every Atlas carries `.atlas/.vale.ini` and `.atlas/vale/`.** Initialization seeds
-the Atlas SDK default prose style; the Atlas owns it from then on and Atlas SDK does
-not rewrite it. An Atlas without its configuration fails Lint. `vale` is a reserved
+the Atlas SDK default prose style — `AtlasSDK.PageLength` plus the vendored
+`vale-cli/Google` style at its own severities, with `Google.Quotes` lowered to a
+warning because Ingest's verbatim citation format places punctuation outside quotes
+— and the Atlas owns it from then on; Atlas SDK does not rewrite it. An Atlas without its configuration fails Lint. `vale` is a reserved
 `.atlas/` directory name.
 
 **Vale findings are Atlas-owned.** They carry `atlas-owned`, untrusted attribution,
