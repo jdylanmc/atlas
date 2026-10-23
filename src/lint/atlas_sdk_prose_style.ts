@@ -1,3 +1,4 @@
+import { googleValeStyleFiles } from "./google_vale_style.ts";
 import { proseLintConfigPath, proseLintStylesDirectory } from "./prose_lint.ts";
 
 /** One file of the Atlas SDK default prose style, as written into `.atlas/`. */
@@ -16,7 +17,10 @@ StylesPath = vale/styles
 MinAlertLevel = suggestion
 
 [*.md]
-BasedOnStyles = AtlasSDK
+BasedOnStyles = AtlasSDK, Google
+# Ingest writes verbatim source quotations as \`Quoted span "exact text".\`,
+# which Google.Quotes would reject; keep it advisory.
+Google.Quotes = warning
 `;
 
 const pageLengthRule = `# Counts prose words only: headings, code, table cells, and frontmatter are
@@ -31,8 +35,10 @@ token: "[\\\\p{L}\\\\p{N}]+(?:['\u2019-][\\\\p{L}\\\\p{N}]+)*"
 `;
 
 /**
- * The Atlas SDK default prose style. Initialize copies it into every new Atlas,
- * after which the Atlas owns it and may change, disable, or extend its rules.
+ * The Atlas SDK default prose style: the AtlasSDK page-length rule plus the
+ * vendored Google developer documentation style at its own severities, except
+ * Google.Quotes. Initialize copies it into every new Atlas, after which the
+ * Atlas owns it and may change, disable, or extend its rules.
  */
 export const atlasSdkProseStyleFiles: readonly AtlasSdkProseStyleFile[] = Object.freeze(
   [
@@ -41,5 +47,11 @@ export const atlasSdkProseStyleFiles: readonly AtlasSdkProseStyleFile[] = Object
       content: pageLengthRule,
       path: `${proseLintStylesDirectory}/styles/AtlasSDK/PageLength.yml`,
     }),
+    ...googleValeStyleFiles.map(([name, content]) =>
+      Object.freeze({
+        content,
+        path: `${proseLintStylesDirectory}/styles/Google/${name}`,
+      }),
+    ),
   ],
 );

@@ -18,6 +18,7 @@ import {
   type AtlasInitializationEffectReceipt,
   type AtlasInitializationWorkflowState,
 } from "../src/operations/initialize_operation.ts";
+import { googleValeStyleFiles } from "../src/lint/google_vale_style.ts";
 import { atlasSdkProseStyleFiles } from "../src/lint/atlas_sdk_prose_style.ts";
 import { runLintOperation } from "../src/operations/lint_operation.ts";
 import { passingProseLinter } from "./prose_lint_fixtures.ts";
@@ -129,11 +130,13 @@ test("Atlas Initialization writes the Atlas SDK default prose style after the ro
   assert.deepEqual(stylePaths, [
     ".atlas/.vale.ini",
     ".atlas/vale/styles/AtlasSDK/PageLength.yml",
+    ...googleValeStyleFiles.map(([name]) => `.atlas/vale/styles/Google/${name}`),
   ]);
+  assert.ok(stylePaths.includes(".atlas/vale/styles/Google/LICENSE"));
   assert.deepEqual(
     paths.slice(
       paths.indexOf(".atlas/index.md") + 1,
-      paths.indexOf(".atlas/index.md") + 3,
+      paths.indexOf(".atlas/index.md") + 1 + stylePaths.length,
     ),
     stylePaths,
   );

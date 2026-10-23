@@ -192,10 +192,13 @@ test("atlas lint --machine emits a completed Operation Result and Handoff for a 
   assert.equal(result.operation.subject, "captured-home-atlas");
   assert.equal(result.payload.state, "completed");
   assert.equal(result.payload.lint.outcome, "valid");
-  assert.deepEqual(result.handoff.validationState, {
-    findings: [],
-    state: "passed",
-  });
+  assert.equal(result.handoff.validationState.state, "passed");
+  // The default style's Google rules may advise on fixture prose; none may fail it.
+  for (const finding of result.handoff.validationState.findings) {
+    assert.match(finding.code, /^VALE_GOOGLE_/u);
+    assert.notEqual(finding.severity, "error");
+    assert.equal(finding.attribution.kind, "atlas-owned");
+  }
   assert.equal(result.handoff.result.summary, "Lint passed.");
 });
 
@@ -211,7 +214,9 @@ test("atlas lint --machine emits stable diagnostics and an invalid exit code for
   assert.equal(result.payload.lint.outcome, "invalid");
   assert.equal("pages" in result.payload.lint, false);
   assert.deepEqual(
-    result.payload.lint.findings.map((finding) => finding.code),
+    result.payload.lint.findings
+      .filter((finding) => finding.attribution.kind === "sdk-core")
+      .map((finding) => finding.code),
     [
       "ATLAS_PAGE_TITLE_H1_MISMATCH",
       "ATLAS_CITATION_TARGET_NOT_SOURCE",
@@ -241,12 +246,14 @@ test("atlas lint --machine fails a page whose prose exceeds the default Vale pag
   assert.equal(result.payload.state, "completed");
   assert.equal(result.payload.lint.outcome, "invalid");
   assert.deepEqual(
-    result.payload.lint.findings.map(({ attribution, code, path, severity }) => ({
-      attribution,
-      code,
-      path,
-      severity,
-    })),
+    result.payload.lint.findings
+      .filter((finding) => finding.severity === "error")
+      .map(({ attribution, code, path, severity }) => ({
+        attribution,
+        code,
+        path,
+        severity,
+      })),
     [
       {
         attribution: {

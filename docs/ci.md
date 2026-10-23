@@ -236,7 +236,8 @@ read where that surface can actually occur:
 
 A directory name or page-ID prefix must resolve to a glossary term or to a
 directory Atlas SDK reserves without one. The directory exceptions are exactly
-`types` and `atlas-cache`; invented fallback directories are not exceptions.
+`types`, `atlas-cache`, and `vale`; invented fallback directories are not
+exceptions.
 Structural parse failures without a readable record path use `.atlas` as their
 diagnostic scope.
 A term listed in an unqualified
